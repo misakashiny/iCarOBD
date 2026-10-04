@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="6dp"
+    android:background="@drawable/bg_input"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:padding="6dp">
+
+    <Spinner
+        android:id="@+id/spSource"
+        android:layout_width="0dp"
+        android:layout_height="40dp"
+        android:layout_weight="2.2" />
+
+    <Spinner
+        android:id="@+id/spOp"
+        android:layout_width="0dp"
+        android:layout_height="40dp"
+        android:layout_marginStart="4dp"
+        android:layout_weight="1.3" />
+
+    <EditText
+        android:id="@+id/etThreshold"
+        style="@style/InputEditMono"
+        android:layout_width="0dp"
+        android:layout_height="40dp"
+        android:layout_marginStart="4dp"
+        android:layout_weight="1.1"
+        android:importantForAutofill="no"
+        android:inputType="numberDecimal|numberSigned"
+        android:minHeight="40dp"
+        android:textSize="13sp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnRemove"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="wrap_content"
+        android:layout_height="40dp"
+        android:minWidth="0dp"
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
+        android:text="×"
+        android:textColor="@color/danger"
+        android:textSize="16sp" />
+</LinearLayout>

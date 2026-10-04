@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      自定义控件属性。
+
+      maxWidthDp 用于「最大宽度约束」系列容器（见 ui/view/MaxWidthViews.kt）。
+      新增自定义 View 时在这里登记属性，不要用硬编码常量。
+    -->
+    <declare-styleable name="MaxWidth">
+        <!-- 内容最大宽度。用 dimension，代码里直接拿到 px。 -->
+        <attr name="maxWidthDp" format="dimension" />
+    </declare-styleable>
+</resources>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/tvLog"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:fontFamily="monospace"
+    android:paddingStart="10dp"
+    android:paddingTop="1dp"
+    android:paddingEnd="10dp"
+    android:paddingBottom="1dp"
+    android:textColor="@color/text_secondary"
+    android:textIsSelectable="true"
+    android:textSize="10sp" />

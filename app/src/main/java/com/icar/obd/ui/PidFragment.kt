@@ -1,0 +1,248 @@
+package com.icar.obd.ui
+
+import android.content.Intent
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.EditText
+import android.widget.FrameLayout
+import androidx.appcompat.app.AlertDialog
+import androidx.fragment.app.Fragment
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.button.MaterialButton
+import com.icar.obd.R
+import com.icar.obd.data.AppLog
+import com.icar.obd.data.Backup
+import com.icar.obd.data.Store
+import com.icar.obd.obd.ObdController
+import com.icar.obd.ui.adapter.PidAdapter
+import java.io.File
+
+/**
+ * PID 管理页。
+ *
+ * 这是「不改 APK 就能支持新车数据」的入口：
+ *   · 新增 PID  → 手工填协议/Mode/PID/公式/量程
+ *   · PID 扫描器 → 让车告诉我们它支持什么
+ *   · 阿特兹模板 → 一键生成可编辑的候选条目（PID 号为占位，需扫描确认）
+ *   · 导入/导出  → JSON 分享，便于在多个设备/多个智能体之间传递成果
+ */
+class PidFragment : Fragment() {
+
+    private lateinit var adapter: PidAdapter
+
+    override fun onCreateView(
+        inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
+    ): View = inflater.inflate(R.layout.fragment_pid, container, false)
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        adapter = PidAdapter(
+            onToggle = { pid, on ->
+                Store.setEnabled(pid.id, on)
+                ObdController.reloadPids()
+                AppLog.i(AppLog.M_UI, "PID 启用状态变更", "${pid.name} → $on")
+            },
+            onClick = { pid ->
+                startActivity(
+                    Intent(requireContext(), PidEditorActivity::class.java)
+                        .putExtra(PidEditorActivity.EXTRA_ID, pid.id)
+                )
+            },
+            onDelete = { pid ->
+                AlertDialog.Builder(requireContext())
+                    .setTitle("删除 PID")
+                    .setMessage("确定删除「${pid.name}」？使用它的仪表与规则会失效。")
+                    .setPositiveButton("删除") { _, _ ->
+                        Store.deletePid(pid.id)
+                        ObdController.reloadPids()
+                        refresh()
+                    }
+                    .setNegativeButton("取消", null)
+                    .show()
+            }
+        )
+
+        view.findViewById<RecyclerView>(R.id.rvPids).apply {
+            layoutManager = LinearLayoutManager(requireContext())
+            adapter = this@PidFragment.adapter
+        }
+
+        view.findViewById<MaterialButton>(R.id.btnAddPid).setOnClickListener {
+            startActivity(Intent(requireContext(), PidEditorActivity::class.java))
+        }
+        view.findViewById<MaterialButton>(R.id.btnScanner).setOnClickListener {
+            startActivity(Intent(requireContext(), ScannerActivity::class.java))
+        }
+        view.findViewById<MaterialButton>(R.id.btnImport).setOnClickListener { showImportDialog() }
+        view.findViewById<MaterialButton>(R.id.btnExport).setOnClickListener { showExportDialog() }
+        view.findViewById<MaterialButton>(R.id.btnSeedMazda).setOnClickListener { seedTemplates() }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refresh()
+    }
+
+    private fun refresh() {
+        adapter.submit(Store.allPids())
+    }
+
+    // ------------------------------------------------------------ 导出
+
+    private fun showExportDialog() {
+        AlertDialog.Builder(requireContext())
+            .setTitle("导出")
+            .setItems(
+                arrayOf(
+                    "只导出 PID（体积小，便于分享）",
+                    "导出全部配置（完整备份）"
+                )
+            ) { _, which -> if (which == 0) exportPids() else exportBackup() }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun exportPids() {
+        shareJson("pids", "iCarOBD-pids") { Store.exportPidsJson() }
+    }
+
+    private fun exportBackup() {
+        val s = Backup.currentSummary()
+        AlertDialog.Builder(requireContext())
+            .setTitle("导出完整备份")
+            .setMessage("将打包：\n${s.describe()}\n\n包含 PID、启用状态、规则、仪表布局、主题与设置。")
+            .setPositiveButton("导出") { _, _ ->
+                shareJson("backup", "iCarOBD-backup") { Backup.export() }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /** 写文件 → 交给系统分享面板（用户可存到网盘/发给自己） */
+    private fun shareJson(prefix: String, chooserTitle: String, build: () -> String) {
+        runCatching {
+            val dir = File(requireContext().getExternalFilesDir(null), "export").apply { mkdirs() }
+            val f = File(dir, "$prefix-${System.currentTimeMillis()}.json")
+            f.writeText(build())
+            AppLog.i(AppLog.M_UI, "导出 $prefix", f.absolutePath)
+
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                requireContext(), "${requireContext().packageName}.fileprovider", f
+            )
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "application/json"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(send, chooserTitle))
+            f
+        }.onSuccess {
+            ObdController.toast("已导出：${it.name}")
+        }.onFailure {
+            ObdController.toast("导出失败：${it.message}")
+        }
+    }
+
+    // ------------------------------------------------------------ 导入
+
+    /** 从文件恢复完整备份（SAF 选择器，不依赖存储权限） */
+    private val openBackupFile = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@registerForActivityResult
+        val text = runCatching {
+            requireContext().contentResolver.openInputStream(uri)
+                ?.bufferedReader()?.use { it.readText() }
+        }.getOrNull()
+        if (text.isNullOrBlank()) {
+            ObdController.toast("读取文件失败")
+            return@registerForActivityResult
+        }
+        doImportBackup(text)
+    }
+
+    private fun showImportDialog() {
+        AlertDialog.Builder(requireContext())
+            .setTitle("导入")
+            .setItems(
+                arrayOf(
+                    "粘贴 PID JSON（只导入 PID）",
+                    "粘贴完整备份（覆盖全部配置）",
+                    "从文件恢复完整备份"
+                )
+            ) { _, which ->
+                when (which) {
+                    0 -> showPasteDialog("导入 PID JSON", "粘贴 PID 的 JSON 数组") { doImportPids(it) }
+                    1 -> showPasteDialog("导入完整备份", "粘贴备份 JSON") { doImportBackup(it) }
+                    else -> openBackupFile.launch(arrayOf("application/json", "text/plain", "*/*"))
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun showPasteDialog(title: String, hintText: String, onOk: (String) -> Unit) {
+        val ctx = requireContext()
+        val pad = (resources.displayMetrics.density * 12).toInt()
+        val et = EditText(ctx).apply {
+            hint = hintText
+            setPadding(pad, pad, pad, pad)
+            minLines = 5
+        }
+        val wrap = FrameLayout(ctx).apply { setPadding(pad, pad, pad, pad); addView(et) }
+        AlertDialog.Builder(ctx)
+            .setTitle(title)
+            .setView(wrap)
+            .setPositiveButton("导入") { _, _ -> onOk(et.text.toString()) }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun doImportPids(text: String) {
+        runCatching { Store.importPidsJson(text) }
+            .onSuccess {
+                ObdController.reloadPids()
+                refresh()
+                ObdController.toast("已导入 $it 条")
+            }
+            .onFailure {
+                ObdController.toast("导入失败：${it.message}")
+                AppLog.e(AppLog.M_UI, "导入 PID 失败", it.message ?: "")
+            }
+    }
+
+    private fun doImportBackup(text: String) {
+        AlertDialog.Builder(requireContext())
+            .setTitle("恢复完整备份")
+            .setMessage("会**整体替换**当前的 PID、启用状态、规则、仪表布局、主题与设置。\n\n此操作不可撤销，确定继续？")
+            .setPositiveButton("恢复") { _, _ ->
+                val r = Backup.import(text)
+                ObdController.reloadPids()
+                ObdController.reloadRules()
+                refresh()
+                ObdController.toast(r.message)
+                AppLog.i(AppLog.M_UI, "恢复备份", "ok=${r.ok} ${r.message}")
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun seedTemplates() {
+        AlertDialog.Builder(requireContext())
+            .setTitle("生成阿特兹候选 PID")
+            .setMessage(
+                "将复制 4 条厂家 PID 模板为**可编辑**条目（变速箱油温、左右转向、方向盘转角）。\n\n" +
+                    "注意：模板里的 PID 号是占位值，标准 OBD 里没有转向灯这类信号。\n" +
+                    "正确流程：PID 扫描器扫出真实地址 → 在编辑器里改号 → 测试通过 → 启用。"
+            )
+            .setPositiveButton("生成") { _, _ ->
+                val n = Store.importTemplatesAsCustom()
+                refresh()
+                ObdController.toast("已生成 $n 条候选，请用扫描器确认真实 PID")
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+}

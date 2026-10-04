@@ -1,0 +1,355 @@
+{
+  "schema": "icar.ui/2",
+  "meta": {
+    "name": "示例主题 · v2 全能力",
+    "author": "iCarOBD",
+    "description": "演示控件树 / 图片 / 状态系统 / 旋转 / 分组 / 设计分辨率。素材图片需自行放到 assets/ 下。"
+  },
+  "canvas": {
+    "unit": 360,
+    "designW": 2560,
+    "designH": 1600,
+    "scaleMode": 0,
+    "note": "每轴 0..360。x/y 是左上角（相对父节点），w/h 是尺寸；rotation 绕自身中心"
+  },
+  "theme": "neon",
+  "background": {
+    "path": "assets/carbon.png"
+  },
+  "assets": [
+    {
+      "id": "as_bg",
+      "name": "碳纤维底.png",
+      "kind": "background",
+      "path": "assets/carbon.png",
+      "w": 2560,
+      "h": 1600,
+      "bytes": 0
+    },
+    {
+      "id": "as_needle",
+      "name": "指针.png",
+      "kind": "needle",
+      "path": "assets/needle.png",
+      "w": 64,
+      "h": 240,
+      "bytes": 0
+    },
+    {
+      "id": "as_lamp_off",
+      "name": "故障灯-灭.png",
+      "kind": "warning",
+      "path": "assets/lamp_off.png",
+      "w": 64,
+      "h": 64,
+      "bytes": 0
+    },
+    {
+      "id": "as_lamp_warn",
+      "name": "故障灯-警告.png",
+      "kind": "warning",
+      "path": "assets/lamp_warn.png",
+      "w": 64,
+      "h": 64,
+      "bytes": 0
+    },
+    {
+      "id": "as_lamp_crit",
+      "name": "故障灯-严重.png",
+      "kind": "warning",
+      "path": "assets/lamp_crit.png",
+      "w": 64,
+      "h": 64,
+      "bytes": 0
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n7ewf",
+      "type": "image",
+      "name": "背景图",
+      "x": 0,
+      "y": 0,
+      "w": 360,
+      "h": 360,
+      "rotation": 0,
+      "scale": 1,
+      "alpha": 255,
+      "z": 0,
+      "assetId": "as_bg"
+    },
+    {
+      "id": "g8k3e",
+      "type": "group",
+      "name": "转速组",
+      "x": 8,
+      "y": 8,
+      "w": 200,
+      "h": 200,
+      "rotation": 0,
+      "scale": 1,
+      "alpha": 255,
+      "z": 10,
+      "children": [
+        {
+          "id": "n96re",
+          "type": "gauge",
+          "name": "转速表盘",
+          "x": 0,
+          "y": 0,
+          "w": 200,
+          "h": 200,
+          "rotation": 0,
+          "scale": 1,
+          "alpha": 255,
+          "z": 0,
+          "pid": "obd.rpm",
+          "style": 0,
+          "min": 0,
+          "max": 8000,
+          "warnHigh": 6500,
+          "ringStyle": 1,
+          "neonPreset": "强烈"
+        },
+        {
+          "id": "nampb",
+          "type": "image",
+          "name": "指针",
+          "x": 88,
+          "y": 20,
+          "w": 24,
+          "h": 80,
+          "rotation": 30,
+          "scale": 1.15,
+          "alpha": 230,
+          "z": 1,
+          "assetId": "as_needle"
+        }
+      ]
+    },
+    {
+      "id": "nb3qo",
+      "type": "gauge",
+      "name": "车速",
+      "x": 212,
+      "y": 8,
+      "w": 140,
+      "h": 92,
+      "rotation": 0,
+      "scale": 1,
+      "alpha": 255,
+      "z": 11,
+      "pid": "obd.speed",
+      "style": 1,
+      "min": 0,
+      "max": 260,
+      "warnHigh": 120,
+      "cardStyle": 1
+    },
+    {
+      "id": "nc5pl",
+      "type": "gauge",
+      "name": "水温",
+      "x": 212,
+      "y": 104,
+      "w": 140,
+      "h": 48,
+      "rotation": 0,
+      "scale": 1,
+      "alpha": 200,
+      "z": 11,
+      "pid": "obd.coolant",
+      "style": 2,
+      "min": -40,
+      "max": 215,
+      "warnLow": 60,
+      "warnHigh": 105
+    },
+    {
+      "id": "gdkov",
+      "type": "group",
+      "name": "警告灯组",
+      "x": 8,
+      "y": 216,
+      "w": 200,
+      "h": 60,
+      "rotation": 0,
+      "scale": 1,
+      "alpha": 255,
+      "z": 12,
+      "children": [
+        {
+          "id": "neqtg",
+          "type": "image",
+          "name": "发动机故障灯",
+          "x": 0,
+          "y": 8,
+          "w": 44,
+          "h": 44,
+          "rotation": 0,
+          "scale": 1,
+          "alpha": 255,
+          "z": 0,
+          "assetId": "as_lamp_off",
+          "statePid": "obd.coolant",
+          "states": {
+            "normal": {
+              "assetId": "as_lamp_off",
+              "alpha": 77,
+              "blink": false,
+              "blinkMs": 200
+            },
+            "warn": {
+              "assetId": "as_lamp_warn",
+              "alpha": 255,
+              "blink": false,
+              "blinkMs": 200
+            },
+            "critical": {
+              "assetId": "as_lamp_crit",
+              "alpha": 255,
+              "blink": true,
+              "blinkMs": 200
+            }
+          }
+        },
+        {
+          "id": "nff9u",
+          "type": "image",
+          "name": "机油压力灯",
+          "x": 68,
+          "y": 8,
+          "w": 44,
+          "h": 44,
+          "rotation": 0,
+          "scale": 1,
+          "alpha": 255,
+          "z": 1,
+          "assetId": "as_lamp_off",
+          "statePid": "obd.rpm",
+          "states": {
+            "normal": {
+              "assetId": "as_lamp_off",
+              "alpha": 77,
+              "blink": false,
+              "blinkMs": 200
+            },
+            "warn": {
+              "assetId": "as_lamp_warn",
+              "alpha": 255,
+              "blink": false,
+              "blinkMs": 200
+            },
+            "critical": {
+              "assetId": "as_lamp_crit",
+              "alpha": 255,
+              "blink": true,
+              "blinkMs": 200
+            }
+          }
+        },
+        {
+          "id": "ngk3v",
+          "type": "image",
+          "name": "电池灯",
+          "x": 136,
+          "y": 8,
+          "w": 44,
+          "h": 44,
+          "rotation": 0,
+          "scale": 1,
+          "alpha": 255,
+          "z": 2,
+          "assetId": "as_lamp_off",
+          "statePid": "obd.voltage",
+          "states": {
+            "normal": {
+              "assetId": "as_lamp_off",
+              "alpha": 77,
+              "blink": false,
+              "blinkMs": 200
+            },
+            "warn": {
+              "assetId": "as_lamp_warn",
+              "alpha": 255,
+              "blink": false,
+              "blinkMs": 200
+            },
+            "critical": {
+              "assetId": "as_lamp_crit",
+              "alpha": 255,
+              "blink": true,
+              "blinkMs": 200
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "nhbrj",
+      "type": "text",
+      "name": "标题",
+      "x": 212,
+      "y": 300,
+      "w": 140,
+      "h": 24,
+      "rotation": 0,
+      "scale": 1,
+      "alpha": 255,
+      "z": 13,
+      "text": "iCar OBD",
+      "fontSize": 20,
+      "color": "#00D8FF",
+      "bold": true
+    },
+    {
+      "id": "niu64",
+      "type": "text",
+      "name": "装饰线（已锁定）",
+      "x": 212,
+      "y": 328,
+      "w": 140,
+      "h": 18,
+      "rotation": 0,
+      "scale": 1,
+      "alpha": 255,
+      "z": 13,
+      "locked": true,
+      "text": "———————————",
+      "fontSize": 14,
+      "color": "#2A3547"
+    },
+    {
+      "id": "gjybr",
+      "type": "group",
+      "name": "旋转徽标组",
+      "x": 300,
+      "y": 300,
+      "w": 52,
+      "h": 52,
+      "rotation": 12,
+      "scale": 1,
+      "alpha": 255,
+      "z": 14,
+      "children": [
+        {
+          "id": "nkrhb",
+          "type": "text",
+          "name": "徽标文字",
+          "x": 0,
+          "y": 0,
+          "w": 52,
+          "h": 52,
+          "rotation": 0,
+          "scale": 1,
+          "alpha": 255,
+          "z": 0,
+          "text": "OBD",
+          "fontSize": 16,
+          "color": "#7C5CFF",
+          "bold": true
+        }
+      ]
+    }
+  ]
+}

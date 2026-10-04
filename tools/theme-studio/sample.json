@@ -1,0 +1,89 @@
+{
+  "schema": "icar.ui/1",
+  "meta": {
+    "name": "赛道模式",
+    "author": "iCarOBD",
+    "description": "示例：混合盘面（圆表 + 数字 + 条形），带指针环、霓虹档位与卡片外框覆盖。"
+  },
+  "theme": "neon",
+  "canvas": {
+    "unit": 360,
+    "note": "每轴 0..360。x/y 是左上角，w/h 是尺寸"
+  },
+  "background": {
+    "path": "/sdcard/icar-bg/carbon.png"
+  },
+  "gauges": [
+    {
+      "pid": "obd.rpm",
+      "style": 0,
+      "min": 0,
+      "max": 8000,
+      "warnHigh": 6500,
+      "x": 0,
+      "y": 0,
+      "w": 240,
+      "h": 240,
+      "ringStyle": 1,
+      "ringSegments": 40,
+      "neonPreset": "强烈",
+      "cardStyle": 2
+    },
+    {
+      "pid": "obd.speed",
+      "style": 1,
+      "min": 0,
+      "max": 260,
+      "warnHigh": 120,
+      "x": 240,
+      "y": 0,
+      "w": 120,
+      "h": 120
+    },
+    {
+      "pid": "obd.voltage",
+      "style": 0,
+      "min": 0,
+      "max": 20,
+      "warnLow": 11.8,
+      "warnHigh": 15.2,
+      "x": 240,
+      "y": 120,
+      "w": 120,
+      "h": 120
+    },
+    {
+      "pid": "obd.coolant",
+      "style": 2,
+      "min": -40,
+      "max": 215,
+      "warnLow": 60,
+      "warnHigh": 105,
+      "x": 0,
+      "y": 240,
+      "w": 180,
+      "h": 60
+    },
+    {
+      "pid": "obd.throttle",
+      "style": 2,
+      "min": 0,
+      "max": 100,
+      "x": 180,
+      "y": 240,
+      "w": 180,
+      "h": 60
+    },
+    {
+      "pid": "obd.load",
+      "style": 1,
+      "min": 0,
+      "max": 100,
+      "x": 240,
+      "y": 240,
+      "w": 120,
+      "h": 120,
+      "cardStyle": 1
+    }
+  ]
+}

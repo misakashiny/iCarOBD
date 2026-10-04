@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 基础（深色车载风格） -->
+    <color name="bg">#FF0A0D12</color>
+    <color name="bg_surface">#FF141A23</color>
+    <color name="bg_surface2">#FF1C2430</color>
+    <color name="bg_elevated">#FF212B39</color>
+    <color name="divider">#FF2A3547</color>
+
+    <color name="text_primary">#FFE8EEF7</color>
+    <color name="text_secondary">#FF9AA8BC</color>
+    <color name="text_dim">#FF5F6E85</color>
+
+    <!-- 强调 -->
+    <color name="accent">#FF00D8FF</color>
+    <color name="accent2">#FF7C5CFF</color>
+    <color name="accent_dim">#6600D8FF</color>
+
+    <!-- 状态 -->
+    <color name="ok">#FF2FD47A</color>
+    <color name="warn">#FFFFB020</color>
+    <color name="danger">#FFFF4D4F</color>
+    <color name="info">#FF4DA3FF</color>
+
+    <!-- 仪表 -->
+    <color name="gauge_track">#FF263143</color>
+    <color name="gauge_tick">#FF4A5A73</color>
+    <color name="gauge_needle">#FFFF4D4F</color>
+    <color name="gauge_value">#FFFFFFFF</color>
+    <color name="gauge_label">#FF8FA0B8</color>
+
+    <!-- 扫描器 -->
+    <color name="scan_hit">#FF2FD47A</color>
+    <color name="scan_miss">#FF3A465C</color>
+</resources>

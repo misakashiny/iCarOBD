@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">iCar OBD</string>
+
+    <!-- 导航 -->
+    <string name="nav_dashboard">仪表盘</string>
+    <string name="nav_connect">连接</string>
+    <string name="nav_pid">PID</string>
+    <string name="nav_rule">规则</string>
+    <string name="nav_log">日志</string>
+
+    <!-- 仪表盘 -->
+    <string name="dash_normal">普通驾驶</string>
+    <string name="dash_perf">性能模式</string>
+    <string name="dash_custom">自定义</string>
+    <string name="dash_add_gauge">+ 添加仪表</string>
+    <string name="dash_no_data">未连接设备</string>
+
+    <!-- 连接 -->
+    <string name="conn_scan">扫描设备</string>
+    <string name="conn_stop_scan">停止扫描</string>
+    <string name="conn_connect">连接</string>
+    <string name="conn_disconnect">断开</string>
+    <string name="conn_init">初始化 ELM327</string>
+    <string name="conn_protocol">协议</string>
+    <string name="conn_voltage">电瓶电压</string>
+
+    <!-- PID -->
+    <string name="pid_add">新增 PID</string>
+    <string name="pid_test_send">发送测试请求</string>
+    <string name="pid_save">保存 PID</string>
+    <string name="pid_scanner">PID 扫描器</string>
+
+    <!-- 规则 -->
+    <string name="rule_add">新增规则</string>
+    <string name="rule_when">当</string>
+    <string name="rule_for">持续</string>
+    <string name="rule_then">执行</string>
+
+    <!-- 日志 -->
+    <string name="log_export">导出</string>
+    <string name="log_clear">清空</string>
+    <string name="log_filter">过滤</string>
+
+    <!-- 通用 -->
+    <string name="ok_text">确定</string>
+    <string name="cancel">取消</string>
+    <string name="delete">删除</string>
+    <string name="edit">编辑</string>
+    <string name="save">保存</string>
+    <string name="unit">单位</string>
+</resources>

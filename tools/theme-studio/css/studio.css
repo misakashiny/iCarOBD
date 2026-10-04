@@ -1,0 +1,720 @@
+/* ==========================================================================
+   studio.css —— 主题制作工具样式
+   --------------------------------------------------------------------------
+   布局见 docs/主题设计大纲.md §6.3：
+     顶栏（撤销/吸附在显眼位置）│ 左栏（素材库 + 控件树）│ 中栏（画布）│ 右栏（属性分组）
+   ========================================================================== */
+
+:root {
+  --bg: #0A0D12; --surface: #141A23; --surface2: #1C2430; --elevated: #212B39;
+  --divider: #2A3547; --text: #E8EEF7; --text2: #9AA8BC; --dim: #5F6E85;
+  --accent: #00D8FF; --ok: #2FD47A; --warn: #FFB020; --danger: #FF4D4F;
+  --purple: #7C5CFF;
+  /* 画布自己的底色（JS 读这两个变量去画，不然切主题后画布还是黑的） */
+  --cvOut: #020407;      /* 画布外（fit 模式的留边区域） */
+  --cvIn: #05070A;       /* 画布内（0..360 坐标区） */
+  --cvGrid: rgba(20, 28, 38, 0.9);
+  --cvGridAxis: rgba(30, 44, 60, 0.95);
+  --cvCard: rgba(28, 36, 48, 0.75);
+  --cvCardLine: #2A3547;
+  --cvTrack: #263143;
+  --cvText: #8FA0B8;
+  --cvTextDim: #5F6E85;
+  --cvTextFaint: #3A4A5E;
+  --cvValue: #FFFFFF;
+}
+
+/* ---- 白色主题 --------------------------------------------------------- */
+[data-theme="light"] {
+  --bg: #EEF1F6; --surface: #FFFFFF; --surface2: #F3F6FA; --elevated: #E6ECF4;
+  --divider: #CFD8E4; --text: #16202C; --text2: #4C5B70; --dim: #8394A8;
+  --accent: #0A7EA4; --ok: #12855A; --warn: #A9690A; --danger: #C62828;
+  --purple: #5B3FD6;
+  --cvOut: #DDE3EC;
+  --cvIn: #FFFFFF;
+  --cvGrid: rgba(180, 195, 212, 0.75);
+  --cvGridAxis: rgba(150, 168, 190, 0.9);
+  --cvCard: rgba(240, 244, 249, 0.92);
+  --cvCardLine: #C6D0DE;
+  --cvTrack: #D7DFEA;
+  --cvText: #46586E;
+  --cvTextDim: #6C7E93;
+  --cvTextFaint: #94A4B7;
+  --cvValue: #16202C;
+}
+
+/* 亮色下按钮/选中态需要单独的底色（深色底 + 亮字在亮色主题里读不出来） */
+[data-theme="light"] button.primary { background: #D6EDF6; border-color: #7FBBD0; color: #0A6A8C; }
+[data-theme="light"] button.danger { border-color: #E8B4B4; color: #A02020; }
+[data-theme="light"] .trow.sel { background: #D6EDF6; }
+[data-theme="light"] .tabs button.on { background: #D6EDF6; border-color: #7FBBD0; color: #0A6A8C; }
+[data-theme="light"] .msg.err { background: #FDECEC; border-color: var(--danger); color: #8C1D1D; }
+[data-theme="light"] .msg.warn { background: #FDF4E3; border-color: var(--warn); color: #7A4C05; }
+[data-theme="light"] .msg.ok { background: #E8F7EF; border-color: var(--ok); color: #0C5F3F; }
+[data-theme="light"] .stateBox { background: rgba(0, 0, 0, .015); }
+[data-theme="light"] textarea { background: #F7F9FC; color: #1F4A5C; }
+[data-theme="light"] .athumb { background: #F0F3F8; }
+[data-theme="light"] .badge.lock { background: #FBF0DA; color: #8A5A06; }
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--text); overflow: hidden;
+  font: 13px/1.5 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  display: flex; flex-direction: column;
+}
+
+/* ---------------------------------------------------------------- 顶栏 */
+header {
+  display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+  background: var(--surface); border-bottom: 1px solid var(--divider);
+  flex: 0 0 auto; flex-wrap: nowrap; overflow-x: auto;
+}
+header h1 { font-size: 14px; margin: 0 10px 0 0; font-weight: 600; white-space: nowrap; }
+header .ver { color: var(--dim); font-size: 11px; white-space: nowrap; }
+header code { background: var(--elevated); padding: 0 3px; border-radius: 3px; font-size: 11px; }
+.spacer { flex: 1 1 auto; min-width: 6px; }
+.sep { width: 1px; height: 20px; background: var(--divider); margin: 0 4px; flex: 0 0 auto; }
+
+button {
+  background: var(--elevated); color: var(--text); border: 1px solid var(--divider);
+  border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 12px;
+  white-space: nowrap; font-family: inherit;
+}
+button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+button:disabled { opacity: .4; cursor: default; }
+button.primary { background: #0E3A4A; border-color: #1D6E88; color: var(--accent); }
+button.bad { border-color: var(--danger); color: var(--danger); }
+button.danger { border-color: #5A2A2C; color: #FF9EA0; }
+button.danger:hover { border-color: var(--danger); color: var(--danger); }
+button.mini { padding: 2px 6px; font-size: 11px; margin-left: 4px; }
+button.on { border-color: var(--ok); color: var(--ok); }
+button.off { border-color: var(--warn); color: var(--warn); }
+button.icon { padding: 5px 9px; font-weight: 600; }
+
+/* ---------------------------------------------------------------- 主体三栏 */
+main {
+  flex: 1 1 auto; min-height: 0; display: grid;
+  grid-template-columns: 320px minmax(0, 1fr) 420px;
+  gap: 8px; padding: 8px;
+}
+.col { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.col.scroll { overflow-y: auto; padding-right: 2px; }
+
+.panel {
+  background: var(--surface); border: 1px solid var(--divider);
+  border-radius: 8px; padding: 8px; flex: 0 0 auto; min-height: 0;
+}
+.panel.grow { flex: 1 1 auto; display: flex; flex-direction: column; overflow: hidden; }
+.panel h2 {
+  font-size: 11px; margin: 0 0 6px; color: var(--text2); font-weight: 600;
+  text-transform: uppercase; letter-spacing: .6px;
+  display: flex; align-items: center; gap: 6px;
+}
+
+/* ---------------------------------------------------------------- 画布 */
+.canvasWrap {
+  position: relative; background: var(--surface); border: 1px solid var(--divider);
+  border-radius: 8px; padding: 8px; flex: 1 1 auto; min-height: 0;
+  display: flex; justify-content: center; align-items: center;
+}
+canvas { display: block; cursor: default; border-radius: 4px; background: #020407; }
+
+/* ---------------------------------------------------------------- 控件树 */
+.treeHead {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
+}
+.treeTitle { font-size: 11px; color: var(--text2); font-weight: 600;
+  text-transform: uppercase; letter-spacing: .6px; flex: 1 1 auto; }
+.treeCount { font-size: 10px; color: var(--dim); background: var(--elevated);
+  padding: 0 5px; border-radius: 8px; }
+.treeBody { overflow: auto; flex: 1 1 auto; min-height: 0; }
+
+.trow {
+  display: flex; align-items: center; gap: 4px; padding: 3px 4px;
+  border-radius: 4px; cursor: pointer; font-size: 12px; user-select: none;
+}
+.trow:hover { background: var(--surface2); }
+.trow.sel { background: #0E3A4A; }
+.trow.dropTarget { outline: 1px dashed var(--accent); }
+.trow .tw { width: 12px; color: var(--dim); font-size: 10px; text-align: center; flex: 0 0 auto; }
+.trow .tic { width: 14px; text-align: center; color: var(--text2); flex: 0 0 auto; }
+.trow .tnm { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trow .tbtn { width: 18px; text-align: center; font-size: 11px; opacity: .55; flex: 0 0 auto; }
+.trow .tbtn:hover { opacity: 1; }
+.trow .tflag { font-size: 10px; flex: 0 0 auto; }
+.tkids { margin-left: 12px; border-left: 1px solid #1e2836; padding-left: 2px; }
+.tdrop {
+  margin: 6px 0 0; padding: 6px; border: 1px dashed var(--divider); border-radius: 5px;
+  color: var(--dim); font-size: 11px; text-align: center;
+}
+.tdrop.dropTarget { border-color: var(--accent); color: var(--accent); }
+
+/* ---------------------------------------------------------------- 素材库 */
+.assetKinds { overflow: auto; flex: 1 1 auto; min-height: 0; }
+.akind { margin-bottom: 2px; }
+.akhead {
+  display: flex; align-items: center; gap: 4px; padding: 3px 4px;
+  border-radius: 4px; cursor: pointer; font-size: 12px;
+}
+.akhead:hover { background: var(--surface2); }
+.akhead .pcaret { width: 12px; color: var(--dim); font-size: 10px; }
+.akname { flex: 1 1 auto; }
+.akitems { margin-left: 14px; }
+.akempty { color: var(--dim); font-size: 11px; padding: 2px 4px; }
+.aitem {
+  display: flex; align-items: center; gap: 6px; padding: 3px 4px;
+  border-radius: 4px; cursor: grab; font-size: 12px;
+}
+.aitem:hover { background: var(--surface2); }
+.athumb {
+  width: 26px; height: 26px; object-fit: contain; flex: 0 0 auto;
+  background: #05070A; border: 1px solid var(--divider); border-radius: 3px;
+}
+.aname { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------------------------------------------------------------- 属性面板 */
+.pTitle {
+  font-size: 13px; font-weight: 600; margin-bottom: 6px;
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+.badge {
+  display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 10px;
+  background: var(--elevated); color: var(--text2); font-weight: 400;
+}
+.badge.lock { background: #3A2A10; color: var(--warn); }
+
+.pgroup { border-top: 1px solid var(--divider); }
+.phead {
+  display: flex; align-items: center; gap: 6px; padding: 7px 2px; cursor: pointer;
+  font-size: 12px; color: var(--text2); font-weight: 600; user-select: none;
+}
+.phead:hover { color: var(--accent); }
+.pcaret { width: 12px; font-size: 10px; color: var(--dim); }
+.pbody { padding: 2px 0 8px; }
+
+.prow { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+.prow:last-child { margin-bottom: 0; }
+.prow > label { flex: 0 0 84px; color: var(--text2); font-size: 12px; }
+.prow input[type=number], .prow input[type=text], .prow input:not([type]),
+.prow select {
+  flex: 1 1 auto; min-width: 0; background: var(--bg); color: var(--text);
+  border: 1px solid var(--divider); border-radius: 5px; padding: 4px 6px;
+  font-size: 12px; font-family: inherit;
+}
+.prow input:focus, .prow select:focus { outline: none; border-color: var(--accent); }
+.prow input[type=range] { flex: 1 1 auto; min-width: 0; }
+.chk { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text2); }
+
+.btnRow { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 5px; }
+.btnRow:last-child { margin-bottom: 0; }
+.btnRow button { flex: 0 1 auto; padding: 4px 8px; font-size: 11px; }
+
+.hint { color: var(--dim); font-size: 11px; margin-top: 5px; line-height: 1.6; }
+.hint.inline { margin: 0 0 0 4px; }
+.hint code { background: var(--elevated); padding: 0 3px; border-radius: 3px; }
+
+.stateBox {
+  border: 1px solid var(--divider); border-radius: 6px; padding: 6px;
+  margin-bottom: 6px; background: rgba(255, 255, 255, .015);
+}
+.stateName { font-size: 12px; font-weight: 600; color: var(--accent); margin-bottom: 4px; }
+
+/* ---------------------------------------------------------------- 消息 */
+.msgs { overflow: auto; font-size: 12px; flex: 1 1 auto; min-height: 40px; }
+.msg {
+  padding: 6px 8px; border-radius: 5px; margin-bottom: 4px;
+  border-left: 3px solid; word-break: break-word;
+}
+.msg:last-child { margin-bottom: 0; }
+.msg.err { background: #2A1214; border-color: var(--danger); color: #FFB3B5; }
+.msg.warn { background: #2A2210; border-color: var(--warn); color: #FFDCA0; }
+.msg.ok { background: #0F2A1C; border-color: var(--ok); color: #A8F0C8; }
+
+/* ---------------------------------------------------------------- 标签页 */
+.tabs { display: flex; gap: 4px; margin-bottom: 6px; }
+.tabs button { padding: 4px 9px; font-size: 11px; }
+.tabs button.on { background: #0E3A4A; border-color: #1D6E88; color: var(--accent); }
+.tabPane { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+textarea {
+  width: 100%; flex: 1 1 auto; min-height: 160px; background: #05070A; color: #B7E4F5;
+  border: 1px solid var(--divider); border-radius: 6px; padding: 8px;
+  font: 11px/1.5 Consolas, "Cascadia Mono", monospace; resize: vertical;
+}
+/* JSON 文本域有错、尚未生效 —— 必须一眼看出来，否则用户以为"改了没反应" */
+textarea.dirty { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger) inset; }
+
+.jsonDirtyBar {
+  display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap;
+  background: #2A1214; border: 1px solid var(--danger); border-radius: 6px;
+  padding: 7px 9px; margin-bottom: 6px; font-size: 11px; line-height: 1.6;
+  color: #FFB3B5;
+}
+.jsonDirtyBar button {
+  padding: 3px 8px; font-size: 11px; border-color: var(--danger); color: #FFB3B5;
+}
+[data-theme="light"] .jsonDirtyBar { background: #FDECEC; color: #8C1D1D; }
+[data-theme="light"] .jsonDirtyBar button { color: #8C1D1D; }
+
+kbd {
+  background: var(--elevated); border: 1px solid var(--divider); border-radius: 3px;
+  padding: 0 4px; font-size: 11px; font-family: inherit;
+}
+
+/* ---------------------------------------------------------------- 提示条 */
+#toast {
+  position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(20px);
+  background: var(--elevated); border: 1px solid var(--accent); color: var(--text);
+  padding: 8px 16px; border-radius: 8px; font-size: 12px; max-width: 70vw;
+  white-space: pre-wrap; opacity: 0; pointer-events: none; transition: all .22s ease;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .5); z-index: 99;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ---------------------------------------------------------------- 可折叠面板 */
+/* 设计信息 / 背景图 / 预设布局 都改成可折叠，标题行点击切换 */
+.panelHead {
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  font-size: 11px; color: var(--text2); font-weight: 600;
+  text-transform: uppercase; letter-spacing: .6px; user-select: none;
+  padding: 1px 0;
+}
+.panelHead:hover { color: var(--accent); }
+.panelHead .pcaret { width: 12px; font-size: 10px; color: var(--dim); flex: 0 0 auto; }
+.panelHead .ph-count { margin-left: auto; font-size: 10px; color: var(--dim);
+  background: var(--elevated); padding: 0 5px; border-radius: 8px; text-transform: none; letter-spacing: 0; }
+.panelBody { padding-top: 6px; }
+
+/* ---------------------------------------------------------------- 控件树层级徽章 */
+/* 用户要求"显示层级数的图标"：直接给个数字徽章，比单纯缩进更明确 */
+.tdepth {
+  flex: 0 0 auto; min-width: 15px; text-align: center;
+  font: 600 9px/14px Consolas, monospace;
+  color: var(--dim); background: var(--elevated);
+  border-radius: 3px; padding: 0 3px; margin-right: 1px;
+}
+.trow.sel .tdepth { color: var(--accent); background: rgba(0, 216, 255, .12); }
+[data-theme="light"] .trow.sel .tdepth { background: rgba(10, 126, 164, .14); }
+
+/* ---------------------------------------------------------------- 右键菜单 */
+.ctxMenu {
+  position: fixed; z-index: 200; min-width: 190px;
+  background: var(--surface); border: 1px solid var(--divider);
+  border-radius: 8px; padding: 4px; display: none;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, .45);
+}
+.ctxMenu.show { display: block; }
+.ctxItem {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 9px; border-radius: 5px; cursor: pointer;
+  font-size: 12px; color: var(--text); white-space: nowrap;
+}
+.ctxItem:hover { background: var(--surface2); }
+.ctxItem.disabled { color: var(--dim); cursor: default; }
+.ctxItem.disabled:hover { background: transparent; }
+.ctxItem .k { margin-left: auto; color: var(--dim); font-size: 10px; font-family: inherit; }
+.ctxItem .ic { width: 14px; text-align: center; color: var(--text2); flex: 0 0 auto; }
+.ctxSep { height: 1px; background: var(--divider); margin: 4px 2px; }
+.ctxTitle {
+  padding: 5px 9px 6px; font-size: 11px; color: var(--dim);
+  border-bottom: 1px solid var(--divider); margin-bottom: 4px;
+  max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+
+
+/* 控件树拖拽：同层插入的指示线 */
+.treeRow.dropBefore { box-shadow: inset 0 2px 0 0 var(--accent); }
+.treeRow.dropAfter { box-shadow: inset 0 -2px 0 0 var(--accent); }
+
+/* JSON 语法错误：可点击跳到出错行 */
+.msg.jumpable {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  cursor: pointer;
+}
+.msg.jumpable:hover { filter: brightness(1.15); }
+.msg .jumpBtn {
+  flex: 0 0 auto; font-size: 10px; padding: 1px 6px;
+  border: 1px solid currentColor; border-radius: 3px;
+  background: transparent; color: inherit; cursor: pointer;
+}
+.msg .jumpBtn:hover { background: rgba(255, 255, 255, .12); }
+
+
+
+
+/* ---------------------------------------------------------------- 画布区：竖排（页签 / 面包屑 / 画布）
+   ⚠️ 这三个是**竖着摞**的。原来 .canvasWrap 不是列向 flex，
+   于是 #pageTabs 被挤成 63×115 的竖条、还压在画布上。 */
+.canvasWrap { display: flex; flex-direction: column; min-height: 0; }
+.canvasWrap > #pageTabs,
+.canvasWrap > #breadcrumb {
+  flex: 0 0 auto;
+  /* ⚠️ 必须 align-self: stretch —— .canvasWrap 可能给画布设了 align-items:center，
+     不加这条页签条会被一起居中（实测跑到了 x=663）。 */
+  align-self: stretch;
+}
+.canvasWrap > #cv {
+  /* ⚠️ **不能让 flex 拉伸画布**。applyCanvasSize() 按**设计宽高比**算好尺寸
+     并写进 style.width/height；flex:1 1 auto 会纵向拉长它，
+     于是「位图比例」与「CSS 尺寸」不一致 → 坐标换算全错、
+     旋转手柄点不中（实测踩到：位图 866×541 / CSS 866×730）。
+     用 flex:0 0 auto 让它保持自己的尺寸，再用 margin:auto 居中。 */
+  flex: 0 0 auto;
+  margin: auto;
+}
+
+/* ---------------------------------------------------------------- 右栏：别让它无限长
+   ⚠️ 原来 #props 有 1378px 高，整个右栏 2239px ——
+   JSON 页签被顶到 y=2039，**要滚过整个属性面板才够得着**。
+   给属性面板自己的滚动区，右栏就不会被一个面板撑爆。 */
+/* 属性面板：自己的滚动区 + 可拖拽调高（与素材库同一套交互）。
+   ⚠️ 默认高度用 max-height 而不是 height —— 没内容时不该占满，
+   有内容时再撑到上限，超出就自己滚。 */
+#props { max-height: 46vh; overflow-y: auto; }
+/* ⚠️ 必须 flex: 0 0 auto —— 父级 .col.scroll 是列向 flex，
+   默认会让它收缩到内容以下（实测 .propsWrap 只有 56px 而里面的 #props 有 425px）。 */
+.propsWrap { display: flex; flex-direction: column; flex: 0 0 auto; }
+.propsWrap.collapsed { flex: 0 0 auto; }
+/* 拖过之后就用显式高度（inline style 由 applyPanelCollapse 落上） */
+#props[style*="height"] { max-height: none; }
+#props .pgroup { margin-bottom: 4px; }
+
+/* ---------------------------------------------------------------- 面板头 / 可滚动体 / 收起 / 拖高 */
+.panelBar {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 8px; flex: 0 0 auto;
+  background: var(--surface2); border-bottom: 1px solid var(--divider);
+  font-size: 11px; font-weight: 600; cursor: pointer; user-select: none;
+}
+.panelBar:hover { color: var(--accent); }
+.panelBar .pbCaret { width: 10px; color: var(--dim); flex: 0 0 auto; }
+.panelBar .pbTitle { flex: 0 0 auto; }
+.panelBar .pbCount {
+  flex: 0 0 auto; padding: 0 5px; border-radius: 8px; font-size: 10px;
+  background: var(--surface); color: var(--dim); font-weight: 400;
+}
+.panelBar .pbBtn {
+  margin-left: 2px; padding: 0 3px; border-radius: 3px;
+  color: var(--dim); font-weight: 400;
+}
+.panelBar .pbBtn:first-of-type { margin-left: auto; }
+.panelBar .pbBtn:hover { background: var(--surface); color: var(--accent); }
+
+/* 面板自己的滚动体。**必须有它** —— 面板是 overflow:hidden 的 flex 容器，
+   内容直接塞进去会被裁掉且滚不动 */
+.panelScroll { overflow: auto; flex: 1 1 auto; min-height: 0; }
+
+/* 收起：只剩标题条，把空间让给别的面板 */
+.panel.collapsed { flex: 0 0 auto !important; height: auto !important; }
+.panel.collapsed .panelScroll,
+.panel.collapsed .panelResize { display: none !important; }
+
+/* 拖拽调高 */
+.panelResize {
+  flex: 0 0 auto; height: 5px; cursor: ns-resize;
+  background: transparent; border-top: 1px solid transparent;
+}
+.panelResize:hover { background: var(--accent); border-top-color: var(--accent); }
+
+/* 素材库：固定高度（可拖），默认占左栏约一半 ——
+   否则展开分类会把控件树整个挤出去 */
+#assets { flex: 0 0 auto; height: 46vh; min-height: 80px; }
+#tree { flex: 1 1 auto; min-height: 120px; }
+
+/* ---------------------------------------------------------------- 子部件编辑 */
+.partBox {
+  margin: 3px 0; border: 1px solid var(--divider); border-radius: 4px;
+  background: var(--surface2); overflow: hidden;
+}
+.partHead {
+  display: flex; align-items: center; gap: 5px;
+  padding: 3px 6px; cursor: pointer; font-size: 11px;
+}
+.partHead:hover { background: var(--surface); }
+.partHead .partKind {
+  flex: 0 0 auto; padding: 0 4px; border-radius: 2px;
+  background: var(--accent); color: #04121A; font-size: 10px;
+}
+.partHead .partName {
+  flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--textDim);
+}
+.partBody { padding: 2px 6px 5px; border-top: 1px solid var(--divider); }
+
+/* ---------------------------------------------------------------- 多页面页签 */
+#pageTabs {
+  display: flex; align-items: center; gap: 2px; flex-wrap: wrap;
+  padding: 3px 6px; font-size: 11px;
+  background: var(--surface2); border-bottom: 1px solid var(--divider);
+}
+#pageTabs .pgTab {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 4px 4px 0 0; cursor: pointer;
+  color: var(--textDim); border: 1px solid transparent; border-bottom: none;
+  max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#pageTabs .pgTab:hover { background: var(--surface); color: var(--text); }
+#pageTabs .pgCur {
+  background: var(--surface); color: var(--accent); font-weight: 600;
+  border-color: var(--divider); border-bottom-color: var(--surface);
+}
+#pageTabs .pgDel {
+  font-size: 9px; opacity: 0; padding: 0 2px; border-radius: 2px;
+}
+#pageTabs .pgTab:hover .pgDel { opacity: .7; }
+#pageTabs .pgDel:hover { background: #B22; color: #fff; opacity: 1; }
+#pageTabs .pgAdd {
+  padding: 2px 8px; border-radius: 4px; cursor: pointer;
+  color: var(--accent); border: 1px dashed var(--divider);
+}
+#pageTabs .pgAdd:hover { background: var(--surface); border-style: solid; }
+#pageTabs .pgHint { margin-left: 8px; color: var(--textFaint); font-size: 10px; }
+
+/* ---------------------------------------------------------------- 组的进入/退出面包屑 */
+#breadcrumb {
+  display: none; align-items: center; gap: 4px;
+  padding: 3px 8px; font-size: 11px;
+  background: var(--surface2); border-bottom: 1px solid var(--divider);
+}
+#breadcrumb .bcSeg {
+  padding: 1px 6px; border-radius: 3px; cursor: pointer;
+  color: var(--textDim);
+}
+#breadcrumb .bcSeg:hover { background: var(--surface); color: var(--text); }
+#breadcrumb .bcRoot { color: var(--accent); }
+#breadcrumb .bcCur { background: var(--accent); color: #04121A; font-weight: 600; }
+#breadcrumb .bcArrow { color: var(--textFaint); }
+#breadcrumb .bcHint { margin-left: 8px; color: var(--textFaint); font-size: 10px; }
+#breadcrumb .bcExit {
+  margin-left: auto; padding: 1px 7px; border-radius: 3px; cursor: pointer;
+  background: var(--surface); color: var(--textDim);
+}
+#breadcrumb .bcExit:hover { background: #B22; color: #fff; }
+
+/* ---------------------------------------------------------------- 素材库（v2.6.0 重做排版） */
+/* 搜索框 */
+.assetSearchWrap {
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 6px; border-bottom: 1px solid var(--divider);
+}
+.assetSearchWrap input {
+  flex: 1 1 auto; min-width: 0; font-size: 12px; padding: 3px 6px;
+  background: var(--surface2); border: 1px solid var(--divider);
+  border-radius: 4px; color: var(--text);
+}
+.assetSearchWrap input:focus { outline: none; border-color: var(--accent); }
+
+/* 大区块标题（控件库 / 素材） */
+.asection {
+  padding: 6px 8px 3px; font-size: 11px; font-weight: 700;
+  letter-spacing: .08em; color: var(--accent);
+  border-top: 1px solid var(--divider);
+  background: var(--surface2);
+}
+.asection:first-of-type { border-top: none; }
+
+/* 缩略图网格 —— 一行多个，一屏能看十几个 */
+.assetGrid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
+  gap: 5px; padding: 5px 6px;
+}
+.assetThumb {
+  position: relative; display: flex; flex-direction: column; align-items: center;
+  gap: 2px; padding: 4px 3px 3px; border-radius: 5px; cursor: pointer;
+  border: 1px solid transparent; background: var(--surface2);
+}
+.assetThumb:hover { border-color: var(--accent); background: var(--surface3, var(--surface2)); }
+.assetThumb img {
+  width: 100%; height: 38px; object-fit: contain;
+  image-rendering: auto; pointer-events: none;
+}
+.assetThumb.used { opacity: .55; }
+.assetThumb .atName {
+  font-size: 9px; line-height: 1.15; color: var(--textDim);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.assetThumb .atNoImg { font-size: 9px; color: var(--textFaint); height: 38px; display: flex; align-items: center; }
+.assetThumb .atBadge {
+  position: absolute; top: 2px; right: 2px; font-size: 8px; padding: 0 3px;
+  border-radius: 3px; background: var(--accent); color: #04121A;
+}
+.assetThumb .atDel {
+  position: absolute; top: 2px; right: 2px; width: 14px; height: 14px;
+  line-height: 13px; text-align: center; border-radius: 3px; font-size: 10px;
+  background: rgba(0, 0, 0, .6); color: var(--textDim); opacity: 0;
+}
+.assetThumb:hover .atDel { opacity: 1; }
+.assetThumb .atDel:hover { background: #B22; color: #fff; }
+
+/* 控件芯片网格 */
+.ctrlGrid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 4px; padding: 5px 6px;
+}
+.ctrlChip {
+  position: relative; display: flex; align-items: center; gap: 4px;
+  padding: 4px 5px; border-radius: 5px; cursor: grab;
+  background: var(--surface2); border: 1px solid transparent; font-size: 11px;
+}
+.ctrlChip:hover { border-color: var(--accent); }
+.ctrlChip:active { cursor: grabbing; }
+.ctrlChip .ccIcon { flex: 0 0 auto; color: var(--accent); }
+.ctrlChip .ccName {
+  flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ctrlChip .ccDel {
+  flex: 0 0 auto; font-size: 10px; color: var(--textFaint); opacity: 0;
+}
+.ctrlChip:hover .ccDel { opacity: 1; }
+.ctrlChip .ccDel:hover { color: #FF6B6B; }
+/* ---------------------------------------------------------------- 模态框（控件编辑器） */
+.modal {
+  position: fixed; inset: 0; z-index: 300; display: none;
+  background: rgba(0, 0, 0, .55); align-items: center; justify-content: center;
+}
+.modal.show { display: flex; }
+.modalBox {
+  background: var(--surface); border: 1px solid var(--divider); border-radius: 10px;
+  width: min(880px, 94vw); max-height: 90vh; display: flex; flex-direction: column;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, .6);
+}
+.modalHead {
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  border-bottom: 1px solid var(--divider); font-size: 13px; font-weight: 600;
+}
+.modalBody { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 12px; padding: 12px; overflow: hidden; min-height: 0; }
+.modalFoot {
+  display: flex; align-items: center; gap: 6px; padding: 10px 12px;
+  border-top: 1px solid var(--divider);
+}
+.ceLeft { display: flex; flex-direction: column; gap: 6px; }
+.ceLeft canvas { width: 100%; height: auto; border-radius: 6px; border: 1px solid var(--divider); }
+.ceRight { overflow-y: auto; min-height: 0; max-height: 62vh; }
+
+/* 素材库里的"控件"区 */
+.ctrlItem {
+  display: flex; align-items: center; gap: 6px; padding: 4px 6px;
+  border-radius: 4px; cursor: grab; font-size: 12px;
+}
+.ctrlItem:hover { background: var(--surface2); }
+.ctrlItem .cic { width: 16px; text-align: center; color: var(--accent); }
+.ctrlItem .cnm { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 1400px) {
+  main { grid-template-columns: 280px minmax(0, 1fr) 380px; }
+}
+@media (max-width: 1150px) {
+  body { overflow: auto; }
+  main { grid-template-columns: minmax(0, 1fr); }
+  .col.scroll { overflow: visible; }
+  .canvasWrap { max-height: 60vh; }
+  .panel.grow { max-height: 50vh; }
+}
+
+/* 子部件列表（v2.18.0 嵌套）：缩进 + 左侧竖线，一眼看出层级 */
+.subParts { margin:6px 0 0 0; padding:6px 0 0 8px; border-left:2px solid #2a3547; }
+.subParts .prow { display:flex; align-items:center; gap:4px; padding:2px 0; font-size:12px; }
+.subParts .pkind { flex:1 1 auto; color:#9dc7d6; }
+
+/* 控件库的分类标题（v2.22.0）：控件 40 → 78 个，平铺找不动了 */
+.ctrlCat {
+  display: flex; align-items: center; gap: 6px;
+  margin: 10px 0 5px 0; padding-bottom: 3px;
+  font-size: 12px; font-weight: 600; color: #9dc7d6;
+  border-bottom: 1px solid #1e2836;
+}
+/* 第一个分类标题不要上边距 —— 否则面板顶部会多一截空白 */
+.ctrlCat:first-child { margin-top: 2px; }
+.ctrlCatN {
+  font-weight: 400; font-size: 11px; color: #5f6e85;
+  background: #141a23; border-radius: 8px; padding: 0 6px;
+}
+
+/* 控件库的滚动上限（v2.23.0）：控件 112 个，不封顶会把素材网格整个挤出视口 */
+.ctrlScroll {
+  max-height: 46vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* 素材悬停大图（v2.24.0）：缩略图 62px 认不出"碳纤维 vs 拉丝"这种差别 */
+.assetPreview {
+  position: fixed; z-index: 60;
+  width: 200px; height: 200px;
+  display: none;
+  flex-direction: column; align-items: center; justify-content: center;
+  background: #0b0f15; border: 1px solid #2a3547; border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .6);
+  pointer-events: none;   /* 不挡鼠标，否则会闪 */
+  padding: 6px; box-sizing: border-box;
+}
+.assetPreview.on { display: flex; }
+.assetPreview img {
+  max-width: 100%; max-height: 160px;
+  image-rendering: pixelated;   /* 点阵素材放大后要看清像素，不要模糊 */
+}
+.assetPreview .apName {
+  margin-top: 6px; font-size: 12px; color: #9dc7d6; text-align: center;
+}
+
+/* ==========================================================================
+   隐藏滚动条（v2.25.0）
+   --------------------------------------------------------------------------
+   用户反馈"有滚动属性的全都出现了滚动条、很不美观"。
+
+   做法：**保留滚动能力，只把滚动条画成透明**。
+   不能用 `overflow: hidden` —那会把内容直接截掉，用户再也滚不到下面。
+
+   两个前缀都要写：
+     · `::-webkit-scrollbar` —Chrome / Edge / Safari
+     · `scrollbar-width` / `scrollbar-color` —Firefox 与较新的标准
+   ========================================================================== */
+
+/* WebKit 系 */
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  background: transparent;
+}
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: transparent;
+  border: none;
+}
+/* 悬停时也不显示 —用户要的是"干净"，不是"悬停才出现" */
+*::-webkit-scrollbar-thumb:hover { background: transparent; }
+*::-webkit-scrollbar-corner { background: transparent; }
+
+/* Firefox / 标准 */
+* {
+  scrollbar-width: none;
+  scrollbar-color: transparent transparent;
+}
+
+/*
+ * 给"还能滚"一点视觉提示 —滚动条没了之后，用户可能不知道下面还有内容。
+ * 用**底部的渐隐遮罩**代替：内容被截断的地方自然淡出。
+ *
+ * ⚠️ 只在 `.panelScroll` 上做，不用通配符 —通配符会让所有容器都多一层
+ * 伪元素，画布那种大区域不需要（它本来就不滚）。
+ */
+.panelScroll { position: relative; }
+
+/* 素材的「改分类」下拉（v2.29.0）—— 缩略图很小，做紧凑一点 */
+.atKind { width: 100%; margin-top: 2px; font-size: 10px; padding: 0 2px;
+  background: #141a23; color: #8fa0b8; border: 1px solid #2a3547; border-radius: 3px; }
+
+/* 主题配色编辑器（v2.31.0） */
+.tcDlg { background: #0b0f15; color: #cfe0ee; border: 1px solid #2a3547;
+  border-radius: 10px; padding: 14px 16px; max-width: 560px; width: 90vw; }
+.tcDlg::backdrop { background: rgba(0,0,0,.55); }
+.tcTitle { display: flex; justify-content: space-between; align-items: center;
+  font-weight: 600; margin-bottom: 10px; }
+.tcHead { font-size: 12px; color: #8fa0b8; margin-bottom: 10px; }
+.tcGrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 14px; }
+.tcRow { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.tcRow label { width: 62px; color: #8fa0b8; }
+.tcRow input[type=color] { width: 34px; height: 22px; padding: 0; border: 1px solid #2a3547;
+  border-radius: 3px; background: none; cursor: pointer; }
+.tcVal { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: #5f6e85; }
+.tcFoot { margin-top: 12px; text-align: right; }
