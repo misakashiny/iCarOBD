@@ -20,7 +20,7 @@
 ## 1. 目录总览
 
 ```
-D:/icarobd/   （ASCII 联结 → C:\Users\Administrator\Desktop\iCarOBD2）
+D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 ├── app/
 │   ├── build.gradle.kts            构建脚本（版本号在这里改）
 │   └── src/main/
@@ -371,7 +371,7 @@ $ADB exec-out run-as com.icar.obd cat files/log/obd-$(date +%Y%m%d).log
 
 ### 6.1 工程路径含空格 + 非 ASCII 字符
 
-工程位于 `C:\Users\Administrator\Desktop\iCarOBD2`（2026-10-06 起；构建走联结 `D:\icarobd`）。两个后果：
+工程位于 `D:\AI Dsh\车机项目\iCarOBD2`（2026-10-06 起；构建走联结 `D:\icarobd`）。两个后果：
 
 | 任务 | 影响 | 对策 |
 |---|---|---|

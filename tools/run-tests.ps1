@@ -5,7 +5,7 @@
 .DESCRIPTION
     ⚠️ 为什么需要这个脚本，而不是直接 `./gradlew testDebugUnitTest`：
 
-    本工程位于纯 ASCII 路径（`C:\Users\Administrator\Desktop\iCarOBD2`）。
+    本工程真实路径含空格与中文（`D:\AI Dsh\车机项目\iCarOBD2`），所以构建一律走 ASCII 联结 `D:\icarobd`。
     AGP 会因此拒绝构建，已用 `android.overridePathCheck=true` 放行；
     但**测试任务仍会失败** —— JVM 启动器用系统 ANSI 代码页解码 `-cp` 参数，
     中文路径被解码坏掉，于是 Gradle 把已经编译好的测试类报成
@@ -60,7 +60,7 @@ if (-not $ProjectDir) {
 
 if (-not $ProjectDir -or -not (Test-Path $ProjectDir)) {
     Write-Host "[x] 找不到工程目录：'$ProjectDir'" -ForegroundColor Red
-    Write-Host "    请显式指定：-ProjectDir `"C:\Users\Administrator\Desktop\iCarOBD2`"" -ForegroundColor Yellow
+    Write-Host "    请显式指定：-ProjectDir `"D:\AI Dsh\车机项目\iCarOBD2`"" -ForegroundColor Yellow
     exit 2
 }
 

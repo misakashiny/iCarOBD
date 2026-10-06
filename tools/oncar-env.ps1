@@ -9,7 +9,7 @@
       |--------------|-----------------------------------------------------------|-------------------------------------|
       | JDK          | C:\Android\jdk21（笔记本）                                 | C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot |
       | Android SDK  | C:\Android\Sdk                                            | 一致（5 个组件已装齐）              |
-      | 工程路径     | C:\Users\大青虫\Desktop\iCarOBD（笔记本）                  | C:\Users\Administrator\Desktop\iCarOBD2 |
+      | 工程路径     | C:\Users\大青虫\Desktop\iCarOBD（笔记本）                  | D:\AI Dsh\车机项目\iCarOBD2 |
       | 构建路径     | D:\icarobd（ASCII 目录联接）                               | 一致                                |
 
     ⚠️ **本机 PowerShell 执行策略默认禁止运行 .ps1**（所有 Scope 都是 Undefined

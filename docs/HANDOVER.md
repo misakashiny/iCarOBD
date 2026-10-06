@@ -71,7 +71,7 @@ dist/iCarOBD-debug-v1.10.4-android.apk    6.69 MB
   否则转屏导致 Fragment 重建、验证链断掉。
 
 ---
-> 项目路径：`D:/icarobd`（ASCII 联结 → `C:\Users\Administrator\Desktop\iCarOBD2`）
+> 项目路径：`D:/icarobd`（ASCII 联结 → `D:\AI Dsh\车机项目\iCarOBD2`）
 > 包名：`com.icar.obd`　版本：`1.4.0`（versionCode 6）
 >
 > **六份文档的分工**（别重复读）：
@@ -153,7 +153,7 @@ export ANDROID_SDK_ROOT='C:\Android\Sdk'
 > 现象（进程启动早于用户级变量写入）。**当前 DSH 会话里两个变量都已就绪**，
 > 真报 `JAVA_HOME is not set` 时再显式导出即可。
 
-> ⚠️ **路径曾经含空格与中文**（旧位置 `D:\AI Dsh\车机项目`；2026-10-06 已迁到纯 ASCII 的 `C:\Users\Administrator\Desktop\iCarOBD2`）：AGP 默认拒绝构建，
+> ⚠️ **路径曾经含空格与中文**（旧位置 `D:\AI Dsh\车机项目`；现位于 `D:\AI Dsh\车机项目\iCarOBD2`（含空格与中文））：AGP 默认拒绝构建，
 > 已用 `android.overridePathCheck=true` 放行。**但测试任务在原路径必然失败** ——
 > 见 [`FILE_MAP.md`](FILE_MAP.md) §6。
 
