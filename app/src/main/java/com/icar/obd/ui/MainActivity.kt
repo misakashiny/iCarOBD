@@ -34,9 +34,6 @@ import com.icar.obd.service.ObdService
  */
 class MainActivity : AppCompatActivity(), ObdController.Listener {
 
-    private lateinit var connDot: View
-    private lateinit var tvStatus: TextView
-    private lateinit var tvRate: TextView
 
     private val main = Handler(Looper.getMainLooper())
     private var rateTicker: Runnable? = null
@@ -60,9 +57,6 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        connDot = findViewById(R.id.connDot)
-        tvStatus = findViewById(R.id.tvStatus)
-        tvRate = findViewById(R.id.tvRate)
 
         // 导航控件在竖屏是 BottomNavigationView、横屏是 NavigationRailView，
         // 两者都继承 NavigationBarView，因此这里用基类接收，不需要判断方向。
@@ -120,7 +114,6 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
 
     override fun onStart() {
         super.onStart()
-        refreshStatus()
         startRateTicker()
     }
 
@@ -156,7 +149,6 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
     private fun setFullscreen(on: Boolean) {
         fullscreen = on
         if (on) findViewById<NavigationBarView>(R.id.navView).selectedItemId = R.id.nav_dashboard
-        findViewById<View>(R.id.statusBar)?.visibility = if (on) View.GONE else View.VISIBLE
         findViewById<View>(R.id.navView)?.visibility = if (on) View.GONE else View.VISIBLE
 
         val c = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
@@ -311,7 +303,6 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
         stopRateTicker()
         val r = object : Runnable {
             override fun run() {
-                refreshStatus()
                 main.postDelayed(this, 1000)
             }
         }
@@ -324,26 +315,6 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
         rateTicker = null
     }
 
-    private fun refreshStatus() {
-        val state = ObdController.transport.state
-        val (dot, text) = when (state) {
-            State.READY -> {
-                val name = ObdController.connectedDeviceName.ifBlank { "设备" }
-                R.drawable.dot_online to "已连接 · $name"
-            }
-            State.CONNECTING, State.DISCOVERING ->
-                R.drawable.dot_warn to ObdController.stateName()
-            State.SCANNING ->
-                R.drawable.dot_warn to "扫描中…"
-            State.CLOSED ->
-                R.drawable.dot_offline to "已断开"
-            else -> R.drawable.dot_offline to "未连接"
-        }
-        connDot.setBackgroundResource(dot)
-        tvStatus.text = text
-        val hz = VehicleBus.sampleHz
-        tvRate.text = if (hz > 0.1f) String.format("%.1f Hz", hz) else "-- Hz"
-    }
 
     // ------------------------------------------------------------ 权限
 
@@ -388,12 +359,10 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
     }
 
     override fun onState(state: State, detail: String) {
-        runOnUiThread { refreshStatus() }
     }
 
     override fun onAlert(msg: String) {
         // 告警条由 DashFragment 自己展示；这里只保证状态条刷新
-        runOnUiThread { refreshStatus() }
     }
 
     companion object {

@@ -45,43 +45,6 @@
         android:layout_weight="1"
         android:orientation="vertical">
 
-        <!-- 顶部状态条（与竖屏同 id） -->
-        <LinearLayout
-            android:id="@+id/statusBar"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="@color/bg_surface"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingStart="12dp"
-            android:paddingTop="6dp"
-            android:paddingEnd="12dp"
-            android:paddingBottom="6dp">
-
-            <View
-                android:id="@+id/connDot"
-                android:layout_width="10dp"
-                android:layout_height="10dp"
-                android:background="@drawable/dot_offline" />
-
-            <TextView
-                android:id="@+id/tvStatus"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:layout_weight="1"
-                android:text="未连接"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp" />
-
-            <TextView
-                android:id="@+id/tvRate"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="-- Hz"
-                android:textColor="@color/text_dim"
-                android:textSize="12sp" />
-        </LinearLayout>
 
         <FrameLayout
             android:id="@+id/pageContainer"
