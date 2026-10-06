@@ -47,8 +47,7 @@ class ProbeLogActivity : AppCompatActivity() {
 
     private lateinit var list: LinearLayout
     private lateinit var tvCount: TextView
-    private lateinit var tabPid: MaterialButton
-    private lateinit var tabCan: MaterialButton
+    private lateinit var tabLayout: com.google.android.material.tabs.TabLayout
     private lateinit var tvPage: TextView
     private lateinit var btnPrev: MaterialButton
     private lateinit var btnNext: MaterialButton
@@ -82,15 +81,34 @@ class ProbeLogActivity : AppCompatActivity() {
         root.addView(bar)
 
         // ---- ② 页签（PID / CAN 各一页）----
-        val tabs = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(8), 0, dp(6))
+        //
+        // ⚠️ v1.19.24：原来用两个 MaterialButton（描边样式）当页签 —— 用户反馈"十分丑"。
+        // 确实：**按钮不是页签**。页签的语义是"同一份内容的两个视图"，
+        // 该用 TabLayout（等宽 + 下划线指示器 + 选中态变色），
+        // 那是 Material 里"页签"的标准形态，一眼就知道可以左右切。
+        val tabs = com.google.android.material.tabs.TabLayout(this).apply {
+            tabMode = com.google.android.material.tabs.TabLayout.MODE_FIXED
+            tabGravity = com.google.android.material.tabs.TabLayout.GRAVITY_FILL
+            setSelectedTabIndicatorColor(0xFF4DA3FF.toInt())
+            setSelectedTabIndicatorHeight(dp(2))
+            setTabTextColors(0xFF8B98A5.toInt(), 0xFFE6EDF3.toInt())
+            setBackgroundColor(0xFF0B0E13.toInt())
+            addTab(newTab().setText("PID 探测"))
+            addTab(newTab().setText("CAN 探测"))
+            addOnTabSelectedListener(object : com.google.android.material.tabs.TabLayout.OnTabSelectedListener {
+                override fun onTabSelected(t: com.google.android.material.tabs.TabLayout.Tab) {
+                    kind = if (t.position == 0) ProbeLog.KIND_PID else ProbeLog.KIND_CAN
+                    page = 0
+                    refresh()
+                }
+                override fun onTabUnselected(t: com.google.android.material.tabs.TabLayout.Tab) {}
+                override fun onTabReselected(t: com.google.android.material.tabs.TabLayout.Tab) {}
+            })
         }
-        tabPid = tab("PID 探测") { kind = ProbeLog.KIND_PID; page = 0; refresh() }
-        tabCan = tab("CAN 探测") { kind = ProbeLog.KIND_CAN; page = 0; refresh() }
-        tabs.addView(tabPid, LinearLayout.LayoutParams(0, dp(40), 1f))
-        tabs.addView(tabCan, LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginStart = dp(6) })
-        root.addView(tabs)
+        tabLayout = tabs
+        root.addView(tabs, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(4) })
 
         // ---- ③ 列表 ----
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -129,11 +147,12 @@ class ProbeLogActivity : AppCompatActivity() {
     private fun refresh() {
         val pidN = ProbeLog.all().count { it.kind == ProbeLog.KIND_PID }
         val canN = ProbeLog.all().count { it.kind == ProbeLog.KIND_CAN }
-        tabPid.text = "PID 探测 ($pidN)"
-        tabCan.text = "CAN 探测 ($canN)"
-        // 当前页签高亮（用 alpha 区分：选中=不透明）
-        tabPid.alpha = if (kind == ProbeLog.KIND_PID) 1f else 0.45f
-        tabCan.alpha = if (kind == ProbeLog.KIND_CAN) 1f else 0.45f
+        // 条数写在页签标题里 —— 不用切过去就知道那边有没有东西
+        tabLayout.getTabAt(0)?.text = "PID 探测 ($pidN)"
+        tabLayout.getTabAt(1)?.text = "CAN 探测 ($canN)"
+        // 保证选中态和 kind 一致（点页签会触发 onTabSelected → refresh，这里只做对齐）
+        val want = if (kind == ProbeLog.KIND_PID) 0 else 1
+        if (tabLayout.selectedTabPosition != want) tabLayout.getTabAt(want)?.select()
         tvCount.text = "共 ${ProbeLog.count()} 条"
 
         val all = filtered()
@@ -235,17 +254,6 @@ class ProbeLogActivity : AppCompatActivity() {
         textSize = 12f
         minWidth = 0; minimumWidth = 0
         setPadding(dp(10), 0, dp(10), 0)
-        setOnClickListener { onClick() }
-    }
-
-    /** 页签按钮：选中态用「填充 vs 描边」区分，比只改颜色更明显 */
-    private fun tab(text: String, onClick: () -> Unit) = MaterialButton(
-        this, null,
-        com.google.android.material.R.attr.materialButtonOutlinedStyle
-    ).apply {
-        this.text = text
-        textSize = 13f
-        minWidth = 0; minimumWidth = 0
         setOnClickListener { onClick() }
     }
 
