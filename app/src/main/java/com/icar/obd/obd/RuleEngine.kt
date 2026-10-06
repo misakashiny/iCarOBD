@@ -45,8 +45,66 @@ object RuleEngine {
     var activeRules: List<Rule> = emptyList()
         private set
 
+    // ---------------------------------------------------------------- 模拟测试（v1.19.19）
+
+    /**
+     * 正在**模拟**的规则 id（null = 没在模拟）。
+     *
+     * ## 模拟的语义：只改"条件判定"，别的一律不动
+     *
+     * 被模拟的规则，条件**直接判定为成立**；而 `durationMs` / `cooldownMs`
+     * **照常生效**。这不是偷懒 —— 那正是要看的东西：
+     * "咔嗒声按冷却节奏响"、"持续 3 秒才报"这些时序只有让它们真跑才看得出来。
+     */
+    @Volatile
+    var simulateRuleId: String? = null
+        private set
+
+    /**
+     * 模拟当前是否"**正在显示效果**"（悬浮按钮的 开启查看 / 关闭查看）。
+     *
+     * 关掉它 = 被模拟的规则**退回正常判定**，用来和"模拟效果"来回对比。
+     * 注意它**不等于**退出模拟 —— 退出是 [stopSimulation]。
+     */
+    @Volatile
+    var simulationOn: Boolean = false
+        private set
+
+    val isSimulating: Boolean get() = simulateRuleId != null
+
+    /** 开始模拟一条规则（会把它纳入评估，**即使它当前是禁用的**） */
+    fun startSimulation(ruleId: String) {
+        if (ruleId.isBlank()) return
+        simulateRuleId = ruleId
+        simulationOn = true
+        // 禁用的规则不在 activeRules 里 —— 但"测试一条还没启用的规则"正是常见用法
+        reload()
+        AppLog.i(AppLog.M_RULE, "开始规则模拟", "id=$ruleId name=${Store.rules.find { it.id == ruleId }?.name ?: "?"}")
+    }
+
+    /** 悬浮按钮的 开启查看 / 关闭查看 */
+    fun setSimulationOn(on: Boolean) {
+        if (simulateRuleId == null) return
+        simulationOn = on
+        // 关掉时把染色清掉，否则"关闭查看"之后仪表还红着，看起来像没生效
+        if (!on) clearColors()
+        AppLog.i(AppLog.M_RULE, if (on) "模拟：开启查看" else "模拟：关闭查看", "id=$simulateRuleId")
+    }
+
+    /** 退出模拟：状态清干净，规则回到正常判定 */
+    fun stopSimulation() {
+        val id = simulateRuleId ?: return
+        simulateRuleId = null
+        simulationOn = false
+        gate.clear()
+        clearColors()
+        reload()
+        AppLog.i(AppLog.M_RULE, "退出规则模拟", "id=$id")
+    }
+
     fun reload() {
-        activeRules = Store.rules.filter { it.enabled }
+        // 被模拟的规则**即使 disabled 也要进来** —— 否则"测试一条还没启用的规则"会毫无反应
+        activeRules = Store.rules.filter { it.enabled || it.id == simulateRuleId }
         AppLog.i(AppLog.M_RULE, "规则已加载", "count=${activeRules.size}")
     }
 
@@ -78,13 +136,22 @@ object RuleEngine {
         for (rule in activeRules) {
             if (rule.conditions.isEmpty()) continue
 
-            val results = rule.conditions.map { cond ->
-                val cur = snapshot[cond.sourceId]?.takeIf { it.ok }?.value
-                if (cur == null) false
-                else CompareOp.fromSymbol(cond.op).test(cur, cond.threshold, prevValues[cond.sourceId])
+            // ---- 模拟测试：被模拟的规则**条件直接判成立** ----
+            //
+            // ⚠️ 只改"条件判定"这一件事：`durationMs` / `cooldownMs` 仍然照常生效。
+            // 那正是要看的东西 —— "持续 3 秒才报"、"咔嗒声按冷却节奏响"，
+            // 只有让时序真跑才看得出来。绕过它们等于把要验的东西验掉了。
+            val simulated = rule.id == simulateRuleId && simulationOn
+            val satisfied = if (simulated) {
+                true
+            } else {
+                val results = rule.conditions.map { cond ->
+                    val cur = snapshot[cond.sourceId]?.takeIf { it.ok }?.value
+                    if (cur == null) false
+                    else CompareOp.fromSymbol(cond.op).test(cur, cond.threshold, prevValues[cond.sourceId])
+                }
+                if (rule.logic.equals("OR", true)) results.any { it } else results.all { it }
             }
-
-            val satisfied = if (rule.logic.equals("OR", true)) results.any { it } else results.all { it }
 
             if (!satisfied) {
                 gate.onUnsatisfied(rule.id)

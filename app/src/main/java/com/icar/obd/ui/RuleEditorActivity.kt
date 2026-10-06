@@ -111,6 +111,17 @@ class RuleEditorActivity : AppCompatActivity() {
         findViewById<MaterialButton>(R.id.btnSave).setOnClickListener { save() }
         findViewById<MaterialButton>(R.id.btnDelete).setOnClickListener { confirmDelete() }
         findViewById<MaterialButton>(R.id.btnTestNow).setOnClickListener { testNow() }
+        // v1.19.19：模拟测试 —— **先保存再模拟**。
+        // 为什么必须先保存：模拟是按 **规则 id** 跑的，而引擎读的是 Store 里的规则。
+        // 不保存就模拟，跑的是**上一次保存的版本**（用户改了阈值却按旧值跑，
+        // 而且现象上完全看不出）—— 这类"看起来生效其实没有"的坑本项目踩过多次。
+        findViewById<MaterialButton>(R.id.btnSimulate).setOnClickListener {
+            val saved = saveRule() ?: return@setOnClickListener
+            ObdController.startRuleSimulation(saved.id)
+            ObdController.pendingGotoDash = true
+            ObdController.toast("模拟已开启：回仪表盘看效果（右下角可关闭/退出）")
+            finish()
+        }
 
         updatePreview()
     }
@@ -380,23 +391,37 @@ class RuleEditorActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------ 保存 / 删除
 
-    private fun save() {
+    /**
+     * 校验并落盘；**不 finish**。
+     *
+     * 抽出来是为了让"保存后立刻做别的"能复用它（v1.19.19 的模拟测试：
+     * 先保存再按规则 id 起模拟）—— 否则要么重复写一遍校验，
+     * 要么就得在 save() 里 finish 之后再操作一个已经关掉的界面。
+     *
+     * @return 保存成功返回规则；校验没过返回 null（并已 toast 说明原因）
+     */
+    private fun saveRule(): Rule? {
         val r = collect()
         if (r.name.isBlank()) {
             ObdController.toast("请填写规则名称")
-            return
+            return null
         }
         if (r.conditions.isEmpty() || r.conditions.any { it.sourceId.isBlank() }) {
             ObdController.toast("请至少配置一个有效条件")
-            return
+            return null
         }
         if (r.actions.isEmpty()) {
             ObdController.toast("请至少配置一个动作")
-            return
+            return null
         }
         Store.upsertRule(r)
         ObdController.reloadRules()
         AppLog.i(AppLog.M_UI, "规则已保存", RuleEngine.describeRule(r))
+        return r
+    }
+
+    private fun save() {
+        if (saveRule() == null) return
         ObdController.toast("已保存")
         finish()
     }

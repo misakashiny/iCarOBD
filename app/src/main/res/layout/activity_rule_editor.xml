@@ -189,6 +189,19 @@
                 android:layout_marginTop="8dp"
                 android:text="用当前实时数据试判一次" />
 
+            <!--
+              v1.19.19：与上面那条**不是一回事** ——
+              上面是"静态判一次条件成立不成立"，这条是"**让效果真跑起来**"，
+              然后回仪表盘看变色/听声音。
+            -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnSimulate"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="▶ 模拟测试（回仪表盘看效果）" />
+
             <TextView
                 android:id="@+id/tvTestResult"
                 android:layout_width="match_parent"

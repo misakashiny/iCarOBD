@@ -102,10 +102,98 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
         startRateTicker()
     }
 
+    override fun onResume() {
+        super.onResume()
+        // 从规则编辑器开完模拟回来：切到仪表盘 + 挂上悬浮条
+        if (ObdController.pendingGotoDash) {
+            ObdController.pendingGotoDash = false
+            findViewById<NavigationBarView>(R.id.navView).selectedItemId = R.id.nav_dashboard
+        }
+        updateSimBar()
+    }
+
     override fun onStop() {
         super.onStop()
         stopRateTicker()
     }
+
+    // ------------------------------------------------ 规则模拟悬浮条（v1.19.19）
+
+    private var simBar: View? = null
+
+    /**
+     * 模拟进行中时挂一条**悬浮操作条**，退出时移除。
+     *
+     * ## 为什么挂在 MainActivity 而不是 DashFragment
+     *
+     * 用户的原话是"开启后可以**返回仪表盘**查看效果" —— 说明模拟要**跨页面存活**
+     * （他可能先去 PID 页看看、再回仪表盘）。挂在 Fragment 上一切页就没了。
+     *
+     * ## 为什么用代码建而不用布局文件
+     *
+     * 加到 `android.R.id.content`（Activity 自带的 FrameLayout）就行，
+     * **不用改 activity_main.xml** —— 那个根是 LinearLayout，
+     * 为了悬浮去套一层 FrameLayout 会牵动所有子 View 的布局参数。
+     */
+    private fun updateSimBar() {
+        val active = ObdController.isSimulating
+        if (!active) {
+            simBar?.let { v -> (v.parent as? android.view.ViewGroup)?.removeView(v) }
+            simBar = null
+            return
+        }
+        val bar = simBar ?: buildSimBar().also {
+            simBar = it
+            val lp = android.widget.FrameLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                android.view.Gravity.BOTTOM or android.view.Gravity.END
+            )
+            lp.setMargins(0, 0, dp(12), dp(88))   // 抬高一点，别压住底部导航
+            (findViewById<android.view.ViewGroup>(android.R.id.content)).addView(it, lp)
+        }
+        // 每次刷新文案与按钮态：模拟可能是"关掉查看"的状态
+        val on = ObdController.simulationOn
+        bar.findViewById<TextView>(R.id.tvSimRule).text =
+            "模拟中 · ${ObdController.simulatingRuleName().ifBlank { "未命名规则" }}"
+        bar.findViewById<android.widget.Button>(R.id.btnSimOn).alpha = if (on) 0.4f else 1f
+        bar.findViewById<android.widget.Button>(R.id.btnSimOff).alpha = if (on) 1f else 0.4f
+    }
+
+    private fun buildSimBar(): View {
+        val ctx = this
+        val row = android.widget.LinearLayout(ctx).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setBackgroundColor(0xE6101820.toInt())
+            setPadding(dp(10), dp(6), dp(6), dp(6))
+        }
+        row.addView(TextView(ctx).apply {
+            id = R.id.tvSimRule
+            setTextColor(0xFFFFD400.toInt())
+            textSize = 12f
+            setPadding(0, 0, dp(8), 0)
+        })
+        row.addView(simButton("开启查看") { ObdController.setSimulationOn(true); updateSimBar() }.apply { id = R.id.btnSimOn })
+        row.addView(simButton("关闭查看") { ObdController.setSimulationOn(false); updateSimBar() }.apply { id = R.id.btnSimOff })
+        row.addView(simButton("退出模拟") {
+            ObdController.stopRuleSimulation()
+            updateSimBar()
+        })
+        return row
+    }
+
+    private fun simButton(text: String, onClick: () -> Unit): android.widget.Button =
+        android.widget.Button(this).apply {
+            this.text = text
+            textSize = 12f
+            minWidth = 0
+            minimumWidth = 0
+            setPadding(dp(8), 0, dp(8), 0)
+            setOnClickListener { onClick() }
+        }
+
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     override fun onDestroy() {
         ObdController.removeListener(this)

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  代码里创建 View 时用的 id（v1.19.19）。
+
+  为什么单独一个文件：规则模拟的**悬浮操作条**是纯代码建的
+  （见 MainActivity.updateSimBar），不用布局文件 —— 这样就不必为了"悬浮"
+  去改 activity_main.xml 的根布局。但代码里要能 findViewById 到自己的子 View，
+  就得有 id；R.id 只认这里（或布局里）声明过的名字。
+
+  命名前缀 `sim` 便于一眼看出是"模拟"那条悬浮条用的。
+-->
+<resources>
+    <item name="tvSimRule" type="id" />
+    <item name="btnSimOn" type="id" />
+    <item name="btnSimOff" type="id" />
+</resources>

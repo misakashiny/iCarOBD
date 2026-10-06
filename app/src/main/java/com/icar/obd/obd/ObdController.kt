@@ -493,6 +493,73 @@ object ObdController {
     /** 当前被判定为「本车不支持」的 PID 条数（给界面做汇总提示用） */
     fun unsupportedCount(): Int = engine.unsupportedPids.size
 
+    // ------------------------------------------------ 规则模拟测试（v1.19.19）
+
+    private val simHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var simTick: Runnable? = null
+
+    /**
+     * 开始模拟一条规则。
+     *
+     * ⚠️ **必须自带节拍** —— 这是这个功能最容易做错的地方：
+     * `RuleEngine.evaluate()` 平时是由**轮询周期**（`engine.onCycle`）驱动的，
+     * 而"没车时试一条规则"正是它的主要用法 —— 那时**轮询根本没跑**，
+     * 只设个 `simulateRuleId` 就**什么都不会发生**，
+     * 用户会以为功能坏了（而日志里也看不出问题）。
+     */
+    fun startRuleSimulation(ruleId: String) {
+        RuleEngine.startSimulation(ruleId)
+        if (simTick == null) {
+            val r = object : Runnable {
+                override fun run() {
+                    if (!RuleEngine.isSimulating) return
+                    runCatching { RuleEngine.evaluate() }
+                        .onFailure { AppLog.e(AppLog.M_RULE, "模拟评估异常", it.message ?: "") }
+                    simHandler.postDelayed(this, SIM_TICK_MS)
+                }
+            }
+            simTick = r
+            simHandler.postDelayed(r, SIM_TICK_MS)
+            AppLog.i(AppLog.M_RULE, "模拟节拍已启动", "间隔=${SIM_TICK_MS}ms（轮询可能没在跑）")
+        }
+    }
+
+    /** 悬浮按钮的 开启查看 / 关闭查看 */
+    fun setSimulationOn(on: Boolean) = RuleEngine.setSimulationOn(on)
+
+    /** 退出模拟 */
+    fun stopRuleSimulation() {
+        simTick?.let { simHandler.removeCallbacks(it) }
+        simTick = null
+        RuleEngine.stopSimulation()
+    }
+
+    val isSimulating: Boolean get() = RuleEngine.isSimulating
+    val simulationOn: Boolean get() = RuleEngine.simulationOn
+
+    /** 正在模拟的规则名（悬浮按钮上显示，空 = 没在模拟） */
+    fun simulatingRuleName(): String =
+        RuleEngine.simulateRuleId?.let { id -> com.icar.obd.data.Store.rules.find { it.id == id }?.name }
+            ?.takeIf { it.isNotBlank() } ?: ""
+
+    /**
+     * 「模拟开始后请切到仪表盘」的一次性旗标。
+     *
+     * 规则编辑器是**独立 Activity**，它没法直接指挥 MainActivity 换页；
+     * 用旗标比用 `setResult` 简单，而且不依赖调用方用的是 startActivity 还是 forResult。
+     * MainActivity 在 onResume 里**消费并清掉**它（消费一次就够）。
+     */
+    @Volatile
+    var pendingGotoDash: Boolean = false
+
+    /**
+     * 模拟节拍间隔。
+     *
+     * 200ms ≈ 5Hz：比轮询（120ms 起）略慢，够看出变色/提示的即时感，
+     * 又不会把主线程刷爆（每次 evaluate 都要遍历规则并跑动作）。
+     */
+    private const val SIM_TICK_MS = 200L
+
     // ---------------------------------------------------------------- 规则动作
 
     private fun handleAction(rule: com.icar.obd.data.Rule, a: RuleAction) {
