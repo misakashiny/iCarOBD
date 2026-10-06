@@ -20,7 +20,7 @@
 ## 1. 目录总览
 
 ```
-D:/AI Dsh/车机项目/iCarOBD/
+D:/icarobd/   （ASCII 联结 → C:\Users\Administrator\Desktop\iCarOBD2）
 ├── app/
 │   ├── build.gradle.kts            构建脚本（版本号在这里改）
 │   └── src/main/
@@ -316,7 +316,7 @@ D:/AI Dsh/车机项目/iCarOBD/
 PowerShell：
 
 ```powershell
-Set-Location 'D:\AI Dsh\车机项目\iCarOBD'
+Set-Location 'D:\icarobd'
 $env:JAVA_HOME = 'C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot'
 $env:ANDROID_HOME = 'C:\Android\Sdk'
 .\gradlew.bat assembleDebug
@@ -325,7 +325,7 @@ $env:ANDROID_HOME = 'C:\Android\Sdk'
 Git Bash：
 
 ```bash
-cd "/d/AI Dsh/车机项目/iCarOBD"
+cd /d/icarobd
 export JAVA_HOME='C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot'
 export ANDROID_HOME='C:\Android\Sdk'
 ./gradlew assembleDebug
@@ -371,7 +371,7 @@ $ADB exec-out run-as com.icar.obd cat files/log/obd-$(date +%Y%m%d).log
 
 ### 6.1 工程路径含空格 + 非 ASCII 字符
 
-工程位于 `D:\AI Dsh\车机项目\iCarOBD`。两个后果：
+工程位于 `C:\Users\Administrator\Desktop\iCarOBD2`（2026-10-06 起；构建走联结 `D:\icarobd`）。两个后果：
 
 | 任务 | 影响 | 对策 |
 |---|---|---|
