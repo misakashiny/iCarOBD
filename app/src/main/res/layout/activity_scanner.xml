@@ -289,6 +289,18 @@
                     android:layout_weight="1"
                     android:enabled="false"
                     android:text="停止" />
+
+                <!-- 导出：把**本次扫描**的参数 + 命中 + 日志写成一个自包含文件。
+                     原来只能去「日志」页导出**整份**日志（含所有模块），不好用。 -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnExport"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1"
+                    android:enabled="false"
+                    android:text="导出结果" />
             </LinearLayout>
 
             <ProgressBar

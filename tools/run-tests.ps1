@@ -75,7 +75,21 @@ if (-not $env:JAVA_HOME) { $env:JAVA_HOME = 'C:\Program Files\Eclipse Adoptium\j
 if (-not $env:ANDROID_HOME) { $env:ANDROID_HOME = 'C:\Android\Sdk' }
 
 Push-Location $Link
-& .\gradlew.bat testDebugUnitTest --console=plain
+# ⚠️ **必须加 `--no-daemon`**（v2.73.0）。
+#
+# 为什么：Gradle daemon 会**反复卡死**（实测最长 25 分钟无输出）——
+# 而它卡住的后果不是"慢"，是**"这半边验证跑不了"**。
+#
+# 那个后果我在 v2.62 ~ v2.72 之间真实付过代价：
+# 因为 Kotlin 测试跑不了，我只跑浏览器套件，于是 Kotlin 侧的 2 条断言
+# **被破坏了 6 个版本都没人发现**（详见 CHANGELOG v2.72.0）。
+#
+# `--no-daemon` 之后实测 **15 秒**跑完 495 个测试。
+# 代价是每次都重新起 JVM（慢几秒），换来的是一致能跑完。
+#
+# ⚠️ 另外：**必须在 ASCII 路径下跑**（本脚本用 `$Link` 联接）。
+# 从含空格 + 中文的原始路径跑，会有 25 个测试报 `initializationError`。
+& .\gradlew.bat testDebugUnitTest --no-daemon --console=plain
 $code = $LASTEXITCODE
 Pop-Location
 

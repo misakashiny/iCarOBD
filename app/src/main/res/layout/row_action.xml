@@ -38,6 +38,29 @@
         android:minHeight="40dp"
         android:textSize="12sp" />
 
+    <EditText
+        android:id="@+id/etP3"
+        style="@style/InputEditMono"
+        android:layout_width="0dp"
+        android:layout_height="40dp"
+        android:layout_marginStart="4dp"
+        android:layout_weight="1"
+        android:hint="参数3"
+        android:importantForAutofill="no"
+        android:minHeight="40dp"
+        android:textSize="12sp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnPreview"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="wrap_content"
+        android:layout_height="40dp"
+        android:minWidth="0dp"
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
+        android:text="♪"
+        android:textSize="16sp" />
+
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnRemove"
         style="@style/Widget.Material3.Button.TextButton"

@@ -141,22 +141,37 @@ BLE → BleTransport → ElmSession → ObdEngine → ObdProtocol
 
 16. 特征选择必须校验 `properties`，不能只比对 UUID；
     写类型要在 `WRITE_TYPE_NO_RESPONSE` 与 `WRITE_TYPE_DEFAULT` 之间自适应。
+17. **GATT 操作必须串行化 —— 同一连接同时只允许一个未完成操作。**
+    这条是 2026-10-06 用**一轮实车日志**换来的：`requestMtu(512)` 与
+    `writeDescriptor(CCCD)` 背靠背发出（相隔 12ms），描述符写的回调**再也没回来** →
+    栈上永远挂着一个未完成操作 → **之后每一次 `writeCharacteristic()` 都返回 false**。
+    症状是「连上了、通知也能收、但一个字节都发不出去」，一小时刷出 902 条
+    「写入被拒」而**零有效数据**。
+
+    **判据**：日志里必须有 `CCCD 写入完成 | status=0`。没有它 = 栈已卡死，
+    此时**唯一有效的动作是断开重连**，继续写毫无意义。
+
+    **两个具体禁令**：
+    - `requestMtu` 之后**不能**紧接着 `writeDescriptor` —— 要在 `onMtuChanged` 里再开通知
+    - 超时兜底**必须用显式的 `pending` 标志**做判据，
+      **不能拿 `state == DISCOVERING` 代替** —— 前者会被另一个回调先改掉，
+      兜底就变成**永不触发的死代码**（我们正是这么静默失效的）
 
 ### 4.5 其他
 
-17. `settings.gradle.kts` 的阿里云镜像是当前网络环境的构建前提，不能删除。
-18. `AppLog` 的模块常量是 `M_XXX`（`M_RULE` 不是 `RULE`）。
-19. 不得把仪表盘布局改回「网格 + `span` + 高度 `weight`」：v1.5.0 起是
+18. `settings.gradle.kts` 的阿里云镜像是当前网络环境的构建前提，不能删除。
+19. `AppLog` 的模块常量是 `M_XXX`（`M_RULE` 不是 `RULE`）。
+20. 不得把仪表盘布局改回「网格 + `span` + 高度 `weight`」：v1.5.0 起是
     **归一化自由画布**（`GaugeItem.x/y/w/h`），网格那套（自然高度 / `MAX_SCALE` /
     `NestedScrollView`）已废弃，见 §6。
-20. 样式 → View 的映射只能写在 `ui/view/GaugeViewFactory.kt` 一处；
+21. 样式 → View 的映射只能写在 `ui/view/GaugeViewFactory.kt` 一处；
     渲染器与拖拽编辑器都调它，**分两处写必然分叉**（编辑器看到的与实际渲染的不一致）。
-21. **性能判据只能是帧间隔，不能是 `DrawStats` 的每帧耗时。**
+22. **性能判据只能是帧间隔，不能是 `DrawStats` 的每帧耗时。**
     开了硬件加速后 `onDraw` 只是把绘制指令**记录**进 DisplayList，
     真正的光栅化在**渲染线程**上做 —— `DrawStats` 量的是"记录耗时"，不是绘制成本。
     拿它下结论会得出过于乐观的答案（v1.10.1 差点这么干）。
     基准入口：连接页 →「运行选项」→「性能基准」，报告在 `files/bench-dashboard.txt`。
-22. **设计文件（`icar.ui/1`）的校验规则必须与 `tools/theme-studio/index.html` 保持同源。**
+23. **设计文件（`icar.ui/1`）的校验规则必须与 `tools/theme-studio/index.html` 保持同源。**
     两边分叉的后果是「编辑器说没问题、App 加载报错」，而用户直到推上设备才发现。
     改任何一边都要改另一边，`ThemeStudioSampleTest` 会守住这条。
 

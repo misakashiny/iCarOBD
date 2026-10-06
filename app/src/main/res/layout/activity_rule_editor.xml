@@ -107,7 +107,7 @@
                         style="@style/FieldLabel"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="冷却(ms)" />
+                        android:text="冷却 / 播放间隔(ms)" />
 
                     <EditText
                         android:id="@+id/etCooldown"

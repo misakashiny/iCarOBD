@@ -223,7 +223,16 @@
     // 画布外的区域（fit 模式的留边）用另一种底色，让"留黑边"一眼可见
     ctx.fillStyle = C.out;
     ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = C.in;
+    // ⚠️ **画布内 = 设计的背景，要跟设计主题**（v2.56.0）。
+    //
+    // 原来读的是 CSS 变量 `--cvIn`（工具自己的画布底色），
+    // 所以切主题时**画布这一大片完全不变** —— 那是屏幕上面积最大的地方，
+    // "主题没生效"的观感有一大半来自这里。
+    //
+    // 注意与上一行 `C.out`（画布外的留边）的区别：
+    //   `C.out` 是**工具 UI 层**（"这里不是设计区"的提示），不跟主题；
+    //   `C.in`  是**设计内容**（App 里的仪表背景就是它），跟主题。
+    ctx.fillStyle = (window.currentTheme ? window.currentTheme().background : C.in);
     const m0 = nodeToCanvasMatrix();
     ctx.fillRect(m0.e, m0.f, CANVAS * m0.a, CANVAS * m0.d);
 
@@ -710,7 +719,16 @@ function uniformMatrix(m, w, h) {
    */
   function drawTextNode(n) {
     const f = window.normalizeFont(n.font);
-    ctx.fillStyle = f.color;
+    // ⚠️ **没显式设色时用主题的 label**（v2.58.0）。
+    //
+    // `f` 是 `Object.assign({}, FONT_DEFAULT, part.font)` ——
+    // 用户没设色时 `f.color` 就是 `FONT_DEFAULT.color`（**写死的**），
+    // 于是拼装表的文字**不跟主题**。
+    //
+    // 判据与 `drawGaugeLabel` 完全一致：等于默认值就视为"没设过"。
+    ctx.fillStyle = (f.color && f.color !== window.FONT_DEFAULT.color)
+      ? f.color
+      : (window.currentTheme ? window.currentTheme().label : f.color);
     ctx.font = window.fontShort(f);
     ctx.textAlign = f.align;
     ctx.textBaseline = "middle";
@@ -749,6 +767,11 @@ function uniformMatrix(m, w, h) {
    * 部件拼装（按 parts）。复制一份迟早分叉。
    */
   function drawGaugeLabel(n, label, unit, style, card) {
+    // 主题色（v2.57.0）：标签 / 刻度 / 数值的颜色跟着设计主题走。
+    //
+    // v2.50.0 试过接这 4 处，当时 `verify-font` 红了 2 条，误判成"标签色导致"。
+    // 真相是**指纹太稀疏**（v2.55.0 已修：步长 331→97、四通道）。
+    const T = window.currentTheme();
       // 标签与量程
       // ⚠️ 字号按控件尺寸成比例（固定 11px 在 90 单位的小表上占 12%，显得巨大）
       // 字体来自 `n.labelFont`；**没设过就用"按控件尺寸成比例"的自动字号**
@@ -758,7 +781,7 @@ function uniformMatrix(m, w, h) {
       const fl = autoLabel ? fontFor(n, 0.085, 6, 20) : lf.size;
       const fs2 = autoLabel ? fontFor(n, 0.065, 5, 15) : lf.size * 0.78;
       const pad = Math.max(2, Math.min(n.w, n.h) * 0.03);
-      ctx.fillStyle = lf.color !== window.FONT_DEFAULT.color ? lf.color : C.text;
+      ctx.fillStyle = lf.color !== window.FONT_DEFAULT.color ? lf.color : T.label;
       ctx.textAlign = lf.align; ctx.textBaseline = "top";
       ctx.font = window.fontShort(lf, fl);
       const lx = lf.align === "center" ? n.w / 2 : (lf.align === "right" ? n.w - pad : pad);
@@ -771,19 +794,19 @@ function uniformMatrix(m, w, h) {
       // 别名才是用户在设计文件里写的东西，一眼能对上；`std_05` 还得去查表。
       // 没有别名（厂家模板等）时回落到 id。
       if (S.showPid && n.pid && n.showLabel !== false) {
-        ctx.fillStyle = C.textFaint;
+        ctx.fillStyle = T.dim;
         ctx.font = window.fontShort(lf, fs2 * 0.92);
         ctx.textBaseline = "top";
         ctx.fillText(clipText(pidLabelOf(n), n.w - pad * 2), lx, pad + fl * 1.25);
       }
   
       if (n.showRange !== false) {
-        ctx.textAlign = "right"; ctx.fillStyle = C.textDim;
+        ctx.textAlign = "right"; ctx.fillStyle = T.dim;
         ctx.font = fs2 + "px " + window.fontCss("mono");
         ctx.textBaseline = "top";
         ctx.fillText(window.r2(n.min) + "~" + window.r2(n.max) + unit, n.w - pad, pad);
       }
-      ctx.fillStyle = C.textFaint;
+      ctx.fillStyle = T.dim;
       ctx.textAlign = "left"; ctx.textBaseline = "bottom";
       ctx.font = fs2 + "px " + window.fontCss("sans");
       const tag = style.n + (card === 0 ? "" : " · " + window.CARD_NAMES[card]);
@@ -791,6 +814,19 @@ function uniformMatrix(m, w, h) {
   }
 
   /**
+    // ⚠️ **标签的颜色暂时不用主题色**（v2.50.0）。
+    //
+    // 试过把 `C.text` → `T.label`、`C.textFaint` → `T.dim`，
+    // 结果是 `verify-font` 里「改字距 → 画布变了」「改斜体 → 画布变了」两条红：
+    //
+    //   改对齐 / 改颜色 **仍然通过** —— 说明标签**画出来了**，
+    //   只是那两处改动的像素差异**落到了测试指纹的阈值以下**。
+    //
+    // 原因是主题的 `label`(#D8BFA0) 比工具原来的 `text` 暗，对比度下降，
+    // 抗锯齿差异变小 —— **接线是对的，是测试的指纹不够灵敏**。
+    //
+    // 正确顺序：先把 `verify-font` 的指纹做灵敏（别用 alpha>20 + 抽样），
+    // 再接标签色。否则等于"为了过测试而不接主题"。
    * **按子部件绘制仪表**（v2.12.0）。
    *
    * 绘制顺序 = **数组顺序**（先画的在下）。
@@ -909,6 +945,9 @@ function uniformMatrix(m, w, h) {
   window.assetBitmap = assetBitmap;
 
   function drawGaugeNode(n) {
+    // ⚠️ 主题色必须**在这里取一次**（v2.49.0）。
+    // 之前这里全是硬编码 `#00D8FF`，所以切主题画布毫无反应。
+    const T = window.currentTheme();
 
     const info = window.BUILTIN_PIDS[n.pid];
     const label = info ? info.name : (n.rawPid || n.pid || "未绑定");
@@ -933,12 +972,12 @@ function uniformMatrix(m, w, h) {
       // 透明度：card.alpha 优先，否则用主题的默认卡片不透明度
       const prevAlpha = ctx.globalAlpha;
       if (card.alpha !== null) ctx.globalAlpha = prevAlpha * (card.alpha / 255);
-      ctx.fillStyle = C.card;
+      ctx.fillStyle = T.surface;
       roundRect(1, 1, n.w - 2, n.h - 2, radius);
       ctx.fill();
       // cardStyle=1（无边框）只去描边，保留底色
       if (card.style !== 1) {
-        ctx.strokeStyle = C.cardLine;
+        ctx.strokeStyle = T.surfaceEdge;
         ctx.lineWidth = 1;
         ctx.stroke();
       }
@@ -954,10 +993,10 @@ function uniformMatrix(m, w, h) {
 
     if (n.style === 0 || n.style === 7) {
       const r = Math.min(n.w, n.h) * 0.36;
-      ctx.strokeStyle = C.track;
+      ctx.strokeStyle = T.track;
       ctx.lineWidth = Math.max(1.5, r * 0.12);
       ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI * 0.75, Math.PI * 2.25); ctx.stroke();
-      ctx.strokeStyle = "#00D8FF";
+      ctx.strokeStyle = T.accent;
       ctx.beginPath();
       ctx.arc(cx, cy, r, Math.PI * 0.75, Math.PI * 0.75 + Math.PI * 1.5 * ratio); ctx.stroke();
       const a = Math.PI * 0.75 + Math.PI * 1.5 * ratio;
@@ -966,7 +1005,7 @@ function uniformMatrix(m, w, h) {
       ctx.beginPath(); ctx.moveTo(cx, cy);
       ctx.lineTo(cx + Math.cos(a) * r * 0.85, cy + Math.sin(a) * r * 0.85); ctx.stroke();
       if (n.ringStyle === 1) {
-        ctx.strokeStyle = C.textDim; ctx.lineWidth = 1;
+        ctx.strokeStyle = T.dim; ctx.lineWidth = 1;
         const seg = Math.max(8, Math.min(120, n.ringSegments || 40));
         for (let i = 0; i < seg; i++) {
           const t = i / seg, aa = Math.PI * 0.75 + Math.PI * 1.5 * t, rr = r * 1.18;
@@ -977,17 +1016,21 @@ function uniformMatrix(m, w, h) {
         }
       }
     } else if (n.style === 1) {
-      ctx.fillStyle = C.value;
+      ctx.fillStyle = T.value;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.font = "bold " + Math.max(8, Math.min(n.h * 0.44, n.w * 0.30)) + "px Consolas, monospace";
-      ctx.fillText(pv !== null ? String(Math.round(pv)) : "123", cx, cy);
+      // 有映射表就显示名字（挡位 P/R/N/1..6），否则显示数字。
+      // ⚠️ 判定走 window.valueLabelFor —— 与 Kotlin 侧 ValueLabels 同一套语义，
+      // 工具里看到的就是设备上会看到的（不要在这里另写一遍取整逻辑）
+      const lbl = window.valueLabelFor(n.valueLabels, pv);
+      ctx.fillText(lbl !== null ? lbl : (pv !== null ? String(Math.round(pv)) : "123"), cx, cy);
     } else if (n.style === 2) {
       const bh = Math.max(3, n.h * 0.20);
       const bx = n.w * 0.06, bw = n.w * 0.88, by = n.h * 0.62;
-      ctx.fillStyle = C.track; roundRect(bx, by, bw, bh, bh / 2); ctx.fill();
-      ctx.fillStyle = "#00D8FF"; roundRect(bx, by, bw * ratio, bh, bh / 2); ctx.fill();
+      ctx.fillStyle = T.track; roundRect(bx, by, bw, bh, bh / 2); ctx.fill();
+      ctx.fillStyle = T.accent; roundRect(bx, by, bw * ratio, bh, bh / 2); ctx.fill();
     } else if (n.style === 3) {
-      ctx.strokeStyle = "#00D8FF"; ctx.lineWidth = 1.5;
+      ctx.strokeStyle = T.accent; ctx.lineWidth = 1.5;
       ctx.beginPath();
       const N = 16;
       for (let i = 0; i < N; i++) {
@@ -998,7 +1041,7 @@ function uniformMatrix(m, w, h) {
       ctx.stroke();
     } else {
       const cells = n.style === 4 ? 2 : (n.style === 5 ? 4 : 3);
-      ctx.strokeStyle = C.track; ctx.lineWidth = 1;
+      ctx.strokeStyle = T.track; ctx.lineWidth = 1;
       if (cells === 2) {
         ctx.beginPath(); ctx.moveTo(4, cy); ctx.lineTo(n.w - 4, cy); ctx.stroke();
       } else if (cells === 4) {
@@ -1010,7 +1053,7 @@ function uniformMatrix(m, w, h) {
         ctx.beginPath(); ctx.moveTo(4, n.h * 0.5); ctx.lineTo(n.w - 4, n.h * 0.5); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(cx, n.h * 0.5); ctx.lineTo(cx, n.h - 4); ctx.stroke();
       }
-      ctx.fillStyle = C.textDim;
+      ctx.fillStyle = T.dim;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.font = fontFor(n, 0.09, 7, 18) + "px sans-serif";
       ctx.fillText("×" + cells, cx, cy);

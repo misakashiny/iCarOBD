@@ -10,6 +10,18 @@
   --divider: #2A3547; --text: #E8EEF7; --text2: #9AA8BC; --dim: #5F6E85;
   --accent: #00D8FF; --ok: #2FD47A; --warn: #FFB020; --danger: #FF4D4F;
   --purple: #7C5CFF;
+
+  /*
+   * **圆角阶梯**（v2.44.0）。
+   *
+   * 原来 47 处 `border-radius` **全是写死的**，散成 3/4/5/6/8/10 七档 ——
+   * 相近的元素各用各的，看起来不成体系（而颜色早就有变量了）。
+   *
+   * 收敛成三档：小的给行/按钮，中的给缩略图/面板块，大的给对话框/浮层。
+   */
+  --r-sm: 4px;   /* 行、按钮、chip */
+  --r-md: 6px;   /* 缩略图、面板块、输入框 */
+  --r-lg: 8px;   /* 对话框、toast、浮层 */
   /* 画布自己的底色（JS 读这两个变量去画，不然切主题后画布还是黑的） */
   --cvOut: #020407;      /* 画布外（fit 模式的留边区域） */
   --cvIn: #05070A;       /* 画布内（0..360 坐标区） */
@@ -57,7 +69,10 @@
 [data-theme="light"] .badge.lock { background: #FBF0DA; color: #8A5A06; }
 
 * { box-sizing: border-box; }
-html, body { height: 100%; }
+html, /* 界面缩放（v2.54.0）：用 CSS 变量挂 zoom，改 --ui-zoom 即可整体缩放。
+   ⚠️ 用 zoom 而不是 root font-size —— 本工程的字号**全是写死的 px**，
+   root font-size 只影响 rem，对它们无效。 */
+body { height: 100%; }
 body {
   margin: 0; background: var(--bg); color: var(--text); overflow: hidden;
   font: 13px/1.5 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
@@ -71,14 +86,16 @@ header {
   flex: 0 0 auto; flex-wrap: nowrap; overflow-x: auto;
 }
 header h1 { font-size: 14px; margin: 0 10px 0 0; font-weight: 600; white-space: nowrap; }
-header .ver { color: var(--dim); font-size: 11px; white-space: nowrap; }
-header code { background: var(--elevated); padding: 0 3px; border-radius: 3px; font-size: 11px; }
+header .ver {
+  /* 同款问题：靠内容推高度会得到 17/18 两种（v2.45.0） */
+  display: inline-flex; align-items: center; height: 17px; line-height: 1; color: var(--dim); font-size: 11px; white-space: nowrap; }
+header code { background: var(--elevated); padding: 0 3px; border-radius: var(--r-sm); font-size: 11px; }
 .spacer { flex: 1 1 auto; min-width: 6px; }
 .sep { width: 1px; height: 20px; background: var(--divider); margin: 0 4px; flex: 0 0 auto; }
 
 button {
   background: var(--elevated); color: var(--text); border: 1px solid var(--divider);
-  border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 12px;
+  border-radius: var(--r-md); padding: 5px 10px; cursor: pointer; font-size: 12px;
   white-space: nowrap; font-family: inherit;
 }
 button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
@@ -92,6 +109,19 @@ button.on { border-color: var(--ok); color: var(--ok); }
 button.off { border-color: var(--warn); color: var(--warn); }
 button.icon { padding: 5px 9px; font-weight: 600; }
 
+/*
+ * ⚠️ **工具栏按钮必须给显式高度**（v2.45.0）。
+ *
+ * 原来 `button` 既没有 `height` 也没有 `line-height` —— 行盒是 UA 的 `normal`。
+ * 而 `.icon` 带 `font-weight: 600`，浏览器会换用 **semibold 字体面**，
+ * 它的固有行高比常规体**高 1px** → 『↶ 撤销』是 **29px**、『新建』是 **28px**。
+ *
+ * 同一排按钮并排就能看出这 1px 差。给显式高度，别让字体度量决定布局。
+ *
+ * （只修工具栏 —— 全局给 `button` 加高度会波及 `.mini` / `.btnRow` 等紧凑按钮。）
+ */
+header button { height: 28px; line-height: 1; }
+
 /* ---------------------------------------------------------------- 主体三栏 */
 main {
   flex: 1 1 auto; min-height: 0; display: grid;
@@ -103,7 +133,7 @@ main {
 
 .panel {
   background: var(--surface); border: 1px solid var(--divider);
-  border-radius: 8px; padding: 8px; flex: 0 0 auto; min-height: 0;
+  border-radius: var(--r-lg); padding: 8px; flex: 0 0 auto; min-height: 0;
 }
 .panel.grow { flex: 1 1 auto; display: flex; flex-direction: column; overflow: hidden; }
 .panel h2 {
@@ -115,10 +145,10 @@ main {
 /* ---------------------------------------------------------------- 画布 */
 .canvasWrap {
   position: relative; background: var(--surface); border: 1px solid var(--divider);
-  border-radius: 8px; padding: 8px; flex: 1 1 auto; min-height: 0;
+  border-radius: var(--r-lg); padding: 8px; flex: 1 1 auto; min-height: 0;
   display: flex; justify-content: center; align-items: center;
 }
-canvas { display: block; cursor: default; border-radius: 4px; background: #020407; }
+canvas { display: block; cursor: default; border-radius: var(--r-sm); background: #020407; }
 
 /* ---------------------------------------------------------------- 控件树 */
 .treeHead {
@@ -127,12 +157,12 @@ canvas { display: block; cursor: default; border-radius: 4px; background: #02040
 .treeTitle { font-size: 11px; color: var(--text2); font-weight: 600;
   text-transform: uppercase; letter-spacing: .6px; flex: 1 1 auto; }
 .treeCount { font-size: 10px; color: var(--dim); background: var(--elevated);
-  padding: 0 5px; border-radius: 8px; }
+  padding: 0 5px; border-radius: var(--r-lg); }
 .treeBody { overflow: auto; flex: 1 1 auto; min-height: 0; }
 
 .trow {
   display: flex; align-items: center; gap: 4px; padding: 3px 4px;
-  border-radius: 4px; cursor: pointer; font-size: 12px; user-select: none;
+  border-radius: var(--r-sm); cursor: pointer; font-size: 12px; user-select: none;
 }
 .trow:hover { background: var(--surface2); }
 .trow.sel { background: #0E3A4A; }
@@ -140,12 +170,27 @@ canvas { display: block; cursor: default; border-radius: 4px; background: #02040
 .trow .tw { width: 12px; color: var(--dim); font-size: 10px; text-align: center; flex: 0 0 auto; }
 .trow .tic { width: 14px; text-align: center; color: var(--text2); flex: 0 0 auto; }
 .trow .tnm { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.trow .tbtn { width: 18px; text-align: center; font-size: 11px; opacity: .55; flex: 0 0 auto; }
-.trow .tbtn:hover { opacity: 1; }
+/*
+ * 图标小按钮（v2.44.0 修）。
+ *
+ * ⚠️ 原来这条规则写成了 `.trow .tbtn` —— **只对「控件树的行」生效**。
+ * 而「素材分类头」里的 ↑↓ 在 `.akhead` 里，**拿不到宽度** → 退化成字形宽度：
+ * `↑`/`↓` 只有 **6px**，而同一排的 `✎`/`⇩` 是 12px。
+ *
+ * 后果：同一个类在不同容器里尺寸不一样，而且 6px 基本点不中。
+ * 改成**不分容器**都统一，并给足命中区。
+ */
+.tbtn {
+  display: inline-block; min-width: 18px; padding: 1px 2px;
+  text-align: center; font-size: 11px; line-height: 16px;
+  opacity: .55; flex: 0 0 auto; cursor: pointer;
+  border-radius: var(--r-sm);
+}
+.tbtn:hover { opacity: 1; background: var(--surface2); }
 .trow .tflag { font-size: 10px; flex: 0 0 auto; }
 .tkids { margin-left: 12px; border-left: 1px solid #1e2836; padding-left: 2px; }
 .tdrop {
-  margin: 6px 0 0; padding: 6px; border: 1px dashed var(--divider); border-radius: 5px;
+  margin: 6px 0 0; padding: 6px; border: 1px dashed var(--divider); border-radius: var(--r-md);
   color: var(--dim); font-size: 11px; text-align: center;
 }
 .tdrop.dropTarget { border-color: var(--accent); color: var(--accent); }
@@ -155,7 +200,7 @@ canvas { display: block; cursor: default; border-radius: 4px; background: #02040
 .akind { margin-bottom: 2px; }
 .akhead {
   display: flex; align-items: center; gap: 4px; padding: 3px 4px;
-  border-radius: 4px; cursor: pointer; font-size: 12px;
+  border-radius: var(--r-sm); cursor: pointer; font-size: 12px;
 }
 .akhead:hover { background: var(--surface2); }
 .akhead .pcaret { width: 12px; color: var(--dim); font-size: 10px; }
@@ -164,12 +209,12 @@ canvas { display: block; cursor: default; border-radius: 4px; background: #02040
 .akempty { color: var(--dim); font-size: 11px; padding: 2px 4px; }
 .aitem {
   display: flex; align-items: center; gap: 6px; padding: 3px 4px;
-  border-radius: 4px; cursor: grab; font-size: 12px;
+  border-radius: var(--r-sm); cursor: grab; font-size: 12px;
 }
 .aitem:hover { background: var(--surface2); }
 .athumb {
   width: 26px; height: 26px; object-fit: contain; flex: 0 0 auto;
-  background: #05070A; border: 1px solid var(--divider); border-radius: 3px;
+  background: #05070A; border: 1px solid var(--divider); border-radius: var(--r-sm);
 }
 .aname { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -179,7 +224,7 @@ canvas { display: block; cursor: default; border-radius: 4px; background: #02040
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
 }
 .badge {
-  display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 10px;
+  display: inline-block; padding: 1px 6px; border-radius: var(--r-lg); font-size: 10px;
   background: var(--elevated); color: var(--text2); font-weight: 400;
 }
 .badge.lock { background: #3A2A10; color: var(--warn); }
@@ -190,32 +235,83 @@ canvas { display: block; cursor: default; border-radius: 4px; background: #02040
   font-size: 12px; color: var(--text2); font-weight: 600; user-select: none;
 }
 .phead:hover { color: var(--accent); }
-.pcaret { width: 12px; font-size: 10px; color: var(--dim); }
+/* 折叠箭头也要点得中（v2.44.0）：12px 太窄，给到 16px 并撑高 */
+.pcaret { min-width: 16px; padding: 1px 0; font-size: 10px; color: var(--dim); text-align: center; line-height: 16px; cursor: pointer; }
 .pbody { padding: 2px 0 8px; }
 
 .prow { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
 .prow:last-child { margin-bottom: 0; }
 .prow > label { flex: 0 0 84px; color: var(--text2); font-size: 12px; }
-.prow input[type=number], .prow input[type=text], .prow input:not([type]),
-.prow select {
-  flex: 1 1 auto; min-width: 0; background: var(--bg); color: var(--text);
-  border: 1px solid var(--divider); border-radius: 5px; padding: 4px 6px;
-  font-size: 12px; font-family: inherit;
+/*
+ * **属性面板的输入控件统一**（v2.44.0 修）。
+ *
+ * ⚠️ 原来这条只列了 `number` / `text` / 无 type / `select` ——
+ * `color`（27px）、`range`（16px）、`checkbox`（13px）**一个都没进**。
+ *
+ * 而且**没设 `height` 和 `box-sizing`**，于是各 type 天然高度不同：
+ *   input[text] 26px · select 28px · input[color] 27px · input[range] 16px · checkbox 13px
+ *
+ * 后果：同一块面板里**行高出现 5 种**（19/26/27/28/36），看着很乱 ——
+ * 但根因不在"行"，在**控件各自高度不同**。
+ *
+ * 现在统一成 26px + border-box，所有 type 都覆盖到。
+ */
+.prow input, .prow select {
+  box-sizing: border-box; height: 26px;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--divider); border-radius: var(--r-md);
+  padding: 0 6px; font-size: 12px; font-family: inherit;
 }
 .prow input:focus, .prow select:focus { outline: none; border-color: var(--accent); }
-.prow input[type=range] { flex: 1 1 auto; min-width: 0; }
+
+/* 文本 / 数字 / 下拉：占满剩余宽度 */
+.prow input[type=number], .prow input[type=text], .prow input:not([type]),
+.prow select { flex: 1 1 auto; min-width: 0; }
+
+/* 滑块：占满，但别继承 text 的左右 padding（range 自己会画轨道） */
+/* ⚠️ Chrome 给 range 带 **默认 margin 2px** —— 不归零的话那一行会高出 4px */
+.prow input[type=range] { flex: 1 1 auto; min-width: 0; padding: 0; margin: 0; cursor: pointer; }
+
+/* 颜色块：固定宽，别抢满整行 */
+.prow input[type=color] { flex: 0 0 auto; width: 40px; padding: 2px; cursor: pointer; }
+
+/*
+ * 勾选框：**给足命中区 + 跟主题色**。
+ * 浏览器默认只有 13×13，在密集面板里很难点。
+ */
+.prow input[type=checkbox], .prow input[type=radio] {
+  flex: 0 0 auto; width: 14px; height: 14px; margin: 0; padding: 0;
+  accent-color: var(--accent); cursor: pointer;
+}
+
+/*
+ * ⚠️ `.chk` 也是 `<label>`，会被 `.prow > label { flex: 0 0 84px }` 命中 ——
+ * 于是勾选框的文字被压在 84px 里**换行成两行**（实测有 36px 高的行）。
+ * 让它用剩余宽度。
+ */
 .chk { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text2); }
+/*
+ * ⚠️ **权重问题**（v2.44.0）：`.prow > label` 是 (0,1,1)，`.chk` 只有 (0,1,0) ——
+ * 所以只写 `.chk { flex: 1 1 auto }` 会被 84px 盖掉，勾选框文字仍被压成两行。
+ * 必须提到同等或更高的权重。
+ */
+.prow > label.chk, .prow .chk { flex: 1 1 auto; min-width: 0; }
 
 .btnRow { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 5px; }
 .btnRow:last-child { margin-bottom: 0; }
 .btnRow button { flex: 0 1 auto; padding: 4px 8px; font-size: 11px; }
+/*
+ * `.prow` 里的按钮要和输入框**一样高**（v2.44.0）。
+ * 原来 button 是 28px、输入框统一成 26px —— 同一行里差 2px，整行被撑到 28px。
+ */
+.prow button { height: 26px; box-sizing: border-box; padding: 0 8px; font-size: 11px; }
 
 .hint { color: var(--dim); font-size: 11px; margin-top: 5px; line-height: 1.6; }
 .hint.inline { margin: 0 0 0 4px; }
-.hint code { background: var(--elevated); padding: 0 3px; border-radius: 3px; }
+.hint code { background: var(--elevated); padding: 0 3px; border-radius: var(--r-sm); }
 
 .stateBox {
-  border: 1px solid var(--divider); border-radius: 6px; padding: 6px;
+  border: 1px solid var(--divider); border-radius: var(--r-md); padding: 6px;
   margin-bottom: 6px; background: rgba(255, 255, 255, .015);
 }
 .stateName { font-size: 12px; font-weight: 600; color: var(--accent); margin-bottom: 4px; }
@@ -223,7 +319,7 @@ canvas { display: block; cursor: default; border-radius: 4px; background: #02040
 /* ---------------------------------------------------------------- 消息 */
 .msgs { overflow: auto; font-size: 12px; flex: 1 1 auto; min-height: 40px; }
 .msg {
-  padding: 6px 8px; border-radius: 5px; margin-bottom: 4px;
+  padding: 6px 8px; border-radius: var(--r-md); margin-bottom: 4px;
   border-left: 3px solid; word-break: break-word;
 }
 .msg:last-child { margin-bottom: 0; }
@@ -238,7 +334,7 @@ canvas { display: block; cursor: default; border-radius: 4px; background: #02040
 .tabPane { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
 textarea {
   width: 100%; flex: 1 1 auto; min-height: 160px; background: #05070A; color: #B7E4F5;
-  border: 1px solid var(--divider); border-radius: 6px; padding: 8px;
+  border: 1px solid var(--divider); border-radius: var(--r-md); padding: 8px;
   font: 11px/1.5 Consolas, "Cascadia Mono", monospace; resize: vertical;
 }
 /* JSON 文本域有错、尚未生效 —— 必须一眼看出来，否则用户以为"改了没反应" */
@@ -246,7 +342,7 @@ textarea.dirty { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger
 
 .jsonDirtyBar {
   display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap;
-  background: #2A1214; border: 1px solid var(--danger); border-radius: 6px;
+  background: #2A1214; border: 1px solid var(--danger); border-radius: var(--r-md);
   padding: 7px 9px; margin-bottom: 6px; font-size: 11px; line-height: 1.6;
   color: #FFB3B5;
 }
@@ -257,7 +353,7 @@ textarea.dirty { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger
 [data-theme="light"] .jsonDirtyBar button { color: #8C1D1D; }
 
 kbd {
-  background: var(--elevated); border: 1px solid var(--divider); border-radius: 3px;
+  background: var(--elevated); border: 1px solid var(--divider); border-radius: var(--r-sm);
   padding: 0 4px; font-size: 11px; font-family: inherit;
 }
 
@@ -265,7 +361,7 @@ kbd {
 #toast {
   position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(20px);
   background: var(--elevated); border: 1px solid var(--accent); color: var(--text);
-  padding: 8px 16px; border-radius: 8px; font-size: 12px; max-width: 70vw;
+  padding: 8px 16px; border-radius: var(--r-lg); font-size: 12px; max-width: 70vw;
   white-space: pre-wrap; opacity: 0; pointer-events: none; transition: all .22s ease;
   box-shadow: 0 6px 24px rgba(0, 0, 0, .5); z-index: 99;
 }
@@ -282,7 +378,7 @@ kbd {
 .panelHead:hover { color: var(--accent); }
 .panelHead .pcaret { width: 12px; font-size: 10px; color: var(--dim); flex: 0 0 auto; }
 .panelHead .ph-count { margin-left: auto; font-size: 10px; color: var(--dim);
-  background: var(--elevated); padding: 0 5px; border-radius: 8px; text-transform: none; letter-spacing: 0; }
+  background: var(--elevated); padding: 0 5px; border-radius: var(--r-lg); text-transform: none; letter-spacing: 0; }
 .panelBody { padding-top: 6px; }
 
 /* ---------------------------------------------------------------- 控件树层级徽章 */
@@ -291,7 +387,7 @@ kbd {
   flex: 0 0 auto; min-width: 15px; text-align: center;
   font: 600 9px/14px Consolas, monospace;
   color: var(--dim); background: var(--elevated);
-  border-radius: 3px; padding: 0 3px; margin-right: 1px;
+  border-radius: var(--r-sm); padding: 0 3px; margin-right: 1px;
 }
 .trow.sel .tdepth { color: var(--accent); background: rgba(0, 216, 255, .12); }
 [data-theme="light"] .trow.sel .tdepth { background: rgba(10, 126, 164, .14); }
@@ -300,13 +396,13 @@ kbd {
 .ctxMenu {
   position: fixed; z-index: 200; min-width: 190px;
   background: var(--surface); border: 1px solid var(--divider);
-  border-radius: 8px; padding: 4px; display: none;
+  border-radius: var(--r-lg); padding: 4px; display: none;
   box-shadow: 0 10px 34px rgba(0, 0, 0, .45);
 }
 .ctxMenu.show { display: block; }
 .ctxItem {
   display: flex; align-items: center; gap: 8px;
-  padding: 6px 9px; border-radius: 5px; cursor: pointer;
+  padding: 6px 9px; border-radius: var(--r-md); cursor: pointer;
   font-size: 12px; color: var(--text); white-space: nowrap;
 }
 .ctxItem:hover { background: var(--surface2); }
@@ -335,7 +431,7 @@ kbd {
 .msg.jumpable:hover { filter: brightness(1.15); }
 .msg .jumpBtn {
   flex: 0 0 auto; font-size: 10px; padding: 1px 6px;
-  border: 1px solid currentColor; border-radius: 3px;
+  border: 1px solid currentColor; border-radius: var(--r-sm);
   background: transparent; color: inherit; cursor: pointer;
 }
 .msg .jumpBtn:hover { background: rgba(255, 255, 255, .12); }
@@ -388,14 +484,14 @@ kbd {
   font-size: 11px; font-weight: 600; cursor: pointer; user-select: none;
 }
 .panelBar:hover { color: var(--accent); }
-.panelBar .pbCaret { width: 10px; color: var(--dim); flex: 0 0 auto; }
+.panelBar .pbCaret { min-width: 16px; padding: 1px 0; color: var(--dim); flex: 0 0 auto; text-align: center; line-height: 16px; cursor: pointer; }
 .panelBar .pbTitle { flex: 0 0 auto; }
 .panelBar .pbCount {
-  flex: 0 0 auto; padding: 0 5px; border-radius: 8px; font-size: 10px;
+  flex: 0 0 auto; padding: 0 5px; border-radius: var(--r-lg); font-size: 10px;
   background: var(--surface); color: var(--dim); font-weight: 400;
 }
 .panelBar .pbBtn {
-  margin-left: 2px; padding: 0 3px; border-radius: 3px;
+  margin-left: 2px; padding: 1px 4px; min-width: 18px; text-align: center; line-height: 16px; border-radius: var(--r-sm); cursor: pointer;
   color: var(--dim); font-weight: 400;
 }
 .panelBar .pbBtn:first-of-type { margin-left: auto; }
@@ -424,7 +520,7 @@ kbd {
 
 /* ---------------------------------------------------------------- 子部件编辑 */
 .partBox {
-  margin: 3px 0; border: 1px solid var(--divider); border-radius: 4px;
+  margin: 3px 0; border: 1px solid var(--divider); border-radius: var(--r-sm);
   background: var(--surface2); overflow: hidden;
 }
 .partHead {
@@ -433,7 +529,7 @@ kbd {
 }
 .partHead:hover { background: var(--surface); }
 .partHead .partKind {
-  flex: 0 0 auto; padding: 0 4px; border-radius: 2px;
+  flex: 0 0 auto; padding: 0 4px; border-radius: var(--r-sm);
   background: var(--accent); color: #04121A; font-size: 10px;
 }
 .partHead .partName {
@@ -449,6 +545,8 @@ kbd {
   background: var(--surface2); border-bottom: 1px solid var(--divider);
 }
 #pageTabs .pgTab {
+  /* ⚠️ 页签和「＋」原来 22px / 23px —— 同样是靠内容推高度（v2.45.0） */
+  display: inline-flex; align-items: center; height: 22px; box-sizing: border-box; line-height: 1;
   display: inline-flex; align-items: center; gap: 4px;
   padding: 2px 8px; border-radius: 4px 4px 0 0; cursor: pointer;
   color: var(--textDim); border: 1px solid transparent; border-bottom: none;
@@ -465,7 +563,8 @@ kbd {
 #pageTabs .pgTab:hover .pgDel { opacity: .7; }
 #pageTabs .pgDel:hover { background: #B22; color: #fff; opacity: 1; }
 #pageTabs .pgAdd {
-  padding: 2px 8px; border-radius: 4px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; height: 22px; box-sizing: border-box; line-height: 1;
+  padding: 2px 8px; border-radius: var(--r-sm); cursor: pointer;
   color: var(--accent); border: 1px dashed var(--divider);
 }
 #pageTabs .pgAdd:hover { background: var(--surface); border-style: solid; }
@@ -478,7 +577,7 @@ kbd {
   background: var(--surface2); border-bottom: 1px solid var(--divider);
 }
 #breadcrumb .bcSeg {
-  padding: 1px 6px; border-radius: 3px; cursor: pointer;
+  padding: 1px 6px; border-radius: var(--r-sm); cursor: pointer;
   color: var(--textDim);
 }
 #breadcrumb .bcSeg:hover { background: var(--surface); color: var(--text); }
@@ -487,7 +586,7 @@ kbd {
 #breadcrumb .bcArrow { color: var(--textFaint); }
 #breadcrumb .bcHint { margin-left: 8px; color: var(--textFaint); font-size: 10px; }
 #breadcrumb .bcExit {
-  margin-left: auto; padding: 1px 7px; border-radius: 3px; cursor: pointer;
+  margin-left: auto; padding: 1px 7px; border-radius: var(--r-sm); cursor: pointer;
   background: var(--surface); color: var(--textDim);
 }
 #breadcrumb .bcExit:hover { background: #B22; color: #fff; }
@@ -501,7 +600,7 @@ kbd {
 .assetSearchWrap input {
   flex: 1 1 auto; min-width: 0; font-size: 12px; padding: 3px 6px;
   background: var(--surface2); border: 1px solid var(--divider);
-  border-radius: 4px; color: var(--text);
+  border-radius: var(--r-sm); color: var(--text);
 }
 .assetSearchWrap input:focus { outline: none; border-color: var(--accent); }
 
@@ -521,7 +620,7 @@ kbd {
 }
 .assetThumb {
   position: relative; display: flex; flex-direction: column; align-items: center;
-  gap: 2px; padding: 4px 3px 3px; border-radius: 5px; cursor: pointer;
+  gap: 2px; padding: 4px 3px 3px; border-radius: var(--r-md); cursor: pointer;
   border: 1px solid transparent; background: var(--surface2);
 }
 .assetThumb:hover { border-color: var(--accent); background: var(--surface3, var(--surface2)); }
@@ -537,11 +636,11 @@ kbd {
 .assetThumb .atNoImg { font-size: 9px; color: var(--textFaint); height: 38px; display: flex; align-items: center; }
 .assetThumb .atBadge {
   position: absolute; top: 2px; right: 2px; font-size: 8px; padding: 0 3px;
-  border-radius: 3px; background: var(--accent); color: #04121A;
+  border-radius: var(--r-sm); background: var(--accent); color: #04121A;
 }
 .assetThumb .atDel {
   position: absolute; top: 2px; right: 2px; width: 14px; height: 14px;
-  line-height: 13px; text-align: center; border-radius: 3px; font-size: 10px;
+  line-height: 13px; text-align: center; border-radius: var(--r-sm); font-size: 10px;
   background: rgba(0, 0, 0, .6); color: var(--textDim); opacity: 0;
 }
 .assetThumb:hover .atDel { opacity: 1; }
@@ -554,7 +653,7 @@ kbd {
 }
 .ctrlChip {
   position: relative; display: flex; align-items: center; gap: 4px;
-  padding: 4px 5px; border-radius: 5px; cursor: grab;
+  padding: 4px 5px; border-radius: var(--r-md); cursor: grab;
   background: var(--surface2); border: 1px solid transparent; font-size: 11px;
 }
 .ctrlChip:hover { border-color: var(--accent); }
@@ -575,7 +674,7 @@ kbd {
 }
 .modal.show { display: flex; }
 .modalBox {
-  background: var(--surface); border: 1px solid var(--divider); border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--divider); border-radius: var(--r-lg);
   width: min(880px, 94vw); max-height: 90vh; display: flex; flex-direction: column;
   box-shadow: 0 18px 60px rgba(0, 0, 0, .6);
 }
@@ -589,13 +688,13 @@ kbd {
   border-top: 1px solid var(--divider);
 }
 .ceLeft { display: flex; flex-direction: column; gap: 6px; }
-.ceLeft canvas { width: 100%; height: auto; border-radius: 6px; border: 1px solid var(--divider); }
+.ceLeft canvas { width: 100%; height: auto; border-radius: var(--r-md); border: 1px solid var(--divider); }
 .ceRight { overflow-y: auto; min-height: 0; max-height: 62vh; }
 
 /* 素材库里的"控件"区 */
 .ctrlItem {
   display: flex; align-items: center; gap: 6px; padding: 4px 6px;
-  border-radius: 4px; cursor: grab; font-size: 12px;
+  border-radius: var(--r-sm); cursor: grab; font-size: 12px;
 }
 .ctrlItem:hover { background: var(--surface2); }
 .ctrlItem .cic { width: 16px; text-align: center; color: var(--accent); }
@@ -627,7 +726,7 @@ kbd {
 .ctrlCat:first-child { margin-top: 2px; }
 .ctrlCatN {
   font-weight: 400; font-size: 11px; color: #5f6e85;
-  background: #141a23; border-radius: 8px; padding: 0 6px;
+  background: #141a23; border-radius: var(--r-lg); padding: 0 6px;
 }
 
 /* 控件库的滚动上限（v2.23.0）：控件 112 个，不封顶会把素材网格整个挤出视口 */
@@ -643,7 +742,7 @@ kbd {
   width: 200px; height: 200px;
   display: none;
   flex-direction: column; align-items: center; justify-content: center;
-  background: #0b0f15; border: 1px solid #2a3547; border-radius: 8px;
+  background: #0b0f15; border: 1px solid #2a3547; border-radius: var(--r-lg);
   box-shadow: 0 8px 28px rgba(0, 0, 0, .6);
   pointer-events: none;   /* 不挡鼠标，否则会闪 */
   padding: 6px; box-sizing: border-box;
@@ -702,11 +801,11 @@ kbd {
 
 /* 素材的「改分类」下拉（v2.29.0）—— 缩略图很小，做紧凑一点 */
 .atKind { width: 100%; margin-top: 2px; font-size: 10px; padding: 0 2px;
-  background: #141a23; color: #8fa0b8; border: 1px solid #2a3547; border-radius: 3px; }
+  background: #141a23; color: #8fa0b8; border: 1px solid #2a3547; border-radius: var(--r-sm); }
 
 /* 主题配色编辑器（v2.31.0） */
 .tcDlg { background: #0b0f15; color: #cfe0ee; border: 1px solid #2a3547;
-  border-radius: 10px; padding: 14px 16px; max-width: 560px; width: 90vw; }
+  border-radius: var(--r-lg); padding: 14px 16px; max-width: 560px; width: 90vw; }
 .tcDlg::backdrop { background: rgba(0,0,0,.55); }
 .tcTitle { display: flex; justify-content: space-between; align-items: center;
   font-weight: 600; margin-bottom: 10px; }
@@ -715,6 +814,19 @@ kbd {
 .tcRow { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .tcRow label { width: 62px; color: #8fa0b8; }
 .tcRow input[type=color] { width: 34px; height: 22px; padding: 0; border: 1px solid #2a3547;
-  border-radius: 3px; background: none; cursor: pointer; }
+  border-radius: var(--r-sm); background: none; cursor: pointer; }
 .tcVal { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: #5f6e85; }
 .tcFoot { margin-top: 12px; text-align: right; }
+
+/* 界面设置对话框（v2.54.0） */
+.setDlg { background: #0b0f15; color: #cfe0ee; border: 1px solid #2a3547;
+  border-radius: var(--r-lg); padding: 14px 16px; max-width: 420px; width: 90vw; }
+.setDlg::backdrop { background: rgba(0,0,0,.55); }
+.setTitle { display: flex; justify-content: space-between; align-items: center;
+  font-weight: 600; margin-bottom: 10px; }
+.setRow { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 12px; }
+.setRow > label { flex: 0 0 88px; color: #9aa8bc; }
+.setPresets { display: flex; gap: 6px; }
+.setPresets button { flex: 1 1 auto; height: 26px; box-sizing: border-box; font-size: 12px; }
+.setFoot { margin-top: 12px; text-align: right; }
+.setHint { color: #5f6e85; font-size: 11px; margin-top: 8px; line-height: 1.6; }

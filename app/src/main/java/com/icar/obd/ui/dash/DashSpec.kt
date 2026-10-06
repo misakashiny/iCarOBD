@@ -33,4 +33,26 @@ object DashSpec {
         PERF -> DashLayout.perf()
         else -> Store.customGauges.toList()
     }
+
+    /**
+     * 这次渲染该不该用**导入的设计文件**（v2 节点树）？
+     *
+     * ## 为什么抽成纯函数
+     *
+     * 这条规则错过一次，而且错得很难查（v1.17.7）：
+     * 原来 `designJson` **无条件优先**，于是导入过一次设计文件之后，
+     * 「普通 / 性能」也被它劫持 —— 用户切页签**看不到任何变化**，
+     * 报的是"普通性能自定义都不显示表盘"。
+     *
+     * 实测根因：一份上一轮设备测试残留的 v2 设计（2 个节点）
+     * 压住了套用预设写进 `customGauges` 的 8 个表。
+     *
+     * 正确语义：**只有「自定义」页签才可能用设计文件** ——
+     * 普通 / 性能是内置布局，它们跟"导入过什么"无关。
+     *
+     * 抽出来是为了能单测：`render()` 在 Fragment 里，测不了；
+     * 而"哪一层优先"恰恰是**最该钉住**的部分。
+     */
+    fun useDesignFile(type: Int, designJson: String): Boolean =
+        type == CUSTOM && designJson.isNotBlank()
 }

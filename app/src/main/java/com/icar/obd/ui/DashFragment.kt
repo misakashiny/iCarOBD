@@ -365,10 +365,17 @@ class DashFragment : Fragment(), com.icar.obd.obd.ObdController.Listener {
             return
         }
         applyBackground(theme)
-        // v2 优先：导入过设计文件就按**节点树**渲染 —— 图片/分组/文字/旋转/图层/缩放模式才生效。
-        // 没有就回落到 v1 的扁平仪表路径（行为与以前完全一致）。
+        // v2 节点树：**只在「自定义」页签生效**（v1.17.7 修）。
+        //
+        // 原来它是**无条件优先**的 —— 于是导入过一次设计文件之后，
+        // 「普通 / 性能」也被它劫持，用户切页签**看不到任何变化**。
+        //
+        // 实测（2026-10-06，用户报"普通性能自定义都不显示表盘"）：
+        // 一份上一轮设备测试残留的 v2 设计（2 个节点）压住了套用预设写进去的 8 个表。
+        //
+        // 语义应该是：普通 / 性能 = 内置布局；自定义 = 设计文件（有）或 customGauges（无）。
         val dj = Store.settings.designJson
-        val design = if (dj.isNotBlank())
+        val design = if (DashSpec.useDesignFile(dashType, dj))
             runCatching { com.icar.obd.data.DesignFile.parse(dj) }.getOrNull()?.design else null
         if (design != null) {
             // 多页面：按设置里选的那一页取节点。**越界夹到最后一页** ——
@@ -493,6 +500,10 @@ AppLog.d(
             else "背景铺法：${com.icar.obd.data.DesignFile.fitName(Store.settings.bgFit)}",
             "导入设计文件…（PC 主题工具产出）",
             "导出当前布局为设计文件…",
+            // 出口：导进去之后**原来没有任何办法撤销**（只能再导一份覆盖），
+            // 而 v2 设计文件在「自定义」层优先级最高 —— 留着它会一直压住预设（v1.17.7 实测）
+            if (Store.settings.designJson.isBlank()) "清除导入的设计文件（当前没有）"
+            else "清除导入的设计文件",
         ) + (
             // 「选择页面」**只在多页设计时出现**，而且是加在**末尾** ——
             // 上面的项是按索引匹配的（themes.size + N），插在中间会全错位。
@@ -502,6 +513,14 @@ AppLog.d(
                 listOf("选择页面：" + pg[i].name + "（" + (i + 1) + "/" + pg.size + "）")
             } else emptyList()
         )
+        // 「选择页面」的**显式索引**（v1.17.7 改）。
+        //
+        // 原来这里用 `labels.size - 1` 反推，理由是"它是条件添加的最后一项"——
+        // 但那假设了**它是唯一的条件尾项**：一旦在它之后再补一个动作项，
+        // 索引就会被这一支抢走，而那一支在单页设计时**什么都不做**，
+        // 表现为"点了没反应"（静默失效，最难查）。
+        // 现在把 extras 的数量算进来，加项不会再错位。
+        val pageIdx = if (designPages().size > 1) themes.size + extras.size else -1
         val labels = themes.map {
             "${it.title}${if (it.custom) "（自建）" else ""}\n${it.description}"
         } + extras
@@ -546,13 +565,10 @@ AppLog.d(
                         dialog.dismiss()
                         showBgFitPicker()
                     }
-                    // 「选择页面」永远是**最后一项**。因为它是条件添加的，
-                    // 所以用 labels.size - 1 反推，比硬编码索引稳。
-                    labels.size - 1 -> {
-                        if (designPages().size > 1) {
-                            dialog.dismiss()
-                            showPagePicker()
-                        }
+                    // 「选择页面」：只在多页设计时存在，索引由 pageIdx 显式给出
+                    pageIdx -> {
+                        dialog.dismiss()
+                        showPagePicker()
                     }
                     themes.size + 6 -> {
                         dialog.dismiss()
@@ -561,6 +577,10 @@ AppLog.d(
                     themes.size + 7 -> {
                         dialog.dismiss()
                         exportDesign()
+                    }
+                    themes.size + 8 -> {
+                        dialog.dismiss()
+                        clearDesignFile()
                     }
                     else -> {
                         Store.settings.gaugeTheme = themes[which].id
@@ -699,12 +719,60 @@ AppLog.d(
     }
 
     /**
+     * 清除**导入的设计文件**，回到「预设 / 手改的扁平表」。
+     *
+     * ## 为什么必须有这个出口
+     *
+     * 导进去之后**原来没有任何办法撤销** —— 只能再导一份覆盖。
+     * 而 v2 设计文件在「自定义」层优先级最高：留着它就会一直压住预设，
+     * 表现为"套了预设但什么都没变"（v1.17.7 实测：一份残留的测试设计挡住 8 个表）。
+     *
+     * 清除后 `render()` 会回落到 `Store.customGauges`（v1 扁平表）。
+     */
+    private fun clearDesignFile() {
+        if (Store.settings.designJson.isBlank()) {
+            com.icar.obd.obd.ObdController.toast("当前没有导入的设计文件")
+            return
+        }
+        Store.settings.designJson = ""
+        // 页面索引跟着失效（扁平表没有多页面），夹回第一页
+        Store.settings.dashPageIndex = 0
+        Store.saveSettings()
+        render()
+        com.icar.obd.obd.ObdController.toast("已清除导入的设计文件")
+        AppLog.i(
+            AppLog.M_UI, "已清除设计文件",
+            "回到 customGauges（count=${Store.customGauges.size}）"
+        )
+    }
+
+    /**
      * 应用预设 = 覆盖「自定义」仪表盘的内容。
      *
      * 之所以顺手切到「自定义」页签：预设改的是 [Store.customGauges]，
      * 停在「普通/性能」页签上会看不到任何变化，容易被当成没生效。
+     *
+     * ⚠️ **同时必须清掉导入的设计文件**（v1.17.7 修）：预设产出的是 v1 扁平表，
+     * 而 v2 的 `designJson` 在「自定义」这一层**优先级更高** ——
+     * 不清掉的话"应用预设"**完全没有可见效果**。
+     *
+     * 实测（2026-10-06）：一份残留的测试设计把 8 个表全挡住了，
+     * 用户看到的是"套了预设但什么都没变"。
+     *
+     * 两者是「自定义」这一层的**两个来源，互斥**：设计文件（v2 节点树）
+     * 或 预设/手改的扁平表（v1）。同时存在必然有一个白写。
      */
     private fun applyPreset(preset: DashLayout.Preset) {
+        val hadDesign = Store.settings.designJson.isNotBlank()
+        if (hadDesign) {
+            Store.settings.designJson = ""
+            // 页面索引跟着失效（新布局的页数通常不同），夹回第一页
+            Store.settings.dashPageIndex = 0
+            AppLog.i(
+                AppLog.M_UI, "应用预设：已清除导入的设计文件",
+                "原因=预设写的是 v1 扁平表，会被 v2 节点树压过（两者互斥）"
+            )
+        }
         Store.customGauges.clear()
         Store.customGauges.addAll(preset.build())
         Store.saveDash()
@@ -715,7 +783,10 @@ AppLog.d(
         toggle.check(R.id.btnDashCustom)
         btnEdit.visibility = View.VISIBLE
         render()
-        com.icar.obd.obd.ObdController.toast("已应用预设：${preset.title}")
+        com.icar.obd.obd.ObdController.toast(
+            if (hadDesign) "已应用预设：${preset.title}（并清除导入的设计文件）"
+            else "已应用预设：${preset.title}"
+        )
         AppLog.i(AppLog.M_UI, "应用预设布局", "id=${preset.id} count=${Store.customGauges.size}")
     }
 

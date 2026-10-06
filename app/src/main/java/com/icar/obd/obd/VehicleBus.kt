@@ -1,6 +1,7 @@
 package com.icar.obd.obd
 
 import com.icar.obd.data.PidValue
+import com.icar.obd.data.Store
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -125,19 +126,85 @@ object VehicleBus {
             if (map != null && baro != null) {
                 put(PidValue("calc_boost", map - baro, "calc", now, true))
             }
+
+            // 续航里程 = 油量% × 油箱容量 ÷ 平均油耗 × 100
+            //
+            // ⚠️ **三个前提缺一不可**：油量（`std_2F`，部分车不支持）、
+            // 油箱容量（用户设置）、平均油耗（要跑够 0.5km 才有）。
+            // 缺任何一个都**不出值** —— 猜一个会让续航"看起来像真的但差很多"，
+            // 比仪表显示 `--` 更糟（用户会按它规划加油）。
+            val fuelPct = value("std_2F")
+            val avgL100 = value("calc_avg_l100")
+            val tank = Store.settings.tankCapacityL
+            if (fuelPct != null && avgL100 != null && avgL100 > 0.1f && tank > 0f) {
+                val liters = fuelPct.coerceIn(0f, 100f) / 100f * tank
+                put(
+                    PidValue(
+                        "calc_range",
+                        (liters / avgL100 * 100f).coerceIn(0f, 1200f),
+                        "calc", now, true
+                    )
+                )
+            }
         }
 
-        /** 里程积分（km），由车速积分得到，引擎每轮调用一次 */
+        /**
+         * 行程积分：里程（车速积分）+ **平均油耗**（油量积分 ÷ 里程）。引擎每轮调用一次。
+         *
+         * ## 为什么平均油耗放在这里而不是 [computeAll]
+         *
+         * 它需要 `dt` 才能把「L/h」积成「L」，而 `computeAll` 没有 dt（它算的是瞬时量）。
+         * 放在同一个 `dt` 里也让**里程与油量的时间基准一致** ——
+         * 两边用不同的 dt，平均油耗会慢慢漂。
+         */
         fun integrateDistance(dtSeconds: Float, put: (PidValue) -> Unit) {
             val speed = value("std_0D") ?: return
             var km = accKm
             if (speed in 0.5f..400f) km += speed * dtSeconds / 3600f
             accKm = km
-            put(PidValue("calc_km", km, "calc", System.currentTimeMillis(), true))
+            val now = System.currentTimeMillis()
+            put(PidValue("calc_km", km, "calc", now, true))
+
+            // 油量积分：L/h × 小时 = L。`calc_lh` 要么来自 015E，要么由 MAF 推算
+            value("calc_lh")?.let { lh ->
+                if (lh in 0f..100f) accLiters += lh * dtSeconds / 3600f
+            }
+
+            // ⚠️ **里程太短时不出值**：0.2km 上用了 0.05L 会算出 25L/100km 这种噪声，
+            // 一上路就显示"25 个油"比先显示 `--` 更糟。
+            if (km >= MIN_AVG_KM) {
+                put(
+                    PidValue(
+                        "calc_avg_l100",
+                        (accLiters / km * 100f).coerceIn(0f, 99f),
+                        "calc", now, true
+                    )
+                )
+            }
         }
 
+        /** 累计里程（km）—— 同时就是「本次行程」的里程 */
         @Volatile
         var accKm: Float = 0f
             private set
+
+        /** 累计用油（L）。与 [accKm] 同一时间基准 */
+        @Volatile
+        var accLiters: Float = 0f
+            private set
+
+        /**
+         * 清零行程累计（里程 + 用油）。
+         *
+         * 两者**必须一起清** —— 只清里程会让平均油耗瞬间跳到天上
+         * （分子还是老的累计油量，分母变 0）。
+         */
+        fun resetTrip() {
+            accKm = 0f
+            accLiters = 0f
+        }
+
+        /** 平均油耗至少要有这么长的里程才出值（避免短里程噪声） */
+        private const val MIN_AVG_KM = 0.5f
     }
 }

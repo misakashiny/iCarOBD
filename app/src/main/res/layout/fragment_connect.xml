@@ -270,6 +270,29 @@
                 android:textColor="@color/text_primary"
                 android:textSize="13sp" />
 
+            <!-- 续航里程 = 油量% × 油箱容量 ÷ 平均油耗 × 100。
+                 容量是**车自己的参数**，只能问用户，猜不出来。 -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="油箱容量（L）—— 用于「续航里程」"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+
+            <EditText
+                android:id="@+id/etTankCapacity"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:background="@drawable/bg_input"
+                android:hint="50"
+                android:inputType="numberDecimal"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:textColor="@color/text_primary"
+                android:textSize="13sp" />
+
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -315,20 +338,6 @@
                     android:text="模拟信号"
                     android:textSize="12sp" />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnCanSniffer"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="4dp"
-                    android:layout_weight="1"
-                    android:insetTop="0dp"
-                    android:insetBottom="0dp"
-                    android:minWidth="0dp"
-                    android:paddingStart="4dp"
-                    android:paddingEnd="4dp"
-                    android:text="CAN 探测"
-                    android:textSize="12sp" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnBench"

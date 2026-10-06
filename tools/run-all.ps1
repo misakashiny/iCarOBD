@@ -58,8 +58,12 @@
 param(
     [switch]$SkipBrowser,
     [switch]$SkipKotlin,
-    [int]$KotlinTimeout = 420,
-    [int]$BrowserTimeout = 600
+    # v2.73.0 修好 Gradle 卡死（`--no-daemon`）之后实测：
+    #   Kotlin ~16 秒（冷启 37 秒）、浏览器 ~60 秒。
+    # 原来的 420/600 是"Gradle 会卡死"那个时代的产物 —— 真卡住时白等 10 分钟。
+    # 240 仍有 4~6 倍余量，真卡死照样报得出来。
+    [int]$KotlinTimeout = 240,
+    [int]$BrowserTimeout = 240
 )
 
 $ErrorActionPreference = 'Stop'

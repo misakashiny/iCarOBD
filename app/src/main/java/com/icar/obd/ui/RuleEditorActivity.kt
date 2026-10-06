@@ -122,6 +122,7 @@ class RuleEditorActivity : AppCompatActivity() {
         val spOp = row.findViewById<Spinner>(R.id.spOp)
         val etThreshold = row.findViewById<EditText>(R.id.etThreshold)
         val btnRemove = row.findViewById<MaterialButton>(R.id.btnRemove)
+        val btnPreview = row.findViewById<MaterialButton>(R.id.btnPreview)
 
         val labels = pidList.map { "${it.name}  [${it.requestString()}]" }
         spSource.adapter = ArrayAdapter(
@@ -159,7 +160,9 @@ class RuleEditorActivity : AppCompatActivity() {
         val spType = row.findViewById<Spinner>(R.id.spType)
         val etP1 = row.findViewById<EditText>(R.id.etP1)
         val etP2 = row.findViewById<EditText>(R.id.etP2)
+        val etP3 = row.findViewById<EditText>(R.id.etP3)
         val btnRemove = row.findViewById<MaterialButton>(R.id.btnRemove)
+        val btnPreview = row.findViewById<MaterialButton>(R.id.btnPreview)
 
         spType.adapter = ArrayAdapter(
             this, android.R.layout.simple_spinner_dropdown_item,
@@ -169,11 +172,12 @@ class RuleEditorActivity : AppCompatActivity() {
         if (tIdx >= 0) spType.setSelection(tIdx)
         etP1.setText(a.p1)
         etP2.setText(a.p2)
-        updateActionHints(spType.selectedItemPosition, etP1, etP2)
+        etP3.setText(a.p3)
+        updateActionHints(spType.selectedItemPosition, etP1, etP2, etP3, btnPreview)
 
         spType.setOnItemSelectedListener(object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: android.widget.AdapterView<*>?, v: android.view.View?, pos: Int, id: Long) {
-                updateActionHints(pos, etP1, etP2)
+                updateActionHints(pos, etP1, etP2, etP3, btnPreview)
                 updatePreview()
             }
             override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
@@ -182,32 +186,55 @@ class RuleEditorActivity : AppCompatActivity() {
             actionContainer.removeView(row)
             updatePreview()
         }
+        // 试听：**不必先保存规则**，按当前的三个参数立刻播一次（含速率与音量）
+        btnPreview.setOnClickListener {
+            ObdController.previewSound(
+                etP1.text.toString(),
+                volume = etP3.text.toString().toFloatOrNull() ?: 1f,
+                rate = etP2.text.toString().toFloatOrNull() ?: 1f
+            )
+        }
         etP1.addTextChangedListener(SimpleWatcher { updatePreview() })
         etP2.addTextChangedListener(SimpleWatcher { updatePreview() })
+        etP3.addTextChangedListener(SimpleWatcher { updatePreview() })
 
         actionContainer.addView(row)
         updatePreview()
     }
 
-    private fun updateActionHints(pos: Int, p1: EditText, p2: EditText) {
+    private fun updateActionHints(
+        pos: Int,
+        p1: EditText,
+        p2: EditText,
+        p3: EditText,
+        preview: MaterialButton
+    ) {
+        // ♪ 只在"播放音效"时有意义
+        preview.visibility =
+            if (actionTypes.getOrNull(pos)?.first == "sound") android.view.View.VISIBLE
+            else android.view.View.GONE
         when (actionTypes.getOrNull(pos)?.first) {
             "sound" -> {
                 p1.hint = "音效名：tick_left/tick_right/warn/beep"
-                p2.hint = "(不用)"
+                p2.hint = "速率 0.5~2"
+                p3.hint = "音量 0~1"
                 if (p1.text.isBlank()) p1.setText("warn")
             }
             "toast", "log", "notify" -> {
                 p1.hint = "文本内容"
                 p2.hint = "(不用)"
+                p3.hint = "(不用)"
             }
             "gauge" -> {
                 p1.hint = "PID id（空=条件源）"
                 p2.hint = "颜色 red/green/yellow/blue"
+                p3.hint = "(不用)"
                 if (p2.text.isBlank()) p2.setText("red")
             }
             "vibrate" -> {
                 p1.hint = "时长 ms"
                 p2.hint = "(不用)"
+                p3.hint = "(不用)"
                 if (p1.text.isBlank()) p1.setText("300")
             }
         }
@@ -242,10 +269,11 @@ class RuleEditorActivity : AppCompatActivity() {
             val spType = row.findViewById<Spinner>(R.id.spType)
             val p1 = row.findViewById<EditText>(R.id.etP1).text.toString()
             val p2 = row.findViewById<EditText>(R.id.etP2).text.toString()
+            val p3 = row.findViewById<EditText>(R.id.etP3).text.toString()
             out.add(
                 RuleAction(
                     type = actionTypes.getOrNull(spType.selectedItemPosition)?.first ?: "toast",
-                    p1 = p1, p2 = p2
+                    p1 = p1, p2 = p2, p3 = p3
                 )
             )
         }

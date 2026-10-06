@@ -112,6 +112,70 @@ foreach ($f in $psFiles) {
     try { $hasCjk = ([System.IO.File]::ReadAllText($f.FullName) -match '[\u4e00-\u9fff]') } catch {}
     if ($hasCjk -and -not $hasBom) { Fail "$($f.Name) 含中文但没有 UTF-8 BOM —— PowerShell 5.1 会按 GBK 解码报假语法错误" }
 }
+# ---- canvas.js 里的裸色值（v2.59.0）
+#
+# 为什么：工具的界面配色分两层（大纲 §2.66）：
+#   · **设计内容层**（仪表弧、刻度、指针、文字、画布底色）→ 要跟设计主题走
+#   · **工具 UI 层**（选中框、手柄、序号、框选、参考线）→ 固定色，**不该跟主题**
+#
+# 所以"canvas.js 里有裸色值"本身不是错，**落在哪一层**才是关键。
+#
+# ⚠️ **过滤逻辑在探针那一侧（Node），不在这里。**
+# 试过在 PowerShell 里 Where-Object 过滤，踩了两个坑：
+#   1. 嵌套 Where-Object 里的 $_ 会**遮蔽**外层的 $_
+#   2. PS 5.1 的 ConvertFrom-Json 对顶层数组有怪癖 ——
+#      实测"15 条被当成 1 条"（.fn 变成了数组）
+# 所以这里只做一件事：**看探针最后一行是不是 []**。
+#
+$colorProbe = Join-Path $PSScriptRoot "guard-color-probe.js"
+if (Test-Path $colorProbe) {
+  $colorOut = & node $colorProbe 2>$null
+  $colorSummary = ($colorOut | Select-Object -First 1)
+  $colorLast = ($colorOut | Select-Object -Last 1)
+  if ($colorLast -eq "[]") {
+    Pass "canvas.js 裸色值都在白名单里（$colorSummary）"
+  } elseif ($colorLast) {
+    Fail "canvas.js 有裸色值不在白名单：$colorLast"
+  } else {
+    Write-Host "  (跳过裸色值检查 —— 探针没输出)" -ForegroundColor DarkGray
+  }
+} else {
+  Write-Host "  (跳过裸色值检查 —— 找不到 guard-color-probe.js)" -ForegroundColor DarkGray
+}
+
+# ---- 控件绑的 PID 是否真实存在（v2.61.0）
+#
+# 为什么：所有仪表控件的 make() 都是
+#   const info = window.BUILTIN_PIDS[window.resolvePid(d.pid)] || {};
+#   min: info.min !== undefined ? info.min : 0,
+#   max: info.max !== undefined ? info.max : 100,
+# **查不到就用 0~100 兜底** —— 没有报错、没有警告，
+# 控件能加能拖能显示，只是**语义完全不对**。
+#
+# 实测（v2.61.0 首次跑）：40 个绑 PID 的控件里 **28 个绑的是不存在的 PID**。
+# 用户的第 ① 项（G力值 → obd.gforce）和第 ③ 项（挡位 → obd.gear）
+# **都是这个根因**。
+#
+# ⚠️ **当前按"警告"处理，不 Fail** —— 28 处是存量债务，
+# 一上来就 Fail 会让守卫长期是红的，反而没人看。
+# 等把这 28 个补完（或确认该删）之后，改成 Fail。
+#
+$pidProbe = Join-Path $PSScriptRoot "guard-pid-probe.js"
+if (Test-Path $pidProbe) {
+  $pidOut = & node $pidProbe 2>$null
+  $pidSummary = ($pidOut | Select-Object -First 1)
+  $pidLast = ($pidOut | Select-Object -Last 1)
+  if ($pidLast -eq "[]") {
+    Pass "控件绑的 PID 都存在（$pidSummary）"
+  } elseif ($pidLast) {
+    Warn "控件绑了不存在的 PID —— $pidSummary"
+  } else {
+    Write-Host "  (跳过 PID 检查 —— 探针没输出)" -ForegroundColor DarkGray
+  }
+} else {
+  Write-Host "  (跳过 PID 检查 —— 找不到 guard-pid-probe.js)" -ForegroundColor DarkGray
+}
+
 if ($fails.Count -eq 0) { Pass "$($psFiles.Count) 个 .ps1 文件编码都正常" }
 
 Write-Host "`n=== 4. 素材引用完整性 ===" -ForegroundColor Cyan

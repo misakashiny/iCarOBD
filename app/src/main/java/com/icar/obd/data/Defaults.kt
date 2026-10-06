@@ -17,15 +17,19 @@ object Defaults {
     fun defaultGauges(): List<GaugeItem> = DashLayout.normal()
 
     /**
-     * 默认规则。注意：转向灯相关规则依赖厂家 PID（tpl_left_turn / tpl_right_turn），
-     * 这两个 PID 默认是**关闭**的——因为标准 OBD 里没有转向灯，
-     * 必须先扫描出真实 PID 并在 PID 编辑器里验证后启用，规则才会生效。
+     * 默认规则。
+     *
+     * ⚠️ 转向灯那两条依赖 `mon_turn_left` / `mon_turn_right` —— 它们是**监听型** PID
+     * （`source = "monitor"`，读 CAN 广播帧 `0x09A`，见 `BuiltInPids`）。
+     * 2026-10-06 实车确认后，这两条已经**不再是占位模板**，默认就启用；
+     * 但它们的值只有到「CAN 探测」页**开启常驻监听**时才会更新
+     * （ELM327 半双工，`ATMA` 监听期间轮询必须让位）。
      */
     fun defaultRules(): List<Rule> = listOf(
         Rule(
             name = "左转向灯音效",
             logic = "AND",
-            conditions = mutableListOf(RuleCondition("tpl_left_turn", "==", 1f)),
+            conditions = mutableListOf(RuleCondition("mon_turn_left", "==", 1f)),
             durationMs = 0,
             // 500ms 冷却 = 条件持续成立时每 0.5 秒响一次，接近实车转向灯节奏
             cooldownMs = 450,
@@ -34,7 +38,7 @@ object Defaults {
         Rule(
             name = "右转向灯音效",
             logic = "AND",
-            conditions = mutableListOf(RuleCondition("tpl_right_turn", "==", 1f)),
+            conditions = mutableListOf(RuleCondition("mon_turn_right", "==", 1f)),
             durationMs = 0,
             cooldownMs = 450,
             actions = mutableListOf(RuleAction("sound", "tick_right"))

@@ -22,6 +22,16 @@ object Store {
         var keepScreenOn: Boolean = true,
         var lastDeviceAddress: String = "",
         var lastDeviceName: String = "",
+        /**
+         * **真的收到过车辆数据**（v1.19.2）。
+         *
+         * 用来把「开机自动连」限定在**确认能用过的设备**上 —— 只看 `lastDeviceAddress`
+         * 不够：那个字段在「点了连接但连不上 / 连上了却读不到数据」时也会被写进去，
+         * 于是下次开机会对着一个连不通的适配器反复尝试。
+         *
+         * 只在**第一次真的解析出数值**时置位（见 ObdController 里的 VehicleBus 监听）。
+         */
+        var everGotData: Boolean = false,
         var dashType: Int = 0,            // 0 普通 1 性能 2 自定义
         var gaugeTheme: Int = 0,          // 0 霓虹 1 冰川 2 经典
         var scanIntervalMs: Int = 150,    // 扫描器请求间隔（限流）
@@ -120,6 +130,24 @@ object Store {
          * 出问题时切回 0 就能确认是不是渲染层的问题。
          */
         var dashEngine: Int = 0,
+
+        /**
+         * **油箱容量（L）** —— 只用于「续航里程」派生通道（v1.17.5）。
+         *
+         * ```
+         * 续航 = 油量% × 油箱容量 ÷ 平均油耗(L/100km) × 100
+         * ```
+         *
+         * ## 为什么必须问用户
+         *
+         * OBD **读不到油箱容量** —— 它连"油量%"都只有部分车支持（`012F`），
+         * 容量更是纯车辆参数（阿特兹 2.0/2.5 是 62L，紧凑车 40~50L）。
+         * 猜一个数字会让续航**看起来像真的但差很多**，比不显示更糟。
+         *
+         * 默认 50L 只是"能算出个数"的起点，界面上明确标了要用户确认。
+         * 填 0 或负数 = **关闭续航**（通道不出值，仪表显示 `--`）。
+         */
+        var tankCapacityL: Float = 50f,
     )
 
     private lateinit var dir: File
@@ -163,6 +191,14 @@ object Store {
             val a = JSONArray(f("rules.json").takeIf { it.exists() }?.readText() ?: "[]")
             rules.clear()
             for (i in 0 until a.length()) rules.add(Rule.fromJson(a.getJSONObject(i)))
+            // v1.19.9 迁移：转向灯从占位模板 `tpl_left_turn`/`tpl_right_turn`
+            // 换成了实车确认的监听型 `mon_turn_left`/`mon_turn_right`
+            // （见 BuiltInPids 与 stage/oncar-evidence/turn-signal-09A.md）。
+            //
+            // ⚠️ 不迁的话，存量 `rules.json` 里那两条规则会指向一个**不存在的 id** ——
+            // 而 `RuleEngine` 拿不到值时是"条件不成立"，**不会报错、不会提示**，
+            // 表现为"转向灯拨了但就是不响"，极难查。改过才回写盘，避免每次启动都写。
+            if (migrateTurnRules()) saveRules()
         }
         runCatching {
             val o = JSONObject(f("dash.json").takeIf { it.exists() }?.readText() ?: "{}")
@@ -206,6 +242,7 @@ object Store {
             keepScreenOn = o.optBoolean("screenOn", true),
             lastDeviceAddress = o.optString("lastAddr"),
             lastDeviceName = o.optString("lastName"),
+            everGotData = o.optBoolean("everGotData", false),
             dashType = o.optInt("dashType", 0),
             gaugeTheme = o.optInt("gaugeTheme", 0),
             scanIntervalMs = o.optInt("scanInterval", 150),
@@ -237,6 +274,8 @@ object Store {
             //
             // 等 LVGL 代码真正删掉之后，这个字段本身也该一起去掉。
             dashEngine = 0,
+            // 油箱容量（L）：续航里程派生用。旧文件没有这个字段 → 50L 兜底
+            tankCapacityL = o.optDouble("tankCapacityL", 50.0).toFloat(),
         )
     }
 
@@ -248,6 +287,28 @@ object Store {
         f("enabled.json").writeText(JSONObject().apply { enabledOverride.forEach { put(it.key, it.value) } }.toString(2))
     }
 
+    /**
+     * v1.19.9 的一次性迁移：转向灯规则的数据源改名。
+     *
+     * `tpl_left_turn` -> `mon_turn_left`，`tpl_right_turn` -> `mon_turn_right`。
+     * 名字换了是因为它们**不再是"厂家模板占位示例"**：2026-10-06 实车确认了
+     * CAN `0x09A` 的 bit2/bit3，已改成 `source = "monitor"` 的监听型 PID。
+     *
+     * @return 是否真的改过（只有改过才需要回写 `rules.json`）
+     */
+    private fun migrateTurnRules(): Boolean {
+        val map = mapOf("tpl_left_turn" to "mon_turn_left", "tpl_right_turn" to "mon_turn_right")
+        var changed = false
+        for (r in rules) {
+            for (c in r.conditions) {
+                val to = map[c.sourceId] ?: continue
+                AppLog.w(AppLog.M_SYS, "规则迁移(转向灯)", "${r.name}: ${c.sourceId} -> $to")
+                c.sourceId = to
+                changed = true
+            }
+        }
+        return changed
+    }
     fun saveRules() = runCatching {
         f("rules.json").writeText(JSONArray().apply { rules.forEach { put(it.toJson()) } }.toString(2))
     }
@@ -268,6 +329,7 @@ object Store {
         put("screenOn", settings.keepScreenOn)
         put("lastAddr", settings.lastDeviceAddress)
         put("lastName", settings.lastDeviceName)
+        put("everGotData", settings.everGotData)
         put("dashType", settings.dashType)
         put("gaugeTheme", settings.gaugeTheme)
         put("scanInterval", settings.scanIntervalMs)
@@ -292,6 +354,7 @@ object Store {
         put("dashPageIndex", settings.dashPageIndex)
         put("bgFit", settings.bgFit)
         put("dashEngine", settings.dashEngine)
+        put("tankCapacityL", settings.tankCapacityL.toDouble())
     }
 
     fun saveSettings() = runCatching {

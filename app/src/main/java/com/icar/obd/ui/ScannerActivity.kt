@@ -9,6 +9,7 @@ import android.widget.ProgressBar
 import android.widget.Spinner
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -24,6 +25,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * PID 扫描器界面。
@@ -51,6 +56,7 @@ class ScannerActivity : AppCompatActivity() {
     private lateinit var swConfirm: MaterialSwitch
     private lateinit var btnStart: MaterialButton
     private lateinit var btnStop: MaterialButton
+    private lateinit var btnExport: MaterialButton
     private lateinit var progress: ProgressBar
     private lateinit var tvProgress: TextView
     private lateinit var tvLog: TextView
@@ -69,6 +75,17 @@ class ScannerActivity : AppCompatActivity() {
     )
 
     private val logLines = ArrayList<String>()
+
+    /**
+     * 本次扫描的命中（**独立于 RecyclerView 的 adapter**）。
+     *
+     * 导出要的是"完整的一次扫描记录"，而 adapter 是给列表渲染用的 ——
+     * 两者生命周期不同（比如以后加了过滤/排序，adapter 就不再等于全部命中）。
+     */
+    private val allHits = ArrayList<PidScanner.Hit>()
+
+    /** 导出文件名里带参数，方便事后分辨哪次扫描是哪次 */
+    private var lastCfg: PidScanner.Config? = null
     private var running = false
     private var lastAppliedMode: String? = null
 
@@ -89,6 +106,7 @@ class ScannerActivity : AppCompatActivity() {
         swConfirm = findViewById(R.id.swConfirm)
         btnStart = findViewById(R.id.btnStart)
         btnStop = findViewById(R.id.btnStop)
+        btnExport = findViewById(R.id.btnExport)
         progress = findViewById(R.id.progress)
         tvProgress = findViewById(R.id.tvProgress)
         tvLog = findViewById(R.id.tvLog)
@@ -109,6 +127,7 @@ class ScannerActivity : AppCompatActivity() {
 
         btnStart.setOnClickListener { startScan() }
         btnStop.setOnClickListener { stopScan() }
+        btnExport.setOnClickListener { exportResults() }
 
         applyModeDefaults()
         appendLog("就绪。扫描前请确认车辆处于安全状态。")
@@ -126,7 +145,11 @@ class ScannerActivity : AppCompatActivity() {
 
         when (mode) {
             "01" -> {
-                etFrom.setText("00"); etTo.setText("60")
+                // ⚠️ 上界必须是 **C0**，不是 60（v1.18.0 修）。
+                // 位图链现在会走到 `01 C0`，但候选还要过一道 `from..to` 过滤 ——
+                // 上界写 60 的话，**挡位 A4 / 总里程 A6 会被这一道筛掉**，
+                // 等于白枚举。两个地方必须一起放宽。
+                etFrom.setText("00"); etTo.setText("C0")
                 etBlacklist.setText("01:02,01:03,01:07,01:0A")
             }
             "09" -> {
@@ -183,10 +206,13 @@ class ScannerActivity : AppCompatActivity() {
         )
 
         adapter.clear()
+        allHits.clear()
+        lastCfg = cfg
         progress.progress = 0
         running = true
         btnStart.isEnabled = false
         btnStop.isEnabled = true
+        btnExport.isEnabled = false
 
         val est = ((to - from + 1) * cfg.intervalMs / 1000.0)
         appendLog("开始扫描 Mode $mode ${hex(from, width)}~${hex(to, width)}，预计约 ${"%.0f".format(est)} 秒")
@@ -201,6 +227,9 @@ class ScannerActivity : AppCompatActivity() {
                             tvProgress.text = "进度 $done / $total"
                             if (hit != null) {
                                 adapter.add(hit)
+                                allHits.add(hit)
+                                // 命中就能导出了 —— 不必等整轮扫完
+                                btnExport.isEnabled = true
                                 appendLog("命中 Mode ${hit.mode} PID ${hit.pid} → ${hit.dataHex}")
                             }
                         }
@@ -213,7 +242,11 @@ class ScannerActivity : AppCompatActivity() {
             progress.progress = 100
             result.onSuccess { hits ->
                 tvProgress.text = "完成：${hits.size} 条命中"
-                appendLog("扫描完成，命中 ${hits.size} 条。点击结果里的「存为PID」可带入编辑器。")
+                btnExport.isEnabled = allHits.isNotEmpty()
+                appendLog(
+                    "扫描完成，命中 ${hits.size} 条。" +
+                        "点击结果里的「存为PID」可带入编辑器，或点「导出结果」存成文件。"
+                )
             }.onFailure { t ->
                 tvProgress.text = "失败：${t.message}"
                 appendLog("扫描失败：${t.message}")
@@ -225,6 +258,49 @@ class ScannerActivity : AppCompatActivity() {
         if (!running) return
         ObdController.scanner.cancel()
         appendLog("已请求停止…")
+    }
+
+    /**
+     * 导出**本次扫描**：参数 + 命中明细 + 界面日志，写成一个自包含的文本文件并分享。
+     *
+     * ## 为什么要有这个按钮
+     *
+     * 命中**本来就已经写进 App 日志**（模块 `SCAN`），而「日志」页有导出 ——
+     * 所以严格说"能导出"。但那条路导的是**整份日志**（含所有模块、可能 2MB），
+     * 想拿"这次扫描的结果"得自己翻。这里给一份干净的、直接能用的。
+     *
+     * ## 为什么是纯文本而不是 JSON
+     *
+     * 目标是**给人看 / 给下一个智能体读**。命中就十几条，一眼看完比机器友好更重要；
+     * 真要结构化，`命中明细` 每条的字段都是固定顺序，好解析。
+     */
+    private fun exportResults() {
+        if (allHits.isEmpty()) {
+            ObdController.toast("还没有命中，先扫一轮")
+            return
+        }
+        val cfg = lastCfg
+        val ts = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+        // 报告拼装是**纯函数**（PidScanner.report），在这里只负责落盘 + 分享
+        val text = PidScanner.report(cfg, allHits, logLines, ts)
+
+        runCatching {
+            val dir = File(getExternalFilesDir(null), "export").apply { mkdirs() }
+            val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+            val f = File(dir, "scan-${cfg?.mode ?: "xx"}-$stamp.txt")
+            f.writeText(text)
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", f)
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(send, "导出扫描结果"))
+            ObdController.toast("已导出 ${f.name}（${f.length() / 1024} KB）")
+            AppLog.i(AppLog.M_UI, "扫描结果已导出", "${f.absolutePath} hits=${allHits.size}")
+        }.onFailure {
+            ObdController.toast("导出失败：${it.message}")
+        }
     }
 
     private fun saveHit(hit: PidScanner.Hit) {

@@ -238,11 +238,14 @@ data class DesignFile(
          * **每一个默认启用的内置 PID 都有别名** —— 由 `ThemeStudioSampleTest`
          * 的 `每个内置 PID 都有语义别名` 用例守着，漏一个就失败。
          *
-         * 刻意**不给** `MANUFACTURER_TEMPLATES`（`tpl_*`）别名：那 4 条是
-         * 占位示例（默认 `enabled=false`，PID 号是猜的）。给它们起个
-         * "好听的语义名"反而会让人以为可以直接用 —— 必须先用扫描器实测。
+         * 刻意**不给** `MANUFACTURER_TEMPLATES`（`tpl_*`）别名：那几条是
+         * 占位示例（PID 号是猜的）。给它们起个"好听的语义名"反而会让人
+         * 以为可以直接用 —— 必须先用扫描器实测。
          *
-         * ⚠️ **改这张表必须同时改 `tools/theme-studio/index.html` 的
+         * ⚠️ 转向灯**不再是** `tpl_*`：2026-10-06 实车确认后改成了监听型
+         * `mon_turn_left` / `mon_turn_right`，所以**必须有**别名。
+         *
+         * ⚠️ **改这张表必须同时改 `tools/theme-studio/js/schema.js` 的
          * `PID_ALIASES` 与 `BUILTIN_PIDS`**，否则 PC 端编辑器会给出误导性的警告。
          */
         val PID_ALIASES: Map<String, String> = mapOf(
@@ -267,6 +270,12 @@ data class DesignFile(
             "obd.run_time" to "std_1F",
             "obd.mil_distance" to "std_21",
             "obd.voltage" to "std_42",
+            // 故障灯（MIL）—— **标准 PID 01**，不需要扫描器实测。
+            // 控件 `lamp_engine`（发动机灯）绑的就是这个名字
+            "obd.engineFault" to "std_01",
+            // 总里程 —— **标准 PID A6**（J1979-2 的 A1~C0 段）。
+            // 控件 `g_odo` 绑的就是它；原来一直以为"要厂家 Mode 22"，其实不用
+            "obd.odo" to "std_A6",
             // ---- 派生（calc_*）：全部 7 条 ----
             "calc.l100" to "calc_l100",
             "calc.fuel_hourly" to "calc_lh",
@@ -275,7 +284,28 @@ data class DesignFile(
             "calc.gforce" to "calc_gforce",
             "calc.gx" to "calc_gx",
             "calc.gy" to "calc_gy",
-        )
+            // 平均油耗（累计用油 ÷ 累计里程）—— 纯本项目的派生，不用等车
+            "calc.avg_l100" to "calc_avg_l100",
+            // 续航里程 —— 需要「油箱容量」设置，但同样不用等车
+            "calc.range" to "calc_range",
+            // ---- 控件-facing 的别名（v2.62.0）
+            //
+            // ⚠️ 必须与 tools/theme-studio/js/schema.js 的 PID_ALIASES **逐条一致** ——
+            // verify-crosslang.js 会比对，漏改一边就红。
+            //
+            // 背景：控件模板用的是这套名字（obd.gforce），规范名是另一套（calc.gforce）。
+            // 查不到时 make() 会用 0~100 兜底，**静默退化成普通数字表**。
+            // 燃油压力（第 ⑨ 项新增）
+            "obd.fuelPressure" to "std_0A",
+            // 燃油轨压力（第 ⑨ 项新增）
+            "obd.railPressure" to "std_22",
+            // 氧传感器电压（第 ⑨ 项新增）
+            "obd.o2voltage" to "std_14",
+            // ---- 监听型（can_*）：2026-10-06 实车确认 ----
+            // CAN `0x09A` 第 3 字节 bit2 = 左转、bit3 = 右转。
+            // 它们**不是** `tpl_*` 占位模板（那类刻意不给别名），而是实测过的真信号。
+            "can.turn_left" to "mon_turn_left",
+            "can.turn_right" to "mon_turn_right",        )
 
         /**
          * 别名表**没覆盖到**的、默认启用的内置 PID。

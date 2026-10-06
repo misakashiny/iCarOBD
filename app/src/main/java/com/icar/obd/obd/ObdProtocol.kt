@@ -26,7 +26,24 @@ object ObdProtocol {
         add("ATH0")      // 关闭 CAN 头显示（减少数据量，解析仍兼容带头的响应）
         add("ATAT1")     // 自适应定时
         if (protocol > 0) add("ATSP$protocol") else add("ATSP0") // 0=自动
-        add("ATCAF0")    // 关闭 CAN 自动格式化（保留原始字节，便于自定义 PID）
+        // ⚠️ **不要在这里加 `ATCAF0`** —— 2026-10-05 的实车日志推翻了这个做法。
+        //
+        // `ATCAF0` 关掉 CAN 自动格式化后，ELM327 **发出的请求也不再补 PCI 字节**：
+        // `01 11` 这种正常请求在 ECU 看来是**畸形帧**，回 NRC 0x13
+        // （incorrectMessageLengthOrInvalidFormat）或干脆 NO DATA。
+        //
+        // 实车证据（IOS-Vlink + ELM327 v2.3，App v1.15.0）：
+        // - 带 ATCAF0 的会话：`01 11` → `03 7F 11 13`，**70 秒 100% 失败**，
+        //   所有 PID 进 30 秒冷却，总线负载保护把轮询降频到 3.375x
+        // - CAF 保持默认（开）的会话：同一个 `01 11` → `41 11 28`，
+        //   **立刻拿到真实数值**（水温 92℃ / 电压 14.4V / 负荷 23% / 节气门 15.7%）
+        //
+        // 复位（ATZ）后 ELM327 的默认值本来就是 CAF1，所以**删掉这行即可**。
+        // 也不要改写成 `ATCAF1`：非 CAN 协议（ISO 9141 等）会回 `?`。
+        //
+        // 解析器**两种格式都兼容**（`matchData` 是扫描「响应模式 + PID」，
+        // 带不带 PCI 前缀都能认），所以不需要为了解析而保留 CAF0。
+        // 这条由 `ObdProtocolTest.初始化不得关闭 CAN 自动格式化` 守着。
     }.map { "$it\r" }
 
     /** 常用协议编号（ATSP n） */
@@ -45,6 +62,27 @@ object ObdProtocol {
     )
 
     fun buildRequest(pid: PidDefinition): String = pid.requestString() + "\r"
+
+    /** 广播头。标准 OBD 查询走它（厂家数据才需要 `AT SH` 到具体模块） */
+    const val DEFAULT_HEADER = "7DF"
+
+    /**
+     * 目标模块头切换（`AT SH`）—— **需要切时才返回命令**，不需要返回 null。
+     *
+     * ## 为什么"切回"和"切过去"一样重要
+     *
+     * `AT SH` 是**粘性**的：设了 `7E0` 之后**后续所有请求**都发往发动机 ECU。
+     * 所以"上一条 PID 用了 `760`、这一条是标准 PID"时**必须显式切回广播**，
+     * 否则标准 PID 会被发到 ABS 模块 —— 现象是"这条读到别的模块的值"，
+     * **从数值上完全看不出**（这正是本项目最怕的那类 bug）。
+     *
+     * 抽成纯函数是为了**可测**：这里最容易错的就是"切过去发了、切回来忘了发"。
+     */
+    fun headerSwitch(current: String, wanted: String): String? {
+        val c = current.trim().uppercase().ifBlank { DEFAULT_HEADER }
+        val w = wanted.trim().uppercase().ifBlank { DEFAULT_HEADER }
+        return if (c == w) null else "ATSH$w\r"
+    }
 
     /** 把一行原始响应转成 hex 字节数组（已剔除噪声与错误行） */
     fun hexBytes(raw: String): List<Int> {
@@ -79,6 +117,94 @@ object ObdProtocol {
         var s = raw
         NOISE_TOKENS.forEach { s = s.replace(it, " ") }
         return s
+    }
+
+    /**
+     * `ATDPN` 的返回是否表示**协议已锁定**（自动协商已完成）。
+     *
+     * ## 为什么需要这个判据
+     *
+     * `ATSP0`（自动）下，**第一次真实请求才会触发协议搜索**。搜索期间适配器回
+     * `SEARCHING...`，此时若立刻开始轮询会**打断搜索**并拿到一串 `STOPPED` ——
+     * 2026-10-05 的实车日志正是这样（5 次 `STOPPED`）。
+     *
+     * ## 取值含义
+     *
+     * | `ATDPN` | 含义 | 锁定？ |
+     * |---|---|---|
+     * | `A0` | 自动协商，**协议还没定下来** | ❌ |
+     * | `A6` | 自动协商，已锁定到协议 6（ISO 15765 CAN 11/500） | ✅ |
+     * | `6` | 用户显式指定了协议 6 | ✅ |
+     *
+     * 抽成纯函数是为了**可测** —— 判据写错的表现是"连接后头几秒全是 STOPPED"，
+     * 那种现象在真机上很难归因。
+     */
+    fun protocolLocked(dpns: String): Boolean {
+        val s = dpns.trim().uppercase()
+        if (s.isEmpty() || isError(s)) return false
+        // `A0` = 自动但协议未定；`0` = 显式选了"自动"，同样等于未定
+        return s != "A0" && s != "0"
+    }
+
+    /**
+     * ISO 14229 的 NRC（否定响应码）说明。**查不到就给十六进制，不要编一个**。
+     *
+     * 为什么要这张表：ECU 说"不行"和"没人回答"是**完全不同的两件事**，
+     * 但在改之前它们都被归成 `无有效响应` —— 2026-10-05 的实车日志里
+     * 29 条否定响应全被吞掉，否则 `NRC 0x13` 当场就能定位到"请求畸形"。
+     */
+    private val NRC_NAMES = mapOf(
+        0x10 to "一般拒绝",
+        0x11 to "该服务不支持",
+        0x12 to "该子功能不支持",
+        0x13 to "报文长度或格式错误",
+        0x21 to "ECU 忙，稍后重试",
+        0x22 to "当前条件不满足",
+        0x24 to "请求序列错误",
+        0x31 to "请求超出范围",
+        0x33 to "安全访问被拒",
+        0x35 to "点火开关未打开",
+        0x78 to "响应挂起（ECU 还在处理）",
+        0x7E to "当前会话不支持该子功能",
+        0x7F to "当前会话不支持该服务"
+    )
+
+    /**
+     * 从响应里识别**否定响应** `7F <服务> <NRC>`，返回可读原因；没有就返回 null。
+     *
+     * ## 格式
+     *
+     * ISO 14229 的否定响应就是 3 个字节：`7F <请求的服务> <NRC>` ——
+     * **不回声 PID**。所以这里只能报"哪个服务被拒 + 什么原因"。
+     *
+     * ## 判据（为什么不会误报）
+     *
+     * 这个方法**只在 `extractData` 已经失败之后才被调用** ——
+     * 也就是说"这条响应里没有我们要的肯定响应"。此时串里的 `7F xx yy`
+     * 几乎只可能是否定响应。`NO DATA` / `CAN ERROR` 这类串里没有十六进制，
+     * 扫不出东西，仍然回落成 `无有效响应`。
+     *
+     * ⚠️ 实测有个反直觉的例子（2026-10-05）：请求 `01 11`，ECU 却回
+     * `7F 11 13` —— **服务字节是 0x11 而不是 0x01**。因为当时开了 `ATCAF0`，
+     * 发出的帧没有 PCI 字节，ECU 把第一个数据字节 `01` 当成了长度、
+     * 把 `11` 当成了服务。**这个"服务对不上"本身就是畸形请求的指纹**，
+     * 所以这里**如实报出 ECU 说的服务号**，不做纠正。
+     */
+    fun negativeReason(raw: String): String? {
+        val bytes = hexBytes(stripNoise(raw))
+        for (i in 0..(bytes.size - 3)) {
+            if (bytes[i] != 0x7F) continue
+            val svc = bytes[i + 1]
+            val nrc = bytes[i + 2]
+            if (svc == 0 || nrc == 0) continue
+            val name = NRC_NAMES[nrc]
+            return if (name != null) {
+                "ECU 拒绝 | 服务=0x%02X NRC=0x%02X %s".format(svc, nrc, name)
+            } else {
+                "ECU 拒绝 | 服务=0x%02X NRC=0x%02X（未知 NRC）".format(svc, nrc)
+            }
+        }
+        return null
     }
 
     /**
@@ -237,7 +363,12 @@ object ObdProtocol {
     /** 完整解析：响应 → 物理量 */
     fun parse(raw: String, pid: PidDefinition): ParseResult {
         val data = extractData(raw, pid.modeInt(), pid.pid, pid.ecuIndex)
-            ?: return ParseResult(false, null, ByteArray(0), raw.trim(), "无有效响应")
+            // 取不到肯定响应时，先问一句"ECU 是不是明确拒绝了？" ——
+            // "ECU 说不行"和"没人回答"必须能分开，否则排障只能靠猜
+            ?: return ParseResult(
+                false, null, ByteArray(0), raw.trim(),
+                negativeReason(raw) ?: "无有效响应"
+            )
         if (data.isEmpty()) return ParseResult(false, null, data, raw.trim(), "响应无数据字节")
         return try {
             val v = com.icar.obd.data.Formula.eval(pid.formula, data)

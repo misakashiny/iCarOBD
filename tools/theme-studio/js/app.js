@@ -358,6 +358,89 @@
    *   · 换主题时，只调过的那几个字段保留，其余跟着新主题走
    *   · 序列化时"内置主题打底 + 覆盖"，所以设计文件里始终是**完整**配色
    */
+  // ================================================================ 界面设置（v2.54.0）
+
+  const SET_KEY = "icar-studio-ui";
+
+  /** 界面设置的默认值。**只放"工具本身"的偏好，不放设计数据。** */
+  const SET_DEFAULTS = { zoom: 1 };
+
+  /**
+   * 界面缩放的预设。
+   *
+   * 为什么只有三档而不是一根滑杆：**离散值更容易回到"标准"**。
+   * 滑杆一旦拖过，用户很难凭感觉拖回 100%。
+   */
+  const ZOOM_PRESETS = [
+    { v: 0.85, n: "紧凑", note: "屏幕小、想多放点东西" },
+    { v: 1.00, n: "标准", note: "默认" },
+    { v: 1.15, n: "宽松", note: "屏幕大、离得远" },
+  ];
+
+  function loadSettings() {
+    try {
+      const raw = localStorage.getItem(SET_KEY);
+      if (!raw) return Object.assign({}, SET_DEFAULTS);
+      const o = JSON.parse(raw);
+      const z = Number(o && o.zoom);
+      return { zoom: (z >= 0.5 && z <= 2) ? z : SET_DEFAULTS.zoom };
+    } catch (e) { return Object.assign({}, SET_DEFAULTS); }
+  }
+
+  function saveSettings(s) {
+    try { localStorage.setItem(SET_KEY, JSON.stringify(s)); } catch (e) {}
+  }
+
+  /** 把缩放**应用到 DOM**。只改一个 CSS 变量，别的地方都不用动。 */
+  function applySettings(s) {
+    document.documentElement.style.setProperty("--ui-zoom", String(s.zoom));
+    const b = document.body;
+    if (b) b.style.zoom = String(s.zoom);
+    // 缩放后画布容器尺寸变了，要重算 —— 否则画布还是原来的大小
+    if (window.applyCanvasSize) setTimeout(window.applyCanvasSize, 0);
+  }
+
+  window.SETTINGS = loadSettings();
+  applySettings(window.SETTINGS);
+
+  window.setUiZoom = function (v) {
+    const z = Number(v);
+    if (!(z >= 0.5 && z <= 2)) return;
+    window.SETTINGS.zoom = z;
+    saveSettings(window.SETTINGS);
+    applySettings(window.SETTINGS);
+    window.openSettings();   // 重画对话框，让选中态跟上
+  };
+
+  window.resetSettings = function () {
+    window.SETTINGS = Object.assign({}, SET_DEFAULTS);
+    try { localStorage.removeItem(SET_KEY); } catch (e) {}
+    applySettings(window.SETTINGS);
+    window.openSettings();
+    if (window.toast) window.toast("界面设置已恢复默认");
+  };
+
+  window.openSettings = function () {
+    const box = document.getElementById("settingsBox");
+    if (!box) return;
+    const cur = window.SETTINGS.zoom;
+    const btn = ZOOM_PRESETS.map(p => {
+      const on = Math.abs(p.v - cur) < 0.001;
+      return '<button class="' + (on ? "primary" : "") + '" title="' + window.esc(p.note) + '"' +
+        ' onclick="setUiZoom(' + p.v + ')">' + window.esc(p.n) + (on ? " ✓" : "") + '</button>';
+    }).join("");
+    box.innerHTML =
+      '<div class="setRow"><label>界面缩放</label><div class="setPresets">' + btn + '</div></div>' +
+      '<div class="setHint">' +
+      '当前 <b>' + Math.round(cur * 100) + '%</b>。' +
+      '这是<b>工具本身</b>的偏好（本机生效），<b>不会写进设计文件</b> —— ' +
+      '否则同一份设计在不同人的机器上会长得不一样。' +
+      '</div>' +
+      '<div class="setFoot"><button onclick="resetSettings()">恢复默认</button></div>';
+    const dlg = document.getElementById("settingsDlg");
+    if (dlg && !dlg.open) { if (dlg.showModal) dlg.showModal(); else dlg.setAttribute("open", ""); }
+  };
+
   window.openThemeColors = function () {
     const d = S.design;
     const base = window.GAUGE_THEMES[d.themeId] || window.GAUGE_THEMES.neon;
@@ -695,6 +778,24 @@
     window.commit(() => {
       n.extraPids = String(v).split(",").map(s => s.trim()).filter(Boolean);
     }, "改副参数", "extras");
+  };
+  /**
+   * 数值 → 文字 映射表（P9「非数值 PID 模型」方向 A）。
+   *
+   * **逗号分隔**，索引 = `round(value)`。与「副参数」同一个套路
+   * （属性面板有"行高 ≤ 40px"的排版约束，多行 textarea 会把它顶红）。
+   *
+   * 代价：**名字里不能有逗号**。挡位这类枚举本来也没有，先这样；
+   * 真需要的话要换成弹窗编辑，而不是把面板的行高破掉。
+   *
+   * 空表归一成 `null`（= 不用映射）—— 否则 `["",""]` 会让读数变成空字符串。
+   */
+  window.setNodeValueLabels = function (v) {
+    const n = sel(); if (!n) return;
+    const arr = String(v).split(",").map(s => s.trim());
+    window.commit(() => {
+      n.valueLabels = window.normalizeValueLabels(arr);
+    }, "改数值映射", "vlabels");
   };
   window.applyPidDefaults = function () {
     const n = sel(); if (!n || n.type !== window.NODE_GAUGE) return;

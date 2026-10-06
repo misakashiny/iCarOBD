@@ -12,6 +12,7 @@ import androidx.core.content.ContextCompat
 import com.icar.obd.R
 import com.icar.obd.data.GaugeItem
 import com.icar.obd.data.PidDefinition
+import com.icar.obd.data.ValueLabels
 
 /**
  * 仪表渲染基类。
@@ -466,8 +467,18 @@ abstract class BaseGaugeView @JvmOverloads constructor(
     protected fun glowColor(color: Int, alpha: Int): Int =
         (color and 0x00FFFFFF) or (alpha.coerceIn(0, 255) shl 24)
 
-    /** 数值格式化：按量程自动决定小数位 */
+    /**
+     * 数值格式化：按量程自动决定小数位。
+     *
+     * **先查映射表**（`GaugeItem.valueLabels`，P9 方向 A）—— 枚举型数据
+     * （挡位 `P/R/N/1..6`）在这里换成名字。
+     *
+     * ⚠️ **这是唯一的入口**：圆表 / 条形表 / 数字表 / 折线 / G力 / 多值表
+     * 全都调这一个函数。放到这里而不是各视图里各判一次 ——
+     * 6 处判定迟早分叉（本项目在"报警配色"上已经栽过一次，见 §2.1 步骤 1）。
+     */
     protected fun format(v: Float?): String {
+        ValueLabels.labelFor(item.valueLabels, v)?.let { return it }
         if (v == null || v.isNaN()) return "--"
         val span = (item.maxVal - item.minVal).let { if (it <= 0f) 1f else it }
         return when {
@@ -503,7 +514,8 @@ abstract class BaseGaugeView @JvmOverloads constructor(
     protected fun extraFormat(i: Int): String = fmtByRange(extraValue(i), extraPid(i))
 
     /** 主参数按自己的量程格式化（多数据显示里主副量程往往差很多） */
-    protected fun primaryFormat(): String = fmtByRange(value, pid)
+    protected fun primaryFormat(): String =
+        ValueLabels.labelFor(item.valueLabels, value) ?: fmtByRange(value, pid)
 
     protected fun extraWarn(i: Int): Boolean {
         val p = extraPid(i) ?: return false

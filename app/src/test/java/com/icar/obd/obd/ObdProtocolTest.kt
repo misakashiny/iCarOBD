@@ -5,6 +5,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -302,7 +303,35 @@ class ObdProtocolTest {
         assertTrue(seq.all { it.endsWith("\r") })
         assertEquals("ATZ\r", seq.first())
         assertTrue(seq.contains("ATSP6\r"))
-        assertEquals("ATCAF0\r", seq.last())
+    }
+
+    /**
+     * **回归守卫**：初始化里**不得**关掉 CAN 自动格式化。
+     *
+     * 2026-10-05 的实车日志（IOS-Vlink + ELM327 v2.3）给出了因果证据：
+     *
+     * | 会话 | `01 11` 的响应 | 结果 |
+     * |---|---|---|
+     * | 带 `ATCAF0` | `03 7F 11 13`（NRC **0x13 报文长度错误**） | **70 秒 100% 失败**，全部 PID 进冷却 |
+     * | CAF 默认（开） | `41 11 28`（节气门 15.7%） | **立刻拿到真实数值** |
+     *
+     * 原因：`CAF0` 让 ELM327 **发出的请求也不补 PCI 字节**，ECU 收到畸形帧。
+     * 复位（ATZ）后默认就是 CAF1，所以正确做法是**不写这条命令**；
+     * 也不能写成 `ATCAF1` —— 非 CAN 协议会回 `?`。
+     */
+    @Test
+    fun `初始化不得关闭 CAN 自动格式化`() {
+        listOf(0, 6, 8).forEach { p ->
+            val seq = ObdProtocol.initSequence(p)
+            assertTrue(
+                "init 序列不得含 ATCAF0（会让发出的请求缺 PCI 字节 → ECU 回 NRC 0x13）",
+                seq.none { it.startsWith("ATCAF0") }
+            )
+            assertTrue(
+                "也不要写 ATCAF1：非 CAN 协议会回 ?（ATZ 后的默认值本来就是 CAF1）",
+                seq.none { it.startsWith("ATCAF1") }
+            )
+        }
     }
 
     @Test
@@ -349,5 +378,103 @@ class ObdProtocolTest {
             ObdProtocol.scanCandidates("22", 0x1100, 0x1102)
         )
         assertEquals(listOf("0000"), ObdProtocol.scanCandidates("21", 0, 0))
+    }
+
+    // ------------------------------------------- 否定响应（NRC）："ECU 说不行" vs "没人回答"
+
+    /**
+     * 下面几条**用的是 2026-10-05 实车日志里的原样字符串**，不是编的。
+     *
+     * 为什么值得专门测：改之前这些全被归成 `无有效响应` ——
+     * 而"ECU 明确拒绝（NRC 0x13 报文长度错误）"和"总线上没人回答"
+     * 指向**完全不同的排查方向**。当时 29 条否定响应被吞掉，
+     * 否则根因（请求缺 PCI 字节）当场就能定位。
+     */
+    @Test
+    fun `否定响应被识别成可读原因`() {
+        // 实车原样：`01 11`（节气门）在 ATCAF0 下的响应
+        val r = ObdProtocol.negativeReason("037F111300000000")
+        assertNotNull("应当识别出否定响应", r)
+        assertTrue("要带上 NRC 与中文说明：$r", r!!.contains("NRC=0x13"))
+        assertTrue("要说明是什么错：$r", r.contains("报文长度"))
+
+        // 0x78 = 响应挂起（ECU 还在处理），不是错误
+        assertTrue(ObdProtocol.negativeReason("037F047800000000")!!.contains("响应挂起"))
+        // 0x7F = 当前会话不支持该服务
+        assertTrue(ObdProtocol.negativeReason("037F2F7F00000000")!!.contains("不支持"))
+    }
+
+    @Test
+    fun `未知 NRC 如实报十六进制而不是编一个说明`() {
+        val r = ObdProtocol.negativeReason("7F0199")
+        assertNotNull(r)
+        assertTrue("未知码要标出来：$r", r!!.contains("未知 NRC"))
+        assertTrue(r.contains("0x99"))
+    }
+
+    @Test
+    fun `肯定响应与无数据串都不算否定响应`() {
+        // 实车原样：会话 B 的正常响应
+        assertNull(ObdProtocol.negativeReason("01 0D 41 0D 00"))
+        assertNull(ObdProtocol.negativeReason("41 0C 1A F8"))
+        // 这些串里没有十六进制，扫不出东西 —— 必须回落成"无有效响应"
+        assertNull(ObdProtocol.negativeReason("NO DATA"))
+        assertNull(ObdProtocol.negativeReason("CAN ERROR"))
+        assertNull(ObdProtocol.negativeReason("STOPPED"))
+        assertNull(ObdProtocol.negativeReason(""))
+    }
+
+    /** 数据字节里**碰巧**有 0x7F 的肯定响应不能被误判（如燃油液位 0x7F = 49.8%） */
+    @Test
+    fun `数据里的 0x7F 不误报`() {
+        assertNull(ObdProtocol.negativeReason("41 2F 7F"))
+        assertNull(ObdProtocol.negativeReason("41 2F 7F 00"))
+    }
+
+    @Test
+    fun `parse 把否定响应写进 error 而不是笼统的无有效响应`() {
+        val p = pid(mode = "01", pid = "11")
+        val r = ObdProtocol.parse("037F111300000000", p)
+        assertFalse(r.ok)
+        assertNotNull(r.error)
+        assertTrue("error 里要有 NRC：${r.error}", r.error!!.contains("NRC=0x13"))
+        assertFalse("不该再是笼统的说法", r.error == "无有效响应")
+    }
+
+    @Test
+    fun `parse 对 NO DATA 仍然报无有效响应`() {
+        val r = ObdProtocol.parse("NO DATA", pid(mode = "01", pid = "0C"))
+        assertFalse(r.ok)
+        assertEquals("无有效响应", r.error)
+    }
+
+    // ------------------------------------------- CAN 模块头切换（AT SH，v1.18.2）
+
+    @Test
+    fun `默认广播头不发切换命令`() {
+        assertNull(ObdProtocol.headerSwitch("", ""))
+        assertNull(ObdProtocol.headerSwitch("7DF", "7DF"))
+        assertNull("大小写与空白不该当成不同头", ObdProtocol.headerSwitch("7df", " 7DF "))
+    }
+
+    @Test
+    fun `切到厂家模块要发 ATSH`() {
+        assertEquals("ATSH7E0\r", ObdProtocol.headerSwitch("7DF", "7E0"))
+        assertEquals("ATSH760\r", ObdProtocol.headerSwitch("7E0", "760"))
+        assertEquals("ATSH7E0\r", ObdProtocol.headerSwitch("", "7E0"))
+    }
+
+    /**
+     * ⚠️ **这条是本组最该守的。**
+     *
+     * `AT SH` 是**粘性**的：设了 `760`（ABS/DSC）之后，后续请求都发往那个模块。
+     * 所以标准 PID 之前**必须显式切回广播** ——
+     * "切过去发了、切回来忘了发"的表现是**标准 PID 读到别的模块的值**，
+     * 而**从数值上完全看不出**（本项目最怕的那类 bug）。
+     */
+    @Test
+    fun `切回广播必须显式发命令`() {
+        assertEquals("ATSH7DF\r", ObdProtocol.headerSwitch("760", ""))
+        assertEquals("ATSH7DF\r", ObdProtocol.headerSwitch("760", "7DF"))
     }
 }

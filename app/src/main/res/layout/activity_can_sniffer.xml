@@ -94,6 +94,58 @@
             android:text="导出原始"
             android:textSize="11sp" />
     </LinearLayout>
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingTop="4dp"
+        android:paddingEnd="12dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="过滤器"
+            android:textSize="11sp" />
+
+        <EditText
+            android:id="@+id/etSniffFilter"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="如 228，或 ATCM700+ATCF400 扫一段；留空=不过滤"
+            android:importantForAutofill="no"
+            android:inputType="textCapCharacters|textNoSuggestions"
+            android:maxLength="40"
+            android:paddingStart="4dp"
+            android:textSize="11sp" />
+    </LinearLayout>
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnSniffDiff"
+        style="@style/Widget.Material3.Button.OutlinedButton"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="4dp"
+        android:layout_marginEnd="12dp"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"
+        android:text="对比基准（找位）"
+        android:textSize="12sp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnMonitorToggle"
+        style="@style/Widget.Material3.Button.OutlinedButton"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="4dp"
+        android:layout_marginEnd="12dp"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"
+        android:text="开启常驻监听（转向灯）"
+        android:textSize="12sp" />
 
     <TextView
         android:id="@+id/tvSniffStatus"
@@ -111,12 +163,27 @@
         android:layout_height="0dp"
         android:layout_weight="1">
 
-        <com.icar.obd.ui.view.ColumnFlowLayout
-            android:id="@+id/sniffResults"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:paddingBottom="16dp" />
+            android:orientation="vertical">
+
+            <com.icar.obd.ui.view.ColumnFlowLayout
+                android:id="@+id/sniffResults"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:paddingBottom="16dp" />
+
+            <LinearLayout
+                android:id="@+id/sniffDiffs"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:paddingBottom="16dp" />
+        </LinearLayout>
     </ScrollView>
 </LinearLayout>

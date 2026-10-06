@@ -160,7 +160,17 @@ const eq = (a, b, m) => ok(a === b, m + `（实际 ${JSON.stringify(a)}，期望
     ok(M.panels === 'function', 'panels.js 已加载');
     ok(M.commit === 'function', 'app.js 已加载');
     eq(M.nodeTypes, 4, '节点类型 4 种');
-    eq(M.aliases, 27, 'PID 别名 27 条');
+    // ⚠️ **这条故意不是精确条数**（v2.65.0 改）。
+    //
+    // 原来写的是 `eq(M.aliases, 27)` —— 实测**四个版本改了四次**
+    // （27 → 32 → 33 → 36）。每次加别名都要回来改一遍，纯维护成本。
+    //
+    // **问题不在"要改"，在"它和 verify-crosslang 功能重复"**：
+    // crosslang 已经逐条比对两侧别名表 —— **单边**漏加/漏删都会红。
+    // 精确性交给它，这里只保留"防大规模误删"这一个价值。
+    //
+    // 27 是 v1 的基线：**低于它就说明有人一次删了一大批**。
+    ok(M.aliases >= 27, `PID 别名不少于 27 条（实际 ${M.aliases}）`);
     eq(M.kinds, 12, '素材分类 12 个（v2.20.0 新增 条形轨道 / 面板边框）');
     // v2.19.0：分类可排序 / 可新建 —— 渲染走 assetKindList()，不是出厂常量
     eq(M.defaultKinds, 12, '出厂分类常量 12 个');

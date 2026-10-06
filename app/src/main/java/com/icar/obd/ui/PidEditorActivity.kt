@@ -261,6 +261,10 @@ class PidEditorActivity : AppCompatActivity() {
 
     private fun runTest() {
         val p = collect()
+        if (p.source.equals("monitor", true)) {
+            tvResult.text = "解析结果: 这是**监听型** PID（广播帧），不能主动请求 —— 到「CAN 探测」页开启常驻监听"
+            return
+        }
         if (p.pid.isBlank()) {
             tvResult.text = "解析结果: 请先填写 PID"
             return
@@ -322,6 +326,10 @@ class PidEditorActivity : AppCompatActivity() {
      */
     private fun runSample() {
         val p = collect()
+        if (p.source.equals("monitor", true)) {
+            tvResult.text = "解析结果: 这是**监听型** PID（广播帧），不能主动请求 —— 到「CAN 探测」页开启常驻监听"
+            return
+        }
         if (p.pid.isBlank()) {
             tvResult.text = "采样: 请先填写 PID"
             return
@@ -389,6 +397,10 @@ class PidEditorActivity : AppCompatActivity() {
         val p = collect()
         if (p.name.isBlank()) {
             ObdController.toast("请填写名称")
+            return
+        }
+        if (p.source.equals("monitor", true)) {
+            tvResult.text = "解析结果: 这是**监听型** PID（广播帧），不能主动请求 —— 到「CAN 探测」页开启常驻监听"
             return
         }
         if (p.pid.isBlank()) {

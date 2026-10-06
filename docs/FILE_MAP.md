@@ -199,7 +199,7 @@ D:/AI Dsh/车机项目/iCarOBD/
 
 ---
 
-### 2.5 单元测试 `app/src/test/java/com/icar/obd/`（**25 个文件 / 495 个用例**）
+### 2.5 单元测试 `app/src/test/java/com/icar/obd/`（**32 个文件 / 563 个用例**）
 
 | 文件 | 用例 | 覆盖 |
 |---|---|---|
@@ -297,7 +297,7 @@ D:/AI Dsh/车机项目/iCarOBD/
 | `tools/theme-studio/png.js` | **极简 PNG 编码器**（零依赖，只用内置 zlib）。PNG 结构 + CRC32 + 绘图原语（rect/roundRect/circle/ring/arc/line/poly）。抗锯齿用**超采样**（4 倍绘制再降采样） |
 | `tools/theme-studio/gen-assets.js` | **生成示例素材**：`node gen-assets.js` → `assets/<分类>/*.png`（**344 个**）+ `assets/builtin.js`（清单）。**全部是几何图形，不含任何车标** |
 | `tools/theme-studio/` | **PC 端主题制作工具**（v2）：`index.html` + `css/studio.css` + `js/{schema,model,validate,presets,canvas,panels,editor,app}.js` + `png.js`（PNG 编码器）+ `gen-assets.js` + `tests/`（**21 个浏览器套件** + `_common.js` 公共前置） + `gen-sample.js` + `sample.json`(v1) + `sample-v2.json` + `README.md` + `CHANGELOG.md`。**双击 index.html 即用，零安装**（经典脚本，不用 ES module/fetch —— 那在 `file://` 下被 CORS 挡）。校验规则与 `DesignFile.kt` 同源，`ThemeStudioSampleTest` 钉着 |
-| `app/src/test/java/com/icar/obd/` | JVM 单元测试 **25 个文件 / 495 个用例**（见 §2.5） |
+| `app/src/test/java/com/icar/obd/` | JVM 单元测试 **32 个文件 / 563 个用例**（见 §2.5） |
 | `docs/screenshots/` | 真机截图：`01~10` 竖屏，`11~17` 横屏 |
 
 ### ⚠️ 改这两个地方时必须成对

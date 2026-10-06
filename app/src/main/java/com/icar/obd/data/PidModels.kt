@@ -40,6 +40,31 @@ data class PidDefinition(
      */
     var ecuIndex: Int = 0,
     /**
+     * **CAN 目标模块头**（`AT SH <header>`），v1.18.2 新增。空 = 默认广播 `7DF`。
+     *
+     * ## 为什么需要它
+     *
+     * OBD 标准查询走 `7DF`（广播），但**厂家数据基本都在具体模块里**：
+     * 发动机 `7E0`、变速箱 `7E1`、仪表 `720`、ABS/DSC `760`、EPS `730`…
+     * 马自达社区项目挖 Mode 22 时用的正是这些头 —— **没有它，那些数据够不到**。
+     *
+     * ⚠️ **`AT SH` 是「粘性」的**：设了之后**后续所有请求**都发往那个模块，
+     * 所以切回广播**必须显式发**（见 `ObdProtocol.headerSwitch`）。
+     * 忘了切回的表现是"另一条 PID 读到了别的模块的值" —— **现象上看不出**。
+     */
+    var header: String = "",
+    /**
+     * **数据来源**（v1.19.9）：`"poll"` = 主动请求（默认）；`"monitor"` = 从**广播帧**里取值。
+     *
+     * 为什么需要它：转向灯这类信号只出现在周期广播帧里（实车确认是 CAN `0x09A`），
+     * **不能像 PID 那样主动请求**。所以这类条目不进轮询列表，由 `FrameMonitor`
+     * 常驻监听 `ATMA` 流并套用同一条 [formula] 求值 —— 于是规则引擎、仪表、
+     * CSV 全都能照旧用它，一行下游代码都不用改。
+     *
+     * 监听型条目用 [header] 存 **CAN ID**（如 `"09A"`），用 [mode] 存 `"MON"` 作标记。
+     */
+    var source: String = "poll",
+    /**
      * 轮询优先级：0=高 1=中 2=低。
      * **仅在 [intervalMs] = 0（跟随全局）时生效** —— 单独设了间隔就以它为准。
      */
@@ -60,6 +85,9 @@ data class PidDefinition(
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id); put("name", name); put("protocol", protocol)
+        // 空 = 默认广播，不写（旧文件读不到就是空，语义一致）
+        if (header.isNotBlank()) put("header", header)
+        put("source", source)
         put("mode", mode); put("pid", pid); put("formula", formula)
         put("unit", unit); put("min", minVal.toDouble()); put("max", maxVal.toDouble())
         warnLow?.let { put("warnLow", it.toDouble()) }
@@ -91,13 +119,40 @@ data class PidDefinition(
             else -> "中"
         }
 
-        fun normalize(s: String): String =
-            s.trim().replace(Regex("\\s+"), " ").uppercase()
+        /**
+         * 规范化请求串：去多余空白 + 大写 + **单个十六进制字符补零**。
+         *
+         * ⚠️ 补零是 v1.18.6 加的。之前只做 trim/大写 —— 于是用户在 Mode 里填 `1`，
+         * 发出去就是 `1 A4`。ELM327 把 `1A4` 当**三个 nibble**，帧是畸形的，
+         * ECU 回 `NO DATA` 或否定响应。实车同一天踩了两次：
+         *
+         * ```
+         * 12:04  PID 测试 | req=2 A4   raw=7F2A7F   ok=false
+         * 12:37  PID 测试 | req=1 A4   raw=NO DATA  ok=false
+         *        PID 测试 | req=01 A4  raw=41A403000DE1  ok=true   ← 填 01 才对
+         * ```
+         *
+         * 规则刻意收窄：
+         *  - **只补长度为 1 的 token**（`1` → `01`、`4` → `04`）
+         *  - **只有整串都是十六进制时才动** —— `ATI` / `ATSH7E0` 这类 AT 命令不能碰
+         *  - `7E0`（长度 3）也不动：补成 `07E0` 会把 CAN 头毁掉
+         */
+        fun normalize(s: String): String {
+            val compact = s.trim().replace(Regex("\\s+"), " ").uppercase()
+            if (compact.isEmpty()) return compact
+            val parts = compact.split(' ')
+            val allHex = parts.all { p -> p.isNotEmpty() && p.all { it in "0123456789ABCDEF" } }
+            if (!allHex) return compact
+            return parts.joinToString(" ") { p -> if (p.length == 1) "0$p" else p }
+        }
 
         fun fromJson(o: JSONObject): PidDefinition = PidDefinition(
             id = o.optString("id", UUID.randomUUID().toString()),
             name = o.optString("name"),
             protocol = o.optString("protocol", "CAN"),
+            // 缺字段 → 空 = 默认广播（旧文件行为完全不变）
+            header = o.optString("header", ""),
+            source = o.optString("source", "poll"),
             mode = o.optString("mode", "01"),
             pid = o.optString("pid", ""),
             formula = o.optString("formula", "A"),
@@ -163,7 +218,16 @@ data class RuleAction(
     var p3: String = ""
 ) {
     fun describe(): String = when (type) {
-        "sound" -> "播放音效 ${p1}"
+        // 只在**真的设了**的时候才显示参数：默认值（空 = 速率1.0/音量1.0）
+        // 拖在每条描述后面纯属噪音，而且"播放音效 tick_left"这条断言是既有契约。
+        "sound" -> buildString {
+            append("播放音效 $p1")
+            val extra = listOfNotNull(
+                p2.takeIf { it.isNotBlank() }?.let { "速率 $it" },
+                p3.takeIf { it.isNotBlank() }?.let { "音量 $it" }
+            )
+            if (extra.isNotEmpty()) append("（${extra.joinToString("，")}）")
+        }
         "toast" -> "弹出提示「$p1」"
         "log" -> "记录日志「$p1」"
         "gauge" -> "仪表 ${if (p1.isBlank()) "当前" else p1} 变色 $p2"
@@ -296,7 +360,18 @@ data class GaugeItem(
      * 存 `Int?` 而不是枚举类型：`data/` 层保持原始类型、ui 层负责解释，
      * 与 [neonPreset] 用字符串是同一个理由（分层只能自上而下）。
      */
-    var cardStyle: Int? = null
+    var cardStyle: Int? = null,
+
+    /**
+     * **数值 → 文字 的映射表**（P9「非数值 PID 模型」方向 A，见 [ValueLabels]）。
+     *
+     * 空 = **不用映射**（读数按量程自动格式化，与旧行为完全一致，**无需迁移**）。
+     * 非空时读数显示 `valueLabels[round(value)]` —— 挡位 `P/R/N/1..6` 靠它。
+     *
+     * ⚠️ **指针 / 弧 / 条仍然按数值走**，所以 `min~max` 照常要填对
+     * （挡位 0..8 就填 0..8）。映射表只换**读数文本**，不换几何。
+     */
+    var valueLabels: MutableList<String> = mutableListOf()
 ) {
     /**
      * 由 [fromJson] 置位：这条来自 v1.4.0 及以前「只有 span」的配置，需要跑一次布局迁移。
@@ -332,6 +407,8 @@ data class GaugeItem(
         // null 不写进去：旧版本读到没有这个字段就是"跟随主题"，语义一致
         neonPreset?.let { put("neonPreset", it) }
         cardStyle?.let { put("cardStyle", it) }
+        // 空表不写进去（旧版本读不到 = 不用映射，语义一致）
+        ValueLabels.toJson(valueLabels)?.let { put("valueLabels", it) }
     }
 
     companion object {
@@ -411,7 +488,9 @@ data class GaugeItem(
                 ringSegments = o.optInt("ringSegments", 40),
                 neonPreset = o.optString("neonPreset", "").takeIf { it.isNotBlank() },
                 // 旧文件没有这个字段 → null = 跟随主题（与旧行为完全一致，无需迁移）
-                cardStyle = if (o.has("cardStyle")) o.optInt("cardStyle", CARD_THEME) else null
+                cardStyle = if (o.has("cardStyle")) o.optInt("cardStyle", CARD_THEME) else null,
+                // 缺字段 / 空数组 → 空表 = 不用映射（旧文件行为完全不变）
+                valueLabels = ValueLabels.parse(o.optJSONArray("valueLabels"))
             ).also { it.legacyGrid = !hasLayout }
         }
     }

@@ -54,6 +54,38 @@ if (Test-Path $killer) { & powershell -ExecutionPolicy Bypass -File $killer -Kil
 Write-Host ""
 Write-Host "===== 浏览器测试套件（$($suites.Count) 个）=====" -ForegroundColor Cyan
 
+# ⚠️ **内联清理，不要再 spawn 一个 PowerShell**（v2.45.0）。
+#
+# 原来每个套件都调一次 `& powershell -File kill-test-browsers.ps1 -Kill`，
+# 实测**单次 2.9 秒**（PS 5.1 里 `Get-Process` 取不到 CommandLine，
+# 只能走 `Get-CimInstance Win32_Process`，而每次都要**新建一个进程去建 CIM 会话**）。
+# 22 个套件 × 2.9s ≈ **64 秒**纯浪费。
+#
+# 内联之后是同一个进程里的连续 CIM 调用 —— 会话复用，只有第一次慢。
+#
+# 判定条件与 kill-test-browsers.ps1 **完全一致**（那个脚本仍然保留，供手动用）：
+#   只看 profile 路径形如 *\Temp\edge-*（用通配匹配，兼容 8.3 短名）
+#   用户自己的 Edge 在 ...\Microsoft\Edge\User Data，不含 \Temp\，**一个都不会动**
+function Kill-TestBrowsers {
+    try {
+        $procs = Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" -ErrorAction SilentlyContinue
+        $n = 0
+        foreach ($p in $procs) {
+            $cl = [string]$p.CommandLine
+            $dir = ""
+            $m = [regex]::Match($cl, '--user-data-dir=(?:"([^"]+)"|([^\s"]+))')
+            if ($m.Success) {
+                if ($m.Groups[1].Success) { $dir = $m.Groups[1].Value } else { $dir = $m.Groups[2].Value }
+            }
+            if ($dir.Length -gt 0 -and $dir -like "*\Temp\edge-*") {
+                Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+                $n++
+            }
+        }
+        return $n
+    } catch { return 0 }
+}
+
 $totalPass = 0; $totalFail = 0; $bad = New-Object System.Collections.ArrayList
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 
@@ -76,7 +108,7 @@ foreach ($s in $suites) {
     $first = ($out | Select-String -Pattern '^PASS=(\d+)\s+FAIL=(\d+)' | Select-Object -Last 1)
     if ($first -and [int]$first.Matches[0].Groups[2].Value -gt 0) {
         Write-Host "       ↻ 失败，重跑一次…" -ForegroundColor DarkYellow
-        if (Test-Path $killer) { & powershell -ExecutionPolicy Bypass -File $killer -Kill 2>&1 | Out-Null }
+        [void](Kill-TestBrowsers)
         Start-Sleep -Milliseconds 300
         $out = & node $s.FullName 2>&1
         $retried = $true
@@ -91,7 +123,7 @@ foreach ($s in $suites) {
     # 下一个套件启动时，这些残留进程还在抢磁盘/内存，偶发拖慢到超时。
     #
     # 原来只在整轮前后各清一次 —— 中间那些残留一直堆着。
-    if (Test-Path $killer) { & powershell -ExecutionPolicy Bypass -File $killer -Kill 2>&1 | Out-Null }
+    [void](Kill-TestBrowsers)
 
     # ⚠️ **等残留 Edge 真正清空**，不要用固定延迟（v2.26.0）。
     #
@@ -103,7 +135,7 @@ foreach ($s in $suites) {
     #
     # 轮询到真的没有残留为止（上限 6 秒，避免卡死）。
     $sw2 = [System.Diagnostics.Stopwatch]::StartNew()
-    while ($sw2.Elapsed.TotalSeconds -lt 2) {
+    while ($sw2.Elapsed.TotalSeconds -lt 1) {
         $left = @(Get-Process msedge -ErrorAction SilentlyContinue | Where-Object {
             $_.CommandLine -and $_.CommandLine -like "*\Temp\edge-*"
         })

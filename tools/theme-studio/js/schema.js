@@ -408,7 +408,23 @@ window.GAUGE_THEMES = {
     value: "#FFF6DB", label: "#D5C8A3", dim: "#847B61",
     glow: false,
   },
-};
+}
+/**
+ * **设计当前生效的主题配色**（v2.49.0）。
+ *
+ * 之前只有 `model.js` 在**序列化**时拼这个（写进设计文件的 `themeColors`），
+ * 而**画布从来不读它** —— 所以切主题时画布上的控件**完全没有变化**，
+ * 用户看到的还是工具自己那套 UI 配色。
+ *
+ * 规则与 `model.js` 的序列化**完全一致**：内置打底 + 用户覆盖。
+ * 两处必须同源，否则"画布上看到的"和"导出后 App 看到的"会不一样。
+ */
+window.currentTheme = function () {
+  const S = window.CanvasState || {};
+  const d = S.design || {};
+  const base = window.GAUGE_THEMES[d.themeId] || window.GAUGE_THEMES.neon;
+  return Object.assign({}, base, d.themeColorsOverride || {});
+};;
 
 /** 主题别名列表（与 GaugeTheme.aliasOf 一致） */
 window.THEME_ALIASES = ["neon", "ice", "amber"];
@@ -527,7 +543,7 @@ window.isCustomAssetKind = function (v) {
 };
 
 
-/** 与 DesignFile.PID_ALIASES 完全一致（27 条） */
+/** 与 DesignFile.PID_ALIASES 完全一致（37 条：25 标准 + 9 派生 + 1 控件-facing + 2 监听） */
 window.PID_ALIASES = {
   // ---- 标准 OBD（std_*）：全部 20 条 ----
   "obd.rpm": "std_0C",
@@ -550,6 +566,10 @@ window.PID_ALIASES = {
   "obd.run_time": "std_1F",
   "obd.mil_distance": "std_21",
   "obd.voltage": "std_42",
+  // 故障灯（MIL）—— **标准 PID 01**，不需要扫描器实测。控件 lamp_engine 绑的就是它
+  "obd.engineFault": "std_01",
+  // 总里程 —— **标准 PID A6**（J1979-2 的 A1~C0 段）。控件 g_odo 绑的就是它
+  "obd.odo": "std_A6",
   // ---- 派生（calc_*）：全部 7 条 ----
   "calc.l100": "calc_l100",
   "calc.fuel_hourly": "calc_lh",
@@ -558,7 +578,32 @@ window.PID_ALIASES = {
   "calc.gforce": "calc_gforce",
   "calc.gx": "calc_gx",
   "calc.gy": "calc_gy",
-};
+  // 平均油耗（累计用油 ÷ 累计里程）—— 纯本项目的派生，不用等车
+  "calc.avg_l100": "calc_avg_l100",
+  // 续航里程 —— 需要「油箱容量」设置，但同样不用等车
+  "calc.range": "calc_range",
+  // ---- 控件-facing 的别名（v2.62.0）
+  //
+  // ⚠️ **为什么同一个 PID 有两个名字**：
+  // 控件模板里写的是这一套（`obd.gforce`），而上面的规范名是另一套（`calc.gforce`）。
+  // 实测 40 个绑 PID 的控件里 **28 个绑的是不存在的名字** ——
+  // 而 `make()` 查不到就用 0~100 兜底，**静默退化成普通数字表**。
+  //
+  // 修法：**把控件用的名字也加成别名**，指向同一个 PID。
+  // 不删旧名（存量设计文件里用的是旧名）。
+  //
+  // ⚠️ 必须与 app/.../data/DesignFile.kt 的 `val PID_ALIASES` **逐条一致**，
+  // verify-crosslang.js 会比对。
+  // 燃油压力（第 ⑨ 项新增）
+  "obd.fuelPressure": "std_0A",
+  // 燃油轨压力（第 ⑨ 项新增）
+  "obd.railPressure": "std_22",
+  // 氧传感器电压（第 ⑨ 项新增）
+  "obd.o2voltage": "std_14",
+  // ---- 监听型（mon_*）：2026-10-06 实车确认 ----
+  // CAN 0x09A 第 3 字节 bit2 = 左转、bit3 = 右转
+  "can.turn_left": "mon_turn_left",
+  "can.turn_right": "mon_turn_right",};
 
 /** 内置 PID 库（id → 名称/单位/量程/报警阈值/分组）。抄自 data/BuiltInPids.kt */
 window.BUILTIN_PIDS = {
@@ -573,6 +618,12 @@ window.BUILTIN_PIDS = {
   "std_06": { name: "短期燃油修正 STFT", unit: "%", min: -100, max: 100, warnLow: -15, warnHigh: 15, g: "标准 OBD" },
   "std_07": { name: "长期燃油修正 LTFT", unit: "%", min: -100, max: 100, warnLow: -15, warnHigh: 15, g: "标准 OBD" },
   "std_5E": { name: "燃油消耗率", unit: "L/h", min: 0, max: 100, g: "标准 OBD" },
+  // 燃油泵供油压力
+  "std_0A": { name: "燃油压力", unit: "kPa", min: 0, max: 765, g: "标准 OBD" },
+  // 相对进气歧管的轨压
+  "std_22": { name: "燃油轨压力", unit: "kPa", min: 0, max: 5178, g: "标准 OBD" },
+  // B1S1；在 0.1~0.9V 之间来回跳是正常的
+  "std_14": { name: "氧传感器电压", unit: "V", min: 0, max: 1.275, warnLow: 0.1, warnHigh: 0.9, g: "标准 OBD" },
   "std_0B": { name: "进气歧管压力 MAP", unit: "kPa", min: 0, max: 255, g: "标准 OBD" },
   "std_2F": { name: "燃油液位", unit: "%", min: 0, max: 100, warnLow: 15, g: "标准 OBD" },
   "std_46": { name: "环境温度", unit: "℃", min: -40, max: 215, g: "标准 OBD" },
@@ -582,17 +633,29 @@ window.BUILTIN_PIDS = {
   "std_49": { name: "油门踏板位置 D", unit: "%", min: 0, max: 100, g: "标准 OBD" },
   "std_1F": { name: "启动后运行时间", unit: "s", min: 0, max: 65535, g: "标准 OBD" },
   "std_21": { name: "故障灯后里程", unit: "km", min: 0, max: 65535, g: "标准 OBD" },
+  // 故障灯 MIL：**布尔**。0=正常 1=故障灯亮；warnHigh=0.5 让值 1 直接走成 critical，
+  // 指示灯的既有三态图就能用（**不需要 valueLabels**，见 docs/主题设计大纲.md §2.110）
+  "std_01": { name: "故障灯状态 MIL", unit: "", min: 0, max: 1, warnHigh: 0.5, g: "标准 OBD" },
+  // 总里程：**标准 PID A6**（J1979-2 的 A1~C0 段），不是厂家地址。
+  // 公式来自独立验证过的马自达项目（与真实里程表核对过）
+  "std_A6": { name: "总里程", unit: "km", min: 0, max: 999999, g: "标准 OBD" },
   "calc_l100": { name: "瞬时油耗", unit: "L/100km", min: 0, max: 40, warnHigh: 15, g: "派生（算出来的）" },
   "calc_lh": { name: "燃油流量", unit: "L/h", min: 0, max: 60, g: "派生（算出来的）" },
   "calc_boost": { name: "增压压力", unit: "kPa", min: -100, max: 300, g: "派生（算出来的）" },
   "calc_km": { name: "本次里程", unit: "km", min: 0, max: 9999, g: "派生（算出来的）" },
+  "calc_avg_l100": { name: "平均油耗", unit: "L/100km", min: 0, max: 40, warnHigh: 15, g: "派生（算出来的）" },
+  "calc_range": { name: "续航里程", unit: "km", min: 0, max: 1200, g: "派生（算出来的）" },
   "calc_gforce": { name: "综合G值", unit: "G", min: 0, max: 2, g: "派生（算出来的）" },
   "calc_gx": { name: "横向G值", unit: "G", min: -2, max: 2, g: "派生（算出来的）" },
   "calc_gy": { name: "纵向G值", unit: "G", min: -2, max: 2, g: "派生（算出来的）" },
   // ---- 厂家模板（默认关闭，**刻意不给别名**：PID 号是猜的，必须先用扫描器实测）----
+  "tpl_oilPressure": { name: "示例-机油压力", unit: "Bar", min: 0, max: 10, warnLow: 0.8, g: "厂家模板（未验证）" },
+  "tpl_afr": { name: "示例-空燃比 AFR", unit: ":1", min: 10, max: 20, warnLow: 11, g: "厂家模板（未验证）" },
   "tpl_atf": { name: "示例-变速箱油温 ATF", unit: "℃", min: -40, max: 180, warnHigh: 120, g: "厂家模板（未验证）" },
-  "tpl_left_turn": { name: "示例-左转向信号", unit: "", min: 0, max: 1, g: "厂家模板（未验证）" },
-  "tpl_right_turn": { name: "示例-右转向信号", unit: "", min: 0, max: 1, g: "厂家模板（未验证）" },
+  // 实车确认：CAN 0x09A 第 3 字节 bit2。需开启常驻监听才更新
+  "mon_turn_left": { name: "左转向灯", unit: "", min: 0, max: 1, g: "监听型（实车确认）" },
+  // 同上，bit3
+  "mon_turn_right": { name: "右转向灯", unit: "", min: 0, max: 1, g: "监听型（实车确认）" },
   "tpl_steer_angle": { name: "示例-方向盘转角", unit: "°", min: -720, max: 720, g: "厂家模板（未验证）" },
 };
 
@@ -612,3 +675,59 @@ window.styleColor = function (s) {
   return ["#00D8FF", "#7C5CFF", "#2FD47A", "#FFB020", "#FF8A65", "#4DA3FF", "#26C6DA", "#FF4D4F"][s]
     || "#5F6E85";
 };
+
+/* ==========================================================================
+   数值 → 文字 的映射表（`valueLabels`，P9「非数值 PID 模型」方向 A）
+
+   ⚠️ **必须与 app/.../data/ValueLabels.kt 逐字一致**（verify-crosslang.js 比对）。
+
+   要解决的是：PID 是 `min~max` 的**连续数值**，但挡位（P/R/N/1..6）、
+   驾驶模式这类数据**不是数**。方向 A 让值仍然是一个数，**只有读数文本**
+   查这张表 —— 数据模型、告警阈值、动画、指针角度全部照旧按数值走。
+
+   注意：**布尔（指示灯亮/灭）不需要这张表** —— `min=0, max=1, warnHigh=0.5`
+   就能驱动既有的三态图。需要映射的只有**枚举**。
+   ========================================================================== */
+
+/** 最多几项映射（与 Kotlin 侧 `ValueLabels.MAX` 一致） */
+window.VALUE_LABELS_MAX = 32;
+
+/**
+ * 查表。**没有映射表时返回 null**，调用方回落到数字格式化。
+ *
+ * | 情况 | 结果 |
+ * |---|---|
+ * | 空表 / 全空串 | null（等于没设 —— 用户清空文本框会留下 `["",""]`） |
+ * | 值是 null / NaN | null |
+ * | `round(value)` 越界 | **夹到 0..size-1** |
+ *
+ * ⚠️ **用 `Math.round` 而不是 `|0` / `Math.trunc`**：`4.999` 是"第 5 挡"，
+ * 截断会写成 4 —— 指针指在 5 挡、读数写 4，**两者都不报错**。
+ */
+window.valueLabelFor = function (labels, value) {
+  if (!window.valueLabelsUsable(labels)) return null;
+  if (value === null || value === undefined || typeof value !== "number" || !isFinite(value)) return null;
+  let i = Math.round(value);
+  if (i < 0) i = 0;
+  if (i > labels.length - 1) i = labels.length - 1;
+  return labels[i];
+};
+
+/** 有没有**可用**的映射表（至少一项非空，而不是"数组非空"） */
+window.valueLabelsUsable = function (labels) {
+  if (!labels || !labels.length) return false;
+  for (let i = 0; i < labels.length; i++) if (labels[i]) return true;
+  return false;
+};
+
+/** 规范化：只留字符串、截断到上限、去掉尾部空项（空表返回 null） */
+window.normalizeValueLabels = function (arr) {
+  if (!arr || !arr.length) return null;
+  const out = [];
+  for (let i = 0; i < arr.length && i < window.VALUE_LABELS_MAX; i++) {
+    out.push(arr[i] === null || arr[i] === undefined ? "" : String(arr[i]));
+  }
+  while (out.length && out[out.length - 1] === "") out.pop();
+  return out.length ? out : null;
+};
+

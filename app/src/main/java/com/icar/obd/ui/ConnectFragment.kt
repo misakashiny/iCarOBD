@@ -8,8 +8,10 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.widget.EditText
 import android.widget.Spinner
 import android.widget.TextView
+import androidx.core.widget.doAfterTextChanged
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -140,12 +142,6 @@ class ConnectFragment : Fragment(), ObdController.Listener {
             )
         }
 
-        // CAN 被动探测：找广播帧（转向灯/车门/刹车这类没有标准 PID 的信号）
-        view.findViewById<MaterialButton>(R.id.btnCanSniffer).setOnClickListener {
-            startActivity(
-                android.content.Intent(requireContext(), CanSnifferActivity::class.java)
-            )
-        }
 
         // 性能基准：8 个表每帧强制重绘，测霓虹辉光的真实绘制成本
         // （文档 §2.4 反复推迟的那件事 —— 量不出来就没法判断该不该重构渲染层）
@@ -216,6 +212,28 @@ class ConnectFragment : Fragment(), ObdController.Listener {
             activity?.let { a ->
                 if (c) a.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 else a.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
+
+        // 油箱容量（L）：只用于「续航里程」派生通道。
+        // OBD 读不到这个值（连"油量%"都只有部分车支持），只能问用户。
+        val etTank = view.findViewById<EditText>(R.id.etTankCapacity)
+        etTank.setText(
+            Store.settings.tankCapacityL.let {
+                if (it == it.toInt().toFloat()) it.toInt().toString() else it.toString()
+            }
+        )
+        // 用 `doAfterTextChanged` 而不是焦点变化：改完直接按返回键时焦点事件不一定来，值会丢
+        etTank.doAfterTextChanged { e ->
+            val s = e?.toString()?.trim().orEmpty()
+            // 空串 = 正在清空重输，**不要**当成 0 存进去（那会静默把续航关掉）
+            if (s.isEmpty()) return@doAfterTextChanged
+            val v = s.toFloatOrNull() ?: return@doAfterTextChanged
+            // 0 = 关闭续航（见 Settings.tankCapacityL）；上限 300L 是给大车的余量
+            val clamped = v.coerceIn(0f, 300f)
+            if (clamped != Store.settings.tankCapacityL) {
+                Store.settings.tankCapacityL = clamped
+                Store.saveSettings()
             }
         }
     }

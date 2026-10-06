@@ -155,10 +155,10 @@
       [
         { key: "g_speed", name: "车速", pid: "obd.speed", style: 1, w: 200, h: 100, icon: "▬" },
         { key: "g_coolant", name: "水温", pid: "obd.coolant", style: 0, w: 120, h: 120, icon: "◉" },
-        { key: "g_fuel", name: "油量", pid: "obd.fuel", style: 0, w: 120, h: 120, icon: "◉" },
+        { key: "g_fuel", name: "油量", pid: "obd.fuel_level", style: 0, w: 120, h: 120, icon: "◉" },
         { key: "g_volt", name: "电压", pid: "obd.voltage", style: 4, w: 150, h: 150, icon: "▣" },
         { key: "g_intake", name: "进气温度", pid: "obd.intake", style: 4, w: 150, h: 150, icon: "▣" },
-        { key: "g_boost", name: "涡轮压力", pid: "obd.boost", style: 2, w: 120, h: 120, icon: "◍" },
+        { key: "g_boost", name: "涡轮压力", pid: "calc.boost", style: 2, w: 120, h: 120, icon: "◍" },
         { key: "g_load", name: "发动机负荷", pid: "obd.load", style: 2, w: 120, h: 120, icon: "◍" },
         { key: "g_throttle", name: "节气门", pid: "obd.throttle", style: 3, w: 200, h: 100, icon: "▬" },
       ].forEach(function (d) {
@@ -228,7 +228,7 @@
         { key: "lamp_coolant", name: "水温灯", pid: "obd.coolant",
           normal: "assets/warning/lamp-off.png", warn: "assets/warning/lamp-warn.png",
           crit: "assets/warning/coolant-warn.png" },
-        { key: "lamp_oil", name: "机油灯", pid: "obd.oilPressure",
+        { key: "lamp_oil", name: "机油灯", pid: "tpl_oilPressure",
           normal: "assets/warning/lamp-off.png", warn: "assets/warning/lamp-warn.png",
           crit: "assets/warning/oil-warn.png" },
         { key: "lamp_batt", name: "电池灯", pid: "obd.voltage",
@@ -362,17 +362,26 @@
   // ---- 常用仪表（第二批）：把车机上真正会看的量都补上
   [
     { key: "g_rpm", name: "转速表", pid: "obd.rpm", style: 0, w: 180, h: 180, icon: "◉" },
-    { key: "g_avgfuel", name: "平均油耗", pid: "obd.avgFuel", style: 1, w: 200, h: 100, icon: "▬" },
-    { key: "g_instfuel", name: "瞬时油耗", pid: "obd.instFuel", style: 2, w: 120, h: 120, icon: "◍" },
-    { key: "g_range", name: "续航里程", pid: "obd.range", style: 1, w: 200, h: 100, icon: "▬" },
+    // 平均油耗：派生通道（累计用油 ÷ 累计里程），**不用等车、不用厂家 PID**
+    { key: "g_avgfuel", name: "平均油耗", pid: "calc.avg_l100", style: 1, w: 200, h: 100, icon: "▬" },
+    { key: "g_instfuel", name: "瞬时油耗", pid: "calc.l100", style: 2, w: 120, h: 120, icon: "◍" },
+    // 续航里程：派生通道（油量% × 油箱容量 ÷ 平均油耗 × 100）。
+    // 需要在 App「连接」页填**油箱容量**，否则通道不出值（仪表显示 --）
+    { key: "g_range", name: "续航里程", pid: "calc.range", style: 1, w: 200, h: 100, icon: "▬" },
     { key: "g_odo", name: "总里程", pid: "obd.odo", style: 1, w: 200, h: 100, icon: "▬" },
-    { key: "g_oiltemp", name: "机油温度", pid: "obd.oilTemp", style: 4, w: 150, h: 150, icon: "▣" },
-    { key: "g_gearbox", name: "变速箱油温", pid: "obd.gearTemp", style: 4, w: 150, h: 150, icon: "▣" },
-    { key: "g_afr", name: "空燃比", pid: "obd.afr", style: 4, w: 150, h: 150, icon: "▣" },
+    { key: "g_oiltemp", name: "机油温度", pid: "obd.oil_temp", style: 4, w: 150, h: 150, icon: "▣" },
+    { key: "g_gearbox", name: "变速箱油温", pid: "tpl_atf", style: 4, w: 150, h: 150, icon: "▣" },
+    { key: "g_afr", name: "空燃比", pid: "tpl_afr", style: 4, w: 150, h: 150, icon: "▣" },
     { key: "g_speed_d", name: "数字车速", pid: "obd.speed", style: 1, w: 220, h: 110, icon: "▬" },
-    { key: "g_gear", name: "挡位", pid: "obd.gear", style: 1, w: 100, h: 100, icon: "▬" },
+    // ⚠️ 挡位是**枚举**，不是连续量 —— 见 P9「非数值 PID 模型」方向 A。
+    // 值仍然是 0..8 的数（指针/条照常按数值走），**只有读数**查 valueLabels。
+    // `min`/`max` 写死在这里：`obd.gear` 目前还不在 PID 库里，
+    // 靠 BUILTIN_PIDS 兜底会得到 0~100（那是指针几乎不动的量程）
+    { key: "g_gear", name: "挡位", pid: "obd.gear", style: 1, w: 100, h: 100, icon: "▬",
+      min: 0, max: 8,
+      valueLabels: ["P", "R", "N", "1", "2", "3", "4", "5", "6"] },
     { key: "g_soc", name: "电池电量", pid: "obd.soc", style: 2, w: 120, h: 120, icon: "◍" },
-    { key: "g_gforce", name: "G 值", pid: "obd.gforce", style: 7, w: 160, h: 160, icon: "✦" },
+    { key: "g_gforce", name: "G 值", pid: "calc.gforce", style: 7, w: 160, h: 160, icon: "✦" },
   ].forEach(function (d) {
     list.push({
       key: d.key, name: d.name, icon: d.icon || "◉",
@@ -380,8 +389,12 @@
         const info = window.BUILTIN_PIDS[window.resolvePid(d.pid)] || {};
         return window.createNode(window.NODE_GAUGE, {
           name: d.name, pid: d.pid, style: d.style,
-          min: info.min !== undefined ? info.min : 0,
-          max: info.max !== undefined ? info.max : 100,
+          // 模板显式给了量程就优先 —— 库里还没有的 PID（挡位这类）必须这样兜，
+          // 否则 `info` 查不到 → 0~100，指针几乎不动
+          min: d.min !== undefined ? d.min : (info.min !== undefined ? info.min : 0),
+          max: d.max !== undefined ? d.max : (info.max !== undefined ? info.max : 100),
+          // 枚举的显示映射（P9 方向 A）；没有就是 null = 显示数字
+          valueLabels: d.valueLabels || null,
           x: 40, y: 40, w: d.w, h: d.h, z: 10,
         });
       },
@@ -466,12 +479,12 @@
     { key: "lamp_abs", name: "ABS 灯", pid: "obd.abs", crit: "assets/warning/abs-warn.png" },
     { key: "lamp_esp", name: "ESP 灯", pid: "obd.esp", crit: "assets/warning/esp-warn.png" },
     { key: "lamp_engine", name: "发动机灯", pid: "obd.engineFault", crit: "assets/warning/engine.png" },
-    { key: "lamp_fuel", name: "燃油报警", pid: "obd.fuel", crit: "assets/warning/fuel-low.png" },
+    { key: "lamp_fuel", name: "燃油报警", pid: "obd.fuel_level", crit: "assets/warning/fuel-low.png" },
     { key: "lamp_door", name: "车门未关", pid: "obd.door", crit: "assets/warning/door-warn.png" },
     { key: "lamp_washer", name: "玻璃水", pid: "obd.washer", crit: "assets/warning/washer.png" },
     { key: "lamp_service", name: "保养提示", pid: "obd.service", crit: "assets/warning/service.png" },
     { key: "lamp_temp", name: "水温报警", pid: "obd.coolant", crit: "assets/warning/coolant-warn.png" },
-    { key: "lamp_charge", name: "充电提示", pid: "obd.charging", crit: "assets/warning/charge-cable.png" },
+    { key: "lamp_charge", name: "充电提示", pid: "obd.voltage", crit: "assets/warning/charge-cable.png" },
     { key: "lamp_lane", name: "车道辅助", pid: "obd.laneKeep", crit: "assets/warning/lane-keep.png" },
     { key: "lamp_collision", name: "碰撞预警", pid: "obd.collision", crit: "assets/warning/collision.png" },
   ].forEach(function (d) {
@@ -621,7 +634,7 @@
         make: function () {
           const E = window.ensureBuiltinAsset || function () { return ""; };
           const n = window.createNode(window.NODE_GAUGE, {
-            name: "拼装条形油量", pid: "obd.fuel", style: 0,
+            name: "拼装条形油量", pid: "obd.fuel_level", style: 0,
             min: 0, max: 100, warnLow: 15,
             x: 40, y: 40, w: 200, h: 60, z: 99,
           });

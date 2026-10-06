@@ -207,9 +207,23 @@ const eq = (a, b, m) => ok(a === b, m + (a === b ? '' : `（实际 ${JSON.string
     const live = await cdp.eval(`(() => {
       const S = window.CanvasState;
       const cv = document.getElementById('cv');
+      // ⚠️ **指纹必须够灵敏**（v2.55.0）。
+      //
+      // 原来是 i += 331 且**只读 R 通道**（d[i]）——
+      // 实测在"把仪表调色板换成主题色"之后，
+      // 「改字距 → 画布变了」「改斜体 → 画布变了」两条会**红**：
+      // 字距/斜体改的是抗锯齿边缘的**细微灰度**，只读 R 且抽样稀疏时测不到。
+      //
+      // 改成：**步长 97**（密 3.4 倍）+ **四个通道都读**。
+      //
+      // 仍然会「看起来变了但指纹没变」的极端情况存在吗？会 ——
+      // 但只要"四通道 + 密采样"都测不出来，那个差异在视觉上也确实可以忽略。
       const hash = () => {
         const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
-        let h = 0; for (let i = 0; i < d.length; i += 331) h = (h*31 + d[i]) % 2147483647;
+        let h = 0;
+        for (let i = 0; i < d.length; i += 97) {
+          for (let c = 0; c < 4; c++) h = (h * 31 + d[i + c]) % 2147483647;
+        }
         return h;
       };
       const txt = window.flatten(S.design.nodes).find(x => x.type === 'window' || x.type === 'text');

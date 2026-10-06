@@ -119,10 +119,48 @@ class LogFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         unsubscribe = AppLog.addListener { e ->
+            // ⚠️ 隐藏时**绝不能**碰 RecyclerView（v1.18.4 修 —— 实车 ANR 的根因）。
+            //
+            // 本 App 切页用的是 `hide()`/`show()` 而不是 `replace()`，而 **`hide()`
+            // 不会触发 `onPause()`**：这一页被切走之后监听器仍然挂着，而 RecyclerView
+            // 的 View 已经是 **GONE**。GONE 的 RecyclerView 不会跑 layout，于是每一次
+            // `notifyItemInserted` / `notifyItemRemoved` 都堆进 `AdapterHelper` 的待处理
+            // 队列里，**永远不被消费**。
+            //
+            // 实车实测（2026-10-06，阿特兹怠速）：
+            //   11:57:03 打开日志页 → 11:57:07 切走（只看了 3.4 秒）
+            //   隐藏 8 分 59 秒 × ~47 条/秒 ≈ **2.5 万个待处理 op**
+            //   12:06:07 再切回来 → 第一次 layout 一次性回放全部 op
+            //   → 主线程卡死 5 秒 → `am_anr: Input dispatching timed out
+            //     (Waited 5001ms for MotionEvent(action=DOWN))` → 系统 SIGKILL
+            //
+            // 隐藏期间不更新；切回来时由 [onHiddenChanged] 用一次 `submitAll` 补齐。
+            if (isHidden) return@addListener
             adapter.add(e)
             // 合并刷新：洪泛时每条都滚一次 + 刷新统计会把主线程打满，
             // 这里改成「最多每 UI_REFRESH_MS 刷新一次」
             requestUiRefresh()
+        }
+    }
+
+    /**
+     * 切页（hide/show）时同步一次。
+     *
+     * 隐藏期间监听器被上面的 `isHidden` 短路了，adapter 会落后于缓冲；
+     * 回来时用**一次** `submitAll`（整表替换，只发一次 `notifyDataSetChanged`）补齐，
+     * 而不是把隐藏期间积累的两万多个 op 一次性喂给 RecyclerView。
+     */
+    override fun onHiddenChanged(hidden: Boolean) {
+        super.onHiddenChanged(hidden)
+        if (!::adapter.isInitialized) return
+        if (hidden) {
+            // 看不见的时候别动 RecyclerView
+            main.removeCallbacks(uiTick)
+            uiScheduled = false
+        } else {
+            adapter.submitAll(AppLog.snapshot())
+            if (!paused && adapter.itemCount > 0) rv.scrollToPosition(adapter.itemCount - 1)
+            updateStats()
         }
     }
 

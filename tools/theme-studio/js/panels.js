@@ -460,6 +460,15 @@
           (n.style === s.v ? " selected" : "") + '>' + s.v + ' · ' + s.n + '</option>').join("") +
         '</select>'),
       row("min / max", numIn("min", n.min, "any") + numIn("max", n.max, "any")),
+      // P9「非数值 PID 模型」方向 A：枚举的**显示**映射
+      // （值仍然是数 → 指针/条照旧按数值走；只有读数换名字）
+      //
+      // ⚠️ **单行输入 + 逗号分隔**，不是 textarea：属性面板有"行高 ≤ 40px"的
+      // 排版约束（`verify-layout` 守着），3 行 textarea 会当场把它顶红。
+      // 代价：**名字里不能有逗号**（挡位这类本来也没有）。
+      row("数值映射", '<input value="' + attr((n.valueLabels || []).join(",")) +
+        '" placeholder="逗号分隔，索引 = round(值)，如 P,R,N,1,2" ' +
+        'oninput="setNodeValueLabels(this.value)">'),
       row("warnLow", '<input type="number" step="any" value="' + (n.warnLow === null ? "" : window.r2(n.warnLow)) +
         '" placeholder="（不设）" oninput="setNodeNullable(\'warnLow\',this.value)">'),
       row("warnHigh", '<input type="number" step="any" value="' + (n.warnHigh === null ? "" : window.r2(n.warnHigh)) +
@@ -1149,7 +1158,19 @@
     if (!d) { box.innerHTML = ""; return; }
 
     const q = assetQuery.trim().toLowerCase();
-    const hit = s => !q || String(s).toLowerCase().indexOf(q) >= 0;
+    // 搜索命中判定（v2.51.0 支持**拼音**）。
+//
+// 三种输入都认：
+//   `碳纤维`      原文（含英文名，比如 `turn-left`）
+//   `tanxianwei`  全拼
+//   `txw`         首字母
+//
+// 原来的实现只有第一条 —— 中文界面里搜东西得切输入法，很别扭。
+// `window.matchPinyin` 在 `js/pinyin.js` 里（表只覆盖现有名字用到的 368 个字，
+// 几 KB；以后名字里出现生字要往那个表里加）。
+const hit = s => !q
+  || String(s).toLowerCase().indexOf(q) >= 0
+  || (window.matchPinyin ? window.matchPinyin(s, q) : false);
 
     const mine = d.assets || [];
     const builtin = window.BUILTIN_ASSETS || [];
@@ -1200,6 +1221,14 @@
       });
 
       // 自定义控件
+      //
+      // ⚠️ **搜索时，没命中的分类要整个跳过**（v2.46.0）。
+      //
+      // 素材分类早就是这么做的（见下面的 `anyKind`），控件这块漏了 ——
+      // 于是搜「圆表」时会看到一个空的「★ 自定义控件 0」，
+      // 而且里面的提示是"右键控件 → 保存到素材库"，**跟搜索完全无关**。
+      // 搜索的意图是"找东西"，显示空分类只是噪音（还占一行滚动）。
+      if (!q || saved.length) {
       h += assetFolder({
         key: "__myctrl", icon: "★", title: "自定义控件", count: saved.length,
         autoOpen: false, forceOpen: !!q,
@@ -1212,8 +1241,11 @@
               '<span class="ccDel" onclick="event.stopPropagation();delSavedControl(\'' + attr(c.id) + '\')" title="删除">✕</span>' +
               '</div>'
             ).join("") + '</div>'
-          : '<div class="akempty">（空 —— 右键控件 →「编辑控件…」→「保存到素材库」）</div>',
+          // 搜索语境下说"没有匹配"才贴切；"去素材库保存"跟搜索无关
+          : (q ? '<div class="akempty">没有匹配的自定义控件</div>'
+               : '<div class="akempty">（空 —— 右键控件 →「编辑控件…」→「保存到素材库」）</div>'),
       });
+      }   // ← 对应上面的 `if (!q || saved.length)`
     }
 
     // ================================================================ 素材
@@ -1628,15 +1660,34 @@ window.useBuiltinAsset = function (path) {
     if (nat) {
       const ar = nat[0] / nat[1];
       const LONG = 90;
+      // 这里不用 MIN/MAX 直接夹 w、h —— 那会**各自独立**夹，比例就废了。
+      // 全程只算一个**整体缩放系数 k**。
       if (ar >= 1) { w = LONG; h = LONG / ar; }
       else { h = LONG; w = LONG * ar; }
-      // 最短边不小于 12：太细的素材（比如 1×256 的分隔线）会窄到点不中。
-      // **整体缩放**，不是单独夹一边。
+
+      // ① 短边不能小于 MIN：太细的素材（比如 1×256 的分隔线）会窄到点不中。
       const MIN = 12;
       if (w < MIN) { const k = MIN / w; w *= k; h *= k; }
       if (h < MIN) { const k = MIN / h; w *= k; h *= k; }
+
+      // ② ⚠️ **长边不能超过画布**（v2.48.0 修）。
+      //
+      // 上面那条 MIN 是"整体放大"，比例越极端放得越大：
+      //   256×8 的分隔线（比 32）→ 90×2.8 → 撑短边到 12 → **384×12**
+      //   而画布只有 **360** 宽 —— 加进去就比整个画布还宽，直接被裁掉。
+      //
+      // **这条优先于 MIN**：宁可短边略低于 12，也不能让节点超出画布。
+      // （比 29.6 更极端的比例下两条约束无法同时满足，必须选一个。）
+      const CAP = 355;   // 留 5 个单位的余量
+      const longSide = Math.max(w, h);
+      if (longSide > CAP) { const k = CAP / longSide; w *= k; h *= k; }
+
       w = Math.round(w); h = Math.round(h);
+      // 取整后可能又超一点点，再夹一次（比例已经定型，这次只影响 1 个单位以内）
+      if (Math.max(w, h) > CAP) { if (w >= h) w = CAP; else h = CAP; }
     }
+    // else：素材既没有 w/h、位图也没加载 —— 只能先用正方形兜底。
+    // 这不是"正确"的尺寸，所以补一次**异步重算**（见下面的 refitImageNode）。
     window.commit(() => {
       const n = window.createNode(window.NODE_IMAGE, {
         name: a ? a.name.replace(/\.[^.]+$/, "") : "图片",
@@ -1647,7 +1698,45 @@ window.useBuiltinAsset = function (path) {
       S.design.nodes.push(n);
       S.selection = [n.id];
     }, "添加图片控件");
+
+    // ⚠️ **没有自然尺寸时，靠位图异步补算**（v2.48.0）。
+    //
+    // 上面 `nat` 为 null 时只能给 90×90 正方形 —— 而正方形对一张
+    // 256×8 的分隔线来说就是"扁掉"（用户报的就是这个）。
+    // 素材的位图是**异步加载**的，等它到了再按真实比例修一次。
+    if (!nat && assetId) refitImageNodeWhenBitmapReady(assetId);
   };
+
+  /**
+   * 位图到位后，把刚加进画布的节点按**真实比例**重修一次。
+   *
+   * 只在 `addImageNode` 拿不到自然尺寸时才会走到这里。
+   * 最多等 3 秒（位图可能在设计文件里，加载更慢）。
+   */
+  function refitImageNodeWhenBitmapReady(assetId) {
+    let tries = 0;
+    const tick = () => {
+      tries++;
+      const bmp = window.assetBitmap ? window.assetBitmap(assetId) : null;
+      if (bmp && bmp.naturalWidth > 0 && bmp.naturalHeight > 0) {
+        const n = S.design.nodes.find(x => x.assetId === assetId && x.w === x.h);
+        if (n) {
+          const ar = bmp.naturalWidth / bmp.naturalHeight;
+          const LONG = 90, MIN = 12, CAP = 355;
+          let w, h;
+          if (ar >= 1) { w = LONG; h = LONG / ar; } else { h = LONG; w = LONG * ar; }
+          if (w < MIN) { const k = MIN / w; w *= k; h *= k; }
+          if (h < MIN) { const k = MIN / h; w *= k; h *= k; }
+          const longSide = Math.max(w, h);
+          if (longSide > CAP) { const k = CAP / longSide; w *= k; h *= k; }
+          window.commit(() => { n.w = Math.round(w); n.h = Math.round(h); }, "按真实比例修正素材尺寸");
+        }
+        return;
+      }
+      if (tries < 30) setTimeout(tick, 100);
+    };
+    setTimeout(tick, 60);
+  }
 
   /**
    * 素材的**原始宽高**（用于按比例定新节点的尺寸）。

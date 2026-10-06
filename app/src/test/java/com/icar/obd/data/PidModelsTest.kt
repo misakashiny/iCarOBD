@@ -85,6 +85,34 @@ class PidModelsTest {
     }
 
     @Test
+    fun `normalize 给单个十六进制字符补零`() {
+        // 实车同一天踩了两次：Mode 填 `1` / `2` → 发出 `1 A4` / `2 A4`
+        // → ELM327 把 `1A4` 当三个 nibble → 帧畸形 → NO DATA / 否定响应
+        assertEquals("01 A4", PidDefinition.normalize("1 A4"))
+        assertEquals("02 A4", PidDefinition.normalize("2 A4"))
+        assertEquals("01 04", PidDefinition.normalize("1 4"))
+        // 本来就是对的不动
+        assertEquals("01 0C", PidDefinition.normalize("01 0C"))
+        assertEquals("22 1234", PidDefinition.normalize("22 1234"))
+    }
+
+    @Test
+    fun `normalize 不碰 AT 命令也不碰三位地址`() {
+        // AT 命令含非十六进制字母 → 整串原样返回（补零会毁掉它）
+        assertEquals("ATI", PidDefinition.normalize("ati"))
+        assertEquals("ATSH7E0", PidDefinition.normalize("atsh7e0"))
+        // `7E0` 是合法 CAN 头，补成 `07E0` 就错了 —— 所以只补长度为 1 的 token
+        assertEquals("7E0", PidDefinition.normalize("7E0"))
+    }
+
+    @Test
+    fun `requestString 也享受补零`() {
+        assertEquals("01 A4", PidDefinition(mode = "1", pid = "A4").requestString())
+        // 手工填的 customRequest 同样走规范化（旧配置里存的就是没补零的串）
+        assertEquals("02 A4", PidDefinition(mode = "01", pid = "0C", customRequest = "2 A4").requestString())
+    }
+
+    @Test
     fun `requestString 由 mode 与 pid 拼成`() {
         assertEquals("01 0C", PidDefinition(mode = "01", pid = "0C").requestString())
         assertEquals("22 1234", PidDefinition(mode = "22", pid = "1234").requestString())

@@ -26,6 +26,10 @@ import com.icar.obd.data.RuleAction
 import com.icar.obd.data.Store
 import java.io.File
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
  * 全局控制器（单例门面）。
@@ -94,6 +98,12 @@ object ObdController {
     /** 用户主动断开时置位，避免自动重连把用户「粘」回车上 */
     @Volatile
     private var manualDisconnect = false
+    /** 开机自动连成功之后，等 READY 自动跑一次初始化（只跑一次） */
+    @Volatile
+    private var autoInitPending = false
+
+    /** 自动初始化是 suspend 的，需要一个作用域（不在主线程上跑，避免卡 UI） */
+    private val autoScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     // 自动重连参数。注意：ObdController 是 object，不能在里面声明 companion object，
     // 因此直接用 const val（object 内允许）。
@@ -115,6 +125,19 @@ object ObdController {
 
         RuleEngine.actionHandler = ::handleAction
         RuleEngine.reload()
+        // 记住「这台车真的能通」—— 只在**第一次解析出数值**时写盘一次。
+        // 「开机自动连」拿它当门槛：光有地址不够，得确认以前真的收到过数据，
+        // 否则点了连接却没读通的设备也会被记住，下次开机会白试一遍。
+        VehicleBus.addValueListener { v ->
+            if (v.ok && !Store.settings.everGotData) {
+                Store.settings.everGotData = true
+                Store.saveSettings()
+                AppLog.i(
+                    AppLog.M_SYS, "已记住这台车能通",
+                    "addr=${Store.settings.lastDeviceAddress} · 下次启动将自动连接并初始化"
+                )
+            }
+        }
 
         ready = true
         AppLog.i(AppLog.M_SYS, "ObdController 初始化完成")
@@ -146,6 +169,15 @@ object ObdController {
                 if (s == State.READY) {
                     wasReady = true
                     reconnectAttempts = 0
+                    // 开机自动连成功 → 自动初始化（只做一次）
+                    if (autoInitPending) {
+                        autoInitPending = false
+                        AppLog.i(AppLog.M_BLE, "自动连接成功，开始自动初始化", "")
+                        autoScope.launch {
+                            runCatching { initializeAndStart() }
+                                .onFailure { AppLog.e(AppLog.M_OBD, "自动初始化异常", it.message ?: "") }
+                        }
+                    }
                 }
                 if (s == State.CLOSED) {
                     engine.stop()
@@ -177,6 +209,36 @@ object ObdController {
      * 否则走的是 `onRx` 那条切帧路径。
      */
     var rawChunkListener: ((String) -> Unit)? = null
+
+    /**
+     * 手动跑一次「轮询周期收尾」：G 值推进 + **规则评估** + CSV 落盘。
+     *
+     * ⚠️⚠️ **监听通道必须调它**（v1.19.12）。
+     *
+     * 规则引擎是被**轮询周期**驱动的：`engine.onCycle` 到 `onEngineCycle` 到
+     * `RuleEngine.evaluate()`。而 `ATMA` 监听期间轮询引擎是**停的**，
+     * 那个回调根本不会触发 —— 于是 `VehicleBus` 里明明有值，
+     * 规则却**一次都没被评估过**。
+     *
+     * 实车 2026-10-06 就卡在这里：`命中=114`（值确实喂进去了）但一点声音都没有。
+     * 这一类"数据到了、但没人消费"的 bug，光看数据侧**完全看不出来**。
+     */
+    fun runCycleOnce() = onEngineCycle()
+
+    /**
+     * 试听一个音效（规则编辑器用）。
+     *
+     * `force = true` 绕过音效总开关 —— 见 [AudioPlayer.play] 的说明。
+     */
+    fun previewSound(name: String, volume: Float = 1f, rate: Float = 1f) {
+        audio.play(
+            name.ifBlank { "beep" },
+            volume.coerceIn(0f, 1f),
+            rate.coerceIn(0.5f, 2f),
+            force = true
+        )
+        AppLog.i(AppLog.M_AUDIO, "试听音效", "name=$name volume=$volume rate=$rate")
+    }
 
     private fun onEngineCycle() {
         // 车速差分模式的纵向 G 要靠每轮轮询推进
@@ -271,6 +333,45 @@ object ObdController {
         return true
     }
 
+    /**
+     * **开机自动连**（v1.19.2）。
+     *
+     * 四个条件全满足才做，避免出现「用户不想连却一直被连回来」：
+     *   1) 以前**真的收到过数据**（[Store.settings] 的 `everGotData`）
+     *   2) 设置里开着 `autoReconnect`
+     *   3) 有上次记住的地址
+     *   4) 不是用户主动断开
+     *
+     * 连上之后由 `onStateChanged` 的 READY 分支自动跑一次 [initializeAndStart] ——
+     * ELM327 的 AT 设置**掉电即失**（拔适配器、车断电就回出厂态），
+     * 所以每次上车基本都得重新初始化一遍。
+     *
+     * ⚠️ 冷启动连不上**不会**进重连循环：`scheduleReconnectIfNeeded` 要求 `wasReady`，
+     * 而冷启动失败时它还是 false。所以不会对着连不通的适配器反复重试。
+     *
+     * @return 是否真的发起了连接
+     */
+    @SuppressLint("MissingPermission")
+    fun autoStartIfPossible(): Boolean {
+        if (manualDisconnect) return false
+        if (autoInitPending) return false          // 已经在自动连了，别重复发起
+        if (isConnected()) return false            // 已经连上了（服务可能先起来过）
+        if (!Store.settings.autoReconnect) return false
+        if (!Store.settings.everGotData) return false
+        if (Store.settings.lastDeviceAddress.isBlank()) return false
+        AppLog.i(
+            AppLog.M_SYS, "开机自动连接",
+            "addr=${Store.settings.lastDeviceAddress} name=${Store.settings.lastDeviceName}"
+        )
+        autoInitPending = true
+        val ok = reconnectLast()
+        if (!ok) {
+            autoInitPending = false
+            AppLog.w(AppLog.M_SYS, "开机自动连接失败", "没有可用地址或蓝牙不可用")
+        }
+        return ok
+    }
+
     fun disconnect() {
         manualDisconnect = true
         engine.stop()
@@ -330,6 +431,19 @@ object ObdController {
             startPolling()
         } else {
             AppLog.e(AppLog.M_OBD, "初始化未通过（0100 无有效响应）", "probe=${r.probeRaw.take(80)}")
+            // ⚠️ **未通过也照常启动轮询**（v1.17.6 改，之前是直接不启动）。
+            //
+            // 为什么改：v1.17.2 把 `ok` 的判据**加严**成"`0100` 真的解析出 4 字节位图"，
+            // 假阴性的概率随之变高 —— 而"ok=false 就完全不轮询"会把假阴性放大成
+            // **"明明能通却什么都不做"**。实车会话 B 就是 `ok=false` 却有真实数据。
+            //
+            // 现在照常轮询：真不通时由**总线负载保护**自动降频，
+            // 30 秒后的「轮询汇总」会明说「有值 0/N」—— 比静默不动**更容易看出问题**。
+            AppLog.w(
+                AppLog.M_OBD, "初始化未通过，但仍启动轮询",
+                "看 30 秒后的「轮询汇总 | 有值 N/M」判断链路到底通不通"
+            )
+            startPolling()
         }
         return r
     }
@@ -360,7 +474,14 @@ object ObdController {
 
     private fun handleAction(rule: com.icar.obd.data.Rule, a: RuleAction) {
         when (a.type) {
-            "sound" -> audio.play(a.p1.ifBlank { "warn" })
+            // p1 = 音效名；p2 = 播放速率（0.5~2.0）；p3 = 音量（0~1）。
+            // 用三个自由字符串参数而不是加字段：RuleAction 本来就是
+            // "type + p1/p2/p3" 的通用形状，**存量 JSON 不用迁移**。
+            "sound" -> audio.play(
+                a.p1.ifBlank { "warn" },
+                volume = a.p3.toFloatOrNull() ?: 1f,
+                rate = a.p2.toFloatOrNull() ?: 1f
+            )
             "toast" -> {
                 val msg = a.p1.ifBlank { rule.name }
                 AppLog.i(AppLog.M_RULE, "提示", msg)

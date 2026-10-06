@@ -16,7 +16,7 @@
 装到设备上：
 
 ```bash
-adb install -r -d iCarOBD-debug-v1.15.0-android.apk
+adb install -r -d iCarOBD-debug-v1.18.2-android.apk
 ```
 
 或直接把 APK 拷到手机点击安装（需允许「安装未知来源应用」）。

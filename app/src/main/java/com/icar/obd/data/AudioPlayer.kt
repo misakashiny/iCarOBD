@@ -51,16 +51,29 @@ class AudioPlayer(context: Context) {
         AppLog.i(AppLog.M_AUDIO, "音效已登记", sounds.keys.joinToString(","))
     }
 
-    /** 播放一次。名字不存在时回退到 warn，并记日志便于排查拼写错误。 */
-    fun play(name: String, volume: Float = 1f) {
-        if (!enabled) return
+    /**
+     * 播放一次。名字不存在时回退到 beep，并记日志便于排查拼写错误。
+     *
+     * @param volume 音量 `0~1`（默认 1），越界会被夹进范围
+     * @param rate   **播放速率** `0.5~2.0`（默认 1）。
+     *
+     *   ⚠️ SoundPool 的 `rate` 会**同时改变时长和音高** —— 调大是"更快、更尖"的
+     *   咔嗒声，调小是"更慢、更闷"。转向灯那种继电器"嗒"声，1.4 左右比 1.0 更像。
+     *   这也是它为什么要跟音量分成两个参数。
+     */
+    fun play(name: String, volume: Float = 1f, rate: Float = 1f, force: Boolean = false) {
+        // force=true 是给**试听**用的：那是用户明确按下的动作，
+        // 不该因为"音效总开关关着"就静默不响 —— 用户会以为按钮坏了。
+        if (!enabled && !force) return
         val key = name.trim().lowercase()
         var sid = ids[key]
         if (sid == null) {
             AppLog.w(AppLog.M_AUDIO, "未登记的音效，回退 beep", "name=$name")
             sid = ids["beep"] ?: return
         }
-        runCatching { pool.play(sid, volume, volume, 1, 0, 1f) }
+        val v = volume.coerceIn(0f, 1f)
+        val r = rate.coerceIn(0.5f, 2f)
+        runCatching { pool.play(sid, v, v, 1, 0, r) }
             .onFailure { AppLog.e(AppLog.M_AUDIO, "播放失败", "name=$name ${it.message}") }
     }
 

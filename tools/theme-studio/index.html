@@ -45,7 +45,8 @@
   <button id="btnSim" onclick="toggleSim()" title="用正弦波形驱动预览，看数值变化与状态切换">▶ 实时模拟</button>
 
   <span class="spacer"></span>
-  <button id="btnTheme" onclick="toggleTheme()" title="切换暗黑 / 白色主题">🌙 暗黑</button>
+  <button onclick="openSettings()" title="界面设置（缩放等）。设置存在本机，不进设计文件">⚙ 设置</button>
+<button id="btnTheme" onclick="toggleTheme()" title="切换暗黑 / 白色主题">🌙 暗黑</button>
   <span class="ver" id="canvasSizeLabel"></span>
 </header>
 
@@ -192,6 +193,8 @@
      索引先到 → 缩略图位置与名字立刻能渲染；
      数据由 js/app.js 在首屏之后按分类陆续注入（见 loadAssetData）。 -->
 <script src="assets/builtin-index.js"></script>
+<!-- 拼音表（v2.51.0）：必须在小面板之前 —— 素材库的搜索要用它 -->
+<script src="js/pinyin.js"></script>
 <script src="js/schema.js"></script>
 <script src="js/model.js"></script>
 <script src="js/validate.js"></script>
@@ -217,5 +220,12 @@
     </div>
     <div id="themeColorsBox"></div>
   </dialog>
+<!-- 界面设置（v2.54.0）
+     ⚠️ 这里的设置是**工具本身的偏好**（缩放），**不进设计文件** ——
+     否则同一份设计在不同人的机器上会长得不一样。 -->
+<dialog id="settingsDlg" class="setDlg">
+  <div class="setTitle">界面设置<button class="mini" onclick="document.getElementById('settingsDlg').close()">关闭</button></div>
+  <div id="settingsBox"></div>
+</dialog>
 </body>
 </html>

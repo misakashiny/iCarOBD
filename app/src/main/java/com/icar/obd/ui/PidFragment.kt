@@ -26,7 +26,7 @@ import java.io.File
  * 这是「不改 APK 就能支持新车数据」的入口：
  *   · 新增 PID  → 手工填协议/Mode/PID/公式/量程
  *   · PID 扫描器 → 让车告诉我们它支持什么
- *   · 阿特兹模板 → 一键生成可编辑的候选条目（PID 号为占位，需扫描确认）
+
  *   · 导入/导出  → JSON 分享，便于在多个设备/多个智能体之间传递成果
  */
 class PidFragment : Fragment() {
@@ -77,7 +77,11 @@ class PidFragment : Fragment() {
         }
         view.findViewById<MaterialButton>(R.id.btnImport).setOnClickListener { showImportDialog() }
         view.findViewById<MaterialButton>(R.id.btnExport).setOnClickListener { showExportDialog() }
-        view.findViewById<MaterialButton>(R.id.btnSeedMazda).setOnClickListener { seedTemplates() }
+        // CAN 探测放在扫描器旁边：两者是同一件事的两条路 ——
+        // **扫描器主动问**（找 ECU 愿答的 PID），**探测被动听**（找模块自己广播的帧）
+        view.findViewById<MaterialButton>(R.id.btnCanSniffer).setOnClickListener {
+            startActivity(Intent(requireContext(), CanSnifferActivity::class.java))
+        }
     }
 
     override fun onResume() {
@@ -229,20 +233,5 @@ class PidFragment : Fragment() {
             .show()
     }
 
-    private fun seedTemplates() {
-        AlertDialog.Builder(requireContext())
-            .setTitle("生成阿特兹候选 PID")
-            .setMessage(
-                "将复制 4 条厂家 PID 模板为**可编辑**条目（变速箱油温、左右转向、方向盘转角）。\n\n" +
-                    "注意：模板里的 PID 号是占位值，标准 OBD 里没有转向灯这类信号。\n" +
-                    "正确流程：PID 扫描器扫出真实地址 → 在编辑器里改号 → 测试通过 → 启用。"
-            )
-            .setPositiveButton("生成") { _, _ ->
-                val n = Store.importTemplatesAsCustom()
-                refresh()
-                ObdController.toast("已生成 $n 条候选，请用扫描器确认真实 PID")
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
+
 }

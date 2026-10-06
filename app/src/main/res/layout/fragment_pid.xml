@@ -42,6 +42,18 @@
             android:insetBottom="0dp"
             android:text="PID 扫描器"
             android:textSize="12sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCanSniffer"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="6dp"
+            android:layout_weight="1"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="CAN 探测"
+            android:textSize="11sp" />
     </LinearLayout>
 
     <LinearLayout
@@ -74,16 +86,7 @@
             android:text="导出 JSON"
             android:textSize="11sp" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnSeedMazda"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="0dp"
-            android:layout_height="36dp"
-            android:layout_weight="1"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:text="阿特兹模板"
-            android:textSize="11sp" />
+
     </LinearLayout>
 
     <TextView

@@ -39,6 +39,20 @@ object CanFrame {
         var firstTs: Long = 0,
         var lastTs: Long = 0
     ) {
+        /**
+         * 出现过的**不同 data 值**（有界，最多 8 个）。
+         *
+         * 为什么必须有它：聚合里的 `lastData` 只是**最后一帧**的值，
+         * 而周期信号很可能正好停在"暗"相位 —— 于是
+         * "开灯时 byte2 跳到 04 还是 08"这种问题**光看 last 答不了**。
+         * 实车 2026-10-06 就卡在这里：`09A` 已知跟着转向灯跳，
+         * 但左转、右转两次的 last 都是 `00`，分不出左右。
+         *
+         * 放在**类体**而不是构造参数里：可变集合不该参与 `data class` 的
+         * `equals`/`hashCode`/`copy`。
+         */
+        val values: LinkedHashSet<String> = LinkedHashSet()
+
         val isExtended: Boolean get() = canId > 0x7FF
         fun idHex(): String = String.format("%X", canId)
     }
@@ -100,6 +114,8 @@ object CanFrame {
                 a.changed++
                 a.lastData = hex
             }
+            // 记录不同取值（有界 8 个，防内存膨胀）
+            if (a.values.size < 8 || a.values.contains(hex)) a.values.add(hex)
             if (raw.size < maxRaw) raw.add(RawFrame(now, f)) else dropped++
         }
 

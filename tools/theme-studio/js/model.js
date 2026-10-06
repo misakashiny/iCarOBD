@@ -73,6 +73,9 @@
         ringSegments: num(o.ringSegments, 40),
         neonPreset: o.neonPreset || null,
         cardStyle: o.cardStyle === undefined ? null : o.cardStyle,
+        // 数值 → 文字 映射表（P9 方向 A）。null = 不用映射（读数按量程格式化）。
+        // ⚠️ 空表要归一成 null —— 否则 `["",""]` 会让读数变成空字符串
+        valueLabels: window.normalizeValueLabels(o.valueLabels),
         // **子部件**：有它就不再走程序化绘制，而是按部件拼装（v2.12.0）。
         // 空数组 = 用 style 的程序化画法（默认），行为完全不变。
         parts: (o.parts && o.parts.length) ? o.parts.map(window.normalizePart) : null,
@@ -798,6 +801,8 @@
       if (n.ringSegments !== 40) o.ringSegments = n.ringSegments;
       if (n.neonPreset) o.neonPreset = n.neonPreset;
       if (n.cardStyle !== null && n.cardStyle !== undefined) o.cardStyle = n.cardStyle;
+      // 映射表只在**有**时写出（空 = 不用映射，旧版本读到没有这个字段语义一致）
+      if (window.valueLabelsUsable(n.valueLabels)) o.valueLabels = n.valueLabels.slice();
       // 部件只在**有**时写出（没有 = 用 style 的程序化画法）
       if (n.parts && n.parts.length) {
   // ⚠️ **剔除空的 pid / rawPid** —— 不剔的话每个部件都会写两个空字符串，
@@ -953,6 +958,8 @@ function toV2Json(d) {
       if (n.ringSegments !== 40) g.ringSegments = n.ringSegments;
       if (n.neonPreset) g.neonPreset = n.neonPreset;
       if (n.cardStyle !== null && n.cardStyle !== undefined) g.cardStyle = n.cardStyle;
+      // 映射表跟着走：App 侧 `GaugeItem` 与 schema 版本无关，v1 也能读
+      if (window.valueLabelsUsable(n.valueLabels)) g.valueLabels = n.valueLabels.slice();
       gauges.push(g);
     });
 

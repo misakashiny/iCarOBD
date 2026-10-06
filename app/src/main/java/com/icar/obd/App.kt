@@ -38,6 +38,13 @@ class App : Application() {
         ObdController.init(this)
         ObdController.ensureChannel()
 
+        // 开机自动连上次那台设备 —— 只有**以前真的收到过数据**才做（门槛在方法里）。
+        // 这里只负责"发起连接"：初始化要等 READY 到了由 ObdController 自己触发，
+        // 因为此刻链路还没建立，直接初始化必然失败。
+        // 用 runCatching 兜住权限：全新安装时 BLUETOOTH_CONNECT 可能还没授予。
+        runCatching { ObdController.autoStartIfPossible() }
+            .onFailure { AppLog.w(AppLog.M_SYS, "开机自动连接异常", it.message ?: "") }
+
         // 注意：前台服务**不在这里启动**。
         // Android 12+ 对「从 Application.onCreate 启动前台服务」有后台启动限制，
         // 因此改由 MainActivity.onCreate 启动（此时应用处于前台，一定允许）。

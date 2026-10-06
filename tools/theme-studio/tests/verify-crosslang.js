@@ -81,6 +81,7 @@ const designFileKt = read(path.join(KOTLIN, "data", "DesignFile.kt"));
 const builtInKt = read(path.join(KOTLIN, "data", "BuiltInPids.kt"));
 const pidModelsKt = read(path.join(KOTLIN, "data", "PidModels.kt"));
 const dashLayoutKt = read(path.join(KOTLIN, "data", "DashLayout.kt"));
+const valueLabelsKt = read(path.join(KOTLIN, "data", "ValueLabels.kt"));
 
 /**
  * 取 Kotlin 的字符串常量。
@@ -138,7 +139,7 @@ function parseKotlinPids(src) {
     const wl = /warnLow\s*=\s*(-?[\d.]+)f/.exec(tail);
     const wh = /warnHigh\s*=\s*(-?[\d.]+)f/.exec(tail);
     out["std_" + m[1].toUpperCase()] = {
-      name: m[2], unit: m[4],
+      name: m[2], unit: m[4], formula: m[3],
       min: Number(m[5]), max: Number(m[6]),
       warnLow: wl ? Number(wl[1]) : null,
       warnHigh: wh ? Number(wh[1]) : null,
@@ -149,9 +150,61 @@ function parseKotlinPids(src) {
   while ((m = re2.exec(src))) {
     const wh = /warnHigh\s*=\s*(-?[\d.]+)f/.exec(m[6] || "");
     out[m[1]] = {
-      name: m[2], unit: m[3],
+      name: m[2], unit: m[3], formula: "A",   // calc 的公式固定是 A
       min: Number(m[4]), max: Number(m[5]),
       warnLow: null,
+      warnHigh: wh ? Number(wh[1]) : null,
+    };
+  }
+  return out;
+}
+
+/**
+ * 从 BuiltInPids 的 `MANUFACTURER_TEMPLATES` 里抽厂家模板（v2.67.0 新增）。
+ *
+ * ## 为什么之前漏了
+ *
+ * `parseKotlinPids` 只认 `std(...)` / `calc(...)` —— 而厂家模板写的是
+ * **完整的 `PidDefinition(...)`**（因为字段不一样：protocol / mode / pid / enabled）。
+ *
+ * 后果：工具侧 `BUILTIN_PIDS` 里的 `tpl_*` 永远被报成"App 侧没有" ——
+ * 而那是**测试的覆盖缺口**，不是真的不对称。
+ *
+ * ⚠️ 这个缺口会让两侧的模板**慢慢漂移**（一边改了量程，测试不红）。
+ */
+function parseKotlinTemplates(src) {
+  const out = {};
+  // PidDefinition(
+  //     id = "tpl_xxx", name = "...", protocol = "CAN", mode = "22", pid = "1234",
+  //     formula = "...", unit = "...", minVal = -40f, maxVal = 180f,
+  //     warnLow = Xf, warnHigh = Yf, enabled = false, ...
+  // )
+  // ⚠️ **不能跨条目**（v2.67.0 踩过）。
+  //
+  // 第一版写的是 `[\s\S]*?`，结果 `std()` 辅助函数里的那个 `PidDefinition(`（`id = "std_$pid"`）
+  // 会一路懒匹配到**第一个真实的 minVal**（在 tpl_oilPressure 里）——
+  // 那个匹配的 id 是 `std_$pid`（被 `^tpl_` 过滤掉），而 **tpl_oilPressure 被吃掉了**。
+  //
+  // 症状：报"工具里多出 tpl_oilPressure"，看起来像 App 侧漏加，其实是**解析器漏读**。
+  //
+  // 修法：用负向先行断言，确保 `id = "..."` 到 `minVal` 之间**不再出现 `PidDefinition(`**。
+  const re = /PidDefinition\(\s*id\s*=\s*"([^"]+)"(?:(?!PidDefinition\()[\s\S])*?minVal\s*=\s*(-?[\d.]+)f\s*,\s*maxVal\s*=\s*(-?[\d.]+)f((?:(?!PidDefinition\()[\s\S])*?)\)\s*,/g;
+  let m;
+  while ((m = re.exec(src))) {
+    const id = m[1];
+    if (!/^tpl_/.test(id)) continue;
+    const body = m[0];
+    const nm = /name\s*=\s*"([^"]*)"/.exec(body);
+    const un = /unit\s*=\s*"([^"]*)"/.exec(body);
+    const fm = /formula\s*=\s*"([^"]*)"/.exec(body);
+    const wl = /warnLow\s*=\s*(-?[\d.]+)f/.exec(body);
+    const wh = /warnHigh\s*=\s*(-?[\d.]+)f/.exec(body);
+    out[id] = {
+      name: nm ? nm[1] : "",
+      unit: un ? un[1] : "",
+      formula: fm ? fm[1] : "",
+      min: Number(m[2]), max: Number(m[3]),
+      warnLow: wl ? Number(wl[1]) : null,
       warnHigh: wh ? Number(wh[1]) : null,
     };
   }
@@ -180,6 +233,10 @@ console.log("\n=== 1. 基础常量 ===");
     n === "STEP" ? tool.STEP : kotlinConstAny(dashLayoutKt, n));
   if (minSize !== null) eq(tool.MIN_SIZE, minSize, "最小尺寸 MIN_SIZE（Kotlin 侧 = 2 * STEP）");
   else note("DashLayout.kt 的 MIN_SIZE 不是「数字 * 名字」形式，工具侧的 30 未做跨语言校验");
+
+  // P9「非数值 PID 模型」方向 A：数值 → 文字映射表的上限
+  eq(tool.VALUE_LABELS_MAX, kotlinConstAny(valueLabelsKt, "MAX"),
+    "映射表上限 VALUE_LABELS_MAX（ValueLabels.kt）");
 }
 
 console.log("\n=== 2. PID 别名表 ===");
@@ -208,7 +265,7 @@ console.log("\n=== 2. PID 别名表 ===");
 
 console.log("\n=== 3. 内置 PID 量程与报警阈值 ===");
 {
-  const kPids = parseKotlinPids(builtInKt);
+  const kPids = Object.assign({}, parseKotlinPids(builtInKt), parseKotlinTemplates(builtInKt));
   const tPids = tool.BUILTIN_PIDS;
   ok(Object.keys(kPids).length > 0,
     `从 BuiltInPids.kt 解析到 ${Object.keys(kPids).length} 个 PID`);
@@ -224,9 +281,35 @@ console.log("\n=== 3. 内置 PID 量程与报警阈值 ===");
     if (f(t.max) !== f(k.max)) bad.push(`${id} max 工具${t.max} App${k.max}`);
     if (f(t.warnHigh) !== f(k.warnHigh)) bad.push(`${id} warnHigh 工具${t.warnHigh} App${k.warnHigh}`);
     if (f(t.warnLow) !== f(k.warnLow)) bad.push(`${id} warnLow 工具${t.warnLow} App${k.warnLow}`);
+    // ⚠️ **名字和单位也要比**（v2.68.0 加）。
+    //
+    // 之前只比量程/阈值 —— 于是"两边名字不一样"这种漂移测不出来，
+    // 而后果很直接：**用户在设计器里看到的名字，和 App 里显示的不一样**。
+    //
+    // 单位同理：单位错了数值就是错的（0.1 vs 0.01 差 10 倍）。
+    // 归一化：去空格 + 全角括号转半角（工具侧历史上有两种写法）
+    const norm = s => String(s === undefined || s === null ? "" : s)
+      .replace(/\s+/g, "").replace(/（/g, "(").replace(/）/g, ")");
+    if (norm(t.name) !== norm(k.name)) bad.push(`${id} 名字 工具「${t.name}」App「${k.name}」`);
+    if (norm(t.unit) !== norm(k.unit)) bad.push(`${id} 单位 工具「${t.unit}」App「${k.unit}」`);
+    // ⚠️ **公式比不了 —— 工具侧的 PID 表没有 formula 字段**（v2.69.0 查明）。
+    //
+    // 试过加这条比对，结果是：
+    //
+    //   ❌ std_0C 公式 工具「undefined」App「((A*256)+B)/4」
+    //
+    // 全部 36 条都报 —— 因为 `window.BUILTIN_PIDS` 的条目只有
+    // `name / unit / min / max / warnLow / warnHigh / g`，**没有 formula**。
+    //
+    // **这不是 bug，是分工**：工具只做**预览**（画控件、看量程），
+    // 公式只在 App 侧跑（`BuiltInPids.kt` 的 `formula` 字段）。
+    //
+    // 想让公式也进跨语言校验的话，得**先给工具的 PID 表加上 formula** ——
+    // 那是个独立任务（36 条数据 + 工具侧可能要显示它），
+    // 不是"顺手加一行断言"能做到的。**记在 CHANGELOG 的下次优化建议里。**
   });
   ok(bad.length === 0,
-    `${checked} 个 PID 的量程与阈值全部一致` + (bad.length ? "：" + bad.slice(0, 6).join("; ") : ""));
+    `${checked} 个 PID 的量程 / 阈值 / 名字 / 单位全部一致` + (bad.length ? "：" + bad.slice(0, 6).join("; ") : ""));
 
   const onlyTool = Object.keys(tPids).filter(k => !(k in kPids));
   if (onlyTool.length) note(`工具里多出 ${onlyTool.length} 个 PID（App 侧没有）：${onlyTool.slice(0, 6).join(", ")}`);
