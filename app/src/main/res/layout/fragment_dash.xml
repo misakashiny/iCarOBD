@@ -16,47 +16,70 @@
         android:paddingTop="8dp"
         android:paddingEnd="8dp">
 
+        <!--
+          ⚠️ v1.19.20 修：这个分段控件**不能给 weight=1**。
+
+          原来它是 `layout_width=0dp + weight=1`，于是吃掉整行 2124px，
+          内部三段再 weight=1 平分 → **每段 708px 去放「普通」两个字**，
+          整段全是空白，分段控件的"分段感"完全没了（实测几何：
+          btnDashNormal [218,143][927,233] = 709px 宽）。
+          同时把右边的操作按钮挤成 91px（2 个字左右各只剩 12px padding）。
+
+          分段控件的正确用法是**贴着自己的内容**（wrap_content），
+          要占位就用一个弹性空白把右侧操作推过去 —— 见下面的 spacer。
+        -->
         <com.google.android.material.button.MaterialButtonToggleGroup
             android:id="@+id/dashToggle"
-            android:layout_width="0dp"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
             app:selectionRequired="true"
             app:singleSelection="true">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnDashNormal"
                 style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="0dp"
+                android:layout_width="wrap_content"
                 android:layout_height="40dp"
-                android:layout_weight="1"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
+                android:minWidth="64dp"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
                 android:text="普通"
                 android:textSize="12sp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnDashPerf"
                 style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="0dp"
+                android:layout_width="wrap_content"
                 android:layout_height="40dp"
-                android:layout_weight="1"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
+                android:minWidth="64dp"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
                 android:text="性能"
                 android:textSize="12sp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnDashCustom"
                 style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="0dp"
+                android:layout_width="wrap_content"
                 android:layout_height="40dp"
-                android:layout_weight="1"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
+                android:minWidth="64dp"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
                 android:text="自定义"
                 android:textSize="12sp" />
         </com.google.android.material.button.MaterialButtonToggleGroup>
+
+        <!-- 弹性空白：把右侧操作推到行尾，同时让左边分段控件保持紧凑 -->
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnDashPreset"
@@ -65,8 +88,8 @@
             android:layout_height="40dp"
             android:layout_marginStart="4dp"
             android:minWidth="0dp"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
             android:text="布局"
             android:textSize="12sp" />
 
@@ -75,10 +98,10 @@
             style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="wrap_content"
             android:layout_height="40dp"
-            android:layout_marginStart="4dp"
+            android:layout_marginStart="2dp"
             android:minWidth="0dp"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
             android:text="风格"
             android:textSize="12sp" />
 
@@ -87,10 +110,10 @@
             style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="wrap_content"
             android:layout_height="40dp"
-            android:layout_marginStart="4dp"
+            android:layout_marginStart="2dp"
             android:minWidth="0dp"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
             android:text="编辑"
             android:textSize="12sp"
             android:visibility="gone" />
