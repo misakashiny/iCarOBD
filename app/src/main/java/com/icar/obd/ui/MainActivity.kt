@@ -72,6 +72,28 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
             true
         }
 
+        // ---- 全屏显示（v1.19.19）：**长按「仪表盘」导航按钮**进入/退出 ----
+        //
+        // 为什么用长按而不是加个按钮：顶栏/导航栏是常驻的，
+        // 为了"全屏"再加一个图标会让本来就不宽裕的一行更挤 ——
+        // 而长按是**零成本**的（不占位置，也不影响单击切页）。
+        // 长按在 nav item 的 View 上挂，不在 NavigationBarView 上（后者没有长按 API）。
+        nav.findViewById<View>(R.id.nav_dashboard)?.setOnLongClickListener {
+            setFullscreen(!fullscreen)
+            true
+        }
+
+        // 返回键：全屏时先退出全屏，而不是直接退出 App
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(false) {
+            override fun handleOnBackPressed() {
+                if (fullscreen) setFullscreen(false) else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                }
+            }
+        })
+
         // 恢复上次选中的页面
         val saved = savedInstanceState?.getInt(KEY_PAGE) ?: R.id.nav_dashboard
         nav.selectedItemId = saved
@@ -115,6 +137,41 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
     override fun onStop() {
         super.onStop()
         stopRateTicker()
+    }
+
+    // ------------------------------------------------ 全屏显示（v1.19.19）
+
+    private var fullscreen = false
+
+    /**
+     * 全屏：**三样都要隐藏，少一样都不算全屏** ——
+     *
+     * 1. 系统状态栏 / 导航栏（`WindowInsetsController`）
+     * 2. App 自己的顶部状态条（`statusBar`）
+     * 3. App 的底部/侧边导航（`navView`）
+     *
+     * 进入时顺带切到仪表盘 —— 长按的是「仪表盘」那个按钮，
+     * 如果人当时在别的页，全屏之后看到的却是 PID 页，会很困惑。
+     */
+    private fun setFullscreen(on: Boolean) {
+        fullscreen = on
+        if (on) findViewById<NavigationBarView>(R.id.navView).selectedItemId = R.id.nav_dashboard
+        findViewById<View>(R.id.statusBar)?.visibility = if (on) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.navView)?.visibility = if (on) View.GONE else View.VISIBLE
+
+        val c = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+        if (on) {
+            // 允许从边缘滑出临时系统栏 —— 否则用户在全屏里可能找不到怎么退出
+            c.systemBarsBehavior =
+                androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            c.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+        } else {
+            c.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+        }
+        AppLog.i(
+            AppLog.M_UI, if (on) "进入全屏" else "退出全屏",
+            "长按「仪表盘」按钮或按返回键可切换"
+        )
     }
 
     // ------------------------------------------------ 规则模拟悬浮条（v1.19.19）
@@ -177,8 +234,17 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
         row.addView(simButton("开启查看") { ObdController.setSimulationOn(true); updateSimBar() }.apply { id = R.id.btnSimOn })
         row.addView(simButton("关闭查看") { ObdController.setSimulationOn(false); updateSimBar() }.apply { id = R.id.btnSimOff })
         row.addView(simButton("退出模拟") {
+            // 用户要求：退出模拟要**回到刚才那个设置页**（规则编辑器），
+            // 而不是把人扔在仪表盘上 —— 他多半还想接着改那条规则。
+            val backId = ObdController.simulatingRuleId()
             ObdController.stopRuleSimulation()
             updateSimBar()
+            if (backId != null) {
+                startActivity(
+                    android.content.Intent(this, RuleEditorActivity::class.java)
+                        .putExtra(RuleEditorActivity.EXTRA_ID, backId)
+                )
+            }
         })
         return row
     }

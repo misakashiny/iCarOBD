@@ -537,6 +537,9 @@ object ObdController {
     val isSimulating: Boolean get() = RuleEngine.isSimulating
     val simulationOn: Boolean get() = RuleEngine.simulationOn
 
+    /** 正在模拟的规则 id（null = 没在模拟）。退出模拟后要"回到刚才那个设置页"就靠它 */
+    fun simulatingRuleId(): String? = RuleEngine.simulateRuleId
+
     /** 正在模拟的规则名（悬浮按钮上显示，空 = 没在模拟） */
     fun simulatingRuleName(): String =
         RuleEngine.simulateRuleId?.let { id -> com.icar.obd.data.Store.rules.find { it.id == id }?.name }
