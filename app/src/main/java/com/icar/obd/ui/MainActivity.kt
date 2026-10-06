@@ -260,6 +260,26 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
 
     // ------------------------------------------------------------ 导航
 
+    /**
+     * 仪表盘页**隐藏系统状态栏**（顶部那条时间/电量）。
+     *
+     * 用户要求：在仪表盘时把系统那条也收掉，让画布更满。
+     * 注意它和 v1.19.19 的「全屏」不是一回事：
+     *  - 这里只收**状态栏**，底部/侧边导航栏留着（还要靠它切页）
+     *  - 全屏（长按仪表盘按钮）会把**导航栏一起**收掉
+     * 所以全屏时这里直接返回，交给 setFullscreen 全权处理 ——
+     * 否则两个地方各收各的，退出全屏时状态会错乱。
+     */
+    private fun applySystemStatusBar(tag: String) {
+        if (fullscreen) return
+        val c = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+        if (tag == "dash") {
+            c.hide(androidx.core.view.WindowInsetsCompat.Type.statusBars())
+        } else {
+            c.show(androidx.core.view.WindowInsetsCompat.Type.statusBars())
+        }
+    }
+
     private fun switchTo(itemId: Int) {
         val tag = when (itemId) {
             R.id.nav_dashboard -> "dash"
@@ -287,6 +307,7 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
         // 两次快速调用会都看到 existing == null 从而各 add 一份）。
         tx.commitNow()
         AppLog.d(AppLog.M_UI, "切换页面", tag)
+        applySystemStatusBar(tag)
     }
 
     private fun createFragment(tag: String): Fragment = when (tag) {
