@@ -94,4 +94,9 @@
         android:layout_weight="1"
         android:clipToPadding="false"
         android:paddingBottom="12dp" />
+    <!--
+      v1.20.3：原来这里有个「知识库」按钮（点了开 Activity）。
+      用户要求"知识库不是在日志里进入、而是直接增加个 tab 标签" —— 已改成导航栏的一个 tab，
+      这里不再留入口（同一个功能两个入口 = 两份权威的轻量版）。
+    -->
 </com.icar.obd.ui.view.MaxWidthLinearLayout>

@@ -110,6 +110,54 @@ class NodeTreeRenderer(private val context: Context) {
             else -> Viewport(cw / c, ch / c, 0f, 0f)
         }
     }
+    }   // ← 关 companion object（它只放纯数学的 computeViewport）
+
+    /**
+     * 最近一次 [build] 的**诊断**（v1.20.3）。
+     *
+     * ## 为什么必须有它
+     *
+     * 设计里的节点会因为三种原因**被静默跳过 / 静默变空**：
+     * ① 绑的 PID 在库里找不到 ② 节点类型不认识 ③ **素材加载失败**
+     * （相对路径拼不出绝对路径、或文件根本不在）。三种的表现**完全一样**：
+     * 画布上一片空白，**日志里一个字都没有**。
+     *
+     * 实机踩到（2026-10-06）：用户的设计由**控件（素材图片）**拼成，
+     * 而 `designBaseDir` **全项目没有任何地方赋值** → 相对路径永远拼不出来 →
+     * 所有素材加载失败 → 表盘只剩空卡片。用户报的是
+     * "画布不显示我做好的内容、显示是空的"，而我们**查了两轮都没定位到** ——
+     * 就是因为这条链上一个日志都没有。
+     */
+    data class BuildReport(
+        val built: Int = 0,
+        /** 绑的 PID 在库里找不到的节点（`节点id(pid)`） */
+        val skippedNoPid: List<String> = emptyList(),
+        /** 类型不认识的节点（`节点id(type)`） */
+        val skippedUnknownType: List<String> = emptyList(),
+        /** 解析不到 / 解码失败的素材 */
+        val missingAssets: List<String> = emptyList(),
+    ) {
+        /** 设计里一共有多少个节点（建出来的 + 跳过的） */
+        val totalNodes: Int get() = built + skippedNoPid.size + skippedUnknownType.size
+        val hasTrouble: Boolean
+            get() = skippedNoPid.isNotEmpty() || skippedUnknownType.isNotEmpty() ||
+                missingAssets.isNotEmpty()
+    }
+
+    private val rptNoPid = ArrayList<String>()
+    private val rptUnknown = ArrayList<String>()
+    private val rptAssets = ArrayList<String>()
+
+    /** 每种问题最多记几条 —— 与项目其它日志一样**有界**，防洪水 */
+    private val RPT_MAX = 8
+
+    /** 最近一次 [build] 的诊断。画布空了的时候，这是唯一能说清原因的东西 */
+    var lastReport: BuildReport = BuildReport()
+        private set
+
+    private fun rec(list: ArrayList<String>, item: String) {
+        if (list.size < RPT_MAX && !list.contains(item)) list.add(item)
+    }
 
     /**
      * 建一棵节点树。
@@ -117,13 +165,14 @@ class NodeTreeRenderer(private val context: Context) {
      * @param parent 挂到哪里（通常是画布容器）
      * @return 建出来的 View 数量（0 表示没有可见节点）
      */
-    }
-
     fun build(nodes: List<DesignNode>, parent: ViewGroup, design: DesignFile, cw: Int, ch: Int): Int {
         gauges.clear()
         stateCells.clear()
+        rptNoPid.clear(); rptUnknown.clear(); rptAssets.clear()
         t = computeViewport(design.scaleMode, cw, ch)
-        return buildInto(nodes, parent, design)
+        val n = buildInto(nodes, parent, design)
+        lastReport = BuildReport(n, rptNoPid.toList(), rptUnknown.toList(), rptAssets.toList())
+        return n
     }
 
     private fun buildInto(nodes: List<DesignNode>, parent: ViewGroup, design: DesignFile): Int {
@@ -169,7 +218,11 @@ class NodeTreeRenderer(private val context: Context) {
         node.isImage -> buildImage(node)
         node.isText -> buildText(node)
         node.isGauge -> buildGauge(node)
-        else -> null
+        else -> {
+            // 类型不认识 —— 以前**静默返回 null**：画布上少一块，而日志里没有任何线索
+            rec(rptUnknown, "${node.id}(${node.type})")
+            null
+        }
     }
 
     /** 分组：一个透明 FrameLayout，子节点在它的坐标系里排布 */
@@ -213,9 +266,18 @@ class NodeTreeRenderer(private val context: Context) {
     }
 
     private fun buildGauge(node: DesignNode): View? {
-        val item = node.gauge ?: return null
-        // 与 v1 一样：过滤掉 PID 库里没有的（否则渲染出来是个空壳）
-        if (item.pidId.isBlank() || Store.findPid(item.pidId) == null) return null
+        val item = node.gauge
+        if (item == null) {
+            rec(rptNoPid, "${node.id}(gauge 字段缺失)")
+            return null
+        }
+        // 与 v1 一样：过滤掉 PID 库里没有的（否则渲染出来是个空壳）。
+        // ⚠️ 但**必须记下来** —— 这是"画布是空的"两个最常见原因之一
+        // （另一个是素材加载失败）。见 [BuildReport] 的说明。
+        if (item.pidId.isBlank() || Store.findPid(item.pidId) == null) {
+            rec(rptNoPid, "${node.id}(${item.pidId.ifBlank { "未绑定" }})")
+            return null
+        }
 
         val density = context.resources.displayMetrics.density
         val host = FrameLayout(context).apply {
@@ -315,14 +377,23 @@ class NodeTreeRenderer(private val context: Context) {
     private fun assetPathOf(node: DesignNode, stateAsset: String?): String {
         val id = stateAsset?.takeIf { it.isNotBlank() } ?: node.assetId
         if (id.isBlank()) return ""
-        val a = lastDesign?.assets?.firstOrNull { it.id == id } ?: return ""
+        val a = lastDesign?.assets?.firstOrNull { it.id == id }
+        if (a == null) {
+            rec(rptAssets, "素材 id 未定义: $id")
+            return ""
+        }
         return a.path
     }
 
     /** 按**素材 id** 取路径（部件的 assetId 是 id，不是 path） */
     private fun assetPathOfAsset(assetId: String): String {
         if (assetId.isBlank()) return ""
-        return lastDesign?.assets?.firstOrNull { it.id == assetId }?.path ?: ""
+        val a = lastDesign?.assets?.firstOrNull { it.id == assetId }
+        if (a == null) {
+            rec(rptAssets, "素材 id 未定义: $assetId")
+            return ""
+        }
+        return a.path
     }
 
     /** 一个 PID 的当前值。**必须走总线**（红线 4.1.5：视图不自己去读） */
@@ -348,6 +419,14 @@ class NodeTreeRenderer(private val context: Context) {
         if (bitmaps.containsKey(path)) return bitmaps[path]
         val resolved = resolveAssetPath(path)
         val bmp = runCatching { DashboardBackground.load(resolved) }.getOrNull()
+        if (bmp == null) {
+            // ⚠️ 这是"画布是空的"**最常见的第二个原因**，以前完全静默。
+            // 相对路径 + `designBaseDir` 为空 → 拼出来还是个相对路径，必然读不到。
+            rec(
+                rptAssets,
+                if (resolved == path) "$path（相对路径，designBaseDir 为空）" else resolved
+            )
+        }
         bitmaps[path] = bmp
         return bmp
     }

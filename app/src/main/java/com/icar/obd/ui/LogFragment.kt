@@ -112,6 +112,9 @@ class LogFragment : Fragment() {
 
         view.findViewById<MaterialButton>(R.id.btnLogExport).setOnClickListener { exportLog() }
 
+        // v1.20.3：知识库入口从这一页**撤掉了** —— 用户要求做成导航栏的独立 tab
+        // （见 MainActivity.createFragment 的 "knowledge"）。同一个功能不留两个入口。
+
         adapter.submitAll(AppLog.snapshot())
         if (adapter.itemCount > 0) rv.scrollToPosition(adapter.itemCount - 1)
         updateStats()

@@ -1,35 +1,53 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!--
+  竖屏主界面（v1.20.4 起导航栏是**悬浮**的）。
+
+  与横屏（res/layout-land/activity_main.xml）**同一套结构**，只是导航栏贴底：
+  根容器 FrameLayout + `pageContainer` 永远整屏 + 导航栏浮在上面。
+
+  为什么不再用 LinearLayout（v1.20.4）：导航栏会**把画布挤掉**，
+  而且仪表盘页收起/展开它时 `pageContainer` 要重新量一次 → 画布尺寸变化 → 表盘重排 + 闪。
+
+  同样的 id：`navView` / `navDivider` / `pageContainer`。
+  （竖屏的分隔线贴导航栏**上边缘**，见下面那条 View 的 layout_gravity。）
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/rootLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bg"
-    android:orientation="vertical">
+    android:background="@color/bg">
 
-
-    <!-- 页面容器 -->
+    <!-- 页面容器：**永远整屏** -->
     <FrameLayout
         android:id="@+id/pageContainer"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1" />
+        android:layout_height="match_parent" />
+
+    <!-- 分隔线：浮在导航栏上边缘。必须和 navView 一起显示/隐藏（见横屏那份的说明） -->
+    <View
+        android:id="@+id/navDivider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_gravity="bottom"
+        android:layout_marginBottom="80dp"
+        android:background="@color/divider" />
 
     <!--
-      竖屏：底部导航。
-      横屏见 res/layout-land/activity_main.xml —— 同样的 id（navView），
-      但换成左侧 NavigationRailView，因为横屏下垂直空间比水平空间珍贵得多。
+      竖屏：底部悬浮导航。
+      横屏见 res/layout-land/activity_main.xml —— 同样的 id，换成左侧 NavigationRailView。
       MainActivity 用 NavigationBarView 基类接收两者。
     -->
     <com.google.android.material.bottomnavigation.BottomNavigationView
         android:id="@+id/navView"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
         android:background="@color/bg_surface"
+        android:elevation="8dp"
         app:itemActiveIndicatorStyle="@style/Widget.Material3.BottomNavigationView.ActiveIndicator"
         app:itemIconTint="@color/nav_item_color"
         app:itemTextColor="@color/nav_item_color"
         app:labelVisibilityMode="labeled"
         app:menu="@menu/bottom_nav" />
-
-</LinearLayout>
+</FrameLayout>

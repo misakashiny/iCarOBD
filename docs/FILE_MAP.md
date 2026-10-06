@@ -45,6 +45,8 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 │   ├── UI控件清单.md               全部 View / 控件 ID / 颜色 / 样式 / drawable
 │   ├── 动画实现.md                 动画机制（**三层数值过渡** / 爆闪 / 共用时钟）
 │   ├── 仪表框架.md                 8 种仪表 + 「某块表为什么是空的」排查
+│   ├── CAN-信号库与逆向框架.md     **CAN 信号逆向的方法论**（DBC 分析 / 采样率是前提 / 四阶段方案）
+│   ├── 下一步-CAN信号库实现规格.md  **上一条的执行规格**（待定项已全定，照着做即可）
 │   ├── LVGL-放弃记录.md            LVGL 方案为什么被放弃（教训）
 │   ├── 主题格式参考.md             Sky Gauge 格式逆向（已不用，格式知识仍有效）
 │   └── screenshots/                实机截图 20 张 + 索引 README
@@ -93,10 +95,11 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `PidModels.kt` | 238 | **核心数据模型**，全部带 JSON 序列化 | `PidDefinition`、`CompareOp`、`Rule`、`RuleCondition`、`RuleAction`、`GaugeItem`（含 **`cardStyle`** + `CARD_*` / `CARD_NAMES`）、`PidValue` | 🔴 加字段必须同步 `toJson`/`fromJson` |
 | `Formula.kt` | 200 | 自研表达式求值器（词法→语法→求值） | `Formula.eval(expr, data)`、`Formula.check(expr)`、内部 `Lexer`/`Parser` | 🔴 解析正确性命门 |
 | `BuiltInPids.kt` | 106 | 内置 PID 库 | `STANDARD`(20)、`DERIVED`(4)、`MANUFACTURER_TEMPLATES`(4)、`all()` | 🟡 **只增不改** |
-| `Store.kt` | 279 | JSON 持久化 | `Settings`、`allPids/findPid/isEnabled/setEnabled`、`upsertPid/deletePid`、`upsertRule/deleteRule`、`exportPidsJson/importPidsJson`、`importTemplatesAsCustom`、**`settingsToJson/applySettingsJson`**（备份复用）、`customThemeJson`、`saveThemes` | 🔴 改存储结构要考虑迁移；**加设置项必须同时改 `settingsToJson` 与 `applySettingsJson`**。仪表盘相关：`gridEnabled`/`grid*`（参考线）、**`dashSnapEnabled`**（拖拽吸附，默认 true）、`bgImagePath`、**`bgFit`**（背景铺法） |
+| `Store.kt` | 739 | JSON 持久化 + **多画布（v1.20.0）** | `Settings`、`allPids/findPid/isEnabled/setEnabled`、`upsertPid/deletePid`、`upsertRule/deleteRule`、`exportPidsJson/importPidsJson`、`importTemplatesAsCustom`、**`settingsToJson/applySettingsJson`**（备份复用）、`customThemeJson`、`saveThemes`、**`activeCanvas/canvasIndex/activeCanvasIndex`**、**`snapshotToActiveCanvas/loadActiveCanvas`**、**`switchCanvas/addCanvas/removeCanvas/renameCanvas/moveCanvas`**、`migrateLegacyToCanvas`（私有，一次性） | 🔴 改存储结构要考虑迁移；**加设置项必须同时改 `settingsToJson` 与 `applySettingsJson`**。仪表盘相关：`gridEnabled`/`grid*`（参考线）、**`dashSnapEnabled`**（拖拽吸附，默认 true）、`bgImagePath`、**`bgFit`**（背景铺法）、**`canvasNamePos`**（画布名浮标位置，v1.20.1；**全局**，不跟着画布走）。⚠️ **多画布的两个坑**：① `settings.dashType/gaugeTheme/designJson/bg*/dashPageIndex` 现在的身份是「当前画布的**实时副本**」，落盘/切画布时由 `snapshotToActiveCanvas`/`loadActiveCanvas` 双向同步（不改成转发属性是为了"漏改只是少存一次"而不是"静默读到过期值"）；② `saveDash()` 会写 `settings.json`，所以 **`load()` 必须先读 settings 再读 dash.json**，反了会拿默认设置覆写用户配置 |
 | `Backup.kt` | 132 | **完整配置备份**：PID + 启用状态 + 规则 + 仪表 + 主题 + 设置 打包成一个 JSON | `export()`、`import(text)`、`currentSummary()`、`APP_TAG/FORMAT`、`Summary/ImportResult` | 🟡 导入是**整体替换**不是合并；分区独立解析 |
 | `Defaults.kt` | 87 | 首次启动的默认规则与仪表 | `defaultRules()`(5条)、`defaultGauges()`（**转发到 `DashLayout.normal()`**）、`seedIfEmpty()` | 🟢 |
 | `DashLayout.kt` | 228 | **内置布局 + 预设布局 + 旧配置迁移 + 拖拽数学** | `presets()`、`normal/perf/line/dualStack/quad/subDual/gForce`、`migrateFromGrid()`、`Drag.snap/move/resize`（**STEP=15 / MIN_SIZE=30**）、**`Drag.snapIf/moveIf/resizeIf`**（可关吸附） | 🟡 放 `data/` 是因为 `Store` 加载时要调迁移；放 `ui/` 会形成 `data → ui` 反向依赖。⚠️ 关掉吸附只去掉「对齐网格」，**夹取永远生效** |
+| `DashCanvas.kt` | 199 | **一套画布**（多画布，v1.20.0）：`id/name/type/gauges/designJson` **+ `theme/pageIndex/bg*/scaleMode`**；另带**画布名浮标的位置常量**（v1.20.1） | `TYPE_NORMAL/PERF/CUSTOM`、`TYPE_NAMES`、`MAX_CANVASES`(8)、`DEFAULT_NAME`、`typeName`、`sanitizeName`、`gaugeCount`、`toJson/fromJson/listFromJson`、**`NAME_POS_*`/`NAME_POS_NAMES`/`namePosName`** | 🟡 **一套画布 = 一屏**：主题/背景/页号都跟着它走（留全局会出现"性能页顶着日常页底图"的半套效果）。`listFromJson` 坏条目**跳过**而不是整体失败。⚠️ `NAME_POS_*` 是**全局显示偏好**（存在 `Settings.canvasNamePos`），**不是每套画布各自的属性** —— 否则横滑时小字会在四个角之间乱跳 |
 | `DesignFile.kt` | 224 | **`icar.ui/1` 设计文件**（PC 端设计 → App 加载）。**不抛异常**，返回带字段路径的可读错误 | `SCHEMA`、`MAX_GAUGES`(32)、**`PID_ALIASES`**(27)、`resolvePid`、**`missingAliases()`**、`parse(text)`、`Result.errors/warnings`、**`Background`/`FIT_*`/`fitName`** | 🔴 改校验规则要**同时改 `tools/theme-studio/index.html`**，否则编辑器与 App 分叉（`ThemeStudioSampleTest` 会失败）。`PID_ALIASES` 改一处要同步三处（Kotlin / 工具 / 设计指南） |
 | `CrashCatcher.kt` | 60 | 全局未捕获异常兜底，写 `files/last-crash.log` | `install()` | 🟢 用户报「闪退」时先看那个文件 |
 | `AppLog.kt` | 385 | 结构化日志：环形缓冲 + **重复抑制** + 批量落盘 + 有界队列 | `Level`、**`M_*` 模块常量**、`log/v/d/i/w/e`、`size()`、`snapshot/clear/exportText`、`prepareTodayFile` | 🔴 四条自我保护（去重/文件上限/队列有界/批量派发）**不可移除**，见 CHANGELOG v1.3.0。`mainHandler` 是 **lazy** 的（否则 JVM 单测里一碰就抛 `Stub!`） |
@@ -129,8 +132,9 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 
 | 文件 | 行 | 职责 | 关键符号 | 风险 |
 |---|---|---|---|---|
-| `MainActivity.kt` | 247 | 导航 + 权限 + 顶部状态条 | `switchTo`（**commitNow**）、`createFragment`、`refreshStatus`、`ensurePermissions`、`applyKeepScreenOn` | 🟡 导航控件用 `NavigationBarView` 基类 |
-| `DashFragment.kt` | 380 | 仪表盘宿主 + 风格 / 预设布局 / 参考线 三个对话框（风格里可进主题编辑器、选背景图、**导入/导出设计文件**） | `DashRenderer`、`dashToggle`、`render()`、`showThemePicker()`、`showPresetPicker()`、`applyPreset()`、`showGridDialog()`、`showBgFitPicker()`、`applyCardQuickStyle()`、**`openDesignFile`/`importDesign`/`applyDesign`/`exportDesign`** | 🟡 设计文件的导入是**两段式**（先显示错误/警告再应用） |
+| `MainActivity.kt` | 546 | 导航 + 权限 + **仪表盘沉浸模式**（收左侧 tab / 收系统栏 / 左边缘把手） | `switchTo`（**commitNow**）、`createFragment`、`ensurePermissions`、`applyKeepScreenOn`、**`applySystemStatusBar`**、**`setRailVisible`/`ensureRailHandle`/`scheduleRailHide`**、`setFullscreen`、`updateSimBar` | 🔴 收起导航栏用**平移**（`translationX`+`alpha`）**不是 GONE** —— GONE 会让页面容器重排、画布尺寸变化、表盘重排并闪一下。⚠️ 沉浸时系统栏用 `BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE`（否则把人锁住） |
+| `KnowledgeFragment.kt` | 420 | **知识库**（v1.20.2 建 / v1.20.3 改成**导航 tab** + 标签筛选）：13 节术语与探测方法 | `SECTIONS`、`TAG_MAP`（**按节索引**挂标签，正文里不写）、`buildTagChips`、`applyFilter` | 🟡 内容是**文档性质的代码**。⚠️ `ChipGroup(singleSelection)` 会**覆盖**你给 chip 挂的监听 —— 必须用 `setOnCheckedStateChangeListener`。⚠️ 在 `SECTIONS` 中间插节要顺手改 `TAG_MAP` |
+| `DashFragment.kt` | 285 | **仪表盘宿主（v1.20.0 起 = 多画布宿主）**：告警条 + `ViewPager2` + 「页码 → `activeCanvasId`」+ 裁决谁在渲染 | `handlePageSelected`、**`awaitingPos`**（程序化翻页标记）、`updatePageActivation`、`onPageEditing`（**编辑态关横滑**）、`jumpToCanvas`、`onCanvasAdded/Removed/Moved/Renamed`、`refreshSimBanner` | 🔴 `ViewPager2` **分不清"用户滑的"和"我们调的"** —— 程序化翻页必须先记 `awaitingPos`，否则"新增一套画布"会把当前画布切成邻居。渲染/编辑/外观都**不在**这里（见 `ui/dash/`） |
 | `ConnectFragment.kt` | 324 | 扫描/连接/初始化/运行选项（含**传输方式**与 **G 值来源**） | `doInit`、`applyInitResult`、`bindSwitches`、`updateTransportHint` | 🟡 |
 | `PidFragment.kt` | 243 | PID 列表 + **导出/导入（PID 或完整备份）** + 模板 | `showExportDialog`、`showImportDialog`、`shareJson`、`doImportBackup`、`openBackupFile`、`seedTemplates` | 🟢 |
 | `RuleFragment.kt` | 96 | 规则列表 + 恢复默认 | — | 🟢 |
@@ -138,7 +142,6 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `PidEditorActivity.kt` | 349 | **核心：PID 编辑器 + 在线测试** | `collect()`、`runTest()`、`save()`、`bindAutoRequest` | 🔴 项目核心 |
 | `RuleEditorActivity.kt` | 341 | 事件规则编辑器（动态条件/动作行） | `addConditionRow`、`addActionRow`、`collect()`、`updatePreview()`、`testNow()` | 🟡 |
 | `ScannerActivity.kt` | 252 | 扫描器 UI + 安全确认 | `startScan`、`applyModeDefaults`、`saveHit` | 🔴 危险模式拦截 |
-| `DashEditorActivity.kt` | 235 | **拖拽式仪表盘编辑器**（全屏画布 + 手柄缩放 + 网格吸附） | `showEditDialog`、`nextSlot`、`save`、`toggleGrid`、`showPresetPicker` | 🟡 编辑时必须**保留自由坐标**，否则位置被重置 |
 | `ThemeEditorActivity.kt` | 388 | **主题编辑器**：顶部实时预览 + 声明式字段行（12 色 + 几何/指针环/辉光） | `ColorField`、`buildFields`、`applyDraft`、`pickColor`、`save/saveAs/persist/delete` | 🟡 内置主题只读，保存会自动转「另存为」 |
 | `SimulatorActivity.kt` | 446 | **模拟信号工具**：分组折叠的单行摘要 + 展开详情（波形缩略图用**真正的 `waveAt`**，预览不可能与实际输出脱节） | `periodSteps`、`noiseSteps`、`buildRows`、`toggle`、`refreshHeader` | 🟡 **`onDestroy` 刻意不停模拟**（它是数据源，应像 OBD 连接一样在界面之外继续跑） |
 | `CanSnifferActivity.kt` | 260 | CAN 被动探测页 + 两种 CSV 导出（聚合 / 原始） | `sniffResults`、导出 | 🟡 用 `ColumnFlowLayout` 自动分栏 |
@@ -159,8 +162,11 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 
 | 文件 | 行 | 职责 | 关键符号 | 风险 |
 |---|---|---|---|---|
-| `DashSpec.kt` | 29 | 类型 → 布局列表的**分发**（内容在 `data/DashLayout.kt`） | `NORMAL/PERF/CUSTOM`、`build(type)`、`title(type)` | 🟢 |
-| `DashRenderer.kt` | 191 | 规格 + 主题 → **自由画布**（归一化坐标绝对定位 + 参考线覆盖层），5Hz 数据推送 | `render(spec, theme)`、`relayout`、`applyOverlay`、`pushValues` | 🔴 不得塞数据获取逻辑；主/副参数由它推给视图 |
+| `DashSpec.kt` | 84 | 类型 → 布局列表的**分发**（内容在 `data/DashLayout.kt`） | `NORMAL/PERF/CUSTOM`（**别名指向 `DashCanvas.TYPE_*`**）、`build(type)`、**`buildFor(canvas)`**、`title(type)`、`useDesignFile(type, designJson)` | 🔴 横滑时每页要渲染**自己那一套** → 用 `buildFor(canvas)`；用 `build(type)`（读 `Store.customGauges` = 当前画布）会让所有页显示同一个盘面（滑过去像没切换） |
+| `DashCanvasPagerAdapter.kt` | 69 | `[画布0][画布1]…[设置]` | `getItemId`（**画布 id 派生的稳定值**）、`containsItem`、`createFragment`、`positionOfCanvas`、`settingsPosition`、`SETTINGS_ID` | 🔴 **不能按下标当 itemId**：中间插/删一套画布会让后面每页的 tag 都变 → 正在编辑的那一页被无声销毁 |
+| `DashCanvasPageFragment.kt` | 689 | **每套画布一页**：渲染 + **就地编辑**（取代已删除的 `DashEditorActivity`） | `setPageActive`、`refreshIfActive`、`isEditing`、`render`、**`applyNameLabel`**（浮标四角/隐藏 + 让开「编辑」按钮）、`applyBackground`、`requestEdit`、`convertToCustom`、`startEdit/exitEdit`、`showEditDialog`、`showPresetPicker` | 🔴 只渲染**自己那一套**（`DashSpec.buildFor`）；**只有当前页才渲染**（由宿主 `setPageActive` 裁决，`onResume` 对"页是否可见"没有发言权）；内置布局要先 `convertToCustom`（并清 `designJson`，否则"转了自定义但画面没变"）。浮标位置用 `layout_gravity` + `padding` 设（padding 在四个角上都等价于"离边多远"） |
+| `CanvasSettingsFragment.kt` | 887 | **最后一页（设置）**：画布增/删/改名/排序 + 当前画布外观（主题/背景/设计文件/参考线/卡片）+ 轮询间隔 + 音效 + **画布名浮标位置** | `refresh`、`buildRow`、`showAddDialog/showRenameDialog/showRowMenu`、`showLookMenu`（**动作列表，不做下标算术**）、`importDesign/applyDesign/exportDesign/clearDesignFile`、`showPollDialog`、**`showNamePosDialog`** | 🔴 **列表对话框一律不要带 `setMessage`**：`MaterialAlertDialogBuilder` 同时收到 message 与 `setItems`/`setSingleChoiceItems` 时**列表会被整个丢掉**（实测 `android:id/text1` 节点数 0），对话框只剩标题+说明+取消。说明进标题或进选项文字；说明较长时改**自定义 View**（见 `showPollDialog`，与 `showGridDialog` 同一条路）。⚠️ 887 行偏大，要拆的话沿「画布管理 / 画布外观」切开 |
+| `DashRenderer.kt` | 334 | 规格 + 主题 → **自由画布**（归一化坐标绝对定位 + 参考线覆盖层），5Hz 数据推送 | `render(spec, theme)`、`relayout`、**`hasRendered`**、`applyOverlay`、`pushValues`、`pruneOrphans`、`start/stop` | 🔴 不得塞数据获取逻辑；主/副参数由它推给视图。⚠️ `pruneOrphans` 动的是 `Store.customGauges`（**当前画布**），只有当前页该调它。⚠️ **`relayout()` 必须在收到第一次规格之前直接返回**（`hasRendered`）：`lastSpec` 初值是空列表，而容器第一次布局就会触发 relayout —— 不挡的话会打出**误导性的** `无可渲染的表 \| spec=0` 并闪一下空态；多画布后非当前页**故意不渲染**，那些页 100% 会走到这里 |
 | `DashboardBenchmark.kt` | 161 | **性能基准的纯逻辑**：排布 + 假值生成（不碰 View / Store / 总线，**可单测**） | `GAUGES`(8)、`STRESS_GAUGES`(12)、`pids`、`gauges`、`gaugeList(count,cols,rows)`、`cellRect`、`valueAt` | 🟡 用 `sin` 而非锯齿 —— 锯齿的周期跳变会额外触发全量重绘，把峰值拉高、测不出稳态 |
 
 ### 2.9 `ui/view/` — 自绘控件
@@ -199,11 +205,15 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 
 ---
 
-### 2.5 单元测试 `app/src/test/java/com/icar/obd/`（**32 个文件 / 563 个用例**）
+### 2.5 单元测试 `app/src/test/java/com/icar/obd/`（**33 个文件 / 598 个用例**）
+
+> ⚠️ 下表的「用例」列**长期滞后于实际**（`run-tests.ps1` 的输出才是准的）——
+> 2026-10-06 实测 `TOTAL=598`。加用例时顺手把这一行和本表改掉。
 
 | 文件 | 用例 | 覆盖 |
 |---|---|---|
 | `data/FormulaTest.kt` | 44 | 文档承诺的全部公式模板、优先级与结合性、内置函数（含 `be16`/`le16`/`s16`/`bits`/`map`）、错误路径（除零 / 变量越界 / 未知函数 / NaN）、`check()` |
+| `data/DashCanvasTest.kt` | 21 | **多画布（v1.20.0/1.20.1）**：`DashCanvas` JSON 往返 / 坏条目跳过 / 名字兜底；**旧配置迁移**（取值完全不变、只迁一次、有画布时 `dash.json` 不再覆盖）；增/删/切/排序（内容互不串台、最后一套删不掉、删当前落到邻居、上限、悬空 id 自愈）；**画布名浮标**（名字表契约 / 越界回落 / 设置往返 / 读取时夹取 / **全局性**）；**备份往返保留全部画布与当前画布** |
 | `obd/ObdProtocolTest.kt` | 42 | `extractData` 各种响应格式（ATH0 / ATH1 / SEARCHING / 多帧 / NO DATA / 15 种错误码 / 兜底分支）、`parse` 端到端、初始化序列、**危险模式拦截**、`scanCandidates`、**ISO-TP 多帧重组**、多 ECU 选序 |
 | `ui/view/AlertPulseTest.kt` | 37 | 等级判定与**迟滞**（含反证用例）、**下限 `levelWithLow`**（方向 / 优先级 / 阈值 0 与 null / `WARN_LOW` 不爆闪）、爆闪时间相位、颜色混合 |
 | `ui/view/EasingTest.kt` | 37 | **缓动纯数学**（v1.10.4）：4 种曲线的单调 / 不过冲 / **帧率无关** / dt 夹取 / 未知模式回落、输入滤波（压尖刺 / 帧率无关 / 收敛）、收敛判据（**数据还在变时不许停** / 稳定后才停 / 吸附与继续是两件事）、5Hz 推送回归 |
@@ -240,7 +250,7 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 |---|---|---|---|
 | `layout/activity_main.xml` | 72 | 主界面（竖屏）：状态条 + 容器 + **底部导航** | — |
 | `layout-land/activity_main.xml` | 93 | 主界面（横屏）：**左侧 NavigationRailView** + 状态条 + 容器 | — |
-| `layout/fragment_dash.xml` | 138 | 仪表盘页（**自由画布 FrameLayout**，不再用 NestedScrollView） | 不限宽（仪表要铺满） |
+| `layout/fragment_dash.xml` | 52 | 仪表盘**宿主**页（v1.20.0）：告警条 + `ViewPager2`（`[画布0][画布1]…[设置]`） | 不限宽（仪表要铺满） |
 | `layout/fragment_connect.xml` | 344 | 连接页（含**传输方式**下拉框 `spTransport` + 提示 `tvTransportHint` + 「模拟信号 / CAN 探测 / 性能基准」三个入口） | 根 `MaxWidthNestedScrollView` 720dp |
 | `layout/fragment_pid.xml` | 107 | PID 列表页 | 根 `MaxWidthLinearLayout` 760dp |
 | `layout/fragment_rule.xml` | 62 | 规则列表页 | 根 `MaxWidthLinearLayout` 760dp |
@@ -248,7 +258,9 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `layout/activity_pid_editor.xml` | 467 | **PID 编辑器**（字段最多） | `MaxWidthScrollView` 720dp |
 | `layout/activity_rule_editor.xml` | 230 | 规则编辑器 | `MaxWidthScrollView` 760dp |
 | `layout/activity_scanner.xml` | 343 | 扫描器 | `MaxWidthNestedScrollView` 760dp |
-| `layout/activity_dash_editor.xml` | 176 | 拖拽式仪表盘编辑器（工具栏 2 行 + 全屏画布；第二行含**参考线 / 吸附开关 / 保存**） | **不限宽**（限了预览比例就失真） |
+| `layout/fragment_dash_canvas.xml` | 272 | **一套画布**（pager 的一页）：`gaugeGrid`（自由画布）+ `lvglDash` + **就地编辑器 `editorCanvas`** + 编辑工具条 2 行 + 画布名浮标 + 右下角「编辑」 | 不限宽（限了预览比例就失真）。⚠️ 浮标的 `layout_gravity`/`padding` 由 `DashCanvasPageFragment.applyNameLabel()` **运行时覆盖**（XML 里的 top|start 只是默认） |
+| `layout/fragment_canvas_settings.xml` | 173 | 画布设置页（pager 最后一页）：画布列表 + 当前画布外观 + 轮询间隔 + 音效 + **画布名浮标** | 根 `MaxWidthNestedScrollView` 720dp |
+| `layout/item_canvas.xml` | 57 | 画布设置页里的一行（名字 + 副标题 + **一个「操作」按钮**；不做四个小按钮，否则每个只剩 40dp） | — |
 | `layout/activity_theme_editor.xml` | 175 | 主题编辑器（工具栏 + 实时预览 + 字段容器；字段行代码生成）。预览表各套一层 `pvCard*` 容器画**卡片底** —— 不套的话调描边/不透明度看不到变化 | 不限宽 |
 | `layout/dialog_gauge_edit.xml` | 168 | 添加/编辑仪表对话框（含**霓虹档位**与**卡片外框**两个单表覆盖项） | `MaxWidthScrollView` 520dp |
 | `layout/item_*.xml` (6) | 13~68 | 各列表行 | — |
@@ -352,7 +364,10 @@ $ADB exec-out run-as com.icar.obd cat files/log/obd-$(date +%Y%m%d).log
 | 加公式函数（如 `log()`） | `data/Formula.kt` 的 `call()` + `check()` 的提示文案 |
 | 加一个音效 | wav 放 `res/raw/` + `data/AudioPlayer.kt` 的 `sounds` 表登记一行 |
 | 加一种规则动作类型 | `obd/ObdController.handleAction` + `data/PidModels.kt` 的 `RuleAction.describe()` + `ui/RuleEditorActivity` 的 `actionTypes`/`updateActionHints` |
-| 改内置仪表盘布局 | `ui/dash/DashSpec.kt` |
+| 改内置仪表盘布局 | `data/DashLayout.kt`（**内容**在这里；`ui/dash/DashSpec.kt` 只做"类型 → 列表"的分发） |
+| 加 / 改"一套画布"的字段 | `data/DashCanvas.kt`（字段 + `toJson`/`fromJson`）**并且**在 `Store.snapshotToActiveCanvas` 与 `Store.loadActiveCanvas` **两处都加** —— 只加一处 = 切画布时静默丢设置 |
+| 改画布页的渲染 / 就地编辑 | `ui/dash/DashCanvasPageFragment.kt`（宿主 `ui/DashFragment.kt` 只管翻页与"谁在渲染"的裁决） |
+| 加一个画布设置项 | `ui/dash/CanvasSettingsFragment.kt` + `res/layout/fragment_canvas_settings.xml` |
 | 增加或调整仪表盘风格 | `ui/view/GaugeTheme.kt`（调色板）；需要新的绘制效果时改对应 `ui/view/*GaugeView.kt` |
 | 加一种仪表样式 | 继承 `ui/view/BaseGaugeView.kt` + 在 `DashRenderer.createView` 注册 + `naturalHeightPx` 加高度 |
 | 改默认规则/默认仪表 | `data/Defaults.kt`（只影响首次启动，已装机的用户需「恢复默认」） |

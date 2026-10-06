@@ -1,5 +1,9 @@
 package com.icar.obd.ui.dash
 
+import com.icar.obd.data.DashCanvas
+import com.icar.obd.data.DashLayout
+import com.icar.obd.data.GaugeItem
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -48,5 +52,33 @@ class DashSpecTest {
         // 任何非 CUSTOM 的值都不该去用导入的设计文件
         assertFalse(DashSpec.useDesignFile(99, design))
         assertFalse(DashSpec.useDesignFile(-1, design))
+    }
+
+    // ---------------------------------------------------------------- 多画布（v1.20.0）
+
+    /**
+     * 横滑时每一页要渲染**自己那一套**。
+     *
+     * 用 `DashSpec.build(type)`（读 `Store.customGauges` = 当前画布）的话，
+     * 所有页都会显示同一个盘面 —— 滑过去看起来像"没切换"，
+     * 而设置页却说切了，是最难查的一类不一致。
+     */
+    @Test
+    fun `每一页按自己那一套取规格`() {
+        // 普通 / 性能 = 内置布局：**画布里就算有表也不该用它**
+        // （否则迁移过来的"普通"画布会突然显示用户很久以前的自定义表）
+        val normal = DashCanvas(name = "n", type = DashSpec.NORMAL)
+        normal.gauges.add(GaugeItem(pidId = "std_0C"))
+        assertEquals(DashLayout.normal().size, DashSpec.buildFor(normal).size)
+
+        val perf = DashCanvas(name = "p", type = DashSpec.PERF)
+        perf.gauges.add(GaugeItem(pidId = "std_0C"))
+        assertEquals(DashLayout.perf().size, DashSpec.buildFor(perf).size)
+
+        // 自定义 = 画布自己的表
+        val custom = DashCanvas(name = "c", type = DashSpec.CUSTOM)
+        custom.gauges.add(GaugeItem(pidId = "std_0C"))
+        custom.gauges.add(GaugeItem(pidId = "std_0D"))
+        assertEquals(2, DashSpec.buildFor(custom).size)
     }
 }

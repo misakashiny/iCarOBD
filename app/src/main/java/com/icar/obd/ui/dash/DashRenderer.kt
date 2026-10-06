@@ -64,6 +64,15 @@ class DashRenderer(
     private var lastW = 0
     private var lastH = 0
 
+    /**
+     * **是否已经收到过一次规格**（v1.20.1 加）。
+     *
+     * [relayout] 在首次渲染之前必须直接返回 —— 见那里的注释。
+     * 初值是 `false`，[render] / [renderDesign] 一进来就置位（**在尺寸判断之前**：
+     * 容器还没尺寸时 `lastSpec` 也已经记下了，relayout 正该拿它去补渲染）。
+     */
+    private var hasRendered = false
+
     /** 参考线覆盖层。常驻容器底部，不随每次渲染重建 */
     private val overlay = DashGridOverlayView(container.context)
 
@@ -94,6 +103,10 @@ class DashRenderer(
     fun render(spec: List<GaugeItem>, theme: GaugeTheme) {
         lastSpec = spec
         lastTheme = theme
+        hasRendered = true
+        // v2 渲染会把空态文案改成"这套设计渲染不出任何东西…"，切回 v1 必须还原，
+        // 否则 v1 空盘时会显示一句完全不相干的 v2 原因（v1.20.3）
+        if (emptyView.text != EMPTY_TEXT_V1) emptyView.text = EMPTY_TEXT_V1
         applyOverlay(theme)
 
         val cw = container.width
@@ -185,6 +198,7 @@ class DashRenderer(
     fun renderDesign(design: DesignFile, theme: GaugeTheme) {
         lastDesign = design
         lastTheme = theme
+        hasRendered = true
         applyOverlay(theme)
 
         val cw = container.width
@@ -198,20 +212,60 @@ class DashRenderer(
         nodeRenderer.setTheme(theme)
         nodeRenderer.setDesign(design)
         val built = nodeRenderer.build(design.nodes, container, design, cw, ch)
+        val rpt = nodeRenderer.lastReport
         lastW = cw
         lastH = ch
 
-        if (built == 0 || nodeRenderer.gauges.isEmpty()) {
-            // 一个仪表都没有 → 空态提示。
-            // 注意：只有图片/文字也算"有内容"，但没仪表就没数据可显示，
-            // 这时候**不**弹空态（否则一张纯背景盘面会被判定为"空"）
-            emptyView.visibility = if (built == 0) View.VISIBLE else View.GONE
+        // ⚠️ **一行日志定性**（v1.20.3）：以前这条链上一个日志都没有，
+        // "画布是空的"只能靠猜（实机为此查了两轮）。现在无论成败都打一行，有问题再补明细。
+        AppLog.i(
+            AppLog.M_UI, "设计渲染",
+            "节点=${rpt.totalNodes} 建出=$built 跳过(未绑通道)=${rpt.skippedNoPid.size} " +
+                "跳过(未知类型)=${rpt.skippedUnknownType.size} 素材缺失=${rpt.missingAssets.size}"
+        )
+        if (rpt.skippedNoPid.isNotEmpty()) {
+            AppLog.w(AppLog.M_UI, "设计里有节点绑了 PID 库里没有的通道", rpt.skippedNoPid.joinToString(", "))
+        }
+        if (rpt.skippedUnknownType.isNotEmpty()) {
+            AppLog.w(AppLog.M_UI, "设计里有不认识的节点类型", rpt.skippedUnknownType.joinToString(", "))
+        }
+        if (rpt.missingAssets.isNotEmpty()) {
+            AppLog.w(AppLog.M_UI, "设计里的素材加载不到", rpt.missingAssets.joinToString(", "))
+        }
+
+        if (built == 0) {
+            // 空态**必须说清为什么**。原来这里只有 XML 里那句
+            // "请先连接设备并在「PID」页启用通道" —— 那是 **v1 的提示**，
+            // 对 v2 设计完全不对路，用户看了只会更糊涂（实机反馈就是"还是不会显示"）。
+            emptyView.text = v2EmptyReason(rpt)
+            emptyView.visibility = View.VISIBLE
         } else {
             emptyView.visibility = View.GONE
         }
     }
 
+    /** v2 设计的空态原因。**要说人话** —— 用户看不懂"PID 全部查不到"这种内部话 */
+    private fun v2EmptyReason(r: NodeTreeRenderer.BuildReport): String = buildString {
+        append("这套设计渲染不出任何东西\n")
+        if (r.skippedNoPid.isNotEmpty()) append("· ").append(r.skippedNoPid.size).append(" 个节点绑的通道不存在\n")
+        if (r.skippedUnknownType.isNotEmpty()) append("· ").append(r.skippedUnknownType.size).append(" 个节点类型不认识\n")
+        if (r.missingAssets.isNotEmpty()) append("· ").append(r.missingAssets.size).append(" 个素材加载不到\n")
+        if (!r.hasTrouble) append("· 设计里没有可见节点\n")
+        append("（详见日志「设计渲染」）")
+    }
+
     fun relayout() {
+        // ⚠️ **首次渲染之前不能走这条路**（v1.20.1 修）。
+        //
+        // `lastSpec` 的初值是空列表，而容器的 `addOnLayoutChangeListener` 在
+        // **第一次布局**（0,0,0,0 → 0,0,W,H）就会触发这里 —— 于是"还没有任何规格"
+        // 被当成"规格是空的"，打出一条**误导性的**
+        // `仪表盘无可渲染的表：PID 全部查不到 | spec=0`，并把空态提示闪一下。
+        //
+        // 为什么多画布之后必须挡：每一页都有自己的渲染器，而**非当前页故意不渲染**
+        // （见 DashCanvasPageFragment.setPageActive）—— 那些页面被布局时
+        // 100% 会走到这里，日志里会堆一排查不出所以然的"PID 全部查不到"。
+        if (!hasRendered) return
         if (container.width == lastW && container.height == lastH) return
         val d = lastDesign
         if (d != null) renderDesign(d, lastTheme) else render(lastSpec, lastTheme)
@@ -308,5 +362,10 @@ class DashRenderer(
         private const val REFRESH_MS = 200L
         /** 卡片间距（dp）。归一化坐标算完像素后再扣，保证每块之间留缝 */
         private const val CELL_MARGIN_DP = 3f
+        /**
+         * v1 空态的默认文案（与 `fragment_dash_canvas.xml` 里 `tvDashEmpty` 的初值一致）。
+         * v2 渲染会临时改写它，所以切回 v1 时要还原。
+         */
+        private const val EMPTY_TEXT_V1 = "没有可显示的通道\n请先连接设备并在「PID」页启用通道"
     }
 }

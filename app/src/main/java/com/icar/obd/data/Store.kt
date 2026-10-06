@@ -148,6 +148,36 @@ object Store {
          * 填 0 或负数 = **关闭续航**（通道不出值，仪表显示 `--`）。
          */
         var tankCapacityL: Float = 50f,
+
+        // ---------- 多画布（方案 A，v1.20.0）----------
+
+        /**
+         * **全部画布**，数组顺序 = 横滑的页序。
+         *
+         * 空 = 这台设备还是旧配置（三选一 + 全局 `customGauges`），
+         * 由 [Store.migrateLegacyToCanvas] 一次性包成第一套画布。
+         *
+         * 为什么不单独放一个 `canvases.json`：画布是**配置的一部分**，
+         * 而 [Store.settingsToJson] 已经是「完整备份」的 schema ——
+         * 放进来，备份/恢复自动带上多画布，不用再维护第三份字段清单。
+         */
+        var canvases: MutableList<DashCanvas> = mutableListOf(),
+
+        /**
+         * 当前画布的 id。**唯一权威**是它 ——
+         * `dashType` / `gaugeTheme` / `designJson` / `bg*` / `dashPageIndex`
+         * 都只是"当前画布"的实时副本（见 [Store.snapshotToActiveCanvas]）。
+         *
+         * 指向不存在的 id 时由 [Store.activeCanvas] 兜回第一套，不会崩。
+         */
+        var activeCanvasId: String = "",
+
+        /**
+         * 画布名浮标画在哪个角（v1.20.1），取值见 [DashCanvas.NAME_POS_*]。
+         *
+         * **全局偏好，不跟着画布走** —— 跟着走的话，横滑时小字会在四个角之间乱跳。
+         */
+        var canvasNamePos: Int = DashCanvas.NAME_POS_TOP_START,
     )
 
     private lateinit var dir: File
@@ -200,23 +230,30 @@ object Store {
             // 表现为"转向灯拨了但就是不响"，极难查。改过才回写盘，避免每次启动都写。
             if (migrateTurnRules()) saveRules()
         }
-        runCatching {
-            val o = JSONObject(f("dash.json").takeIf { it.exists() }?.readText() ?: "{}")
-            customGauges.clear()
-            val ga = o.optJSONArray("gauges")
-            if (ga != null) for (i in 0 until ga.length()) customGauges.add(GaugeItem.fromJson(ga.getJSONObject(i)))
-            // v1.4.0 及以前的配置只有 span（网格布局），这里一次性迁到归一化自由坐标并回写，
-            // 避免每次启动都迁一遍。
-            if (DashLayout.migrateFromGrid(customGauges)) {
-                saveDash()
-                AppLog.i(
-                    AppLog.M_DATA, "仪表布局已迁移",
-                    "span 网格 → 归一化自由坐标 count=${customGauges.size}"
-                )
-            }
-        }
+        // ⚠️ 顺序要紧（v1.20.0）：**先读设置（含多画布），再读旧的 dash.json**。
+        //
+        // 旧顺序（先 dash.json 后 settings.json）会踩一个很脏的坑：
+        // dash.json 的网格迁移里会调 saveDash()，而 saveDash() 现在要把画布落盘 →
+        // 会拿**还没加载的默认 settings** 覆写 settings.json ——
+        // 用户的轮询间隔、主题、画布全被冲成出厂值，而且日志里一条都不提。
         runCatching {
             applySettingsJson(JSONObject(f("settings.json").takeIf { it.exists() }?.readText() ?: "{}"))
+        }
+        runCatching {
+            if (settings.canvases.isEmpty()) {
+                // ---- 旧配置（v1.19.x 及以前）：三选一 + 全局扁平表 + 全局设计文件 ----
+                val o = JSONObject(f("dash.json").takeIf { it.exists() }?.readText() ?: "{}")
+                customGauges.clear()
+                val ga = o.optJSONArray("gauges")
+                if (ga != null) for (i in 0 until ga.length()) customGauges.add(GaugeItem.fromJson(ga.getJSONObject(i)))
+                // v1.4.0 及以前的配置只有 span（网格布局），这里一次性迁到归一化自由坐标并回写，
+                // 避免每次启动都迁一遍。
+                val gridMigrated = DashLayout.migrateFromGrid(customGauges)
+                migrateLegacyToCanvas()
+                if (gridMigrated) saveDash()
+            }
+            // 有画布的分支已经在 applySettingsJson 末尾 loadActiveCanvas() 过了，
+            // 这里不再重复 —— 重复是幂等的，但会让"谁负责同步"变得含糊。
         }
         runCatching {
             val a = JSONArray(f("themes.json").takeIf { it.exists() }?.readText() ?: "[]")
@@ -276,7 +313,22 @@ object Store {
             dashEngine = 0,
             // 油箱容量（L）：续航里程派生用。旧文件没有这个字段 → 50L 兜底
             tankCapacityL = o.optDouble("tankCapacityL", 50.0).toFloat(),
+            // 多画布（v1.20.0）。旧文件没有这两个键 → 空列表 + 空 id，
+            // 交给 load() / 备份导入走一次性迁移 —— 这里**不能**硬造一套，
+            // 因为扁平表在 dash.json 里，这里读不到。
+            canvases = DashCanvas.listFromJson(o.optJSONArray("canvases")),
+            activeCanvasId = o.optString("activeCanvasId", ""),
+            // 越界值**在读取时就夹住**：这个值会被当成 Gravity 分支的输入，
+            // 让一个手改坏的 settings.json 落到未知分支是不必要的风险
+            canvasNamePos = o.optInt("canvasNamePos", DashCanvas.NAME_POS_TOP_START)
+                .coerceIn(0, DashCanvas.NAME_POS_HIDDEN),
         )
+        // 有画布 → 立刻把「当前画布」灌进实时字段。
+        //
+        // 抽在这里，而不是让每个调用方自己记得同步：调用方（load / 备份导入）
+        // 在返回后读 settings.dashType / Store.customGauges 就必须已经是当前画布的值，
+        // 否则备份导入会拿**上一台设备的实时字段**去覆写刚导进来的画布（静默丢配置）。
+        if (settings.canvases.isNotEmpty()) loadActiveCanvas()
     }
 
     fun savePids() = runCatching {
@@ -313,13 +365,29 @@ object Store {
         f("rules.json").writeText(JSONArray().apply { rules.forEach { put(it.toJson()) } }.toString(2))
     }
 
+    /**
+     * 把**当前画布**的内容落盘。做两件事：
+     *
+     * 1. `dash.json` —— **旧格式镜像**。留着是有意的：降级回 v1.19.x 时那份文件
+     *    仍然读得到用户的扁平表（否则降级 = 盘面全空，而用户不会想到是降级导致的）。
+     * 2. `settings.json` —— 画布真正住的地方（v1.20.0 起）。
+     *
+     * ⚠️ 因此它**不能在 `load()` 读完 settings.json 之前被调用** ——
+     * 那会拿默认设置覆写 `settings.json`（旧代码里 dash.json 的网格迁移就会调它）。
+     * 见 [load] 顶部那段顺序说明。
+     */
     fun saveDash() = runCatching {
         f("dash.json").writeText(JSONObject().apply {
             put("gauges", JSONArray().apply { customGauges.forEach { put(it.toJson()) } })
         }.toString(2))
+        saveSettings()
     }
 
     fun settingsToJson(): JSONObject = JSONObject().apply {
+        // ⚠️ 先同步再序列化：调用方（saveSettings / 备份导出）读的是**实时字段**，
+        // 而画布才是权威。不同步就会把"上一次切画布时"的旧内容写回去，
+        // 表现为"改完不生效，切一下画布又对了"。
+        snapshotToActiveCanvas()
         put("protocol", settings.protocol)
         put("pollInterval", settings.pollIntervalMs)
         put("autoReconnect", settings.autoReconnect)
@@ -355,6 +423,15 @@ object Store {
         put("bgFit", settings.bgFit)
         put("dashEngine", settings.dashEngine)
         put("tankCapacityL", settings.tankCapacityL.toDouble())
+        // ---- 多画布（v1.20.0）----
+        //
+        // 数组顺序 = 横滑页序，所以**不要**按 id 排序。
+        // `activeCanvasId` 与上面的 dashType/gaugeTheme/... 有冗余，但冗余是有用的：
+        // 旧版本读到这些键仍能正常显示（只是只认当前那一套）。
+        put("activeCanvasId", settings.activeCanvasId)
+        put("canvases", JSONArray().apply { settings.canvases.forEach { put(it.toJson()) } })
+        // 画布名浮标的位置：全局偏好（与"当前是哪一套"无关）
+        put("canvasNamePos", settings.canvasNamePos)
     }
 
     fun saveSettings() = runCatching {
@@ -364,6 +441,210 @@ object Store {
     fun saveThemes() = runCatching {
         f("themes.json").writeText(
             JSONArray().apply { customThemeJson.forEach { put(JSONObject(it)) } }.toString(2)
+        )
+    }
+
+    // ---------------------------------------------------------- 多画布（v1.20.0）
+
+    /**
+     * 当前画布。**永不返回 null、永不返回空** ——
+     *
+     *  - 列表为空（全新安装 / 刚导入一份旧备份）→ 就地补一套默认画布；
+     *  - [Settings.activeCanvasId] 指向已删除的 id → 落到第一套并**改写 id**。
+     *
+     * 自愈放在这里而不是在调用方，是因为调用方太多（渲染、编辑器、设置页、
+     * `customGauges` 的每一次读写），任何一处漏判都会 NPE。
+     */
+    fun activeCanvas(): DashCanvas {
+        if (settings.canvases.isEmpty()) settings.canvases.add(DashCanvas())
+        val cur = settings.canvases.firstOrNull { it.id == settings.activeCanvasId }
+        if (cur != null) return cur
+        val first = settings.canvases.first()
+        settings.activeCanvasId = first.id
+        return first
+    }
+
+    fun canvasIndex(id: String): Int = settings.canvases.indexOfFirst { it.id == id }
+
+    fun activeCanvasIndex(): Int = canvasIndex(settings.activeCanvasId).coerceAtLeast(0)
+
+    /**
+     * **实时字段 → 当前画布**。
+     *
+     * 画布是权威、实时字段是工作区，两者靠这一对函数同步。
+     * 每次 `saveSettings()` / `saveDash()` 都会先调它 —— 所以用户改完东西
+     * 不需要"记得保存画布"。
+     */
+    fun snapshotToActiveCanvas() {
+        val c = activeCanvas()
+        c.type = settings.dashType.coerceIn(DashCanvas.TYPE_NORMAL, DashCanvas.TYPE_CUSTOM)
+        // 浅拷：GaugeItem 实例保持同一批，与 DashCanvasEditorView 的就地编辑约定一致
+        c.gauges = ArrayList(customGauges)
+        c.designJson = settings.designJson
+        c.theme = settings.gaugeTheme
+        c.pageIndex = settings.dashPageIndex
+        c.bgImagePath = settings.bgImagePath
+        c.bgW = settings.bgW
+        c.bgH = settings.bgH
+        c.bgFit = settings.bgFit
+        c.scaleMode = settings.dashScaleMode
+    }
+
+    /** **当前画布 → 实时字段**（切画布 / 加载配置时用） */
+    fun loadActiveCanvas() {
+        val c = activeCanvas()
+        settings.dashType = c.type.coerceIn(DashCanvas.TYPE_NORMAL, DashCanvas.TYPE_CUSTOM)
+        settings.designJson = c.designJson
+        settings.gaugeTheme = c.theme
+        settings.dashPageIndex = c.pageIndex
+        settings.bgImagePath = c.bgImagePath
+        settings.bgW = c.bgW
+        settings.bgH = c.bgH
+        settings.bgFit = c.bgFit
+        settings.dashScaleMode = c.scaleMode
+        customGauges.clear()
+        customGauges.addAll(c.gauges)
+    }
+
+    /**
+     * 切到某一套画布。
+     *
+     * 顺序要紧：**先**把实时字段落回当前画布，**再**换 id 并加载新的 ——
+     * 反过来会把刚改完的内容写进新画布（用户会看到"切过去之后上一套被覆盖了"）。
+     *
+     * @return false = 该 id 不存在（调用方应忽略这次切换，而不是崩）
+     */
+    fun switchCanvas(id: String): Boolean {
+        val target = settings.canvases.firstOrNull { it.id == id } ?: return false
+        if (target.id == settings.activeCanvasId) return true
+        snapshotToActiveCanvas()
+        settings.activeCanvasId = target.id
+        loadActiveCanvas()
+        saveSettings()
+        AppLog.i(
+            AppLog.M_DATA, "已切换画布",
+            "name=${target.name} type=${target.type} gauges=${target.gauges.size} " +
+                "index=${activeCanvasIndex()}/${settings.canvases.size}"
+        )
+        return true
+    }
+
+    /**
+     * 新增一套画布并**立刻切过去**。
+     *
+     * 为什么自动切：用户点「新增」就是想看那一套 —— 不切的话他会滑过去发现
+     * 还是旧盘面（因为"当前画布"没变），看起来像按钮没生效。
+     *
+     * 初始内容按类型给（普通/性能 = 内置布局，自定义 = 空表）；
+     * **配色跟随当前这一套**（一上来就是同一个观感），
+     * 但**背景图与设计文件不继承** —— 那是上一套"作品"的一部分，
+     * 抄过来只会让人以为串台了。
+     *
+     * @return null = 已达上限 [DashCanvas.MAX_CANVASES]
+     */
+    fun addCanvas(name: String, type: Int): DashCanvas? {
+        if (settings.canvases.size >= DashCanvas.MAX_CANVASES) return null
+        val t = type.coerceIn(DashCanvas.TYPE_NORMAL, DashCanvas.TYPE_CUSTOM)
+        val c = DashCanvas(
+            name = DashCanvas.sanitizeName(name),
+            type = t,
+            gauges = when (t) {
+                DashCanvas.TYPE_PERF -> ArrayList(DashLayout.perf())
+                DashCanvas.TYPE_CUSTOM -> ArrayList()
+                else -> ArrayList(DashLayout.normal())
+            },
+            theme = settings.gaugeTheme,
+        )
+        snapshotToActiveCanvas()
+        settings.canvases.add(c)
+        settings.activeCanvasId = c.id
+        loadActiveCanvas()
+        saveSettings()
+        AppLog.i(
+            AppLog.M_DATA, "已新增画布",
+            "name=${c.name} type=$t index=${activeCanvasIndex()}/${settings.canvases.size}"
+        )
+        return c
+    }
+
+    /**
+     * 删除一套画布。
+     *
+     * **至少留一套** —— 删空之后横滑没有页、`customGauges` 没有归属，
+     * 整个仪表盘页就是一片空白，比"删不掉"难查得多。
+     *
+     * @return false = 只剩一套 / id 不存在
+     */
+    fun removeCanvas(id: String): Boolean {
+        if (settings.canvases.size <= 1) return false
+        val i = canvasIndex(id)
+        if (i < 0) return false
+        val removed = settings.canvases.removeAt(i)
+        if (settings.activeCanvasId == id) {
+            // 落到原位置的邻居；删的是最后一套就落到新的最后一套
+            val next = settings.canvases[i.coerceAtMost(settings.canvases.size - 1)]
+            settings.activeCanvasId = next.id
+            loadActiveCanvas()
+        }
+        saveSettings()
+        AppLog.i(
+            AppLog.M_DATA, "已删除画布",
+            "name=${removed.name} 剩余=${settings.canvases.size} 当前=${activeCanvas().name}"
+        )
+        return true
+    }
+
+    fun renameCanvas(id: String, name: String): Boolean {
+        val c = settings.canvases.firstOrNull { it.id == id } ?: return false
+        c.name = DashCanvas.sanitizeName(name)
+        saveSettings()
+        return true
+    }
+
+    /**
+     * 调整画布顺序（横滑页序）。
+     *
+     * 只动列表顺序、**不动 [Settings.activeCanvasId]** —— 当前看的那一套
+     * 不该因为别人换位置而变。
+     */
+    fun moveCanvas(from: Int, to: Int): Boolean {
+        val n = settings.canvases.size
+        if (from !in 0 until n || to !in 0 until n || from == to) return false
+        val c = settings.canvases.removeAt(from)
+        settings.canvases.add(to, c)
+        saveSettings()
+        AppLog.i(AppLog.M_DATA, "画布已排序", "${c.name}: $from -> $to")
+        return true
+    }
+
+    /**
+     * **一次性迁移**：把 v1.19.x 的「三选一 + 全局扁平表 + 全局设计文件 + 全局背景」
+     * 包成第一套画布，名叫 [DashCanvas.DEFAULT_NAME]。
+     *
+     * 只做**打包**，不改任何取值 —— 迁移完用户看到的东西必须和升级前一模一样，
+     * 否则"升级之后盘面变了"会成为一个说不清的 bug。
+     */
+    private fun migrateLegacyToCanvas() {
+        val c = DashCanvas(
+            name = DashCanvas.DEFAULT_NAME,
+            type = settings.dashType.coerceIn(DashCanvas.TYPE_NORMAL, DashCanvas.TYPE_CUSTOM),
+            gauges = ArrayList(customGauges),
+            designJson = settings.designJson,
+            theme = settings.gaugeTheme,
+            pageIndex = settings.dashPageIndex,
+            bgImagePath = settings.bgImagePath,
+            bgW = settings.bgW,
+            bgH = settings.bgH,
+            bgFit = settings.bgFit,
+            scaleMode = settings.dashScaleMode,
+        )
+        settings.canvases.add(c)
+        settings.activeCanvasId = c.id
+        saveSettings()
+        AppLog.i(
+            AppLog.M_DATA, "配置已迁移到多画布",
+            "第 1 套「${c.name}」type=${c.type} gauges=${c.gauges.size} " +
+                "design=${if (c.designJson.isBlank()) "无" else "有"} theme=${c.theme}"
         )
     }
 

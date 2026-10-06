@@ -624,6 +624,23 @@ object ObdController {
         }
     }
 
+    /**
+     * 把 [Store.settings] 里的音效开关**立刻**应用到播放器（v1.20.0）。
+     *
+     * ## 为什么需要它
+     *
+     * `audio.enabled` 原来只在 [init] 里读一次。而音效开关现在多了一个入口
+     * （仪表盘设置页 —— 用户就在仪表盘上，不可能为了它重启 App），
+     * 不改的话会出现"开关拨了、提示音照响"，是最容易被当成"App 坏了"的那种不一致。
+     *
+     * 没初始化时直接返回（设置页可能在服务起来之前就被打开）。
+     */
+    fun applySoundEnabled() {
+        if (!ready) return
+        runCatching { audio.enabled = Store.settings.soundEnabled }
+            .onFailure { AppLog.w(AppLog.M_SYS, "音效开关应用失败", it.message ?: "") }
+    }
+
     private fun parseColor(spec: String): Int {
         val s = spec.trim()
         if (s.isEmpty()) return 0xFFFF4D4F.toInt()

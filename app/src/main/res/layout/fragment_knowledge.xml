@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  知识库页（v1.20.3）。
+
+  ## 为什么是 Fragment 而不是 Activity
+
+  用户要求："知识库不是在日志里进入、而是直接增加个 tab 标签、知识库"。
+  所以它现在是**导航栏里的一个 tab**，由 `MainActivity.switchTo` 用 hide/show 管
+  （与其它四个页面同一套机制），不再是从日志页跳出去的 Activity。
+
+  ## 内容为什么由代码生成
+
+  各节标题 + 正文 + 标签写在 `KnowledgeFragment.SECTIONS` 里 —— 这份东西的价值
+  在于**改起来快**（每加一条术语只加一行）。写成 XML 就是几十个 TextView，
+  以后没人愿意动（"反正能跑"）。
+
+  限宽 820dp：正文是长段落，太宽会难以扫读。
+-->
+<com.icar.obd.ui.view.MaxWidthNestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:layout_gravity="center_horizontal"
+    android:background="@color/bg"
+    android:fillViewport="true"
+    app:maxWidthDp="820dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="10dp">
+
+        <EditText
+            android:id="@+id/etFilter"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_input"
+            android:hint="搜索（如 CAN / 采样率 / NO DATA）"
+            android:imeOptions="actionDone"
+            android:inputType="text"
+            android:maxLines="1"
+            android:minHeight="44dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_dim"
+            android:textSize="13sp" />
+
+        <!--
+          标签筛选（v1.20.3）。用户要求："给知识库增加个标签区分、可以筛选标签查看知识，
+          如这个文档讲的是 obd 的、就给个 obd 标签"。
+          单选 + 必选 —— 「全部」是第一个 chip，等价于不筛。
+        -->
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/chipTags"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            app:singleLine="false"
+            app:singleSelection="true" />
+
+        <TextView
+            android:id="@+id/tvFilterHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:paddingStart="4dp"
+            android:textColor="@color/text_dim"
+            android:textSize="11sp" />
+
+        <!-- 各节由代码生成 -->
+        <LinearLayout
+            android:id="@+id/llSections"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="vertical" />
+    </LinearLayout>
+</com.icar.obd.ui.view.MaxWidthNestedScrollView>

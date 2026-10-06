@@ -1,123 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  仪表盘页（v1.20.0：多画布）。
+
+  ## 这一版删掉了什么，为什么
+
+  旧版顶部有一行「普通 / 性能 / 自定义 + 布局 / 风格 / 编辑」。
+  v1.19.25 删掉了 App 的状态条之后，那一行就成了整页里**唯一的**横条 ——
+  而它占的是最宝贵的一行高度（实测 65px 的画布），换来的却只是三个页签。
+
+  现在改成：**整页横滑** ——
+  `[画布0][画布1]…[设置]`，页码变化即切 `Store.settings.activeCanvasId`。
+  原「布局 / 风格」的全部能力搬进了最后那一页「设置」，
+  「编辑」变成画布页右下角的一个按钮（就地编辑，见 fragment_dash_canvas.xml）。
+
+  ## 为什么告警条还在外面
+
+  它是**跨画布**的（规则触发与哪一套画布无关），放在 pager 之外
+  才不会因为翻页被重建、也不会在翻页动画里跟着平移。
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg"
     android:orientation="vertical">
-
-    <!-- 仪表盘切换：三种布局用同一套渲染器，切换只换规格 -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingStart="8dp"
-        android:paddingTop="8dp"
-        android:paddingEnd="8dp">
-
-        <!--
-          ⚠️ v1.19.20 修：这个分段控件**不能给 weight=1**。
-
-          原来它是 `layout_width=0dp + weight=1`，于是吃掉整行 2124px，
-          内部三段再 weight=1 平分 → **每段 708px 去放「普通」两个字**，
-          整段全是空白，分段控件的"分段感"完全没了（实测几何：
-          btnDashNormal [218,143][927,233] = 709px 宽）。
-          同时把右边的操作按钮挤成 91px（2 个字左右各只剩 12px padding）。
-
-          分段控件的正确用法是**贴着自己的内容**（wrap_content），
-          要占位就用一个弹性空白把右侧操作推过去 —— 见下面的 spacer。
-        -->
-        <com.google.android.material.button.MaterialButtonToggleGroup
-            android:id="@+id/dashToggle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            app:selectionRequired="true"
-            app:singleSelection="true">
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnDashNormal"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="wrap_content"
-                android:layout_height="40dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:minWidth="64dp"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
-                android:text="普通"
-                android:textSize="12sp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnDashPerf"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="wrap_content"
-                android:layout_height="40dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:minWidth="64dp"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
-                android:text="性能"
-                android:textSize="12sp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnDashCustom"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="wrap_content"
-                android:layout_height="40dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:minWidth="64dp"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
-                android:text="自定义"
-                android:textSize="12sp" />
-        </com.google.android.material.button.MaterialButtonToggleGroup>
-
-        <!-- 弹性空白：把右侧操作推到行尾，同时让左边分段控件保持紧凑 -->
-        <View
-            android:layout_width="0dp"
-            android:layout_height="1dp"
-            android:layout_weight="1" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnDashPreset"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="40dp"
-            android:layout_marginStart="4dp"
-            android:minWidth="0dp"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:text="布局"
-            android:textSize="12sp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnDashTheme"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="40dp"
-            android:layout_marginStart="2dp"
-            android:minWidth="0dp"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:text="风格"
-            android:textSize="12sp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnEditDash"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="40dp"
-            android:layout_marginStart="2dp"
-            android:minWidth="0dp"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:text="编辑"
-            android:textSize="12sp"
-            android:visibility="gone" />
-    </LinearLayout>
 
     <!-- 规则触发的提示条 -->
     <TextView
@@ -134,40 +39,14 @@
         android:visibility="gone" />
 
     <!--
-        自由画布：仪表按归一化坐标 (x/y/w/h ∈ 0..1) 绝对定位，天然铺满视口，
-        所以不再需要滚动容器 —— 旧版的 NestedScrollView 已移除。
-        参考线由 DashRenderer 往 gaugeGrid 里塞的第一个子 View 绘制（z 序最底）。
+        画布 + 设置页。适配器见 ui/dash/DashCanvasPagerAdapter.kt。
+
+        `layout_weight=1` 而不是固定高度：告警条出现时 pager 自己让位，
+        不用手算高度（旧版也是这个结构）。
     -->
-    <FrameLayout
+    <androidx.viewpager2.widget.ViewPager2
+        android:id="@+id/dashPager"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1">
-
-        <FrameLayout
-            android:id="@+id/gaugeGrid"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent" />
-
-        <!--
-            LVGL 引擎（C + SurfaceView）。与上面的 gaugeGrid 二选一显示，
-            由设置项 dashEngine 决定 —— 保留两个是为了能并排对比排查问题。
-        -->
-        <com.icar.obd.ui.lvgl.LvglDashView
-            android:id="@+id/lvglDash"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:visibility="gone" />
-
-        <TextView
-            android:id="@+id/tvDashEmpty"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:gravity="center"
-            android:padding="24dp"
-            android:text="没有可显示的通道\n请先连接设备并在「PID」页启用通道"
-            android:textColor="@color/text_dim"
-            android:textSize="14sp"
-            android:visibility="gone" />
-    </FrameLayout>
+        android:layout_weight="1" />
 </LinearLayout>

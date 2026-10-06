@@ -97,21 +97,50 @@ View
 
 **导航项 ID**：`nav_dashboard` / `nav_connect` / `nav_pid` / `nav_rule` / `nav_log`
 
-### fragment_dash.xml —— 仪表盘
+### fragment_dash.xml —— 仪表盘（**v1.20.0 起只是宿主**）
 
 | 类型 | ID | 说明 |
 |---|---|---|
-| `MaterialButtonToggleGroup` | `dashToggle` | 普通/性能/自定义 切换组 |
-| `MaterialButton` | `btnDashNormal` | 普通驾驶 |
-| `MaterialButton` | `btnDashPerf` | 性能 |
-| `MaterialButton` | `btnDashCustom` | 自定义 |
-| `MaterialButton` | `btnDashPreset` | 预设布局选择 |
-| `MaterialButton` | `btnDashTheme` | 风格选择 |
-| `MaterialButton` | `btnEditDash` | 进入布局编辑器 |
-| `TextView` | `alertBanner` | **告警横幅**（规则触发 / 模拟数据提示） |
+| `TextView` | `alertBanner` | **告警横幅**（规则触发 / 模拟数据提示）。跨画布，所以放在 pager 之外 |
+| `ViewPager2` | `dashPager` | `[画布0][画布1]…[设置]`；页码变化即切 `activeCanvasId` |
+
+> ⚠️ v1.20.0 **删掉了** `dashToggle` / `btnDashNormal` / `btnDashPerf` / `btnDashCustom` /
+> `btnDashPreset` / `btnDashTheme` / `btnEditDash`。原能力的新位置：
+> 「布局 / 风格」→ 设置页的 `btnCanvasLook`；「编辑」→ 画布页的 `btnEditCanvas`。
+
+### fragment_dash_canvas.xml —— 一套画布（含就地编辑器）
+
+| 类型 | ID | 说明 |
+|---|---|---|
+| `FrameLayout` | `canvasArea` | **画布区**。背景（主题纯色 / 背景图）画在这一层 —— 编辑态工具条占高度，画在根上背景定位会对不上 |
 | `FrameLayout` | `gaugeGrid` | **仪表容器**（Android 自绘路径往这里塞 View） |
 | `LvglDashView` | `lvglDash` | LVGL 渲染面（**已废弃**，`dashEngine` 强制为 0） |
 | `TextView` | `tvDashEmpty` | 空布局提示 |
+| `DashCanvasEditorView` | `editorCanvas` | **就地编辑器**（编辑态显示，直接持有 `Store` 里的 `GaugeItem` 实例） |
+| `LinearLayout` | `editBar` | 编辑工具条（2 行，编辑态才显示） |
+| `MaterialButton` | `btnAdd` / `btnEditGauge` / `btnDeleteGauge` / `btnFrontGauge` / `btnPreset` / `btnGrid` / `btnSnap` / `btnDone` | 编辑工具条的按钮（`btnDone` = 退出并保存） |
+| `TextView` | `tvEditorHint` | 编辑提示（已选哪块 / 吸附状态） |
+| `TextView` | `tvCanvasName` | 画布名浮标（半透明 overlay，不占布局高度）。**位置四角/隐藏可选**（v1.20.1）：`layout_gravity` + `padding` 由 `applyNameLabel()` 运行时设 |
+
+> ⚠️ v1.20.2 **删掉了** `btnEditCanvas`（画布页右下角那个「编辑」）。
+> 编辑入口搬到设置页的**操作菜单**（「编辑这一套…」）—— 用户要求，
+> 而且编辑是破坏性动作，常驻按钮在车上容易误触。
+
+### fragment_canvas_settings.xml + item_canvas.xml —— 画布设置页（最后一页）
+
+| 类型 | ID | 说明 |
+|---|---|---|
+| `TextView` | `tvCanvasCount` | `共 N 套 · 上限 8 套` |
+| `LinearLayout` | `llCanvasList` | 画布行容器（**代码生成**，每行 `item_canvas.xml`） |
+| `MaterialButton` | `btnAddCanvas` | 新增画布 |
+| `MaterialButton` | `btnImportCanvas` / `btnExportCanvas` | **导入 / 导出画布**（v1.20.2，一行两个；对接 `tools/theme-studio`） |
+| `TextView` | `tvCurrentCanvas` | `当前：名字 · 类型 · N 个仪表` |
+| `MaterialButton` | `btnCanvasTheme` | 画布主题（**只作用于当前这一套**） |
+| `MaterialButton` | `btnCanvasLook` | 背景 / 设计文件 / 参考线 / 卡片样式菜单 |
+| `MaterialButton` | `btnPollInterval` | 轮询间隔（全局） |
+| `MaterialSwitch` | `swSound` | 音效（全局，改完当次生效） |
+| `MaterialButton` | `btnNameLabel` | **画布名浮标位置**（左上/右上/左下/右下/隐藏，全局） |
+| `item_canvas.xml` | `tvName` / `tvSub` / `btnRowMenu` | 每行：名字（`●` = 当前）/ 副标题 / 「操作」菜单（改名·上移·下移·前往·删除） |
 
 ### fragment_connect.xml —— 连接页
 
@@ -179,13 +208,13 @@ View
 | `MaterialButton` | `btnSimRebuild` | 重新读取 PID |
 | `LinearLayout` | `simChannels` | **通道列表容器**（代码生成，分组 + 可折叠） |
 
-### activity_dash_editor.xml —— 布局编辑器
+### ~~activity_dash_editor.xml~~ —— **v1.20.0 已删除**
 
-| 类型 | ID |
-|---|---|
-| `MaterialButton` | `btnAdd` / `btnEditGauge` / `btnDeleteGauge` / `btnPreset` / `btnFrontGauge` / `btnGrid` / `btnSave` |
-| `TextView` | `tvEditorHint` |
-| `DashCanvasEditorView` | `editorCanvas` |
+原来的全屏拖拽编辑器被**就地编辑**取代（见上面的 `fragment_dash_canvas.xml`）。
+`DashEditorActivity.kt` 与这个布局文件都已删除，`AndroidManifest.xml` 里的声明也去掉了。
+按钮对应关系：`btnAdd` / `btnEditGauge` / `btnDeleteGauge` / `btnFrontGauge` /
+`btnPreset` / `btnGrid` / `btnSnap` 原样搬到画布页的工具条；
+`btnSave` **没有了** —— 退出编辑（`btnDone`）与 `onPause` 都会自动保存。
 
 ### dialog_gauge_edit.xml —— 单块表编辑对话框
 

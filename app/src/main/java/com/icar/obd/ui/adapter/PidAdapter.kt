@@ -26,23 +26,47 @@ class PidAdapter(
 
     /** 行模型。非 private：HeaderVH.bind 是公开成员，若 Row 私有会触发可见性错误。 */
     sealed class Row {
-        data class Header(val title: String, val count: Int) : Row()
+        data class Header(val title: String, val count: Int, val collapsed: Boolean = false) : Row()
         data class Item(val pid: PidDefinition) : Row()
     }
 
     private val rows = ArrayList<Row>()
 
+    /**
+     * 被**收起**的分组名（v1.20.3）。
+     *
+     * 用户要求："PID 列表现在不是分了四类吗、我想给类目上面加个收缩起来的按钮"。
+     *
+     * 状态放在适配器里（不是 Store）—— 它是**纯 UI 临时状态**：
+     * 重启后回到"全展开"是符合预期的，为它加一个持久化字段反而多一份要维护的东西。
+     */
+    private val collapsed = HashSet<String>()
+
+    private var source: List<PidDefinition> = emptyList()
+
     fun submit(list: List<PidDefinition>) {
+        source = list
+        rebuild()
+    }
+
+    /** 展开 / 收起一个分组 */
+    fun toggleGroup(title: String) {
+        if (!collapsed.remove(title)) collapsed.add(title)
+        rebuild()
+    }
+
+    private fun rebuild() {
         rows.clear()
-        val grouped = list.groupBy { it.group }
+        val grouped = source.groupBy { it.group }
         // 分组顺序固定：标准 → 派生 → 厂家模板 → 自定义
         val order = listOf("标准 OBD", "派生", "厂家模板(未验证)")
         val keys = order.filter { grouped.containsKey(it) } +
             grouped.keys.filter { it !in order }.sorted()
         keys.forEach { k ->
             val items = grouped[k] ?: return@forEach
-            rows.add(Row.Header(k, items.size))
-            items.forEach { rows.add(Row.Item(it)) }
+            rows.add(Row.Header(k, items.size, collapsed.contains(k)))
+            // 收起时**只留标题行** —— 这样"四类一眼看全"这个好处还在
+            if (!collapsed.contains(k)) items.forEach { rows.add(Row.Item(it)) }
         }
         notifyDataSetChanged()
     }
@@ -71,7 +95,10 @@ class PidAdapter(
     inner class HeaderVH(v: View) : RecyclerView.ViewHolder(v) {
         private val tv: TextView = v.findViewById(R.id.tvHeader)
         fun bind(r: Row.Header) {
-            tv.text = "${r.title}  (${r.count})"
+            // ▾ 展开 / ▸ 收起 —— 一眼看出"这个标题能点"
+            tv.text = "${if (r.collapsed) "▸" else "▾"}  ${r.title}  (${r.count})"
+            // 整行都可点（只点文字太难按，尤其在车上）
+            itemView.setOnClickListener { toggleGroup(r.title) }
         }
     }
 

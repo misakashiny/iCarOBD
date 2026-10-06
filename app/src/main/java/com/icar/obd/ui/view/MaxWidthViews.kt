@@ -135,6 +135,15 @@ class MaxWidthLayout @JvmOverloads constructor(
  * ```
  * Fragment 的根视图会被加到 FragmentManager 的容器（FrameLayout）里，
  * 因此 `layout_gravity` 生效。
+ *
+ * ## ⚠️ 放进 ViewPager2 的页面里**不生效**（v1.20.2 实测）
+ *
+ * `FragmentStateAdapter.addViewToContainer()` 给页面根视图套的是
+ * `FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)` —— **gravity 被覆盖掉了**。
+ * 于是"限宽生效、居中失效"，整页靠左（实测：内容 x=250..1770，而页面是 200..2560）。
+ *
+ * 修法：**自己再套一层 FrameLayout 提供居中**，那一层由布局文件控制、pager 不改写它。
+ * 见 `fragment_canvas_settings.xml` 的根。
  */
 class MaxWidthLinearLayout @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0

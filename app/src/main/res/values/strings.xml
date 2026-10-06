@@ -8,6 +8,7 @@
     <string name="nav_pid">PID</string>
     <string name="nav_rule">规则</string>
     <string name="nav_log">日志</string>
+    <string name="nav_knowledge">知识库</string>
 
     <!-- 仪表盘 -->
     <string name="dash_normal">普通驾驶</string>

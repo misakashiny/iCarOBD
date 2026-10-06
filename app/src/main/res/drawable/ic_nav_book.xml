@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 知识库导航图标：圆圈里的 i（与其它 ic_nav_* 同规格：24dp / fillColor 白，由 nav_item_color 着色） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,2a10,10 0,1 0,0 20a10,10 0,0 0,0 -20zM12,4.2a7.8,7.8 0,1 1,0 15.6a7.8,7.8 0,0 1,0 -15.6z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M11,6.8h2v2.1h-2zM11,10.6h2v6.6h-2z" />
+</vector>

@@ -1,31 +1,57 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  横屏主界面。
+  横屏主界面（v1.20.4 起导航栏是**悬浮**的）。
 
-  与竖屏（res/layout/activity_main.xml）的唯一结构差异：
-  底部导航被换成**左侧竖排导航（NavigationRailView）**。
+  ## 为什么根容器从 LinearLayout 换成 FrameLayout
 
-  为什么：横屏下垂直像素只有竖屏的 62%（1600 vs 2560），
-  底部导航会吃掉约 180px（≈8% 屏高），而左侧导航占用的是富余的水平像素。
-  另外横屏下拇指/手指从左侧点按更自然。
+  用户原话："仪表台里面 tab 页面要以悬浮窗的形式去显现，**不然会把画布挤掉**"。
 
-  两个布局使用**相同的 id**（navView / statusBar / pageContainer / connDot /
-  tvStatus / tvRate），MainActivity 用 NavigationBarView 基类接收导航控件，
-  因此不需要写任何 if(横屏) 分支。
+  旧结构是 `LinearLayout(horizontal) { navView, divider, pageContainer }` ——
+  导航栏占 198px，**画布就少 198px**；而且仪表盘页把它"滑出去"时，
+  `pageContainer` 会重新量一次 → **画布尺寸变化 → 表盘重排 + 闪一下**。
+
+  现在：`pageContainer` 永远**整屏宽**，导航栏浮在它上面（带 elevation）。
+  展开/收起只动导航栏自己的 translationX/alpha，**画布一动不动**。
+
+  ## 两个布局保持相同 id
+
+  `navView` / `navDivider` / `pageContainer` —— MainActivity 用 `NavigationBarView`
+  基类接收导航控件，所以不需要写任何 if(横屏) 分支。
 -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/rootLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bg"
-    android:orientation="horizontal">
+    android:background="@color/bg">
 
+    <!-- 页面容器：**永远整屏**，不再被导航栏挤 -->
+    <FrameLayout
+        android:id="@+id/pageContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!--
+      分隔线跟着导航栏一起浮（贴在它的右边缘 88dp 处）。
+      ⚠️ 它必须和 navView **一起**显示/隐藏：v1.20.3 实测过，
+      漏了它会在屏幕最左留下一条 `divider` 色的 2px 竖条（用户："看着很不爽"）。
+    -->
+    <View
+        android:id="@+id/navDivider"
+        android:layout_width="1dp"
+        android:layout_height="match_parent"
+        android:layout_gravity="start"
+        android:layout_marginStart="88dp"
+        android:background="@color/divider" />
+
+    <!-- 悬浮导航栏。elevation 让它看起来是"浮在上面的一层" -->
     <com.google.android.material.navigationrail.NavigationRailView
         android:id="@+id/navView"
         android:layout_width="wrap_content"
         android:layout_height="match_parent"
+        android:layout_gravity="start"
         android:background="@color/bg_surface"
+        android:elevation="8dp"
         android:minWidth="88dp"
         app:itemActiveIndicatorStyle="@style/Widget.Material3.NavigationRailView.ActiveIndicator"
         app:itemIconTint="@color/nav_item_color"
@@ -33,24 +59,4 @@
         app:labelVisibilityMode="labeled"
         app:menu="@menu/bottom_nav"
         app:menuGravity="center" />
-
-    <View
-        android:layout_width="1dp"
-        android:layout_height="match_parent"
-        android:background="@color/divider" />
-
-    <LinearLayout
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:orientation="vertical">
-
-
-        <FrameLayout
-            android:id="@+id/pageContainer"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1" />
-    </LinearLayout>
-
-</LinearLayout>
+</FrameLayout>

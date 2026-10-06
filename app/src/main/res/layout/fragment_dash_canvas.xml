@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  **一套画布**（ViewPager2 的一页）。
+
+  同一个布局承担两种状态：
+
+  · **浏览**：`gaugeGrid` + `tvCanvasName` + `btnEditCanvas`，实时刷新、不可拖拽。
+  · **编辑**：`editBar` + `editorCanvas`，拖拽 / 缩放 / 属性；**横滑由宿主关掉**。
+
+  ## 为什么编辑是"就地"而不是再开一个 Activity
+
+  旧版点「编辑」会开 `DashEditorActivity`（整屏换掉）。两个问题：
+  1. 编辑时看不到自己配的背景图与主题（那正是要对齐的东西）；
+  2. 更根本的：**在 pager 里编辑必须解决"拖表盘 vs 横滑"的冲突**，
+     而开新 Activity 时这个冲突根本不存在 —— 也就永远没被解决。
+
+  现在编辑态由本 Fragment 通知宿主把 `ViewPager2.isUserInputEnabled` 置 false
+  （见 `DashCanvasPageFragment.setEditing`），冲突在一处解决。
+
+  ## 为什么画布名只做一个小标签、不做顶栏
+
+  v1.19.25 刚把顶栏删掉换回 65px 画布高度，不能又加一条横条回去。
+  但没有页码指示时"现在看的是第几套"完全无从判断，所以留一个**左上角浮标**
+  （小字、半透明、不占布局高度）。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/canvasRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg"
+    android:orientation="vertical">
+
+    <!-- ================= 编辑工具条（编辑态才有） ================= -->
+    <LinearLayout
+        android:id="@+id/editBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingStart="6dp"
+            android:paddingTop="6dp"
+            android:paddingEnd="6dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAdd"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_weight="1"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp"
+                android:text="添加"
+                android:textSize="12sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnEditGauge"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="4dp"
+                android:layout_weight="1"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp"
+                android:text="属性"
+                android:textSize="12sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnDeleteGauge"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="4dp"
+                android:layout_weight="1"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp"
+                android:text="删除"
+                android:textSize="12sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnFrontGauge"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="4dp"
+                android:layout_weight="1"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp"
+                android:text="置顶"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingStart="6dp"
+            android:paddingTop="4dp"
+            android:paddingEnd="6dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnPreset"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_weight="1"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp"
+                android:text="预设"
+                android:textSize="12sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnGrid"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="4dp"
+                android:layout_weight="1"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp"
+                android:text="参考线"
+                android:textSize="12sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnSnap"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="4dp"
+                android:layout_weight="1"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp"
+                android:text="吸附开"
+                android:textSize="12sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnDone"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="4dp"
+                android:layout_weight="1"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp"
+                android:text="完成"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvEditorHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="12dp"
+            android:paddingTop="6dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="4dp"
+            android:text="拖动移动，右下角方块缩放；坐标吸附到网格（可用「吸附」按钮关掉）"
+            android:textColor="@color/text_dim"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <!-- ================= 画布区 ================= -->
+    <!--
+        背景（主题纯色 / 背景图）画在**这一层**而不是页面根：
+        编辑态工具条会占掉高度，画在根上的话背景定位换算会与实际画布尺寸对不上
+        （`PositionedBackgroundDrawable` 用的是宿主 View 的宽高）。
+    -->
+    <FrameLayout
+        android:id="@+id/canvasArea"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <FrameLayout
+            android:id="@+id/gaugeGrid"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <!--
+            LVGL 引擎（C + SurfaceView）。与上面的 gaugeGrid 二选一显示，
+            由设置项 dashEngine 决定 —— 保留两个是为了能并排对比排查问题。
+        -->
+        <com.icar.obd.ui.lvgl.LvglDashView
+            android:id="@+id/lvglDash"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/tvDashEmpty"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:padding="24dp"
+            android:text="没有可显示的通道\n请先连接设备并在「PID」页启用通道"
+            android:textColor="@color/text_dim"
+            android:textSize="14sp"
+            android:visibility="gone" />
+
+        <!-- 就地编辑器。直接持有 Store 里的 GaugeItem 实例（拖动改的就是它们） -->
+        <com.icar.obd.ui.view.DashCanvasEditorView
+            android:id="@+id/editorCanvas"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
+        <!--
+            画布名浮标：没有它就完全看不出"现在滑到第几套"。
+
+            位置（四角 / 隐藏）由 `DashCanvasPageFragment.applyNameLabel()` 在运行时
+            设 `layout_gravity` + `padding` 覆盖 —— 这里的 top|start 只是默认值。
+            用 padding 而不是 margin：padding 在四个角上都等价于"离边多远"。
+        -->
+        <TextView
+            android:id="@+id/tvCanvasName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|start"
+            android:alpha="0.45"
+            android:paddingStart="12dp"
+            android:paddingTop="6dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="6dp"
+            android:textColor="@color/text_primary"
+            android:textSize="11sp" />
+    </FrameLayout>
+</LinearLayout>

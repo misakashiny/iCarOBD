@@ -14,8 +14,8 @@ android {
         applicationId = "com.icar.obd"
         minSdk = 24
         targetSdk = 34
-        versionCode = 68
-        versionName = "1.19.26"
+        versionCode = 73
+        versionName = "1.20.4"
 
         ndk {
             // 只编 arm64：LVGL 有 192 个 .c 文件，多一个 ABI 编译时间翻倍。
@@ -77,6 +77,10 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
+    // 多画布（v1.20.0）：仪表盘页改成 ViewPager2 —— [画布0][画布1]…[设置]。
+    // 横滑翻页、页码变化即切 activeCanvasId（见 ui/DashFragment.kt）。
+    // 1.1.0 是稳定版；1.0.0 在 FragmentStateAdapter 的稳定 id 处理上有已知毛病。
+    implementation("androidx.viewpager2:viewpager2:1.1.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-service:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")

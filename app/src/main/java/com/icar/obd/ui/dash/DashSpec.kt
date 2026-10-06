@@ -1,5 +1,6 @@
 package com.icar.obd.ui.dash
 
+import com.icar.obd.data.DashCanvas
 import com.icar.obd.data.DashLayout
 import com.icar.obd.data.GaugeItem
 import com.icar.obd.data.Store
@@ -18,20 +19,45 @@ import com.icar.obd.data.Store
  */
 object DashSpec {
 
-    const val NORMAL = 0
-    const val PERF = 1
-    const val CUSTOM = 2
+    /**
+     * 类型常量。
+     *
+     * **权威定义在 [DashCanvas]**（画布住在 `data/` 层）——
+     * 这里只是给 ui 层留一组顺手的别名。两边各写一份 0/1/2 迟早会分叉，
+     * 而分叉的后果是"切到性能页显示的是普通布局"这种静默错误。
+     */
+    const val NORMAL = DashCanvas.TYPE_NORMAL
+    const val PERF = DashCanvas.TYPE_PERF
+    const val CUSTOM = DashCanvas.TYPE_CUSTOM
 
-    fun title(type: Int): String = when (type) {
-        NORMAL -> "普通驾驶"
-        PERF -> "性能模式"
-        else -> "自定义仪表"
-    }
+    fun title(type: Int): String = DashCanvas.typeName(type)
 
     fun build(type: Int): List<GaugeItem> = when (type) {
         NORMAL -> DashLayout.normal()
         PERF -> DashLayout.perf()
         else -> Store.customGauges.toList()
+    }
+
+    /**
+     * **某一套画布**要渲染的仪表列表。
+     *
+     * ## 为什么不直接用 [build]
+     *
+     * [build] 读的是**当前画布**（`Store.customGauges`）。横滑时每一页要渲染
+     * **自己那一套** —— 用 `build` 的话所有页都会显示当前画布的盘面，
+     * 滑过去看起来像"没切换"（而设置页又说切了，最难查的一类不一致）。
+     *
+     * ## 语义与旧版一致
+     *
+     * 普通 / 性能 = 内置布局（与画布里的 [DashCanvas.gauges] 无关），
+     * 自定义 = 画布自己的表。这正是 v1.19.x 里 `dashType` 三选一的语义，
+     * 迁移过来**不会改变用户看到的画面** —— 也因此，
+     * 内置布局的画布要拖拽编辑必须先转成自定义（见 `DashCanvasPageFragment`）。
+     */
+    fun buildFor(canvas: DashCanvas): List<GaugeItem> = when (canvas.type) {
+        NORMAL -> DashLayout.normal()
+        PERF -> DashLayout.perf()
+        else -> canvas.gauges.toList()
     }
 
     /**
