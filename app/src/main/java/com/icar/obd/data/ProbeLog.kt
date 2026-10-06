@@ -100,5 +100,19 @@ object ProbeLog {
         AppLog.i(AppLog.M_SYS, "探测记录已清空")
     }
 
+    /**
+     * 只清某一类（页签级的"清空"）。
+     *
+     * 为什么不做成"清空全部"就完事：用户要清 CAN 的时候，
+     * **不该顺手把 PID 那批也清了** —— 那是两次完全不同的探测，
+     * 而且清掉就找不回来。
+     */
+    fun clearKind(kind: String) {
+        val n = entries.count { it.kind == kind }
+        entries.removeAll { it.kind == kind }
+        save()
+        AppLog.i(AppLog.M_SYS, "探测记录已清空某一类", "kind=$kind 清了${n}条 剩${entries.size}条")
+    }
+
     fun count(): Int = entries.size
 }

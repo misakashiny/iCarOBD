@@ -97,9 +97,10 @@ class CanSnifferActivity : AppCompatActivity() {
                 val filter = etFilter.text.toString().trim().ifBlank { "（不过滤）" }
                 // 明细 = 聚合结果（按 ID 的帧数），这正是事后要看的；
                 // 截断到 60 行，免得一次几万个 ID 把记录撑爆
-                val agg = runCatching {
-                    CanSniffer.aggregateCsv().lineSequence().take(60).joinToString("\n")
-                }.getOrDefault("")
+                // ⚠️ v1.19.23：原来截断到 60 行 —— 而一次探测看到几百个 ID 很正常，
+                // 用户反馈"记录得太少了"。聚合结果本身就是**蒸馏过的**（每个 ID 一行，
+                // 不是每帧一行），整份存下来不会失控；真要每帧明细，CAN 页还有「导出原始」。
+                val agg = runCatching { CanSniffer.aggregateCsv() }.getOrDefault("")
                 ProbeLog.add(ProbeLog.KIND_CAN, "过滤器 $filter · ${describe(st)}", agg)
             }
             wasRunning = CanSniffer.running
