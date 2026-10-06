@@ -6,6 +6,7 @@ import android.os.Looper
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.TextView
+import com.icar.obd.data.AppLog
 import com.icar.obd.data.GaugeItem
 import com.icar.obd.data.DesignFile
 import com.icar.obd.data.Store
@@ -98,12 +99,28 @@ class DashRenderer(
         val cw = container.width
         val ch = container.height
         // 首次布局前尺寸为 0：先记下规格，等 onLayoutChange 再来一次
-        if (cw <= 0 || ch <= 0) return
+        //
+        // ⚠️ v1.19.21：这里以前是**静默 return**，而调用方（DashFragment）那行
+        // 「渲染仪表盘 | count=N」是**无条件打印**的 —— 于是日志说"渲染了 8 个表"、
+        // 画布上却一个都没有，而且**从日志完全看不出**。
+        // 现在把"没渲染成"的原因打出来：一条日志就能定性。
+        if (cw <= 0 || ch <= 0) {
+            AppLog.w(
+                AppLog.M_UI, "仪表盘渲染推迟：容器还没有尺寸",
+                "cw=$cw ch=$ch spec=${spec.size}（等 onLayoutChange 重排）"
+            )
+            return
+        }
 
         clearCells()
 
         val valid = spec.filter { it.pidId.isNotBlank() && Store.findPid(it.pidId) != null }
         if (valid.isEmpty()) {
+            // 同样：以前只显示空态、不打原因 —— 而"为什么一条都留不下"才是要看的
+            AppLog.w(
+                AppLog.M_UI, "仪表盘无可渲染的表：PID 全部查不到",
+                "spec=${spec.size} ids=${spec.joinToString(",") { it.pidId.ifBlank { "(空)" } }.take(120)}"
+            )
             emptyView.visibility = View.VISIBLE
             lastW = cw; lastH = ch
             return
@@ -149,6 +166,9 @@ class DashRenderer(
             cells.add(Cell(item, view, host))
         }
         pushValues()
+        // 成功路径也留一条（有界：每次渲染一行）—— 和上面两条失败日志一起，
+        // 让「到底渲染没渲染」**只靠日志就能定性**，不用再去量像素
+        AppLog.d(AppLog.M_UI, "仪表盘已落盘", "表=${valid.size} 容器=${cw}x${ch}")
     }
 
     /** 尺寸变化后按上一次的规格重排 */
