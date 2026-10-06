@@ -25,9 +25,9 @@
 
   ## 实现上绕开的两个坑（都实际踩过）
 
-  ### 坑 1：路径里有空格和中文
+  ### 坑 1：路径里有空格与括号
 
-  本仓库路径是 `D:\AI Dsh\车机项目\iCarOBD`。
+  本仓库路径是 `C:\Users\Administrator\Desktop\iCarOBD (2)`（2026-10-06 从笔记本交接；旧路径 `D:\AI Dsh\车机项目\iCarOBD` 已删）。
   `Start-Process -ArgumentList @("-File", "`"$path`"")` 会把路径**按空格拆开**，
   子进程拿到 `D:\AI` → 报"没有 .ps1 扩展名" → **根本没跑起来**。
 
