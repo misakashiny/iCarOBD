@@ -515,13 +515,27 @@ object ObdController {
             "gauge" -> {
                 val color = parseColor(a.p2)
                 val target = a.p1
-                if (target.isBlank()) {
-                    // 未指定则给该规则涉及的所有数据源染色
-                    rule.conditions.forEach { c -> RuleEngine.setColor(c.sourceId, color) }
-                } else {
-                    RuleEngine.setColor(target, color)
-                }
+                val targets = if (target.isBlank()) rule.conditions.map { it.sourceId } else listOf(target)
+                targets.forEach { RuleEngine.setColor(it, color) }
                 AppLog.i(AppLog.M_RULE, "仪表变色", "target=${target.ifBlank { "条件源" }} color=$color")
+
+                // p3 = **N 秒后自动恢复**（v1.19.18）。空 = 一直保持到别的规则改它。
+                //
+                // 为什么需要它：变色规则最常用的写法是"超温变红"，而"恢复正常后变回来"
+                // 得**另配一条规则**去 reset —— 很容易忘了配，
+                // 于是仪表**永远红着**，看起来像 App 坏了。
+                //
+                // 用 p3 而不是新加 p4：动作行只有三个输入框，p4 用户填不了。
+                val restoreSec = a.p3.trim().toFloatOrNull()
+                if (restoreSec != null && restoreSec > 0f) {
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        targets.forEach { RuleEngine.setColor(it, -1) }
+                        AppLog.i(
+                            AppLog.M_RULE, "仪表变色已自动恢复",
+                            "targets=${targets.joinToString(",")} 延时=${restoreSec}s"
+                        )
+                    }, (restoreSec * 1000f).toLong())
+                }
             }
             "vibrate" -> vibrate(a.p1.toLongOrNull() ?: 300L)
             "notify" -> notifyRule(a.p1.ifBlank { rule.name })

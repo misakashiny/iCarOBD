@@ -215,13 +215,27 @@ data class RuleAction(
     var type: String = "toast",
     var p1: String = "",
     var p2: String = "",
-    var p3: String = ""
+    var p3: String = "",
+    /**
+     * 第 4 个自由参数（v1.19.18 新增）。
+     *
+     * 加它是因为 `sound` 要支持**用户指定的音频文件**：那时 `p1` 存的是
+     * `content://` URI（给机器用），而人需要看到的是**文件名** ——
+     * 一个 URI 直接显示在规则描述里没人看得懂。所以 `p4` = 显示名。
+     *
+     * `gauge` 也用它：**N 秒后自动恢复**（空 = 一直保持到别的规则改它）。
+     *
+     * 有默认值，所以**存量 JSON 不需要迁移**（`fromJson` 缺字段就是空串）。
+     */
+    var p4: String = ""
 ) {
     fun describe(): String = when (type) {
         // 只在**真的设了**的时候才显示参数：默认值（空 = 速率1.0/音量1.0）
         // 拖在每条描述后面纯属噪音，而且"播放音效 tick_left"这条断言是既有契约。
         "sound" -> buildString {
-            append("播放音效 $p1")
+            // 用户选了文件时显示**文件名**（p4），不显示 content:// URI
+            val shown = if (isAudioFileSpec(p1)) p4.ifBlank { "自定义音频" } else p1
+            append("播放音效 $shown")
             val extra = listOfNotNull(
                 p2.takeIf { it.isNotBlank() }?.let { "速率 $it" },
                 p3.takeIf { it.isNotBlank() }?.let { "音量 $it" }
@@ -230,7 +244,12 @@ data class RuleAction(
         }
         "toast" -> "弹出提示「$p1」"
         "log" -> "记录日志「$p1」"
-        "gauge" -> "仪表 ${if (p1.isBlank()) "当前" else p1} 变色 $p2"
+        "gauge" -> buildString {
+            append("仪表 ${if (p1.isBlank()) "当前" else p1} 变色 $p2")
+            // p3 = N 秒后自动恢复（v1.19.18）。**用 p3 而不是 p4**：
+            // 动作行只有三个输入框，p4 用户填不了。
+            if (p3.isNotBlank()) append("，${p3} 秒后自动恢复")
+        }
         "vibrate" -> "振动 ${p1}ms"
         "notify" -> "通知「$p1」"
         else -> type
@@ -238,12 +257,30 @@ data class RuleAction(
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("type", type); put("p1", p1); put("p2", p2); put("p3", p3)
+        if (p4.isNotBlank()) put("p4", p4)
     }
 
     companion object {
         fun fromJson(o: JSONObject) = RuleAction(
-            o.optString("type", "toast"), o.optString("p1"), o.optString("p2"), o.optString("p3")
+            o.optString("type", "toast"), o.optString("p1"), o.optString("p2"), o.optString("p3"),
+            o.optString("p4", "")
         )
+
+        /**
+         * 音效参数是「**用户指定的音频文件**」还是「内置音效名」。
+         *
+         * 判据：带 URI scheme 或路径分隔符。内置名只有 `tick_left` / `warn`
+         * 这种纯标识符，不会出现 `:` 或 `/`。
+         *
+         * 抽成纯函数放在这里（而不是埋在 `AudioPlayer` 里）是为了**可测** ——
+         * 判错了的表现是"选了文件却去播内置音效"，或反过来的静默失败，
+         * **两种都很难从现象上看出来**。
+         */
+        fun isAudioFileSpec(spec: String): Boolean {
+            val s = spec.trim()
+            return s.startsWith("content://") || s.startsWith("file://") ||
+                s.startsWith("/") || s.contains("://")
+        }
     }
 }
 

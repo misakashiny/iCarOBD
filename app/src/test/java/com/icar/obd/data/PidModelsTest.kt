@@ -76,6 +76,61 @@ class PidModelsTest {
         assertEquals("weird", RuleAction("weird").describe())
     }
 
+    // ------------------------------------------- 音效：内置名 vs 用户音频文件（v1.19.18）
+
+    @Test
+    fun `内置音效名不算音频文件`() {
+        // ⚠️ 判错的表现是"选了文件却去播内置音效"，或反过来的静默失败 ——
+        // 两种都很难从现象上看出来，所以这条判据必须钉住
+        assertFalse(RuleAction.isAudioFileSpec("tick_left"))
+        assertFalse(RuleAction.isAudioFileSpec("warn"))
+        assertFalse(RuleAction.isAudioFileSpec("beep"))
+        assertFalse(RuleAction.isAudioFileSpec(""))
+        assertFalse(RuleAction.isAudioFileSpec("   "))
+    }
+
+    @Test
+    fun `用户选的音频文件算音频文件`() {
+        assertTrue(RuleAction.isAudioFileSpec("content://media/external/audio/media/1234"))
+        assertTrue(RuleAction.isAudioFileSpec("file:///sdcard/a.mp3"))
+        assertTrue(RuleAction.isAudioFileSpec("/sdcard/a.mp3"))
+        assertTrue("前后空白不该影响判断", RuleAction.isAudioFileSpec("  content://x/y  "))
+    }
+
+    @Test
+    fun `选了文件时描述显示文件名而不是 URI`() {
+        val a = RuleAction("sound", "content://media/external/audio/media/1234", "", "", "转向灯.mp3")
+        val d = a.describe()
+        assertTrue("应显示文件名：$d", d.contains("转向灯.mp3"))
+        assertFalse("不该把 content:// 甩给用户看：$d", d.contains("content://"))
+    }
+
+    @Test
+    fun `选了文件但没存显示名时有兜底文案`() {
+        val d = RuleAction("sound", "content://x/y").describe()
+        assertTrue("不能出现空名字：$d", d.contains("自定义音频"))
+    }
+
+    @Test
+    fun `gauge 的 p3 表示 N 秒后自动恢复`() {
+        assertEquals("仪表 std_05 变色 red", RuleAction("gauge", "std_05", "red").describe())
+        assertEquals(
+            "仪表 std_05 变色 red，3 秒后自动恢复",
+            RuleAction("gauge", "std_05", "red", "3").describe()
+        )
+    }
+
+    @Test
+    fun `p4 能过 JSON 往返，且为空时不写出`() {
+        val a = RuleAction("sound", "content://x/y", "1.4", "0.8", "我的音效.mp3")
+        val back = RuleAction.fromJson(a.toJson())
+        assertEquals(a, back)
+        // 空 p4 不写出：保持存量 JSON 干净（旧文件读出来也是空）
+        val plain = RuleAction("toast", "hi")
+        assertFalse("空 p4 不该出现在 JSON 里", plain.toJson().has("p4"))
+        assertEquals("", RuleAction.fromJson(plain.toJson()).p4)
+    }
+
     // ---------------------------------------------------------------- PidDefinition
 
     @Test

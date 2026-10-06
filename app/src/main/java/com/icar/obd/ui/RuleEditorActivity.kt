@@ -2,6 +2,7 @@ package com.icar.obd.ui
 
 import android.os.Bundle
 import android.view.LayoutInflater
+import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -155,6 +156,57 @@ class RuleEditorActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------ 动作行
 
+    /** 正在等用户选音频文件的那一行（SAF 回调是异步的，得记住是谁发起的） */
+    private var pendingFileRow: View? = null
+
+    /**
+     * 选一个音频文件当音效（v1.19.18）。
+     *
+     * 走 SAF（`OpenDocument`）而不是直接读路径：Android 10+ 的分区存储下，
+     * 用户能选的文件**拿不到真实路径**，只有 `content://` URI。
+     *
+     * ⚠️ **必须 `takePersistableUriPermission`** —— 否则重启 App 后那个 URI
+     * 就没有读权限了，规则触发时**静默不响**（用户会以为规则坏了）。
+     */
+    private val pickAudio = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        val row = pendingFileRow
+        pendingFileRow = null
+        if (uri == null || row == null) return@registerForActivityResult
+        runCatching {
+            contentResolver.takePersistableUriPermission(
+                uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        }.onFailure { AppLog.w(AppLog.M_UI, "音频读权限持久化失败", it.message ?: "") }
+
+        val shown = audioDisplayName(uri)
+        row.tag = shown                                        // → p4
+        row.findViewById<EditText>(R.id.etP1).setText(uri.toString())   // → p1（机器用）
+        refreshPickButton(row.findViewById(R.id.btnPickAudio), uri.toString(), shown)
+        AppLog.i(AppLog.M_UI, "已选择音频文件", "name=$shown uri=$uri")
+        updatePreview()
+    }
+
+    /** 给用户看的文件名（URI 本身没法看） */
+    private fun audioDisplayName(uri: android.net.Uri): String {
+        val fromQuery = runCatching {
+            contentResolver.query(uri, null, null, null, null)?.use { c ->
+                val i = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (i >= 0 && c.moveToFirst()) c.getString(i) else null
+            }
+        }.getOrNull()
+        return fromQuery?.takeIf { it.isNotBlank() }
+            ?: uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+            ?: "自定义音频"
+    }
+
+    /** 按钮文案：没选文件时是 📁，选了就显示文件名（让用户一眼看到选了什么） */
+    private fun refreshPickButton(btn: View, spec: String, shown: String) {
+        val b = btn as MaterialButton
+        b.text = if (RuleAction.isAudioFileSpec(spec) && shown.isNotBlank()) shown else "📁"
+    }
+
     private fun addActionRow(a: RuleAction) {
         val row = LayoutInflater.from(this).inflate(R.layout.row_action, actionContainer, false)
         val spType = row.findViewById<Spinner>(R.id.spType)
@@ -163,6 +215,11 @@ class RuleEditorActivity : AppCompatActivity() {
         val etP3 = row.findViewById<EditText>(R.id.etP3)
         val btnRemove = row.findViewById<MaterialButton>(R.id.btnRemove)
         val btnPreview = row.findViewById<MaterialButton>(R.id.btnPreview)
+        val btnPickAudio = row.findViewById<MaterialButton>(R.id.btnPickAudio)
+
+        // p4（显示名）挂在行上：p1 存的是 URI，人看不懂
+        row.tag = a.p4
+        refreshPickButton(btnPickAudio, a.p1, a.p4)
 
         spType.adapter = ArrayAdapter(
             this, android.R.layout.simple_spinner_dropdown_item,
@@ -173,11 +230,11 @@ class RuleEditorActivity : AppCompatActivity() {
         etP1.setText(a.p1)
         etP2.setText(a.p2)
         etP3.setText(a.p3)
-        updateActionHints(spType.selectedItemPosition, etP1, etP2, etP3, btnPreview)
+        updateActionHints(spType.selectedItemPosition, etP1, etP2, etP3, btnPreview, btnPickAudio)
 
         spType.setOnItemSelectedListener(object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: android.widget.AdapterView<*>?, v: android.view.View?, pos: Int, id: Long) {
-                updateActionHints(pos, etP1, etP2, etP3, btnPreview)
+                updateActionHints(pos, etP1, etP2, etP3, btnPreview, btnPickAudio)
                 updatePreview()
             }
             override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
@@ -185,6 +242,11 @@ class RuleEditorActivity : AppCompatActivity() {
         btnRemove.setOnClickListener {
             actionContainer.removeView(row)
             updatePreview()
+        }
+        // 选音频文件（只在"播放音效"时可见）
+        btnPickAudio.setOnClickListener {
+            pendingFileRow = row
+            pickAudio.launch(arrayOf("audio/*"))
         }
         // 试听：**不必先保存规则**，按当前的三个参数立刻播一次（含速率与音量）
         btnPreview.setOnClickListener {
@@ -207,15 +269,17 @@ class RuleEditorActivity : AppCompatActivity() {
         p1: EditText,
         p2: EditText,
         p3: EditText,
-        preview: MaterialButton
+        preview: MaterialButton,
+        pick: MaterialButton
     ) {
-        // ♪ 只在"播放音效"时有意义
-        preview.visibility =
-            if (actionTypes.getOrNull(pos)?.first == "sound") android.view.View.VISIBLE
-            else android.view.View.GONE
+        // ♪ 与 📁 都只在"播放音效"时有意义 —— 其他类型下显示它们只会让人误点
+        val isSound = actionTypes.getOrNull(pos)?.first == "sound"
+        preview.visibility = if (isSound) android.view.View.VISIBLE else android.view.View.GONE
+        pick.visibility = if (isSound) android.view.View.VISIBLE else android.view.View.GONE
         when (actionTypes.getOrNull(pos)?.first) {
             "sound" -> {
-                p1.hint = "音效名：tick_left/tick_right/warn/beep"
+                // 点 📁 选文件后 p1 会变成 content:// URI —— 提示里说清楚两种都行
+                p1.hint = "音效名（或点 📁 选音频文件）"
                 p2.hint = "速率 0.5~2"
                 p3.hint = "音量 0~1"
                 if (p1.text.isBlank()) p1.setText("warn")
@@ -228,7 +292,8 @@ class RuleEditorActivity : AppCompatActivity() {
             "gauge" -> {
                 p1.hint = "PID id（空=条件源）"
                 p2.hint = "颜色 red/green/yellow/blue"
-                p3.hint = "(不用)"
+                // p3 = 自动恢复延时（v1.19.18）：不填就一直红着
+                p3.hint = "N 秒后自动恢复"
                 if (p2.text.isBlank()) p2.setText("red")
             }
             "vibrate" -> {
@@ -273,7 +338,9 @@ class RuleEditorActivity : AppCompatActivity() {
             out.add(
                 RuleAction(
                     type = actionTypes.getOrNull(spType.selectedItemPosition)?.first ?: "toast",
-                    p1 = p1, p2 = p2, p3 = p3
+                    p1 = p1, p2 = p2, p3 = p3,
+                    // p4 = 选文件时的显示名（挂在行 tag 上）；没选就是空
+                    p4 = (row.tag as? String).orEmpty()
                 )
             )
         }
