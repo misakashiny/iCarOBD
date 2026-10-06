@@ -82,6 +82,10 @@ class PidFragment : Fragment() {
         view.findViewById<MaterialButton>(R.id.btnCanSniffer).setOnClickListener {
             startActivity(Intent(requireContext(), CanSnifferActivity::class.java))
         }
+        // 探测记录（v1.19.22）：翻看 PID 探测 / CAN 探测的历史结论
+        view.findViewById<MaterialButton>(R.id.btnProbeLog).setOnClickListener {
+            startActivity(Intent(requireContext(), ProbeLogActivity::class.java))
+        }
     }
 
     override fun onResume() {

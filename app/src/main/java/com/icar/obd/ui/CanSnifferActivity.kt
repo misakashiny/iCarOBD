@@ -14,6 +14,7 @@ import androidx.core.content.FileProvider
 import com.google.android.material.button.MaterialButton
 import com.icar.obd.R
 import com.icar.obd.data.AppLog
+import com.icar.obd.data.ProbeLog
 import com.icar.obd.data.PidDefinition
 import com.icar.obd.data.Store
 import com.icar.obd.obd.CanDiff
@@ -61,6 +62,7 @@ class CanSnifferActivity : AppCompatActivity() {
         diffContainer = findViewById(R.id.sniffDiffs)
         btnDiff.setOnClickListener { showDiff() }
         btnMonitor.setOnClickListener { toggleMonitor() }
+        setupFilterPresets()
         FrameMonitor.onStateChanged = { on ->
             runOnUiThread { btnMonitor.text = if (on) "停止常驻监听" else "开启常驻监听（转向灯）" }
         }
@@ -83,10 +85,24 @@ class CanSnifferActivity : AppCompatActivity() {
             export("can-raw.csv", CanSniffer.rawCsv())
         }
 
+        // v1.19.22：探测**结束**时留档到「探测记录」。
+        // 用"上一帧在跑、这一帧不跑了"来判定结束 —— 比在 toggle() 里记更可靠：
+        // 探测也可能因为超时/出错自己停，那些路径同样该留档。
+        var wasRunning = false
         CanSniffer.onUpdate = { st ->
             tvStatus.text = describe(st)
             btnToggle.text = if (CanSniffer.running) "停止探测" else "开始探测"
             buildRows()
+            if (wasRunning && !CanSniffer.running) {
+                val filter = etFilter.text.toString().trim().ifBlank { "（不过滤）" }
+                // 明细 = 聚合结果（按 ID 的帧数），这正是事后要看的；
+                // 截断到 60 行，免得一次几万个 ID 把记录撑爆
+                val agg = runCatching {
+                    CanSniffer.aggregateCsv().lineSequence().take(60).joinToString("\n")
+                }.getOrDefault("")
+                ProbeLog.add(ProbeLog.KIND_CAN, "过滤器 $filter · ${describe(st)}", agg)
+            }
+            wasRunning = CanSniffer.running
         }
         tvStatus.text = describe(CanSniffer.status)
         buildRows()
@@ -212,6 +228,48 @@ class CanSnifferActivity : AppCompatActivity() {
         Store.upsertPid(p)
         ObdController.reloadPids()
         ObdController.toast("已加为监听型 PID：${p.name}\n可在「PID」页改名，或直接绑到规则")
+    }
+
+    /**
+     * 过滤预设（v1.19.22）：点一下把输入框填好。
+     *
+     * ## 为什么需要
+     *
+     * 过滤器是"**能不能看清闪烁类信号**"的前提 ——
+     * 实测过滤后单 ID 采样率从 0.7 帧/秒 提到 **20 帧/秒**。
+     * 但它的写法（`ATCRA228` / `ATCM700+ATCF400`）**没人记得住**，
+     * 于是这个关键能力实际上没人用。让人翻文档记语法，不如点一下。
+     *
+     * 预设选的是**实际会用到的场景**，不是穷举语法。
+     */
+    private fun setupFilterPresets() {
+        val group = findViewById<com.google.android.material.chip.ChipGroup>(R.id.cgFilterPresets)
+        val presets = listOf(
+            "228" to "左转向灯",
+            "ATCM700+ATCF400" to "0x400~0x4FF",
+            "ATCM700+ATCF000" to "全部 11 位 ID",
+            "7E8" to "OBD 应答",
+            "" to "不过滤"
+        )
+        val current = etFilter.text.toString().trim()
+        presets.forEach { (value, label) ->
+            val chip = com.google.android.material.chip.Chip(this).apply {
+                text = label
+                isCheckable = true
+                // 当前值正好是某个预设 → 高亮它，让人一眼看到"现在用的是哪个"
+                isChecked = current == value
+                setOnClickListener {
+                    etFilter.setText(value)
+                    etFilter.setSelection(value.length)
+                    // 单选语义：点了新的就取消其他（ChipGroup 的 checkable 默认允许多选）
+                    for (i in 0 until group.childCount) {
+                        val c = group.getChildAt(i) as? com.google.android.material.chip.Chip
+                        if (c !== this) c?.isChecked = false
+                    }
+                }
+            }
+            group.addView(chip)
+        }
     }
 
     private fun toggle() {

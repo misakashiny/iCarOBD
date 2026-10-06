@@ -17,6 +17,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.icar.obd.R
 import com.icar.obd.data.AppLog
+import com.icar.obd.data.ProbeLog
 import com.icar.obd.obd.ObdController
 import com.icar.obd.obd.ObdProtocol
 import com.icar.obd.obd.PidScanner
@@ -247,6 +248,18 @@ class ScannerActivity : AppCompatActivity() {
                     "扫描完成，命中 ${hits.size} 条。" +
                         "点击结果里的「存为PID」可带入编辑器，或点「导出结果」存成文件。"
                 )
+                // v1.19.22：**留档**（探测记录）。
+                // 明细直接放命中列表 —— 那正是事后要回看的东西，
+                // 不必再去几千行的当天日志里捞（而且第二天日志就换文件了）。
+                val c = lastCfg
+                if (c != null) {
+                    ProbeLog.add(
+                        ProbeLog.KIND_PID,
+                        "Mode ${c.mode} 命中 ${hits.size} 条",
+                        if (allHits.isEmpty()) "（无命中）"
+                        else allHits.joinToString("\n") { "Mode ${it.mode} PID ${it.pid}  ${it.dataHex}" }
+                    )
+                }
             }.onFailure { t ->
                 tvProgress.text = "失败：${t.message}"
                 appendLog("扫描失败：${t.message}")

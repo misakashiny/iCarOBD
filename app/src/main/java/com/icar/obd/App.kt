@@ -3,6 +3,7 @@ package com.icar.obd
 import android.app.Application
 import android.os.Build
 import com.icar.obd.data.AppLog
+import com.icar.obd.data.ProbeLog
 import com.icar.obd.data.CrashCatcher
 import com.icar.obd.data.Defaults
 import com.icar.obd.data.Store
@@ -30,6 +31,8 @@ class App : Application() {
         AppLog.i(AppLog.M_SYS, "===== iCar OBD 启动 =====", "ver=${BuildConfig.VERSION_NAME} sdk=${Build.VERSION.SDK_INT}")
 
         Store.init(File(filesDir, "config"))
+        // 探测记录（v1.19.22）：与 Store 同一个 config 目录，启动时读回来
+        ProbeLog.init(this)
         AppLog.minLevel = AppLog.Level.fromTag(Store.settings.minLogLevel)
         AppLog.mirrorToLogcat = Store.settings.mirrorLogcat
 

@@ -3,6 +3,7 @@
   CAN 总线被动探测。结果行代码生成（每个 CAN ID 一行）。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg"
@@ -121,6 +122,29 @@
             android:paddingStart="4dp"
             android:textSize="11sp" />
     </LinearLayout>
+
+    <!--
+      过滤预设（v1.19.22）：点一下就把上面的输入框填好。
+
+      为什么需要：过滤器的语法（`ATCRA228` / `ATCM700+ATCF400`）**不好记**，
+      而它又是"能不能看清闪烁类信号"的前提 ——
+      实测过滤后单 ID 采样率从 0.7 帧/秒 提到 20 帧/秒。
+      让人去翻文档记语法，不如点一下。
+    -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:scrollbars="none">
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/cgFilterPresets"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:singleLine="true"
+            app:singleSelection="false" />
+    </HorizontalScrollView>
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnSniffDiff"
         style="@style/Widget.Material3.Button.OutlinedButton"

@@ -97,6 +97,11 @@
             android:name=".ui.CanSnifferActivity"
             android:exported="false" />
 
+        <!-- 探测记录（v1.19.22）：PID 探测 / CAN 探测的历史结论 -->
+        <activity
+            android:name=".ui.ProbeLogActivity"
+            android:exported="false" />
+
         <!-- 性能基准页：8 个表每帧强制重绘，测霓虹辉光的绘制成本（见 docs/下一步-…§2.4） -->
         <activity
             android:name=".ui.BenchActivity"

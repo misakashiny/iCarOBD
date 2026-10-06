@@ -40,7 +40,7 @@
             android:layout_weight="1"
             android:insetTop="0dp"
             android:insetBottom="0dp"
-            android:text="PID 扫描器"
+            android:text="PID 探测"
             android:textSize="12sp" />
 
         <com.google.android.material.button.MaterialButton
@@ -53,6 +53,22 @@
             android:insetTop="0dp"
             android:insetBottom="0dp"
             android:text="CAN 探测"
+            android:textSize="11sp" />
+
+        <!--
+          v1.19.22：探测记录 —— 把「PID 探测」与「CAN 探测」的结果都留档，
+          方便事后翻（不用去几万行的日志里捞）。
+        -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnProbeLog"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="6dp"
+            android:layout_weight="1"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="探测记录"
             android:textSize="11sp" />
     </LinearLayout>
 
