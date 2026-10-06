@@ -10,6 +10,7 @@ import com.google.android.material.materialswitch.MaterialSwitch
 import com.icar.obd.R
 import com.icar.obd.data.PidDefinition
 import com.icar.obd.data.Store
+import com.icar.obd.obd.ObdController
 
 /**
  * PID 列表适配器。带分组标题行。
@@ -86,7 +87,18 @@ class PidAdapter(
             val unit = if (pid.unit.isBlank()) "" else " ${pid.unit}"
             tvSub.text = "${pid.requestString()}  ·  ${pid.formula}  ·  " +
                 "${trim(pid.minVal)}~${trim(pid.maxVal)}$unit"
-            if (pid.note.isBlank()) {
+
+            // ---- P10-1：被判定「本车不支持」的**标灰**，并说明怎么恢复 ----
+            //
+            // 为什么用长按而不是再加个按钮：这一行已经有开关和删除两个可点区域，
+            // 再加会挤（工具那边有行高约束，App 这边同理）。
+            // 「标灰 + 备注写明长按重新启用」够用，也不破坏原有交互。
+            val unsupported = ObdController.isUnsupported(pid.id)
+            itemView.alpha = if (unsupported) 0.45f else 1f
+            if (unsupported) {
+                tvNote.visibility = View.VISIBLE
+                tvNote.text = "本车不支持，已退出轮询 —— 长按重新启用"
+            } else if (pid.note.isBlank()) {
                 tvNote.visibility = View.GONE
             } else {
                 tvNote.visibility = View.VISIBLE
@@ -99,6 +111,15 @@ class PidAdapter(
             sw.setOnCheckedChangeListener { _, checked -> onToggle(pid, checked) }
 
             itemView.setOnClickListener { onClick(pid) }
+            itemView.setOnLongClickListener {
+                // 长按只对"被判定不支持"的行生效，其他行保持原样（返回 false 让事件继续）
+                if (!ObdController.isUnsupported(pid.id)) return@setOnLongClickListener false
+                ObdController.reEnablePid(pid.id)
+                ObdController.toast("已重新启用：${pid.name}")
+                val pos = bindingAdapterPosition
+                if (pos != RecyclerView.NO_POSITION) notifyItemChanged(pos)
+                true
+            }
             btnDelete.visibility = if (pid.builtIn) View.GONE else View.VISIBLE
             btnDelete.setOnClickListener { onDelete(pid) }
         }

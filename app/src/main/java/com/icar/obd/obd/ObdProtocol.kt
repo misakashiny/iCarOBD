@@ -208,6 +208,68 @@ object ObdProtocol {
     }
 
     /**
+     * 取出**否定响应的 NRC 码**（`7F <服务> <NRC>` 的第三个字节）；没有就返回 null。
+     *
+     * 抽出来是为了让「这条 PID 是不是本车不支持」能**按码判断** ——
+     * 按中文名匹配的话，哪天表里改个措辞，判断就**静默失效**了。
+     */
+    fun negativeCode(raw: String): Int? {
+        val bytes = hexBytes(stripNoise(raw))
+        for (i in 0..(bytes.size - 3)) {
+            if (bytes[i] != 0x7F) continue
+            val svc = bytes[i + 1]
+            val nrc = bytes[i + 2]
+            if (svc == 0 || nrc == 0) continue
+            return nrc
+        }
+        return null
+    }
+
+    /**
+     * 「**本车不支持这条 PID**」的 NRC 码。
+     *
+     * 只有这几个才算证据：
+     * - `0x11` 该服务不支持 · `0x12` 该子功能不支持 · `0x31` 请求超出范围
+     * - `0x7E` / `0x7F` 当前会话不支持
+     *
+     * **故意不含** `0x13`（报文长度错 —— 那是**我们自己发了畸形帧**，是 App 的错）、
+     * `0x21`（ECU 忙）/ `0x22`（条件不满足）/ `0x78`（响应挂起）——
+     * 这些都是**暂时**状态，当成"不支持"会把好 PID 也停掉。
+     */
+    private val UNSUPPORTED_NRC = setOf(0x11, 0x12, 0x31, 0x7E, 0x7F)
+
+    /**
+     * 这次失败是否构成「**本车不支持这条 PID**」的证据（P10-1）。
+     *
+     * ## 为什么必须区分 —— 这条判据的安全性全在这里
+     *
+     * 优化目标是"连续失败 N 次就退出轮询"。**如果什么失败都算**，
+     * 那么一次链路抖动（超时 / 写入被拒）就能把**全部** PID 判成不支持 ——
+     * **车没坏，App 先自己瞎了。**
+     *
+     * 所以只有 **ECU 明确回答"这条我没有"** 才算：
+     *
+     * | 响应 | 算不算 | 为什么 |
+     * |---|---|---|
+     * | `NO DATA` | ✅ | ECU 收到了请求、**明确说**没有这个 PID |
+     * | NRC `0x11/0x12/0x31/0x7E/0x7F` | ✅ | ECU **明确拒绝** |
+     * | **空串（超时）** | ❌ | **我们没问到** —— 不是车说没有 |
+     * | `CAN ERROR` / `BUS ERROR` / `UNABLE TO CONNECT` | ❌ | 总线/连接问题，与 PID 无关 |
+     * | `STOPPED` / `ERROR` | ❌ | 适配器状态问题 |
+     *
+     * ⚠️ 注意 `ElmSession.request` **超时返回空串**，而 `NO DATA` 是**有内容**的
+     * 响应 —— 两者在 `parse` 里都会塌缩成「无有效响应」，
+     * 所以**只能看原始响应**，不能看错误串。
+     */
+    fun isUnsupportedEvidence(raw: String): Boolean {
+        val r = raw.trim().uppercase()
+        if (r.isBlank()) return false                 // 超时：我们没问到
+        if (r.contains("NO DATA")) return true        // ECU 明确说没有
+        val nrc = negativeCode(raw) ?: return false
+        return nrc in UNSUPPORTED_NRC
+    }
+
+    /**
      * 从响应中提取数据字节。
      *
      * ## 两条路径

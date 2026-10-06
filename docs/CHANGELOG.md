@@ -41,6 +41,110 @@
 
 ---
 
+## v1.19.17 · 2026-10-06 · P10-1：「这台车不支持」的 PID 自动退出轮询
+
+> 迭代清单 **P10 第 1 条**。症状：那 5 条 `std_0A` / `std_14` / `std_22` / `std_5C` / `std_5E`
+> 每分钟都在打 `PID 连续失败进入冷却`，而 `轮询汇总 | 有值 20/25` 永远差 5 个。
+
+### 判据的关键：**只有「ECU 明确说没有」才算**
+
+优化目标是"连续失败 N 次就退出轮询"。**如果什么失败都算**，
+一次链路抖动（超时 / 写入被拒）就能把**全部** PID 判成不支持 ——
+**车没坏，App 先自己瞎了。**
+
+所以新加的 `ObdProtocol.isUnsupportedEvidence(raw)` **只看原始响应**：
+
+| 响应 | 算不算 | 为什么 |
+|---|---|---|
+| `NO DATA` | ✅ | ECU 收到了请求、**明确说**没有这个 PID |
+| NRC `0x11/0x12/0x31/0x7E/0x7F` | ✅ | ECU **明确拒绝**（服务/子功能不支持、超出范围） |
+| **空串（超时）** | ❌ | **我们没问到** —— 不是车说没有 |
+| `CAN ERROR` / `BUS ERROR` / `UNABLE TO CONNECT` | ❌ | 总线/连接问题，与 PID 无关 |
+| `STOPPED` / `ERROR` | ❌ | 适配器状态问题 |
+| NRC `0x13`（报文长度错） | ❌ | **我们自己发了畸形帧**，是 App 的错 |
+
+> ⚠️ 容易踩的点：`ElmSession.request` **超时返回空串**，而 `NO DATA` 是**有内容**的响应 ——
+> 两者在 `parse` 里**都会塌缩成「无有效响应」**。所以**只能看原始响应，不能看错误串**。
+
+### 改了什么
+
+| 位置 | 内容 |
+|---|---|
+| `ObdProtocol.isUnsupportedEvidence()` | 纯函数判据（新增，可测） |
+| `ObdProtocol.negativeCode()` | 取出 NRC **码** —— 按码判断，**不按中文名**（名字一改判断就静默失效） |
+| `ObdEngine` | `unsupportedStreak` 计数；连续 **3** 次明确回绝 → 加入 `unsupportedPids`、**退出轮询**、记一行 W |
+| `ObdEngine` 轮询 `due` 过滤 | 判定不支持的**直接不问**（不再白占总线、不再刷冷却行） |
+| `ObdEngine` 汇总 | 分母**只算还在轮询的** → `有值 20/20`；尾注「另有 N 条本车不支持」 |
+| `ObdEngine.reEnable()` / `ObdController.reEnablePid()` | **手动重启用** |
+| `PidAdapter` | 判定不支持的行**标灰**（alpha 0.45）+ 备注「本车不支持，已退出轮询 —— **长按重新启用**」 |
+
+**为什么判据要"连续"**：成功一次就清零 `unsupportedStreak` ——
+长期累积会把"偶发几次 NO DATA 但一直有值"的 PID 误判掉。
+
+**为什么必须留手动出口**：判定依据是 ECU 回绝，但车况会变（换适配器 / 换车 / 上次总线正忙）。
+**判定错一次就不让用户改，等于把 App 写死。** 判定是**内存态**，重启 App 自然重测。
+
+### 验证
+
+| 项 | 结果 |
+|---|---|
+| Kotlin 单测 | ✅ **570 全过**（+7：6 条判据 + 1 条阈值区间） |
+| 浏览器套件 | ✅ 848 断言全过 |
+| 构建守卫 | ✅ 通过（1 条警告 = 已知的 14 个控件） |
+| APK | `dist/iCarOBD-debug-v1.19.17-android.apk`（versionCode 60） |
+| 装机 | ✅ 已装到平板（见下面"装机踩到的坑"） |
+| 启动验证 | ✅ 无崩溃；`规则已加载 count=5` / `开机自动连接` / **`渲染仪表盘 type=2 count=11`** —— **回填的配置全部生效** |
+| **车上判据** | ⏳ **待上车** —— `有值 20/25 → 20/20`、日志不再出现那 5 条冷却行。**这两条必须车边上验** |
+
+### ⚠️ 装机踩到的坑：**debug 签名每台机器不一样**
+
+```
+INSTALL_FAILED_UPDATE_INCOMPATIBLE: Existing package com.icar.obd signatures do not match
+```
+
+平板上装的是**笔记本**构建的 v1.19.15，而本机构建的 APK 用的是**本机的**
+`~/.android/debug.keystore` —— **debug 签名是每台机器一份，无法原地覆盖**。
+项目没有自定义签名配置，所以这是必然。
+
+**处置（无损，已做完）**：备份 App 数据 → 卸载 → 装新版 → 回填。
+
+```powershell
+# ① 备份（cmd 重定向是字节安全的；PowerShell 5.1 的 Out-File 没有 -Encoding Byte）
+foreach ($f in 'settings.json','dash.json','rules.json') {
+  cmd /c "`"$ADB`" -s 7e7d7bb4 exec-out run-as com.icar.obd cat files/config/$f > `"$dest\$f`""
+}
+# ② 卸载 + 装
+& $ADB -s 7e7d7bb4 uninstall com.icar.obd
+& $ADB -s 7e7d7bb4 install -r -d dist\iCarOBD-debug-v1.19.17-android.apk
+# ③ 先启动一次（否则 files/config 还没建出来）
+& $ADB -s 7e7d7bb4 shell am start -n com.icar.obd/.ui.MainActivity   # 等 8 秒
+& $ADB -s 7e7d7bb4 shell am force-stop com.icar.obd
+# ④ 回填：**用 base64 写进 App 自己的目录**
+#    ⚠️ 别用「push 到 /sdcard 再 run-as cp」—— /sdcard 上是 root:everybody，
+#    App 的 uid 读不到，报 Permission denied（实测踩了）
+foreach ($f in 'settings.json','dash.json','rules.json') {
+  $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes("$dest\$f"))
+  & $ADB -s 7e7d7bb4 shell "run-as com.icar.obd sh -c 'echo $b64 | base64 -d > files/config/$f'"
+}
+# ⑤ 重装后权限会被清空，必须补授权（否则卡在系统权限对话框上）
+& $ADB -s 7e7d7bb4 shell pm grant com.icar.obd android.permission.BLUETOOTH_SCAN
+& $ADB -s 7e7d7bb4 shell pm grant com.icar.obd android.permission.BLUETOOTH_CONNECT
+& $ADB -s 7e7d7bb4 shell pm grant com.icar.obd android.permission.POST_NOTIFICATIONS
+```
+
+**回填判据**：三个文件字节数必须与备份**完全一致**（702 / 3527 / 2768），
+且启动日志出现 `渲染仪表盘 | type=2 count=11`（那 11 个表就是用户自己的仪表盘）。
+
+> ⚠️ 别把 `ACCESS_FINE_LOCATION` 授权失败当成问题 —— 清单里它带 `maxSdkVersion`，
+> SDK 33 上**本来就不申请**（报 `has not requested permission` 是**对的**）。
+
+### 遗留
+
+- ⏳ **车上判据未验**（`20/20` + 无冷却行）—— 需要车
+- **判定是内存态**：重启 App 会重新测那 5 条（约 15 次请求 + 若干行日志）。
+  如果嫌重启后又要等一轮，可以改成持久化 —— 但那样"换了车"就发现不了，**暂不做**
+
+---
 ## v1.19.16 · 2026-10-06 · 入口归位 + 去掉过时模板按钮 + 音效可试听
 
 ### 1. 「CAN 探测」入口挪到「PID」页，紧挨「PID 扫描器」

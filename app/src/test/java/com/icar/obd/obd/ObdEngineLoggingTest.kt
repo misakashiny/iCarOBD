@@ -98,4 +98,22 @@ class ObdEngineLoggingTest {
             ObdEngine.DEAD_LINK_REQUESTS <= 200
         )
     }
+
+    /**
+     * **「本车不支持」的判定阈值必须落在合理区间**（P10-1）。
+     *
+     * 太小 → 单次偶发 `NO DATA`（会话刚建立、总线瞬时忙）就把好 PID 停掉；
+     * 太大 → 那 5 条不支持的 PID 会一直占着总线刷日志，等于没做这个优化。
+     */
+    @Test
+    fun `不支持判定的阈值不能太激进也不能太宽松`() {
+        assertTrue(
+            "太小会误判：UNSUPPORTED_STREAK=${ObdEngine.UNSUPPORTED_STREAK}",
+            ObdEngine.UNSUPPORTED_STREAK >= 2
+        )
+        assertTrue(
+            "太大挡不住噪音：UNSUPPORTED_STREAK=${ObdEngine.UNSUPPORTED_STREAK}",
+            ObdEngine.UNSUPPORTED_STREAK <= 10
+        )
+    }
 }

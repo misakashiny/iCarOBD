@@ -470,6 +470,29 @@ object ObdController {
 
     fun reloadRules() = RuleEngine.reload()
 
+    // ------------------------------------------------ 「本车不支持」的查询与重启用（P10-1）
+
+    /**
+     * 该 PID 是否已被判定为「**本车不支持**」（ECU 连续明确回绝后已退出轮询）。
+     *
+     * UI 用它把列表项**标灰**。判据见 [ObdProtocol.isUnsupportedEvidence] ——
+     * **超时/总线错不算**，所以这个集合里不会有"链路不好"误伤的 PID。
+     */
+    fun isUnsupported(pidId: String): Boolean = engine.unsupportedPids.contains(pidId)
+
+    /**
+     * 手动把一条被判定为「本车不支持」的 PID **重新纳入轮询**。
+     *
+     * 判定依据是"ECU 连续 N 次明确回绝"，但车况会变（换适配器 / 换车 / 上次总线正忙），
+     * **判定错一次就不让用户改，等于把 App 写死**。
+     *
+     * @return true = 之前确实被标记过，已重启用
+     */
+    fun reEnablePid(pidId: String): Boolean = engine.reEnable(pidId)
+
+    /** 当前被判定为「本车不支持」的 PID 条数（给界面做汇总提示用） */
+    fun unsupportedCount(): Int = engine.unsupportedPids.size
+
     // ---------------------------------------------------------------- 规则动作
 
     private fun handleAction(rule: com.icar.obd.data.Rule, a: RuleAction) {

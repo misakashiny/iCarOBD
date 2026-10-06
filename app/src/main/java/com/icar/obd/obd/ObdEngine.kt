@@ -40,6 +40,20 @@ class ObdEngine(private val session: ElmSession) {
     private val failStreak = ConcurrentHashMap<String, Int>()
     private val cooldownUntil = ConcurrentHashMap<String, Long>()
 
+    /** 连续"ECU 明确说不支持"的次数（与 [failStreak] 分开：只有明确回绝才累加，见 [UNSUPPORTED_STREAK]） */
+    private val unsupportedStreak = ConcurrentHashMap<String, Int>()
+
+    /**
+     * 已判定为「**本车不支持**」并退出轮询的 PID（P10-1）。
+     *
+     * 与 [cooldownUntil] 的区别 —— 这是两件事：
+     * - **冷却** = "这条**暂时**别问"（30 秒后还会再试）
+     * - **不支持** = "**这台车没有这条**"（不再问，直到 [reEnable]）
+     *
+     * UI 读它来把列表项标灰；判据见 [ObdProtocol.isUnsupportedEvidence]。
+     */
+    val unsupportedPids: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
     private val nextDue = ConcurrentHashMap<String, Long>()
 
     /** 统计窗口 */
@@ -85,6 +99,20 @@ class ObdEngine(private val session: ElmSession) {
     companion object {
         /** 连续失败多少次进入冷却 */
         private const val MAX_FAIL = 4
+
+        /**
+         * 连续多少次「ECU 明确说不支持」就判定**本车不支持**并退出轮询（P10-1）。
+         *
+         * 取 3 而不是 1：单次 `NO DATA` 可能是偶发（会话刚建立、总线瞬时忙）。
+         * 也不能太大 —— 实测那 5 条**每次都回 NO DATA**，3 次足够定论，
+         * 而每多一次就多一次总线往返 + 一行日志。
+         *
+         * ⚠️ 只有 [ObdProtocol.isUnsupportedEvidence] 为真的失败才累加这个计数 ——
+         * **超时/总线错不算**，否则一次链路抖动会把所有 PID 停掉。
+         *
+         * 故意**不是 private**：有用例钉着它的合理区间（见 `ObdEngineLoggingTest`）。
+         */
+        const val UNSUPPORTED_STREAK = 3
         /** 冷却时长 */
         private const val COOLDOWN_MS = 30_000L
         /** 单条请求的最短超时 */
@@ -165,6 +193,27 @@ class ObdEngine(private val session: ElmSession) {
         }
     }
 
+    /**
+     * 手动把一条被判定为「本车不支持」的 PID **重新纳入轮询**（P10-1）。
+     *
+     * ## 为什么必须有这个出口
+     *
+     * 判定依据是"ECU 连续 N 次明确回绝"，但**车况会变**：
+     * 换了适配器、插了另一台车、ECU 会话不同、或者上次判定时总线正好在忙。
+     * **判定错一次就不让用户改，等于把 App 写死。**
+     *
+     * @return true = 它之前确实被标记为不支持，已重启用；false = 本来就没被标记
+     */
+    fun reEnable(pidId: String): Boolean {
+        if (!unsupportedPids.remove(pidId)) return false
+        unsupportedStreak.remove(pidId)
+        failStreak.remove(pidId)
+        cooldownUntil.remove(pidId)
+        nextDue.remove(pidId)
+        AppLog.i(AppLog.M_OBD, "手动重启用 PID", "id=$pidId —— 已重新纳入轮询")
+        return true
+    }
+
     fun reload() {
         // 排除两类：`CALC`（计算派生）与 `monitor`（监听型，由 FrameMonitor 喂值）。
         // 监听型要是进了轮询列表，会对着一个**只存在于广播帧里**的地址发请求，
@@ -174,6 +223,12 @@ class ObdEngine(private val session: ElmSession) {
         }
         activePids = all
         nextDue.keys.retainAll(all.map { it.id }.toSet())
+        // 「本车不支持」的判定**跨重连保留**（否则每次重连都要重新测一遍、
+        // 那 5 条 NO DATA 又会刷一轮日志）；只清掉**已经不在列表里**的。
+        // 想重测：点列表里的「重启用」（[reEnable]），或重启 App ——
+        // 判定是**内存态**，下次启动自然重新验证。
+        unsupportedPids.retainAll(all.map { it.id }.toSet())
+        unsupportedStreak.keys.retainAll(all.map { it.id }.toSet())
         AppLog.i(AppLog.M_OBD, "轮询列表已刷新", "count=${all.size} ids=${all.joinToString(",") { it.id }}")
     }
 
@@ -213,7 +268,10 @@ class ObdEngine(private val session: ElmSession) {
         while (scope.isActive && running) {
             val now = System.currentTimeMillis()
             val due = activePids.filter { pid ->
-                (nextDue[pid.id] ?: 0L) <= now && (cooldownUntil[pid.id] ?: 0L) <= now
+                // 判定为"本车不支持"的**直接不问**（P10-1 的核心）：
+                // 它们每次都回 NO DATA，问了也是白占总线 + 白刷日志
+                pid.id !in unsupportedPids &&
+                    (nextDue[pid.id] ?: 0L) <= now && (cooldownUntil[pid.id] ?: 0L) <= now
             }
             if (due.isEmpty()) {
                 delay(20)
@@ -250,6 +308,9 @@ class ObdEngine(private val session: ElmSession) {
                 val value = res.value
                 if (res.ok && value != null) {
                     failStreak.remove(pid.id)
+                    // 成功一次就清掉"不支持"的连续计数 —— 判定必须是**连续**的，
+                    // 否则长期累积会把"偶发几次 NO DATA 但一直有值"的 PID 误判掉
+                    unsupportedStreak.remove(pid.id)
                     requestsSinceSuccess = 0
                     VehicleBus.put(PidValue(pid.id, value, res.data.toHex(), System.currentTimeMillis(), true))
                     sampleCount++
@@ -269,7 +330,26 @@ class ObdEngine(private val session: ElmSession) {
                     VehicleBus.put(
                         PidValue(pid.id, Float.NaN, "", System.currentTimeMillis(), false, res.error)
                     )
-                    if (n >= MAX_FAIL) {
+                    // ---- P10-1：「本车不支持」的判定 ----
+                    //
+                    // ⚠️ 判据是 [ObdProtocol.isUnsupportedEvidence] ——
+                    // **只有 ECU 明确说"这条我没有"（NO DATA / 明确 NRC）才算**。
+                    // 超时、CAN ERROR 这些"我们没问到"的失败**不算**，
+                    // 否则一次链路抖动就会把全部 PID 判成不支持。
+                    if (ObdProtocol.isUnsupportedEvidence(raw)) {
+                        val u = (unsupportedStreak[pid.id] ?: 0) + 1
+                        unsupportedStreak[pid.id] = u
+                        if (u >= UNSUPPORTED_STREAK && unsupportedPids.add(pid.id)) {
+                            AppLog.w(
+                                AppLog.M_OBD, "PID 本车不支持，已退出轮询",
+                                "id=${pid.id} name=${pid.name} 连续 $u 次 ECU 明确回绝" +
+                                    "（列表保留，可手动重启用）| 响应=${raw.trim().take(24)}"
+                            )
+                        }
+                    }
+                    // 已判定不支持的就不再报冷却 —— 它已经被移出轮询，
+                    // 再刷"进入冷却"只是噪音（P10-1 的判据之一）
+                    if (n >= MAX_FAIL && pid.id !in unsupportedPids) {
                         cooldownUntil[pid.id] = System.currentTimeMillis() + COOLDOWN_MS
                         AppLog.w(
                             AppLog.M_OBD, "PID 连续失败进入冷却",
@@ -321,18 +401,24 @@ class ObdEngine(private val session: ElmSession) {
             // 低频是刻意的，见 [SUMMARY_MS]。
             if (t - lastSummaryAt >= SUMMARY_MS) {
                 lastSummaryAt = t
-                val parts = activePids.mapNotNull { p ->
+                // 分母**只算还在轮询的**（P10-1）：判定为"本车不支持"的已经退出，
+                // 还把它们算进分母，那个数字就永远差几条 —— 正是这次要修的症状
+                // （实测 `有值 20/25` 里少的 5 就是它们）。
+                val polled = activePids.filter { it.id !in unsupportedPids }
+                val parts = polled.mapNotNull { p ->
                     lastValues[p.id]?.let { "${p.name}=${fmtValue(it)}${p.unit}" }
                 }
+                val skipped = activePids.size - polled.size
+                val tail = if (skipped > 0) "（另有 $skipped 条本车不支持，已退出轮询）" else ""
                 if (parts.isEmpty()) {
                     AppLog.w(
                         AppLog.M_OBD, "轮询汇总",
-                        "有值 0/${activePids.size} —— 一条都没成功过（原因看上面的失败行）"
+                        "有值 0/${polled.size} —— 一条都没成功过（原因看上面的失败行）$tail"
                     )
                 } else {
                     AppLog.i(
                         AppLog.M_OBD, "轮询汇总",
-                        "有值 ${parts.size}/${activePids.size} | ${parts.joinToString(" ")}"
+                        "有值 ${parts.size}/${polled.size} | ${parts.joinToString(" ")}$tail"
                     )
                 }
             }

@@ -477,4 +477,66 @@ class ObdProtocolTest {
         assertEquals("ATSH7DF\r", ObdProtocol.headerSwitch("760", ""))
         assertEquals("ATSH7DF\r", ObdProtocol.headerSwitch("760", "7DF"))
     }
+
+    // ------------------------- 「本车不支持」的判据（P10-1）-------------------------
+    //
+    // 这组用例守的是**整个优化的安全性**：判定"连续 N 次就退出轮询"时，
+    // 如果把"我们没问到"也算成"车说没有"，一次链路抖动就会把**全部** PID 停掉。
+
+    @Test
+    fun `NO DATA 是「本车不支持」的证据`() {
+        assertTrue(ObdProtocol.isUnsupportedEvidence("NO DATA"))
+        assertTrue("SEARCHING... 之后的 NO DATA 也算", ObdProtocol.isUnsupportedEvidence("SEARCHING...\rNO DATA"))
+        assertTrue("大小写不该影响", ObdProtocol.isUnsupportedEvidence("no data"))
+    }
+
+    @Test
+    fun `超时不是「本车不支持」的证据`() {
+        // ⚠️ 关键：`ElmSession.request` 超时返回**空串** ——
+        // 那是"**我们没问到**"，不是"车说没有"。
+        assertFalse("空串（超时）绝不能被当成车不支持", ObdProtocol.isUnsupportedEvidence(""))
+        assertFalse(ObdProtocol.isUnsupportedEvidence("   "))
+    }
+
+    @Test
+    fun `总线与连接错误不是「本车不支持」的证据`() {
+        assertFalse(ObdProtocol.isUnsupportedEvidence("CAN ERROR"))
+        assertFalse(ObdProtocol.isUnsupportedEvidence("BUS ERROR"))
+        assertFalse(ObdProtocol.isUnsupportedEvidence("UNABLE TO CONNECT"))
+        assertFalse(ObdProtocol.isUnsupportedEvidence("STOPPED"))
+        assertFalse(ObdProtocol.isUnsupportedEvidence("ERROR"))
+    }
+
+    @Test
+    fun `明确的 NRC 算不支持，暂时性的 NRC 不算`() {
+        // 算：服务不支持 / 子功能不支持 / 超出范围 / 当前会话不支持
+        assertTrue("0x11 该服务不支持", ObdProtocol.isUnsupportedEvidence("7F 01 11"))
+        assertTrue("0x12 该子功能不支持", ObdProtocol.isUnsupportedEvidence("7F 01 12"))
+        assertTrue("0x31 请求超出范围", ObdProtocol.isUnsupportedEvidence("7F 22 31"))
+        assertTrue("0x7F 当前会话不支持该服务", ObdProtocol.isUnsupportedEvidence("7F 01 7F"))
+        // 不算：这几条都是**暂时**状态、或者**我们自己的错**
+        assertFalse(
+            "0x13 报文长度错 —— 我们自己发了畸形帧，是 App 的错",
+            ObdProtocol.isUnsupportedEvidence("7F 01 13")
+        )
+        assertFalse("0x21 ECU 忙", ObdProtocol.isUnsupportedEvidence("7F 01 21"))
+        assertFalse("0x22 当前条件不满足", ObdProtocol.isUnsupportedEvidence("7F 01 22"))
+        assertFalse("0x78 响应挂起", ObdProtocol.isUnsupportedEvidence("7F 01 78"))
+    }
+
+    @Test
+    fun `正常的十六进制响应不是不支持`() {
+        assertFalse(ObdProtocol.isUnsupportedEvidence("41 0C 1F 40"))
+        assertFalse(ObdProtocol.isUnsupportedEvidence("41 05 84"))
+        assertFalse(ObdProtocol.isUnsupportedEvidence("62 11 00 1A F8"))
+    }
+
+    @Test
+    fun `NRC 按码判断而不是按中文名`() {
+        // 抽 negativeCode 的目的就是"名字改了判断也不会失效"
+        assertEquals(0x11, ObdProtocol.negativeCode("7F 01 11"))
+        assertEquals(0x31, ObdProtocol.negativeCode("7F 22 31"))
+        assertNull("正常响应没有 NRC", ObdProtocol.negativeCode("41 0C 1F 40"))
+        assertNull(ObdProtocol.negativeCode("NO DATA"))
+    }
 }
