@@ -138,6 +138,8 @@ View
 | `MaterialButton` | `btnCanvasTheme` | 画布主题（**只作用于当前这一套**） |
 | `MaterialButton` | `btnCanvasLook` | 背景 / 设计文件 / 参考线 / 卡片样式菜单 |
 | `MaterialButton` | `btnPollInterval` | 轮询间隔（全局） |
+| `MaterialButton` | `btnGestures` | **手势**（v1.20.9，全局）：4 个双指方向各选一个动作 |
+| `TextView` | `tvGestureSummary` | 手势当前映射的一句话总结（`当前：右滑呼出导航 · 其余无`） |
 | `MaterialSwitch` | `swSound` | 音效（全局，改完当次生效） |
 | `MaterialButton` | `btnNameLabel` | **画布名浮标位置**（左上/右上/左下/右下/隐藏，全局） |
 | `item_canvas.xml` | `tvName` / `tvSub` / `btnRowMenu` | 每行：名字（`●` = 当前）/ 副标题 / 「操作」菜单（改名·上移·下移·前往·删除） |
@@ -393,3 +395,44 @@ View
 5. **动画不要各自 `postDelayed`** —— 用 `GaugeTicker`，
    否则每帧 N 次消息投递且和 vsync 错拍。
 6. **文字格式化要缓存** —— 文本只随 `value` 变（5Hz），不随缓动变（60fps）。
+
+---
+
+## 十、手势冲突矩阵（**改任何手势之前先看这一张**）
+
+> v1.20.9 定的。为什么要有它：仪表盘上同时跑着**四类**触摸消费者
+> （ViewPager2 翻页、画布编辑器拖表盘、`MainActivity.dispatchTouchEvent` 的双指与双击、
+> 系统自己的边缘手势），而它们**都不能靠"谁先拿到事件"来分工** ——
+> 一处抢错的表现是"另一个功能突然不灵了"，且极难联想到是这里。
+
+| 手势 | 谁处理 | 作用 | 可配置 | 会不会被抢 |
+|---|---|---|---|---|
+| **单指横滑** | `ViewPager2`（`DashFragment`） | 切上一套 / 下一套画布、滑到设置页 | 否 | 编辑态下**被禁用**（`pager.isUserInputEnabled = false`） |
+| **单指按下-移动** | `DashCanvasEditorView`（仅编辑态） | 拖表盘 / 缩放 | 否 | 编辑态里横滑已禁用，所以不打架 |
+| **单指双击** | `MainActivity.dispatchTouchEvent`（旁听） | 呼出 / 收起导航栏（**兜底**） | **否**（刻意） | 落点在导航栏上不算；两次落点要彼此靠近（v1.20.6 修） |
+| **双指滑动 ×4** | `MainActivity.dispatchTouchEvent`（旁听） | 4 个方向各一个动作，**默认**：右滑呼出导航 / 左滑收起导航 / 上滑下一套画布 / 下滑上一套画布 | **是**（设置页「手势」） | 不与任何单指手势冲突 |
+| **单指点击导航栏** | `NavigationBarView` | 切页 | 否 | 双击判据里排除了导航栏区域 |
+| **单指长按「仪表盘」** | `NavigationBarView` 子项 | 全屏开关 | 否 | —— |
+| **系统边缘手势**（单指） | 系统 | 返回 / 回桌面 | 否 | ⚠️ v1.20.3 那条"左边缘把手"就撞在这里，**已整个停用** |
+
+**四条不许破的约定**：
+
+1. **双指与双击一律"旁听、不消费"** —— 都在 `MainActivity.dispatchTouchEvent` 里判，
+   最后照旧 `return super.dispatchTouchEvent(ev)`。改成消费（返回 true）会把单指手势一起吃掉，
+   而那正是 v1.20.4 放弃"透明 View"方案的原因。
+2. **方向判定只能有一份**（`data/GestureActions.slotOf`，纯函数有单测）：
+   先比主轴（`|dx|` vs `|dy|`）再比阈值（48dp）。反过来判会把"斜着划"一律当成横滑 ——
+   两根手指不可能完全同步，斜划在真机上非常常见。
+3. **动作执行只能有一处**（`MainActivity.runGesture`）。设置页只编辑 `Store.settings` 里那张表；
+   那边要是也执行一遍，迟早出现"设置页显示的映射"与"真的执行的动作"不一致。
+4. **双击兜底不可配置、不可关** —— 它是"卡在仪表盘页出不去"的保险
+   （双指手势没法用 adb 验，只能靠用户的手指）。
+
+**"切画布"要判当前页**：只在仪表盘页有意义。在 PID / 日志页上切会改配置却看不到变化 ——
+所以 `runGesture` 先判 `currentTag() == "dash"`，不满足就弹一句明说。
+另外 `DashFragment.stepCanvas` 还会判"pager 是不是停在设置页"（那时没有"当前是哪一套"可言）。
+
+**加新动作时要同时改三处**（漏一处的表现是"能选但没反应"）：
+`GestureActions.ACTION_IDS` / `ACTION_NAMES` / `shortAction`，
+再在 `MainActivity.runGesture` 的 `when` 里加分支。
+

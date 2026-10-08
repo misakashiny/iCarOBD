@@ -179,6 +179,22 @@ object Store {
          */
         var canvasNamePos: Int = DashCanvas.NAME_POS_TOP_START,
 
+        // ---------- 双指手势（v1.20.9）----------
+
+        /**
+         * 四个双指手势各绑一个动作，取值见 [GestureActions]。
+         *
+         * 默认值 = [GestureActions.DEFAULTS]（右滑呼出导航、左滑收起导航、上下翻画布）。
+         * **旧配置里没有这四个键** —— [Store.applySettingsJson] 用 `optString` 逐个兜默认值，
+         * 所以升级后手感不变（这一条有单测钉着）。
+         *
+         * 为什么不存成一个数组：四个键各自独立，缺哪个兜哪个 —— 数组缺一项就整份作废。
+         */
+        var gestureLeft: String = GestureActions.DEFAULTS[GestureActions.SLOT_LEFT],
+        var gestureRight: String = GestureActions.DEFAULTS[GestureActions.SLOT_RIGHT],
+        var gestureUp: String = GestureActions.DEFAULTS[GestureActions.SLOT_UP],
+        var gestureDown: String = GestureActions.DEFAULTS[GestureActions.SLOT_DOWN],
+
         // ---------- 最近一次导入设计文件（v1.20.6）----------
 
         /**
@@ -214,6 +230,38 @@ object Store {
                 .format(java.util.Date(lastImportAt))
             val name = lastImportName.ifBlank { "未命名设计" }
             return "$name · $lastImportGauges 块表 · $ts"
+        }
+
+        /**
+         * 某个双指手势绑的动作（**读**）。
+         *
+         * ⚠️ 必须走 [GestureActions.normalize]：设置页显示的映射与 `MainActivity`
+         * 真的执行的动作**只能有这一个来源**。读原始字段的话，一份手改坏了的
+         * `settings.json` 会出现"设置页说右滑呼出导航、实际什么都不做"。
+         */
+        fun gestureAt(slot: Int): String = GestureActions.normalize(slot, rawGesture(slot))
+
+        /** 某个双指手势绑的动作（**写**）。写入前归一化，保证落盘的永远是合法 id */
+        fun setGestureAt(slot: Int, actionId: String) {
+            val v = GestureActions.normalize(slot, actionId)
+            when (slot) {
+                GestureActions.SLOT_LEFT -> gestureLeft = v
+                GestureActions.SLOT_RIGHT -> gestureRight = v
+                GestureActions.SLOT_UP -> gestureUp = v
+                GestureActions.SLOT_DOWN -> gestureDown = v
+            }
+        }
+
+        /** 设置页那一行「当前：…」；格式化只有一处（[GestureActions.summary]，纯函数有单测） */
+        fun gestureSummary(): String =
+            GestureActions.summary(listOf(gestureLeft, gestureRight, gestureUp, gestureDown))
+
+        private fun rawGesture(slot: Int): String = when (slot) {
+            GestureActions.SLOT_LEFT -> gestureLeft
+            GestureActions.SLOT_RIGHT -> gestureRight
+            GestureActions.SLOT_UP -> gestureUp
+            GestureActions.SLOT_DOWN -> gestureDown
+            else -> GestureActions.NONE
         }
     }
 
@@ -359,6 +407,22 @@ object Store {
             // 让一个手改坏的 settings.json 落到未知分支是不必要的风险
             canvasNamePos = o.optInt("canvasNamePos", DashCanvas.NAME_POS_TOP_START)
                 .coerceIn(0, DashCanvas.NAME_POS_HIDDEN),
+            // 双指手势（v1.20.9）。旧配置**没有这四个键** → 逐个兜出厂默认值，
+            // 于是"升级不改变已有手感"（右滑呼出 / 左滑收起），上下两个方向是新增的。
+            // ⚠️ 兜底值必须写 [GestureActions.DEFAULTS]，**不能**写字符串字面量 ——
+            // 两处各写一份的话，以后改默认值必然漏掉一处（表现是"默认值和文档不一样"）。
+            gestureLeft = GestureActions.normalize(
+                GestureActions.SLOT_LEFT, o.optString("gestureLeft", "")
+            ),
+            gestureRight = GestureActions.normalize(
+                GestureActions.SLOT_RIGHT, o.optString("gestureRight", "")
+            ),
+            gestureUp = GestureActions.normalize(
+                GestureActions.SLOT_UP, o.optString("gestureUp", "")
+            ),
+            gestureDown = GestureActions.normalize(
+                GestureActions.SLOT_DOWN, o.optString("gestureDown", "")
+            ),
             // 最近一次导入（v1.20.6）。旧配置没有这三个键 → 空记录，
             // 设置页显示"还没导入过"（**不要**兜一个假时间，那比空更糟）
             lastImportName = o.optString("lastImportName", ""),
@@ -474,6 +538,12 @@ object Store {
         put("canvases", JSONArray().apply { settings.canvases.forEach { put(it.toJson()) } })
         // 画布名浮标的位置：全局偏好（与"当前是哪一套"无关）
         put("canvasNamePos", settings.canvasNamePos)
+        // 双指手势（v1.20.9）：全局偏好。写出去的是**归一化后**的值
+        // （读回来的可能是手改坏的串，见 Settings.gestureAt）
+        put("gestureLeft", settings.gestureAt(GestureActions.SLOT_LEFT))
+        put("gestureRight", settings.gestureAt(GestureActions.SLOT_RIGHT))
+        put("gestureUp", settings.gestureAt(GestureActions.SLOT_UP))
+        put("gestureDown", settings.gestureAt(GestureActions.SLOT_DOWN))
         // 最近一次导入的设计文件（v1.20.6）—— 设置页那条"一眼可见"的记录
         put("lastImportName", settings.lastImportName)
         put("lastImportGauges", settings.lastImportGauges)

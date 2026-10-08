@@ -101,4 +101,42 @@ class BackgroundSizeTest {
         assertEquals(256, bg.w)
         assertEquals("相对路径也要原样保留（App 侧拼 designBaseDir）", "assets/背景/carbon.png", bg.path)
     }
+
+    // ================================================================ v1.20.9
+
+    @Test
+    fun `相对路径的背景不报本机不存在`() {
+        // 相对路径要拼上 `designBaseDir` 才谈得上"存不存在"，而那是导入之后的事。
+        // 在解析阶段拿 `File(相对路径).isFile` 判的是**进程当前目录**，永远为 false ——
+        // 于是每一份带背景的 v2 设计都凭空多一条"文件不存在"。
+        // 假警报的代价是用户学会无视整个警告列表，而设计包导入恰恰靠这个列表说清缺了什么。
+        val r = DesignFile.parse(
+            """
+            {
+              "schema": "icar.ui/2",
+              "canvas": {"unit": 360},
+              "background": {"path": "assets/背景.png", "fit": 0},
+              "nodes": [{"id":"g","type":"gauge","pid":"obd.rpm","style":0,
+                         "min":0,"max":8000,"x":0,"y":0,"w":180,"h":180}]
+            }
+            """.trimIndent()
+        )
+        assertTrue(r.errors.toString(), r.ok)
+        assertTrue(
+            "相对路径不该报背景不存在，实际警告：${r.warnings}",
+            r.warnings.none { it.contains("background.path") }
+        )
+    }
+
+    @Test
+    fun `绝对路径的背景不存在仍然要提示`() {
+        // 反面：绝对路径是真的能当场判的，这条提示**必须留着**
+        // （`ThemeStudioSampleTest` 里那条"恰好一条警告"也依赖它）
+        val r = parse("""{"path":"/sdcard/绝对不存在的目录/bg.png","fit":0}""")
+        assertTrue(r.errors.toString(), r.ok)
+        assertTrue(
+            "绝对路径不存在必须提示，实际警告：${r.warnings}",
+            r.warnings.any { it.contains("background.path") }
+        )
+    }
 }

@@ -12,6 +12,7 @@ import androidx.viewpager2.widget.ViewPager2
 import com.icar.obd.R
 import com.icar.obd.data.AppLog
 import com.icar.obd.data.Store
+import com.icar.obd.obd.ObdController
 import com.icar.obd.ui.dash.CanvasSettingsFragment
 import com.icar.obd.ui.dash.DashCanvasPageFragment
 import com.icar.obd.ui.dash.DashCanvasPagerAdapter
@@ -233,6 +234,49 @@ class DashFragment : Fragment(), com.icar.obd.obd.ObdController.Listener {
 
     /** 设置页要求跳到某一套画布 */
     fun jumpToCanvas(index: Int) = jumpTo(index, true)
+
+    /**
+     * **按顺序切上/下一套画布**（v1.20.9，双指上下滑用）。
+     *
+     * ## 为什么放在这里而不是 MainActivity 里直接改 `activeCanvasId`
+     *
+     * 画布与 ViewPager2 的页码是**一体两面**（见类注释）：只改 `activeCanvasId`
+     * 不翻页，界面还停在第 N 页、而"当前画布"已经变成第 N+1 套 ——
+     * 下一次横滑会把页码变化当成"用户切了画布"，行为彻底乱掉。
+     * 所以"切画布"这件事只能由**知道 pager 在哪一页**的这一层来做。
+     *
+     * @param delta `+1` = 下一套，`-1` = 上一套
+     */
+    fun stepCanvas(delta: Int) {
+        if (view == null) return
+        val canvases = Store.settings.canvases
+        if (canvases.size <= 1) {
+            ObdController.toast("只有一套画布")
+            return
+        }
+        val cur = pager.currentItem
+        // 停在**设置页**时没有"当前是哪一套"可言：这时切过去会让用户莫名其妙
+        // 被从设置页拽走。明确说出来，不静默。
+        if (cur !in canvases.indices) {
+            ObdController.toast("当前在设置页，先滑回画布再切")
+            AppLog.i(AppLog.M_UI, "手势切画布被忽略", "pager 停在设置页 cur=$cur")
+            return
+        }
+        val target = cur + delta
+        if (target !in canvases.indices) {
+            ObdController.toast(if (delta > 0) "已经是最后一套画布" else "已经是第一套画布")
+            return
+        }
+        // 顺序与设置页的「前往这一套」一致：**先切画布再翻页**，
+        // 翻页期间 awaitingPos 会吃掉 onPageSelected（见 jumpTo 的说明）
+        Store.switchCanvas(canvases[target].id)
+        jumpTo(target, true)
+        AppLog.i(
+            AppLog.M_UI,
+            if (delta > 0) "手势：下一套画布" else "手势：上一套画布",
+            "${canvases[cur].name} -> ${canvases[target].name} (${target + 1}/${canvases.size})"
+        )
+    }
 
     /**
      * 设置页的操作菜单要求"跳到某一套并**直接进编辑态**"（v1.20.2）。

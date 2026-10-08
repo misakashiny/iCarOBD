@@ -143,6 +143,20 @@
       }
     }
 
+    // ---- 变量 / 模式 / 绑定（v2.80.0，规格 §3）
+    //
+    // ⚠️ **放在 nodes 之前**：`nodes` 的 `$` 检查与漂移检测都要拿 bindings 当判据。
+    // 顺带一个好处：即使后面 nodes 报错返回 null，这些警告也已经收进 warnings 里了。
+    const tokens = parseTokens(root.tokens, errors, warnings);
+    const modes = parseModes(root.modes, tokens, errors, warnings);
+    const bindings = parseBindings(root.bindings, warnings);
+    const activeMode = typeof root.activeMode === "string" ? root.activeMode.trim() : "";
+    if (activeMode && !modes.some(m => m.id === activeMode)) {
+      warnings.push("`activeMode` = `" + activeMode + "` 在 `modes` 里找不到 —— 已回落到"
+        + "「当前主题对应的内置模式」（再没有就用第一个模式）");
+    }
+    checkBindingRefs(bindings, tokens, errors);
+
     // ---- 多页面（可选）。有 pages 就用 pages，否则 nodes 当单页 ——
     // **向后兼容**：没有 pages 字段的老文件行为完全不变。
     let pages = null;
@@ -221,6 +235,19 @@
       }
     }
 
+    // ---- 核心不变式：`nodes` 里不许出现 `$`（§3.1 / §4.2）+ 漂移检测（§5）
+    //
+    // ⚠️ 有 `pages` 时只走 pages —— `nodes` 那时是"当前页的副本"，
+    // 两边都走会把同一处报两遍，而且被忽略的那份 `nodes` 本来就不参与渲染。
+    const nodeRoots = pages
+      ? pages.map((pg, i) => ({ list: pg.nodes, path: "pages[" + i + "].nodes" }))
+      : [{ list: nodes, path: (isV1 ? "gauges" : "nodes") }];
+    checkDollarInNodes(nodeRoots, bindings, errors, warnings);
+    // 漂移检测要用**与 resolveDesign 同一套**的当前值（§4「不许各写一份」）
+    checkDrift(nodeRoots, bindings,
+      window.resolveTokenState({ tokens: tokens, modes: modes, activeMode: activeMode, themeId: typeof root.theme === "string" ? root.theme : "" }),
+      warnings);
+
     if (errors.length) return { design: null, errors, warnings };
 
     const design = {
@@ -247,6 +274,17 @@ themeColors: (root.themeColors && typeof root.themeColors === "object" && !Array
       background: background,
       assets: assets,
       controls: controls,
+      // ---- 变量 / 模式 / 绑定（v2.80.0，规格 §3）
+      //
+      // ⚠️ 这四个字段**只活在内存里的 design 对象上**：
+      //   · `toV2Json` 是显式构造 root 的，不遍历 design 的键 →
+      //     **不写进文件**，所以对 App 与存量文件零影响（App 侧一行都不用改）
+      //   · 第 4 步（`model.js` 序列化四个新键）才会真正落盘 —— 本轮刻意不做
+      // 缺省值取"空"而不是 null：下游（resolveDesign / 校验）不用再判空。
+      tokens: tokens,
+      modes: modes,
+      activeMode: activeMode,
+      bindings: bindings,
       nodes: nodes,
       // ⚠️ **必须兜底成单页**：validate 这里是字面量构造对象，不走 createDesign，
       // 留 undefined 的话 d.pages 是空的，切页 / 序列化全会炸。
@@ -475,21 +513,33 @@ themeColors: (root.themeColors && typeof root.themeColors === "object" && !Array
     const out = {};
     if (o.show !== undefined) out.show = !!o.show;
     if (o.alpha !== undefined) {
-      const a = Number(o.alpha);
-      if (!Number.isFinite(a)) {
-        warnings.push(path + ".alpha = " + trimNum(o.alpha) + " 不是数字 —— 已忽略");
+      // ⚠️ **变量引用原样保留**（v2.80.0，规格 §3.6 白名单里有 `card.alpha`）。
+      // 走下面的 `Number()` 分支的话 `"$dim"` 会变成"不是数字 —— 已忽略"，
+      // 于是绑定在**校验之前**就被丢掉了 —— 症状和 §4.2 那个静默陷阱一模一样：
+      // 不报错、值没了。所以引用串直接放行，交给「nodes 里不许有 `$`」那条硬错误去判。
+      if (window.isTokenRef(o.alpha)) {
+        out.alpha = o.alpha;
       } else {
-        if (a < 0 || a > 255) warnings.push(path + ".alpha = " + trimNum(a) + " 超出 0..255 —— 已夹住");
-        out.alpha = Math.max(0, Math.min(255, Math.round(a)));
+        const a = Number(o.alpha);
+        if (!Number.isFinite(a)) {
+          warnings.push(path + ".alpha = " + trimNum(o.alpha) + " 不是数字 —— 已忽略");
+        } else {
+          if (a < 0 || a > 255) warnings.push(path + ".alpha = " + trimNum(a) + " 超出 0..255 —— 已夹住");
+          out.alpha = Math.max(0, Math.min(255, Math.round(a)));
+        }
       }
     }
     if (o.radius !== undefined) {
-      const r = Number(o.radius);
-      if (!Number.isFinite(r)) {
-        warnings.push(path + ".radius = " + trimNum(o.radius) + " 不是数字 —— 已忽略");
+      if (window.isTokenRef(o.radius)) {
+        out.radius = o.radius;                 // 同上：引用原样保留
       } else {
-        if (r < 0) warnings.push(path + ".radius = " + trimNum(r) + " 为负 —— 已夹到 0");
-        out.radius = Math.max(0, Math.min(120, r));
+        const r = Number(o.radius);
+        if (!Number.isFinite(r)) {
+          warnings.push(path + ".radius = " + trimNum(o.radius) + " 不是数字 —— 已忽略");
+        } else {
+          if (r < 0) warnings.push(path + ".radius = " + trimNum(r) + " 为负 —— 已夹到 0");
+          out.radius = Math.max(0, Math.min(120, r));
+        }
       }
     }
     return Object.keys(out).length ? out : null;
@@ -563,6 +613,320 @@ themeColors: (root.themeColors && typeof root.themeColors === "object" && !Array
       return { path: path, fit: 0, w: w, h: h };
     }
     return { path: path, fit: fit, w: w, h: h };
+  }
+
+  // ================================================================ 变量 / 模式 / 绑定
+  //
+  // 规格：[`docs/下一步-变量模式与组件变体.md`](../../../docs/下一步-变量模式与组件变体.md) §3 ~ §5。
+  //
+  // ⚠️ 这一节**只解析与检查**，不改写任何东西：
+  //   · 未知的顶层键 App 会忽略（DesignFile.kt 用 optJSONObject/optJSONArray 读），
+  //     所以"工具认识 tokens/modes/bindings"对 App 与存量文件**零影响**
+  //   · 真正把四个新键**写出**是 `model.js` 的下一步（§9.1 第 4 步），本轮刻意不做
+  //
+  // 硬错误 / 警告的分工（§5 的表，v2.80.1 起按字段分两档）：
+  //   颜色/数值字段里出现 `$` 且 bindings 没有对应条目 → **硬错误**（引用不能写在 nodes 里）
+  //   `text` 里出现 `$` 且 bindings 没有对应条目        → **警告**（字面 `$` 是正常内容，见下）
+  //   bindings 指向不存在的变量                        → **硬错误**
+  //   nodes 的值与 bindings 推出来的不一致              → **警告**（手改 JSON 是合法用法，但会被覆盖）
+
+  /**
+   * 解析 `tokens`（§3.2）。
+   *
+   * **值一律走 [window.coerceTokenValue]**（与 `resolveDesign` 同一个函数）——
+   * 校验的判据和解析的判据必须是同一条，否则会出现"校验说合法、解析却跳过"。
+   */
+  function parseTokens(raw, errors, warnings) {
+    const out = [];
+    if (raw === undefined || raw === null) return out;
+    if (!Array.isArray(raw)) { errors.push("`tokens` 必须是数组"); return out; }
+    const ids = {}, names = {};
+    raw.forEach((t, i) => {
+      const path = "tokens[" + i + "]";
+      if (t === null || typeof t !== "object" || Array.isArray(t)) {
+        errors.push(path + " 不是一个对象");
+        return;
+      }
+      const id = typeof t.id === "string" ? t.id.trim() : "";
+      if (!id) { errors.push(path + " 缺少 `id`（变量靠 id 被引用，不能省）"); return; }
+      if (ids[id]) { errors.push(path + " 的 id `" + id + "` 与前面的变量重复"); return; }
+      if (id.charAt(0) === window.MODE_RAW_PREFIX) {
+        errors.push(path + " 的 id 不能以 `" + window.MODE_RAW_PREFIX + "` 开头（那是 modes 里"
+          + "「直接覆盖 themeColors」的保留前缀）");
+        return;
+      }
+      ids[id] = true;
+
+      const name = (typeof t.name === "string" && t.name.trim()) ? t.name.trim() : id;
+      if (name.charAt(0) === "$") {
+        warnings.push(path + " 的名字以 `$` 开头 —— 引用语法里 `$` 是前缀，这个名字**引用不到**");
+      } else if (names[name]) {
+        warnings.push(path + " 的名字 `" + name + "` 与前面的变量重名 —— 按名字引用时以**先出现的**为准");
+      } else {
+        names[name] = true;
+      }
+
+      // 类型：不认识就按值猜（比"一律当字符串"更贴近用户意图）
+      let type = typeof t.type === "string" ? t.type : "";
+      if (window.TOKEN_TYPE_VALUES.indexOf(type) < 0) {
+        const guess = window.isHexColor(t.value) ? "color"
+          : (typeof t.value === "number" && Number.isFinite(t.value)) ? "number" : "string";
+        warnings.push(path + " 的 type `" + trimNum(t.type) + "` 不认识（本版本认："
+          + window.TOKEN_TYPE_VALUES.join(" / ") + "）—— 已按值当作 `" + guess + "`");
+        type = guess;
+      }
+
+      // 值：null/undefined = "没设"，合法；给了但转不出来 = 警告（解析时会跳过它）
+      if (t.value !== null && t.value !== undefined
+        && window.coerceTokenValue(type, t.value) === undefined) {
+        warnings.push(path + "（" + name + "）的 value " + trimNum(t.value)
+          + " 不是合法的 " + type + " —— 解析时会跳过它");
+      }
+
+      const tok = { id: id, name: name, type: type, value: (t.value === undefined ? null : t.value) };
+      if (typeof t.builtin === "string" && t.builtin) {
+        if (!window.THEME_COLOR_FIELDS.some(f => f.k === t.builtin)) {
+          warnings.push(path + " 的 builtin `" + t.builtin + "` 不是主题色字段（"
+            + window.THEME_COLOR_FIELDS.map(f => f.k).join(" / ") + "）—— 不会写进 themeColors");
+        } else {
+          if (!window.isHexColor(tok.value)) {
+            warnings.push(path + " 是内置变量（" + t.builtin + "）但值不是 `#RRGGBB` —— "
+              + "解析时会**回落内置主题的同名色**，不会写坏 themeColors");
+          }
+          tok.builtin = t.builtin;
+        }
+      }
+      out.push(tok);
+    });
+    return out;
+  }
+
+  /** 解析 `modes`（§3.3）。`values` 只存差异；`@` 开头的键 = 直接覆盖 themeColors 的同名字段 */
+  function parseModes(raw, tokens, errors, warnings) {
+    const out = [];
+    if (raw === undefined || raw === null) return out;
+    if (!Array.isArray(raw)) { errors.push("`modes` 必须是数组"); return out; }
+    const byId = {}, byName = {};
+    tokens.forEach(t => { byId[t.id] = t; if (t.name) byName[t.name] = t; });
+    const ids = {};
+    raw.forEach((m, i) => {
+      const path = "modes[" + i + "]";
+      if (m === null || typeof m !== "object" || Array.isArray(m)) {
+        errors.push(path + " 不是一个对象");
+        return;
+      }
+      const id = typeof m.id === "string" ? m.id.trim() : "";
+      if (!id) { errors.push(path + " 缺少 `id`"); return; }
+      if (ids[id]) { errors.push(path + " 的 id `" + id + "` 与前面的模式重复"); return; }
+      ids[id] = true;
+
+      const values = {};
+      if (m.values === undefined || m.values === null) {
+        warnings.push(path + " 没有 `values` —— 这个模式不给任何变量赋值（等于全部跟随默认值）");
+      } else if (typeof m.values !== "object" || Array.isArray(m.values)) {
+        warnings.push(path + ".values 不是一个对象 —— 已当空（这个模式不给任何变量赋值）");
+      } else {
+        Object.keys(m.values).forEach(k => {
+          const v = m.values[k];
+          if (k.charAt(0) === window.MODE_RAW_PREFIX) {
+            const f = k.slice(1);
+            if (["glow", "title", "description"].indexOf(f) < 0) {
+              warnings.push(path + ".values." + k + " 会**原样写进 themeColors**，但 `" + f
+                + "` 不是已知的主题字段（已知：glow / title / description）");
+            } else if (f === "glow" && typeof v !== "boolean") {
+              warnings.push(path + ".values." + k + " 应当是 true / false —— 当前是 " + trimNum(v));
+            }
+            values[k] = v;
+            return;
+          }
+          const t = byId[k] || byName[k];
+          if (!t) {
+            warnings.push(path + ".values 里的 `" + k + "` 不是任何变量（id 或名字）—— 已忽略");
+            return;
+          }
+          if (window.coerceTokenValue(t.type, v) === undefined) {
+            warnings.push(path + ".values." + k + " 的值 " + trimNum(v)
+              + " 对不上变量类型 " + t.type + " —— 已忽略（回落默认值）");
+            return;
+          }
+          values[k] = v;
+        });
+      }
+      out.push({
+        id: id,
+        name: (typeof m.name === "string" && m.name.trim()) ? m.name.trim() : id,
+        values: values,
+      });
+    });
+    return out;
+  }
+
+  /** 解析 `bindings`（§3.4）。只留白名单字段 + `$` 引用；其余一律"警告 + 忽略" */
+  function parseBindings(raw, warnings) {
+    const out = {};
+    if (raw === undefined || raw === null) return out;
+    if (typeof raw !== "object" || Array.isArray(raw)) {
+      warnings.push("`bindings` 必须是一个对象（`{ 节点id: { 字段: \"$变量\" } }`）—— 已忽略该段");
+      return out;
+    }
+    Object.keys(raw).forEach(nid => {
+      const spec = raw[nid];
+      if (spec === null || typeof spec !== "object" || Array.isArray(spec)) {
+        warnings.push("bindings." + nid + " 不是一个对象 —— 已忽略");
+        return;
+      }
+      const one = {};
+      Object.keys(spec).forEach(p => {
+        const v = spec[p];
+        if (p.charAt(0) === window.MODE_RAW_PREFIX) {
+          // §3.4 的 @component / @variant：**阶段 2** 的血缘字段。
+          // 如实说"本版本不解析"，不要静默收下 —— 静默收下会让用户以为组件已经联动。
+          warnings.push("bindings." + nid + "." + p + " 是阶段 2 的组件血缘字段 —— 本版本不解析，已忽略");
+          return;
+        }
+        if (!window.bindableField(p)) {
+          warnings.push("bindings." + nid + "." + p + " 不在可绑定白名单里（本版本只支持："
+            + window.BINDABLE_FIELD_PATHS.join(" / ") + "）—— 已忽略");
+          return;
+        }
+        if (!window.isTokenRef(v)) {
+          warnings.push("bindings." + nid + "." + p + " 的值 " + trimNum(v)
+            + " 不是变量引用（要以 `$` 开头）—— 已忽略");
+          return;
+        }
+        one[p] = v;
+      });
+      if (Object.keys(one).length) out[nid] = one;
+    });
+    return out;
+  }
+
+  /**
+   * 每个绑定条目引用的变量**必须存在**（§5 的表：错误）。
+   *
+   * 为什么是错误而不是"回落默认值"：绑定指向一个不存在的变量时，
+   * 这个字段到底该显示什么**没有正确答案** —— 而 App 侧拿到的是
+   * "上一次写进去的字面值"，看起来一切正常。报出来，别让它烂在文件里。
+   */
+  function checkBindingRefs(bindings, tokens, errors) {
+    const names = {};
+    tokens.forEach(t => { names[t.id] = true; if (t.name) names[t.name] = true; });
+    Object.keys(bindings).forEach(nid => {
+      Object.keys(bindings[nid]).forEach(p => {
+        const ref = bindings[nid][p];
+        if (!names[window.tokenRefName(ref)]) {
+          errors.push("bindings." + nid + " 引用了不存在的变量 " + ref);
+        }
+      });
+    });
+  }
+
+  /**
+   * **`nodes` 里永远不出现 `$` 引用**（§3.1 的核心不变式 / §4.2）。
+   *
+   * 这条是「App 零改动」的全部依据：App 不认识 `$`，拿到引用串会**静默回落**
+   * 成默认色 —— 不报错、不崩，就是颜色不对，直到推上设备才发现。
+   *
+   * ## v2.80.1：按字段分**两档**（原来的"一律硬错误"会把文件锁死）
+   *
+   * | 字段 | 判据 | 为什么 |
+   * |---|---|---|
+   * | `font.color` / `labelFont.color` / `card.radius` / `card.alpha` | **硬错误** | 合法值是 `#RRGGBB` 或数字，**不可能有字面 `$`** —— 出现 `$` 必然是调试期笔误，硬错误能立刻抓住 |
+   * | `text` | **警告** | `$100` / `$PID` 是**正常内容**。硬错误 = 用户的文件打不开，而这个项目最怕的就是"文件打不开 / 画布是空的" |
+   *
+   * ⚠️ **降为警告仍然满足 §4.2「不静默」的初衷** —— 问题照样被报出来了，
+   * 只是不再用"打不开文件"这种代价最高、而收益最低的方式报。
+   * 文案必须说清**怎么办**（`$$` 转义 / 补 bindings 条目），否则用户只知道"有问题"。
+   *
+   * @param roots    [{ list, path }]，path 是报错文案里的前缀（`nodes` / `pages[0].nodes`）
+   * @param bindings 解析后的 bindings（判"这条引用有没有被声明"）
+   * @param errors   硬错误（颜色/数值）
+   * @param warnings 软警告（`text`）
+   */
+  function checkDollarInNodes(roots, bindings, errors, warnings) {
+    roots.forEach(root => {
+      walkNodes(root.list, root.path, (n, npath) => {
+        const spec = bindings[n.id];
+        window.BINDABLE_FIELD_PATHS.forEach(p => {
+          const v = getFieldPath(n, p);
+          // ⚠️ `text` 用 [window.isTextTokenRef]：`$$100` 是**转义**，不是引用。
+          // 颜色/数值用 [window.isTokenRef]（判据不变，`$$` 在那些字段上没有意义）。
+          const isRef = (p === "text") ? window.isTextTokenRef(v) : window.isTokenRef(v);
+          if (!isRef) return;
+          if (spec && window.isTokenRef(spec[p])) return;   // 绑定里写了这条 → 正常状态
+          if (p === "text") {
+            // ⚠️ 文案要给出**两条出路**，缺一条用户就只会来问"那我该怎么办"。
+            // `$$` 那条把原来的串原样带上（`$100` → `$$100`），用户直接抄。
+            warnings.push(npath + ".text 是 `" + v + "`，但 bindings 里没有这条 —— "
+              + "如果这是要显示的字面 `$`，请写成 `" + window.TEXT_DOLLAR_ESCAPE + v.slice(1) + "`；"
+              + "如果是要绑定变量，请给这个节点加 bindings 条目（`\"text\": \"" + v + "\"`）。"
+              + "文件照常打开，这段文字现在按原样显示。");
+            return;
+          }
+          errors.push(npath + "." + p + " 是 `" + v + "`，但 bindings 里没有这条 —— "
+            + "引用不能写在 nodes 里（nodes 是编译产物，必须是字面值）");
+        });
+      });
+    });
+  }
+
+  /**
+   * **漂移检测**（§5）：`nodes` 里的实际值与 bindings 推出来的值不一致 → **警告**。
+   *
+   * > 为什么只算警告：手改 JSON 是合法用法（本工具的定位就是"JSON 能直接改"）。
+   * > 只是这种改法会被 bindings 覆盖 —— 所以要**报出来**，让用户知道自己的改动去哪了。
+   *
+   * 字段在 nodes 里**不存在**时不报：那只是"还没写过值"，不是漂移。
+   *
+   * ⚠️ v2.80.1：比较的是**显示值**，`text` 上的 `$$` 转义先解开（与 [window.resolveDesign]
+   * 同一条规则）。否则 `nodes` 里写 `$$100`、而变量值正好是 `$100` 时，
+   * 两者**显示完全相同**却会被报成漂移 —— 假警告比不报更伤（用户会去改一个本来对的地方）。
+   */
+  function checkDrift(roots, bindings, st, warnings) {
+    Object.keys(bindings).forEach(nid => {
+      const spec = bindings[nid];
+      roots.forEach(root => {
+        walkNodes(root.list, root.path, (n, npath) => {
+          if (n.id !== nid) return;
+          Object.keys(spec).forEach(p => {
+            const ref = spec[p];
+            const t = st.byId[window.tokenRefName(ref)] || st.byName[window.tokenRefName(ref)];
+            if (!t) return;                       // 变量不存在：已经报过硬错误了
+            const field = window.bindableField(p);
+            const want = window.coerceTokenValue(field.type, st.cur[t.id]);
+            if (want === undefined) return;       // 变量没值：解析时也跳过，不算漂移
+            const raw = getFieldPath(n, p);
+            if (raw === undefined) return;        // 还没写过值
+            if (displayValue(p, raw) === displayValue(p, want)) return;
+            warnings.push(n.id + " 的 " + p + " 在 nodes 里是 " + trimNum(raw)
+              + "，但 bindings 指向 " + ref + "（= " + trimNum(want) + "）。已按 bindings 重建。");
+          });
+        });
+      });
+    });
+  }
+
+  /** 漂移比较用的"显示值"：只有 `text` 上的 `$$` 转义需要先解开 */
+  function displayValue(path, v) {
+    return (path === "text") ? window.unescapeTextDollar(v) : v;
+  }
+
+  /** 深度优先遍历节点树（含子树），带上报错用的字段路径 */
+  function walkNodes(list, prefix, fn) {
+    if (!Array.isArray(list)) return;
+    list.forEach((n, i) => {
+      if (n === null || typeof n !== "object") return;
+      fn(n, prefix + "[" + i + "]");
+      walkNodes(n.children, prefix + "[" + i + "].children", fn);
+    });
+  }
+
+  /** 读字段路径的值（`card.radius`）；中间层不是对象就返回 undefined */
+  function getFieldPath(node, path) {
+    const i = path.indexOf(".");
+    if (i < 0) return node[path];
+    const head = node[path.slice(0, i)];
+    return (head && typeof head === "object") ? head[path.slice(i + 1)] : undefined;
   }
 
   // ================================================================ 布局自检

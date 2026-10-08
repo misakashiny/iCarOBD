@@ -539,8 +539,14 @@ data class DesignFile(
                 )
                 return Background(path, FIT_FILL)
             }
-            // 绝对路径在本机不存在是常态，只提示
-            if (!java.io.File(path).isFile) {
+            // ⚠️ **只对绝对路径做"文件在不在"的检查**（v1.20.9 修）。
+            //
+            // 相对路径（`assets/背景.png`）要拼上 `designBaseDir` 才谈得上"存不存在"，
+            // 而那是导入之后才有的事 —— 在这里拿 `java.io.File(相对路径).isFile`
+            // 判的是**进程的当前工作目录**，永远为 false，于是每一份带背景的 v2 设计
+            // 都会凭空多一条"文件不存在"。假警报的代价是用户学会无视整个警告列表，
+            // 而这一版（设计包导入）恰恰要靠这个列表说清"缺了哪个素材"。
+            if (path.startsWith("/") && !java.io.File(path).isFile) {
                 warnings.add(
                     "background.path 指向的文件在本机不存在：`$path` —— " +
                         "请用「风格 → 选择背景图片」重新选一张（仪表布局不受影响）"

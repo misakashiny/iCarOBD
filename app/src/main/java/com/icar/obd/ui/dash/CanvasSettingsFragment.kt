@@ -17,6 +17,7 @@ import com.google.android.material.materialswitch.MaterialSwitch
 import com.icar.obd.R
 import com.icar.obd.data.AppLog
 import com.icar.obd.data.DashCanvas
+import com.icar.obd.data.GestureActions
 import com.icar.obd.data.Store
 import com.icar.obd.obd.ObdController
 import com.icar.obd.ui.DashFragment
@@ -55,9 +56,30 @@ class CanvasSettingsFragment : Fragment() {
     private lateinit var btnTheme: MaterialButton
     private lateinit var btnLook: MaterialButton
     private lateinit var btnPoll: MaterialButton
+    private lateinit var btnGestures: MaterialButton
+    private lateinit var tvGestureSummary: TextView
     private lateinit var swSound: MaterialSwitch
     private lateinit var btnNameLabel: MaterialButton
     private lateinit var tvLastImport: TextView
+
+    /**
+     * **正在程序化回填控件状态**（v1.20.9 修）。
+     *
+     * ## 为什么必须有这个标志
+     *
+     * 病根不是某一句 Toast，而是**"程序化恢复控件状态会触发用户操作的副作用"**。
+     * 具体这一条：`refresh()` 里 `swSound.isChecked = Store.settings.soundEnabled`
+     * 会走一遍 `OnCheckedChangeListener` —— 于是**在别处（连接页）改过音效之后**，
+     * 一滑到设置页就会弹一次「音效已开」。
+     *
+     * 所以判据是"这次变化是不是用户点的"，而不是"值有没有变"：
+     * `if (swSound.isChecked != ...)` 那种写法**挡不住**真正的场景
+     * （值确实不同，正是需要恢复的时候）。
+     *
+     * 用标志位而不是"临时摘监听器"：摘/挂之间一旦抛异常，监听器就永久丢了，
+     * 表现是"这个开关从此点不动"。`try/finally` 保证一定会复位。
+     */
+    private var binding = false
 
     /** 轮询间隔候选。**给选项而不是让用户敲数字** —— 这个值直接决定总线负载 */
     private val pollChoices = listOf(60, 80, 100, 120, 150, 200, 250, 300)
@@ -81,28 +103,118 @@ class CanvasSettingsFragment : Fragment() {
     }
 
     /**
-     * 导入设计文件（`icar.ui/1` / `2`，由 `tools/theme-studio/` 产出）。
+     * 导入**设计文件**（`icar.ui/1` / `2`）或**设计包**（`.icarzip`），
+     * 都由 `tools/theme-studio/` 产出。
      *
      * 走 SAF（`OpenDocument`），**不需要任何存储权限** —— 与「从文件恢复备份」同一套。
+     *
+     * ## 为什么要**自动识别**而不是加第二个按钮
+     *
+     * `.icarzip` 就是 zip，只是扩展名不同（工具侧这么定是为了让人一眼认出来）。
+     * 让用户先自己判断"我该点哪个导入"，等于把格式知识推给他 ——
+     * 而他手上的文件是哪一个，**文件头就能回答**（[DesignPack.isZipHead]）。
+     * 多一个按钮还多一条"点错了"的路。
      */
     private val openDesignFile = registerForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri == null) return@registerForActivityResult
+        val ctx = requireContext()
+        // 文件名要**先记下来**：`importDesign` 会弹确认框，用户点「导入」之后
+        // 才走 applyDesign —— 那时 uri 已经不在作用域里了（v1.20.6）
+        pendingImportName = com.icar.obd.ui.SafFile.displayName(ctx, uri, "未命名设计")
+        val head = readHead(uri, 4)
+        if (com.icar.obd.data.DesignPack.isZipHead(head)) {
+            importPack(uri)
+            return@registerForActivityResult
+        }
         val text = runCatching {
-            requireContext().contentResolver.openInputStream(uri)
+            ctx.contentResolver.openInputStream(uri)
                 ?.bufferedReader()?.use { it.readText() }
         }.getOrNull()
         if (text.isNullOrBlank()) {
             ObdController.toast("读取文件失败")
             return@registerForActivityResult
         }
-        // 文件名要**先记下来**：`importDesign` 会弹确认框，用户点「导入」之后
-        // 才走 applyDesign —— 那时 uri 已经不在作用域里了（v1.20.6）
-        pendingImportName = com.icar.obd.ui.SafFile.displayName(
-            requireContext(), uri, "未命名设计.json"
-        )
         importDesign(text)
+    }
+
+    /** 读文件头 n 个字节（用来判"这是不是 zip"）。读不到就返回空数组 */
+    private fun readHead(uri: android.net.Uri, n: Int): ByteArray = runCatching {
+        requireContext().contentResolver.openInputStream(uri)?.use { ins ->
+            val b = ByteArray(n)
+            var off = 0
+            while (off < n) {
+                val r = ins.read(b, off, n - off)
+                if (r < 0) break
+                off += r
+            }
+            if (off == n) b else b.copyOf(off)
+        } ?: ByteArray(0)
+    }.getOrDefault(ByteArray(0))
+
+    /**
+     * **设计包（`.icarzip`）导入**（v1.20.9）。
+     *
+     * 三步：解压到 `files/design/<时间戳>/` → 按 manifest 校验（格式版本 /
+     * 字节数 / CRC32）→ 把 `designBaseDir` 指到解压目录后走**现有的** [importDesign]。
+     *
+     * ⚠️ `designBaseDir` **要等用户点「导入」才写**（见 [applyDesign] 的 `baseDirOverride`）：
+     * 一解开就写的话，用户点「取消」也会把当前这套画布的素材基目录换掉 ——
+     * 表现为"我只是看了一眼那个包，现在的表盘变空了"。
+     */
+    private fun importPack(uri: android.net.Uri) {
+        val ctx = requireContext()
+        val dest = java.io.File(ctx.filesDir, "design/${System.currentTimeMillis()}")
+        val r = runCatching {
+            ctx.contentResolver.openInputStream(uri)?.use {
+                com.icar.obd.data.DesignPack.unpack(it, dest)
+            }
+        }.getOrNull()
+        if (r == null) {
+            showPackFailure(listOf("读不到这个文件（SAF 打开输入流失败）—— 换个位置再试一次"))
+            return
+        }
+        when (r) {
+            is com.icar.obd.data.DesignPack.Result.Fail -> {
+                AppLog.w(
+                    AppLog.M_UI, "设计包拒收",
+                    "文件=$pendingImportName 问题=${r.problems.size} 首条=${r.problems.firstOrNull()}"
+                )
+                showPackFailure(r.problems)
+            }
+            is com.icar.obd.data.DesignPack.Result.Ok -> {
+                AppLog.i(
+                    AppLog.M_UI, "已解开设计包",
+                    "文件=$pendingImportName 目录=${r.dir.absolutePath} " +
+                        "素材=${r.manifest.assets.size} 解出=${r.extractedFiles} " +
+                        "警告=${r.warnings.size} 设计=${r.manifest.designName}"
+                )
+                // 包自己的说明放在确认框里：用户在这里才第一次看到"这份包里有什么"
+                val notes = ArrayList<String>()
+                notes += "已解开设计包：${r.manifest.assets.size} 个素材（解出 ${r.extractedFiles} 个文件）" +
+                    "，素材目录已就位"
+                if (r.manifest.designName.isNotBlank()) {
+                    notes += "包内设计名：${r.manifest.designName}"
+                }
+                notes += r.warnings
+                importDesign(r.designJson, r.dir.absolutePath, notes)
+            }
+        }
+    }
+
+    /** 设计包拒收时的结果对话框：**逐条列出**哪个文件、为什么 */
+    private fun showPackFailure(problems: List<String>) {
+        val msg = buildString {
+            append("这份设计包**没有导入**，有 ").append(problems.size).append(" 个问题：\n\n")
+            problems.forEach { append("· ").append(it).append('\n') }
+            append("\n当前画布一个字都没动。")
+        }
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("设计包有问题")
+            .setMessage(msg.trim())
+            .setPositiveButton("知道了", null)
+            .show()
     }
 
     /** 正在导入的这份设计文件的显示名（见 [openDesignFile]） */
@@ -169,6 +281,8 @@ class CanvasSettingsFragment : Fragment() {
         btnTheme = view.findViewById(R.id.btnCanvasTheme)
         btnLook = view.findViewById(R.id.btnCanvasLook)
         btnPoll = view.findViewById(R.id.btnPollInterval)
+        btnGestures = view.findViewById(R.id.btnGestures)
+        tvGestureSummary = view.findViewById(R.id.tvGestureSummary)
         swSound = view.findViewById(R.id.swSound)
         btnNameLabel = view.findViewById(R.id.btnNameLabel)
         tvLastImport = view.findViewById(R.id.tvLastImport)
@@ -177,18 +291,34 @@ class CanvasSettingsFragment : Fragment() {
         // 导入 / 导出画布（v1.20.2）：与电脑上的 tools/theme-studio 对接的入口。
         // 从"画布外观"菜单里搬出来做成常驻一行 —— 用户明确要求"做成一行、好配合网页版工具"。
         btnImportCanvas.setOnClickListener {
-            openDesignFile.launch(arrayOf("application/json", "text/plain", "*/*"))
+            // ⚠️ 必须带上 `*/*`：`.icarzip` 没有公认的 MIME（多半被报成
+            // `application/octet-stream` 甚至空），按类型过滤会让用户在文件选择器里
+            // **看不到自己刚导出的那个包**。多列几个已知 zip 类型只是为了让它们
+            // 在有图标/有排序的选择器里更靠前，不是过滤条件。
+            openDesignFile.launch(
+                arrayOf(
+                    "application/json", "text/plain",
+                    "application/zip", "application/x-zip-compressed",
+                    "*/*"
+                )
+            )
         }
         btnExportCanvas.setOnClickListener { exportDesign() }
         btnTheme.setOnClickListener { showThemePicker() }
         btnLook.setOnClickListener { showLookMenu() }
         btnPoll.setOnClickListener { showPollDialog() }
+        btnGestures.setOnClickListener { showGestureDialog() }
         btnNameLabel.setOnClickListener { showNamePosDialog() }
         swSound.setOnCheckedChangeListener { _, checked ->
+            // 程序化回填（见 [binding]）**不是用户操作**，不许产生任何副作用 ——
+            // v1.20.9 之前这里没有这道闸，于是"在别处改过音效后滑到设置页"
+            // 会弹一次「音效已开」。
+            if (binding) return@setOnCheckedChangeListener
             Store.settings.soundEnabled = checked
             Store.saveSettings()
             ObdController.applySoundEnabled()
-            ObdController.toast(if (checked) "音效已开" else "音效已关")
+            // ⚠️ 这里**刻意不弹 Toast**（用户明确要求，v1.20.9）：
+            // 开关自己的位置就是反馈，再弹一条只是噪声。
         }
 
         refresh()
@@ -225,8 +355,28 @@ class CanvasSettingsFragment : Fragment() {
         append(" · 主题 ").append(GaugeTheme.of(c.theme).title)
     }
 
+    /**
+     * 把「当前状态」回填到界面。
+     *
+     * ⚠️ **回填期间 [binding] = true**（v1.20.9）：这一页上带着
+     * `OnCheckedChangeListener` 的控件，程序化赋值**也会**走一遍回调，
+     * 于是"在别处改过音效 → 滑到设置页"会弹一次「音效已开」。
+     * 判据是"这次变化是不是用户点的"，所以闸门开在**整段回填**上，
+     * 而不是逐个控件去比"值变没变"（值确实不同，正是需要恢复的时候）。
+     *
+     * 以后往这里加带监听的控件时，**副作用一律要先判 [binding]**。
+     */
     private fun refresh() {
         if (view == null) return
+        binding = true
+        try {
+            refreshInner()
+        } finally {
+            binding = false
+        }
+    }
+
+    private fun refreshInner() {
         val canvases = Store.settings.canvases
         val activeId = Store.settings.activeCanvasId
 
@@ -255,6 +405,9 @@ class CanvasSettingsFragment : Fragment() {
         }
         btnPoll.text = "轮询间隔：${Store.settings.pollIntervalMs} ms"
         btnNameLabel.text = "画布名浮标：${DashCanvas.namePosName(Store.settings.canvasNamePos)}"
+        // 手势那一行：按钮只写"手势"，映射写在下面一行小字里 ——
+        // 4 个方向全塞进按钮文字会很长，而这一页的按钮都是等宽的
+        tvGestureSummary.text = Store.settings.gestureSummary()
         if (swSound.isChecked != Store.settings.soundEnabled) {
             swSound.isChecked = Store.settings.soundEnabled
         }
@@ -669,8 +822,15 @@ class CanvasSettingsFragment : Fragment() {
      * 所以有硬错误时可以精确告诉用户"第几块表的哪个字段错了"，
      * 而不是笼统地"导入失败"。软警告也要显示出来（比如背景路径在本机不存在）——
      * 那些是**能加载但效果可能不是你想要的**，瞒着用户反而更糟。
+     *
+     * @param packBaseDir 来自**设计包**时，解压目录（点「导入」后才写进 `designBaseDir`）
+     * @param packNotes 来自设计包时的说明行（已解开几个素材 / 哪些素材本来就缺）
      */
-    private fun importDesign(text: String) {
+    private fun importDesign(
+        text: String,
+        packBaseDir: String = "",
+        packNotes: List<String> = emptyList()
+    ) {
         val r = com.icar.obd.data.DesignFile.parse(text)
         val msg = buildString {
             if (!r.ok) {
@@ -686,6 +846,12 @@ class CanvasSettingsFragment : Fragment() {
                 d.background?.let { b ->
                     append("· 背景：").append(com.icar.obd.data.DesignFile.fitName(b.fit)).append('\n')
                 }
+                // 设计包：素材**已经解压好了**，所以导入后不该再有"素材加载不到"
+                // 这个未知数 —— 把解压结果和缺的东西都摆在这里（v1.20.9）
+                if (packBaseDir.isNotBlank()) {
+                    append("\n📦 设计包（素材已解压，导入后直接可用）：\n")
+                    packNotes.forEach { append("· ").append(it).append('\n') }
+                }
                 if (r.warnings.isNotEmpty()) {
                     append("\n⚠️ ").append(r.warnings.size).append(" 条提示（不影响导入）：\n")
                     r.warnings.forEach { append("· ").append(it).append('\n') }
@@ -693,10 +859,20 @@ class CanvasSettingsFragment : Fragment() {
             }
         }
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle(if (r.ok) "导入设计文件" else "设计文件有错误")
+            .setTitle(
+                when {
+                    !r.ok -> "设计文件有错误"
+                    packBaseDir.isNotBlank() -> "导入设计包"
+                    else -> "导入设计文件"
+                }
+            )
             .setMessage(msg.trim())
             .apply {
-                if (r.ok) setPositiveButton("导入") { _, _ -> applyDesign(r.design!!, text) }
+                if (r.ok) {
+                    setPositiveButton("导入") { _, _ ->
+                        applyDesign(r.design!!, text, baseDirOverride = packBaseDir)
+                    }
+                }
                 setNegativeButton(if (r.ok) "取消" else "知道了", null)
             }
             .show()
@@ -706,8 +882,20 @@ class CanvasSettingsFragment : Fragment() {
     private fun applyDesign(
         d: com.icar.obd.data.DesignFile,
         rawText: String = "",
-        fileName: String = ""
+        fileName: String = "",
+        /**
+         * 来自**设计包**的素材基目录（v1.20.9）。
+         *
+         * 为什么在这里写、而不是一解开包就写：用户点「取消」时不该有任何副作用。
+         * 一解开就写的话，"我只是看了一眼那个包"会把当前这套画布的素材基目录换掉 ——
+         * 而 `designBaseDir` 变了，**当前**盘面的相对路径素材立刻就解析不到了。
+         *
+         * 必须在下面算背景路径（[resolveDesignPath]）**之前**赋值。
+         */
+        baseDirOverride: String = ""
     ) {
+        if (baseDirOverride.isNotBlank()) Store.settings.designBaseDir = baseDirOverride
+
         // 布局：整体替换当前这一套画布的自定义仪表
         Store.customGauges.clear()
         Store.customGauges.addAll(d.gauges)
@@ -969,6 +1157,88 @@ class CanvasSettingsFragment : Fragment() {
                 Store.saveSettings()
                 refresh()
                 ObdController.toast("轮询间隔：$v ms（下一次轮询即生效）")
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /**
+     * **双指手势 → 动作**（v1.20.9）。
+     *
+     * ## 为什么是 4 个 Spinner，而不是"点一行弹一次列表"
+     *
+     * 4 个手势 × 5 个动作是个小矩阵，一次看全比点 4 次、每次记着上次选了什么要好。
+     * 而且这里**刻意不用 `setMessage` + 列表**（本项目踩过：`MaterialAlertDialogBuilder`
+     * 同时收到 message 与列表时**列表会被整个丢掉**，见 [showNamePosDialog] 的说明）。
+     *
+     * ## 这一页只负责**编辑这张表**
+     *
+     * 执行在 `MainActivity.runGesture`（唯一一处）。设置页要是自己也执行一遍，
+     * 迟早会出现"设置页显示的映射"与"真的执行的动作"不一致。
+     *
+     * ## 为什么"双击兜底"不在这里
+     *
+     * 双击呼出导航是**"卡在仪表盘出不去"的保险**，不可关。放进这张可配置表里，
+     * 用户把它设成「无」之后就真的没有出路了（双指手势本身在真机上是否灵敏，
+     * 是这一版还没法用 adb 验的事）。
+     */
+    private fun showGestureDialog() {
+        val ctx = requireContext()
+        val density = ctx.resources.displayMetrics.density
+        val pad = (density * 20).toInt()
+
+        val root = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+        }
+        root.addView(TextView(ctx).apply {
+            text = "双指滑动才触发（旁听，不抢单指操作）。\n" +
+                "切画布只在仪表盘页生效；「双击」始终是呼出导航的兜底，不可改。"
+            textSize = 12f
+            setTextColor(androidx.core.content.ContextCompat.getColor(ctx, R.color.text_secondary))
+        })
+
+        val spinners = ArrayList<Spinner>(GestureActions.SLOT_COUNT)
+        for (slot in 0 until GestureActions.SLOT_COUNT) {
+            root.addView(TextView(ctx).apply {
+                text = GestureActions.SLOT_NAMES[slot]
+                textSize = 12f
+                setPadding(0, (density * 12).toInt(), 0, 0)
+            })
+            val sp = Spinner(ctx).apply {
+                adapter = ArrayAdapter(
+                    ctx, android.R.layout.simple_spinner_dropdown_item, GestureActions.ACTION_NAMES
+                )
+                // ⚠️ 先设选项、**不挂监听**（与 ConnectFragment 的"先设选项再挂监听"同一条约定）：
+                // 程序化 setSelection 也会触发 onItemSelected，挂了监听就等于
+                // 每次打开对话框都白写一次配置 —— 与任务 1 修的是同一类病。
+                setSelection(GestureActions.actionIndex(Store.settings.gestureAt(slot)))
+            }
+            root.addView(sp)
+            spinners.add(sp)
+        }
+
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle("双指手势（全局）")
+            .setView(root)
+            .setPositiveButton("确定") { _, _ ->
+                var changed = false
+                for (slot in 0 until GestureActions.SLOT_COUNT) {
+                    val id = GestureActions.ACTION_IDS[
+                        spinners[slot].selectedItemPosition.coerceIn(0, GestureActions.ACTION_IDS.lastIndex)
+                    ]
+                    if (id != Store.settings.gestureAt(slot)) {
+                        Store.settings.setGestureAt(slot, id)
+                        changed = true
+                    }
+                }
+                if (changed) Store.saveSettings()
+                refresh()
+                AppLog.i(
+                    AppLog.M_UI, "双指手势设置",
+                    "changed=$changed ${Store.settings.gestureSummary()}"
+                )
+                ObdController.toast(Store.settings.gestureSummary())
             }
             .setNegativeButton("取消", null)
             .show()

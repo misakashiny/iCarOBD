@@ -19,6 +19,7 @@ import com.icar.obd.R
 import com.icar.obd.ble.ObdTransport
 import com.icar.obd.ble.ObdTransport.State
 import com.icar.obd.data.AppLog
+import com.icar.obd.data.GestureActions
 import com.icar.obd.data.Store
 import com.icar.obd.obd.ObdController
 import com.icar.obd.obd.VehicleBus
@@ -455,10 +456,10 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
         )
     }
 
-    // ------------------------------------------------ 双指手势呼出导航（v1.20.4）
+    // ------------------------------------------------ 双指手势（v1.20.4 / 可配置 v1.20.9）
 
     /**
-     * **双指横滑**呼出 / 收起导航栏。
+     * **双指手势**：4 个方向各绑一个动作，映射表在 [Store.settings]（[GestureActions]）。
      *
      * ## 为什么把"左边缘把手"整个停用
      *
@@ -475,8 +476,10 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
      * 透明 View 要"看着"双指就得消费 DOWN —— 那样单指手势会被它吃掉；
      * 返回 false 又收不到后续的 MOVE。而 `dispatchTouchEvent` 能**旁听全部触摸
      * 且不消费**（照旧交给 super），这才是"加一个手势"该有的侵入性。
+     * **v1.20.9 加的三个方向仍然走这条路** —— 不许改成消费事件。
      */
     private var twoFingerStartX = 0f
+    private var twoFingerStartY = 0f
     private var twoFingerHandled = false
 
     /**
@@ -491,6 +494,9 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
      * 所以再给一条**单指也能用**的路：**双击画布**呼出导航。
      * 它不与任何已有手势冲突（拖表盘是"按下-移动"，横滑是"按下-快滑"，
      * 都不产生"两次快速点按"）。
+     *
+     * ⚠️ **它不在可配置的那张表里**（v1.20.9）：这是"出不去"的保险，
+     * 让用户能把它设成「无」等于把保险拆了。
      */
     private var lastTapMs = 0L
     private var lastTapX = 0f
@@ -510,24 +516,69 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
         return x >= nav.left && x <= nav.right && y >= nav.top && y <= nav.bottom
     }
 
+    /**
+     * 执行一个手势槽位绑定的动作。**这是全项目唯一一处执行双指手势动作的地方。**
+     *
+     * 设置页只编辑 `Store.settings` 里那张表 —— 那边要是也执行一遍，
+     * 迟早出现"设置页显示的映射"与"真的执行的动作"不一致。
+     *
+     * "切画布"要**先判当前页**：它只在仪表盘页有意义。在 PID/日志页上切当前画布，
+     * 用户看不到任何变化却改了配置 —— 那是最糟的一种"静默生效"。
+     */
+    private fun runGesture(slot: Int) {
+        val action = Store.settings.gestureAt(slot)
+        val gesture = GestureActions.SLOT_NAMES[slot.coerceIn(0, GestureActions.SLOT_COUNT - 1)]
+        when (action) {
+            GestureActions.NAV_SHOW -> {
+                revealRail()
+                AppLog.i(AppLog.M_UI, "$gesture：呼出导航", "page=${currentTag()}")
+            }
+            GestureActions.NAV_HIDE -> {
+                setRailVisible(false)
+                AppLog.i(AppLog.M_UI, "$gesture：收起导航", "page=${currentTag()}")
+            }
+            GestureActions.CANVAS_PREV, GestureActions.CANVAS_NEXT -> {
+                val delta = if (action == GestureActions.CANVAS_NEXT) 1 else -1
+                if (currentTag() != "dash") {
+                    // **不静默**：用户在别的页上划了一下却什么都没发生，会以为手势坏了
+                    ObdController.toast("切画布只在仪表盘页生效")
+                    AppLog.i(
+                        AppLog.M_UI, "$gesture：切画布被忽略",
+                        "page=${currentTag()}（只在仪表盘页有意义）"
+                    )
+                } else {
+                    dashFragment()?.stepCanvas(delta)
+                }
+            }
+            else -> AppLog.d(
+                AppLog.M_UI, "$gesture：未绑定动作",
+                "到「仪表盘 → 设置 → 手势」里改"
+            )
+        }
+    }
+
+    /** 仪表盘页（`switchTo` 用的 tag 就是 "dash"） */
+    private fun dashFragment(): DashFragment? =
+        supportFragmentManager.findFragmentByTag("dash") as? DashFragment
+
     override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
-        // ---- 双指横滑 ----
+        // ---- 双指手势（旁听，不消费）----
         if (ev.pointerCount >= 2) {
             when (ev.actionMasked) {
                 android.view.MotionEvent.ACTION_POINTER_DOWN -> {
                     twoFingerStartX = (ev.getX(0) + ev.getX(1)) / 2f
+                    twoFingerStartY = (ev.getY(0) + ev.getY(1)) / 2f
                     twoFingerHandled = false
                 }
                 android.view.MotionEvent.ACTION_MOVE -> if (!twoFingerHandled) {
                     val dx = (ev.getX(0) + ev.getX(1)) / 2f - twoFingerStartX
-                    if (dx > dp(48)) {
-                        twoFingerHandled = true
-                        revealRail()
-                        AppLog.i(AppLog.M_UI, "双指右滑：呼出导航", "page=${currentTag()}")
-                    } else if (dx < -dp(48)) {
-                        twoFingerHandled = true
-                        setRailVisible(false)
-                        AppLog.i(AppLog.M_UI, "双指左滑：收起导航", "page=${currentTag()}")
+                    val dy = (ev.getY(0) + ev.getY(1)) / 2f - twoFingerStartY
+                    // 方向判定是纯函数（有单测）：先比主轴再比阈值 —— 双指"斜着划"很常见，
+                    // 反过来判会把它一律当成横滑
+                    val slot = GestureActions.slotOf(dx, dy, dp(48).toFloat())
+                    if (slot >= 0) {
+                        twoFingerHandled = true   // 一次触摸只触发一个动作
+                        runGesture(slot)
                     }
                 }
             }

@@ -210,6 +210,32 @@
                 android:text="轮询间隔"
                 android:textSize="13sp" />
 
+            <!--
+                双指手势（v1.20.9）：4 个方向各选一个动作。
+
+                为什么按钮下面还要单独一行小字写"当前映射"：
+                用户改完映射之后，界面上得有一眼能看到的痕迹（与「最近一次导入」
+                同一套考虑）—— 4 个方向全塞进按钮文字会很长，而这一页的按钮都是等宽的。
+            -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnGestures"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:layout_marginTop="6dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:text="手势"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tvGestureSummary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="@color/text_dim"
+                android:textSize="11sp" />
+
             <com.google.android.material.materialswitch.MaterialSwitch
                 android:id="@+id/swSound"
                 android:layout_width="match_parent"

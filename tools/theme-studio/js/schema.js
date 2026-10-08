@@ -363,6 +363,20 @@ window.normalizeFont = function (f) {
     ? Number(o.weight) : window.FONT_DEFAULT.weight;
   o.italic = !!o.italic;
   o.letterSpacing = Math.max(-10, Math.min(50, Number(o.letterSpacing) || 0));
+  // ⚠️ **变量引用串原样保留，不回落默认色**（v2.80.0，规格 §4.2）。
+  //
+  // 原来这一行的判据是"不是 `#RRGGBB` 就回落默认色，不报错"——
+  // 于是 `"$accent"` 一旦流到这里就被**无声吃掉**：画布上显示 `#E8EEF7`，
+  // 用户以为"绑定没生效"，而工具一声不吭。这是本项目最该避免的失效方式。
+  //
+  // 现在：引用串原样留着，交给 `validate.js` 去报**硬错误**
+  //（"nodes 里出现 `$` 且 bindings 里没有对应条目"）。
+  // 把"颜色悄悄变默认"变成"校验报错"——前者不可发现，后者可以。
+  //
+  // ⚠️ **这里是颜色，不认 `$$` 转义**（v2.80.1）：颜色字段的合法值是 `#RRGGBB`，
+  // 不可能有"字面 `$`"这种正常内容，所以 `$$accent` 仍然算引用、仍然硬错误。
+  // 只有 `text` 走 [window.isTextTokenRef] / [window.unescapeTextDollar]。
+  if (window.isTokenRef(o.color)) return o;
   if (typeof o.color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(o.color)) o.color = window.FONT_DEFAULT.color;
   return o;
 };
@@ -451,6 +465,513 @@ window.THEME_COLOR_FIELDS = [
   { k: "label",      n: "标签" },
   { k: "dim",        n: "次要文字" },
 ];
+
+/* ==========================================================================
+   变量（tokens）/ 模式（modes）/ 绑定（bindings）—— 设计系统的基础设施
+   --------------------------------------------------------------------------
+   规格：[`docs/下一步-变量模式与组件变体.md`](../../../docs/下一步-变量模式与组件变体.md) §3 ~ §5。
+   本节只做**纯逻辑**（解析 / 迁移 / 求值），不碰 DOM、不写文件 ——
+   真正把四个新顶层键**写出**是 `model.js` 的下一步（本轮刻意不做）。
+
+   ⚠️ **核心不变式（§3.1，写死不许破）**：
+     `nodes` / `pages[].nodes` 里**永远不出现 `$` 引用**，也不出现 `instance` 节点。
+     它们是编译产物，由 tokens + modes + activeMode + bindings + library 唯一决定。
+     这条是「App 零改动」的全部依据。
+
+   ⚠️ **v2.80.1 补充：`text` 上的 `$$` 是转义，`$` 未绑定只警告**（见 [unescapeTextDollar]）
+      · `text` 字段里**开头的 `$$`** = 一个字面 `$`（`$$100` → 显示 `$100`）
+      · `text` 上"以 `$` 开头但没有 bindings 条目" → **警告**（不是硬错误），文件照常打开
+      · 颜色 / 数值字段（`font.color` / `labelFont.color` / `card.radius` / `card.alpha`）
+        **保持硬错误** —— 那些字段出现 `$` 必然是调试期笔误，且**不可能有字面 `$`**
+   ========================================================================== */
+
+/**
+ * 变量的类型（§3.2）。决定**解析成什么**、UI 用什么控件。
+ *
+ * ⚠️ 第一版只有这三种。加类型要同时想清楚：解析规则、UI 控件、校验规则、
+ * 以及"这个类型的变量能不能绑到某个字段"（见 [BINDABLE_FIELDS]）。
+ */
+window.TOKEN_TYPES = [
+  { v: "color", n: "颜色", icon: "■" },
+  { v: "number", n: "数值", icon: "#" },
+  { v: "string", n: "文本", icon: "T" },
+];
+window.TOKEN_TYPE_VALUES = window.TOKEN_TYPES.map(function (t) { return t.v; });
+
+/**
+ * **内置变量的 id 前缀**（12 个主题色）。
+ *
+ * 为什么 id 由字段名推出来（`tk_accent`）而不是 `tk1`/`tk2`：
+ *   · `THEME_COLOR_FIELDS` 的顺序变了、或者用户在中间插了一个变量，
+ *     `tk1..tk12` 这种**按位置编号**的 id 会整体错位 —— 而引用是按 id 存的
+ *   · 由字段名推出来的 id 天然稳定，且人眼一看就知道它对应哪个主题色
+ *
+ * ⚠️ **`tk_` 前缀是格式的一部分**：写进设计文件的 `bindings` 里就是它，
+ * 改了会让存量文件的绑定全部失效。
+ */
+window.BUILTIN_TOKEN_PREFIX = "tk_";
+window.builtinTokenId = function (key) { return window.BUILTIN_TOKEN_PREFIX + key; };
+
+/**
+ * **内置模式的 id 前缀**。
+ *
+ * ⚠️ §3.3 的例子里**没有**给模式一个 `builtin` 字段（变量的例子有），
+ * 而 §3.3 又要求"内置模式可改名、可改值，**不可删**" ——
+ * "可改名"意味着**不能用名字当标记**，"不可删"意味着必须有一个稳定标记。
+ * 所以约定：内置模式的 id 必须是 `m_<别名>`（别名 ∈ `THEME_ALIASES`）。
+ *
+ * 这不是"多加了一个字段"，而是把 §3.3 缺的那个标记落在**已有的 id 字段**上。
+ */
+window.MODE_ID_PREFIX = "m_";
+window.builtinModeId = function (alias) { return window.MODE_ID_PREFIX + alias; };
+
+/**
+ * **`modes[].values` 里"不是变量"的键的前缀**（`@glow` / `@title` / `@description`）。
+ *
+ * ## 为什么需要它
+ *
+ * `THEME_COLOR_FIELDS` 只有 **12 个颜色**，而写进设计文件的 `themeColors`
+ * 有 **15 个字段**（12 色 + `glow` + `title` + `description`，
+ * 见 §8.1 与 `verify-crosslang.js` 的核对）。
+ *
+ * §9.3 要求"迁移后导出的 `themeColors` 与迁移前**逐字段相同**"（T1）——
+ * 那 3 个非颜色字段（尤其 `glow`：用户可以在 `themeColors` 里手改成 `false`）
+ * 就必须有个地方落。做成"第 13 个变量"是错的：`glow` 是布尔、
+ * `title` 是显示名，它们不是"可绑定的变量"。
+ *
+ * 所以：`values` 里 `@` 开头的键 = **直接覆盖 `themeColors` 的同名字段**，
+ * 不经过变量解析。变量 id/名字**不允许以 `@` 开头**（校验会拦），
+ * 于是两类键永远不会撞。
+ */
+window.MODE_RAW_PREFIX = "@";
+
+/**
+ * **可绑定的字段白名单**（§3.6，第一版就这 5 处，不加字段）。
+ *
+ * 白名单而不是黑名单：`pid` / `style` / `min` / `max` 这些绑了之后，
+ * 属性面板、校验、量程推导全都要跟着改语义 —— 需要时再逐个放开。
+ *
+ * `node` 只用于 UI 分组与文案，**校验不按节点类型卡**（字段不存在就绑不上，
+ * 多列一个类型判断只会多一处要同步的地方）。
+ */
+window.BINDABLE_FIELDS = [
+  { path: "font.color",      node: window.NODE_TEXT,  type: "color",  n: "文字颜色" },
+  { path: "text",            node: window.NODE_TEXT,  type: "string", n: "文字内容" },
+  { path: "labelFont.color", node: window.NODE_GAUGE, type: "color",  n: "标签颜色" },
+  { path: "card.radius",     node: window.NODE_GAUGE, type: "number", n: "圆角" },
+  { path: "card.alpha",      node: window.NODE_GAUGE, type: "number", n: "底框透明度" },
+];
+window.BINDABLE_FIELD_PATHS = window.BINDABLE_FIELDS.map(function (f) { return f.path; });
+
+/** 这个字段路径能不能绑（白名单查询，唯一入口） */
+window.bindableField = function (path) {
+  return window.BINDABLE_FIELDS.find(function (f) { return f.path === path; }) || null;
+};
+
+/**
+ * 这个值是不是**变量引用**（§3.5）。
+ *
+ * 判据收敛成一条：**字符串且以 `$` 开头**。选字符串前缀而不是
+ * `{ "$t": "tk1" }` 那种对象，就是因为这条判据足够简单 ——
+ * 解析点、校验点、UI 判断全都能用它，不会出现"这里认那里不认"。
+ */
+window.isTokenRef = function (v) {
+  return typeof v === "string" && v.charAt(0) === "$";
+};
+
+/** 引用串 → 变量名/变量 id（`"$accent"` → `"accent"`）。不是引用就返回 "" */
+window.tokenRefName = function (v) {
+  return window.isTokenRef(v) ? v.slice(1) : "";
+};
+
+/**
+ * **`text` 字段的 `$` 转义**（v2.80.1，规格 §4.2 的补丁）。
+ *
+ * ## 治的是什么病
+ *
+ * §3.5 的引用判据是"字符串以 `$` 开头"，而 §3.6 把 `text` 列成可绑定字段 ——
+ * 于是**字面显示 `$` 的文字**（`$100`、`$PID`、`$`）被判成"引用了变量 `100`"。
+ * v2.80.0 那条判据是**硬错误**，后果是**整个文件打不开** ——
+ * 而这个项目最怕的就是"文件打不开 / 画布是空的"。
+ *
+ * 颜色/数值字段**不可能**有字面 `$`（那些字段的合法值是 `#RRGGBB` 或数字），
+ * 所以**只有 `text` 有这个风险**。
+ *
+ * ## 规则（两条，都只作用于 `text`）
+ *
+ * 1. **`$$` 开头 = 一个字面 `$`**：`$$100` → `$100`，`$$` → `$`。
+ *    只认**最开头**那一对，后面原样：`$$$100` → `$` + `$100` = `$$100`
+ *    （**不做二次解释** —— 否则"几个 `$` 是字面"就说不清了）。
+ * 2. `text` 上"以 `$` 开头但没有 bindings 条目" → **警告**（不是硬错误）。
+ *    理由：降为警告**仍然满足 §4.2「不静默」的初衷**（问题被报出来了），
+ *    而硬错误等于**用户的文件打不开**；`text` 上的字面 `$` 本来就是**正常内容**。
+ *
+ * ## ⚠️ 转义**只在 `resolveDesign` 的视图里解开**，解析时**原样保留**
+ *
+ * 这条是刻意的，不是漏了：
+ *   · 解析时解开的话，`toV2Json` 会把 `$100` 写回文件 ——
+ *     下次打开就变成"引用了变量 100"（警告），**每存一次退一步**
+ *   · 保留 `$$100` 则"文件 → 内存 → 文件"**逐字节稳定**（T2 的同类要求）
+ *
+ * 于是：`nodes` 里存的永远是**文件里的原样**，画布看到的是解开后的。
+ */
+window.TEXT_DOLLAR_ESCAPE = "$$";
+
+/** 这个 `text` 值是不是**变量引用**（`$$` 开头的转义**不算**引用）。颜色/数值**不要**用这个 */
+window.isTextTokenRef = function (v) {
+  return typeof v === "string" && v.charAt(0) === "$" && v.slice(0, 2) !== window.TEXT_DOLLAR_ESCAPE;
+};
+
+/** `text` 值 → 显示值：开头的 `$$` 解析成一个字面 `$`。非字符串 / 没有转义 → 原样返回 */
+window.unescapeTextDollar = function (v) {
+  if (typeof v !== "string") return v;
+  return v.slice(0, 2) === window.TEXT_DOLLAR_ESCAPE ? "$" + v.slice(2) : v;
+};
+
+/** `#RRGGBB`（与 `normalizeFont` / Kotlin 侧同一套判据） */
+window.isHexColor = function (v) {
+  return typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v);
+};
+
+/** JSON 深拷贝（解析结果只是"这一帧 / 这一次导出"的视图，**原 design 绝不能被改**） */
+window.deepCloneJson = function (v) {
+  if (v === null || typeof v !== "object") return v;
+  if (Array.isArray(v)) return v.map(window.deepCloneJson);
+  const o = {};
+  for (const k in v) {
+    if (Object.prototype.hasOwnProperty.call(v, k)) o[k] = window.deepCloneJson(v[k]);
+  }
+  return o;
+};
+
+/**
+ * **12 个内置变量**（§3.2）—— 由 `THEME_COLOR_FIELDS` 生成，
+ * 值取**当前主题**的同名字段。
+ *
+ * 它们**同时**是 App 主题系统 `themeColors` 的 12 个字段 ——
+ * 这是整个方案"零 App 改动"的关键复用点（§3.2 / §8.1）。
+ *
+ * ## ⚠️ 没有主题（`theme` 缺失 / 不是三个内置主题之一）时返回 **空数组**
+ *
+ * 这是**刻意**的，不是漏了：
+ *
+ *  · 内置变量的默认值就是"当前主题的颜色"，**没有主题就没有默认值可取**
+ *  · 取一个兜底（比如 `neon`）会让 `resolveDesign` 凭空生成 12 个颜色，
+ *    而今天这种文件导出的 `themeColors` **只有用户覆盖的那几个字段** ——
+ *    于是 T1 的等价性（§9.3）在"没主题"这个分支上直接不成立，
+ *    **存量文件的配色会变**。这是本方案最不能出的错。
+ *
+ * 所以：没主题 → 不生成内置变量、不生成内置模式，
+ * 迁移后仍走老的 `themeColorsOverride` 路径（见 [migrateThemeToTokens]）。
+ */
+window.buildBuiltinTokens = function (themeId) {
+  const base = window.GAUGE_THEMES[themeId];
+  if (!base) return [];
+  return window.THEME_COLOR_FIELDS.map(function (f) {
+    return {
+      id: window.builtinTokenId(f.k),
+      name: f.k,                 // 显示名 = 字段名（`accent`），中文标签在 THEME_COLOR_FIELDS 里
+      type: "color",
+      value: base[f.k],
+      builtin: f.k,              // 有它 = 内置变量，指向 themeColors 的同名字段
+    };
+  });
+};
+
+/**
+ * **3 个内置模式**（§3.3）—— 由 `GAUGE_THEMES` 生成。
+ *
+ * `values` **只存差异**（§3.3，与 `themeColorsOverride` 同一套哲学）：
+ * 与 `tokens[].value` 相同的字段**不写**。于是"改默认值"能影响所有没覆盖它的模式。
+ *
+ * 差异分两类，见 [MODE_RAW_PREFIX]：
+ *   · 12 个颜色 → 变量 id（`tk_accent`）
+ *   · `glow` / `title` / `description` → `@glow` 这样的原样覆盖
+ *
+ * 没主题时返回空数组（理由同 [buildBuiltinTokens]）。
+ */
+window.buildBuiltinModes = function (themeId) {
+  const base = window.GAUGE_THEMES[themeId];
+  if (!base) return [];
+  return window.THEME_ALIASES.map(function (al) {
+    const th = window.GAUGE_THEMES[al];
+    const values = {};
+    window.THEME_COLOR_FIELDS.forEach(function (f) {
+      if (th[f.k] !== base[f.k]) values[window.builtinTokenId(f.k)] = th[f.k];
+    });
+    // 非颜色字段：themeColors 有、THEME_COLOR_FIELDS 没有的那三个
+    ["glow", "title", "description"].forEach(function (k) {
+      if (th[k] !== base[k]) values[window.MODE_RAW_PREFIX + k] = th[k];
+    });
+    return { id: window.builtinModeId(al), name: th.title, values: values };
+  });
+};
+
+/**
+ * **老文件迁移**（§9.3）：把 `themeColorsOverride` 收进模式里。
+ *
+ * ```
+ * 1. 生成 3 个内置模式（由 GAUGE_THEMES）
+ * 2. 生成 12 个内置变量（由 THEME_COLOR_FIELDS + 当前主题）
+ * 3. 把 themeColorsOverride 写进**当前主题对应的那个模式**的 values
+ * 4. themeColorsOverride 字段不再写出（由 modes 取代）—— 第 4 步做
+ * ```
+ *
+ * ⚠️ **只在"当前主题是三个内置主题之一"时才迁移**。没主题的文件原样返回空，
+ * 由调用方继续走老的 `themeColors` 路径 —— 理由见 [buildBuiltinTokens]。
+ *
+ * 纯函数：**不改传入的对象**，返回 `{ tokens, modes, activeMode }`。
+ *
+ * @param themeId 设计文件的 `theme`
+ * @param override `themeColors` 与内置主题的差异（`design.themeColorsOverride`）
+ */
+window.migrateThemeToTokens = function (themeId, override) {
+  const base = window.GAUGE_THEMES[themeId];
+  if (!base) return { tokens: [], modes: [], activeMode: "" };
+
+  const tokens = window.buildBuiltinTokens(themeId);
+  const modes = window.buildBuiltinModes(themeId);
+  const activeMode = window.builtinModeId(themeId);
+  const active = modes.find(function (m) { return m.id === activeMode; });
+
+  // 用户的覆盖写进**当前模式**：颜色走变量 id，其余原样覆盖。
+  //
+  // ⚠️ 只写"用户真的改过的"字段（override 本身就是差异集）——
+  // 全量写进去会让 `values` 变成每个模式一坨完整配色，等于第二份真相（§2.16 的教训）。
+  Object.keys(override || {}).forEach(function (k) {
+    const isColorField = window.THEME_COLOR_FIELDS.some(function (f) { return f.k === k; });
+    active.values[isColorField ? window.builtinTokenId(k) : (window.MODE_RAW_PREFIX + k)] = override[k];
+  });
+
+  return { tokens: tokens, modes: modes, activeMode: activeMode };
+};
+
+/**
+ * **一份设计里"变量系统"的当前状态**（§4.1 步骤 1）。
+ *
+ * ```
+ * { tokens, modes, byId, byName, mode, values, cur }
+ * ```
+ *
+ * ⚠️ **`resolveDesign` 与校验器的漂移检测共用这一个函数**（§4「不许各写一份」）。
+ * 两处各写一遍的话，症状就是那句最要命的话：
+ * 「画布上看到的」和「导出后 App 看到的」不一样。
+ *
+ * 容错：`tokens`/`modes` 里结构不对的条目直接过滤掉（解析侧已经报过错了），
+ * 不认识的名字、转不出来的值一律**跳过**（回落 `token.value`）。
+ */
+window.resolveTokenState = function (design) {
+  const d = design || {};
+  const tokens = Array.isArray(d.tokens) ? d.tokens.filter(function (t) {
+    return t && typeof t === "object" && !Array.isArray(t) && typeof t.id === "string" && t.id;
+  }) : [];
+  const modes = Array.isArray(d.modes) ? d.modes.filter(function (m) {
+    return m && typeof m === "object" && !Array.isArray(m);
+  }) : [];
+
+  const byId = {}, byName = {};
+  tokens.forEach(function (t) {
+    byId[t.id] = t;
+    if (typeof t.name === "string" && t.name) byName[t.name] = t;
+  });
+
+  // 当前值：mode.values[t] ?? token.value
+  const cur = {};
+  tokens.forEach(function (t) { cur[t.id] = t.value; });
+
+  const mode = window.pickActiveMode(modes, d.activeMode, d.themeId);
+  const values = (mode && mode.values && typeof mode.values === "object" && !Array.isArray(mode.values))
+    ? mode.values : {};
+
+  Object.keys(values).forEach(function (k) {
+    if (k.charAt(0) === window.MODE_RAW_PREFIX) return;   // 非变量（@glow 之类），themeColors 那步单独处理
+    const t = byId[k] || byName[k];
+    if (!t) return;                                      // 不认识的键：校验已经报过
+    const v = window.coerceTokenValue(t.type, values[k]);
+    if (v !== undefined) cur[t.id] = v;
+  });
+
+  return { tokens: tokens, modes: modes, byId: byId, byName: byName, mode: mode, values: values, cur: cur };
+};
+
+/**
+ * **解析：唯一入口**（§4）。
+ *
+ * ```
+ * window.resolveDesign(design) → design'     // 深拷贝，nodes 全部字面化
+ * ```
+ *
+ * 两个调用点，**同一个函数**（§4 的表）：渲染前 `canvas.js` 的 `draw()` 开头、
+ * 序列化前 `model.js` 的 `toV2Json()`。
+ *
+ * > ⚠️ **不许各写一份。** v2.49.0 已经踩过同一个坑：`model.js` 拼 `themeColors`、
+ * > 而画布不读它，于是"切主题画布完全不变"。
+ *
+ * 顺序（§4.1）：
+ * ```
+ * 1. 解析 activeMode → 每个变量的当前值（mode.values[t] ?? token.value）
+ * 2. 12 个内置变量 → themeColors（= 内置主题打底 + 覆盖）
+ * 3. 遍历 bindings：引用换成字面值，写进对应节点的字段
+ * 4. `text` 字段的 `$$` 反转义（v2.80.1）—— **只解视图，不改原 design**
+ * 5. 输出深拷贝，原 design 不动
+ * ```
+ *
+ * ⚠️ 第 4 步**放在第 3 步之后**：绑定写进去的值也要按同一条规则解释
+ *（"`text` 的值里开头的 `$$` 显示成一个 `$`"），否则"字面写的"与"绑定来的"
+ * 会出现两套显示规则 —— 而 `nodes` 里两者看起来一模一样。
+ *
+ * **本轮是"骨架"**：求值与绑定落地都已可用，但还没有调用点
+ * （`canvas.js` / `model.js` 是第 4、5 步）。没有 `tokens`/`modes` 的老文件
+ * 走**老路径**，输出与今天逐字段一致（T2）。
+ */
+window.resolveDesign = function (design) {
+  if (!design || typeof design !== "object") return design;
+  const d = window.deepCloneJson(design);
+
+  const st = window.resolveTokenState(d);
+  const tokens = st.tokens, modes = st.modes, byId = st.byId, byName = st.byName;
+  const cur = st.cur, values = st.values;
+  const bindings = (d.bindings && typeof d.bindings === "object" && !Array.isArray(d.bindings)) ? d.bindings : {};
+
+  // ---- 2. themeColors = 内置主题打底 + 覆盖
+  //（步骤 1「解析 activeMode → 每个变量的当前值」在 [resolveTokenState] 里，上面已经调用）
+  //
+  // ⚠️ 覆盖的**来源**取决于有没有变量系统：
+  //   有（tokens 或 modes 非空）→ 由模式解析出来
+  //   没有（老文件 / 没主题）    → 老的 themeColorsOverride，行为**完全不变**（T2）
+  const hasTokenSystem = tokens.length > 0 || modes.length > 0;
+  const ov = {};
+  if (hasTokenSystem) {
+    Object.keys(values).forEach(function (k) {
+      if (k.charAt(0) === window.MODE_RAW_PREFIX) ov[k.slice(1)] = values[k];
+    });
+    tokens.forEach(function (t) {
+      if (!t.builtin) return;
+      if (!window.THEME_COLOR_FIELDS.some(function (f) { return f.k === t.builtin; })) return;
+      // ⚠️ 只认合法颜色：手改坏的变量**跳过**（回落内置主题的同名色），
+      // 不让一个笔误把 `themeColors` 这个跨语言契约写坏。校验会给警告。
+      if (window.isHexColor(cur[t.id])) ov[t.builtin] = cur[t.id];
+    });
+  } else {
+    const legacy = d.themeColorsOverride;
+    if (legacy && typeof legacy === "object" && !Array.isArray(legacy)) {
+      Object.keys(legacy).forEach(function (k) { ov[k] = legacy[k]; });
+    }
+  }
+  const base = window.GAUGE_THEMES[d.themeId] || null;
+  d.themeColors = (base || Object.keys(ov).length) ? Object.assign({}, base || {}, ov) : null;
+
+  // ---- 3. bindings → nodes（引用换成字面值）
+  const index = {};
+  schemaIndexNodes(d.nodes, index);
+  if (Array.isArray(d.pages)) {
+    d.pages.forEach(function (pg) { if (pg && Array.isArray(pg.nodes)) schemaIndexNodes(pg.nodes, index); });
+  }
+  Object.keys(bindings).forEach(function (nid) {
+    const node = index[nid];
+    const spec = bindings[nid];
+    if (!node || !spec || typeof spec !== "object" || Array.isArray(spec)) return;
+    window.BINDABLE_FIELD_PATHS.forEach(function (path) {
+      const ref = spec[path];
+      if (!window.isTokenRef(ref)) return;
+      const t = byId[window.tokenRefName(ref)] || byName[window.tokenRefName(ref)];
+      if (!t) return;                                    // 变量不存在：校验已报错
+      const field = window.bindableField(path);
+      const v = window.coerceTokenValue(field.type, cur[t.id]);
+      if (v === undefined) return;
+      schemaSetFieldPath(node, path, v);
+    });
+  });
+
+  // ---- 4. `text` 的 `$$` 反转义（v2.80.1）
+  //
+  // ⚠️ **放在 bindings 之后**（理由见上面的顺序说明），并且**只动这个深拷贝** ——
+  // 原 design 里的 `$$100` 一个字都不改，于是"文件 → 内存 → 文件"逐字节稳定。
+  //
+  // 只解 `text`：颜色/数值字段上 `$$` 无意义，判据保持原样（见 [window.isTextTokenRef]）。
+  schemaUnescapeTextDollar(d.nodes);
+  if (Array.isArray(d.pages)) {
+    d.pages.forEach(function (pg) {
+      if (pg && Array.isArray(pg.nodes)) schemaUnescapeTextDollar(pg.nodes);
+    });
+  }
+
+  return d;
+};
+
+/**
+ * 遍历一棵节点树，把每个节点的 `text` 字段做一次 `$$` 反转义（v2.80.1）。
+ *
+ * 递归子树：文字节点可以有子节点，漏了递归等于"嵌套层里的 `$$` 显示不出来"。
+ */
+function schemaUnescapeTextDollar(list) {
+  if (!Array.isArray(list)) return;
+  list.forEach(function (n) {
+    if (!n || typeof n !== "object") return;
+    if (typeof n.text === "string") n.text = window.unescapeTextDollar(n.text);
+    schemaUnescapeTextDollar(n.children);
+  });
+}
+
+/** 按 id 索引一棵节点树（含子树）。同名 id 只认第一个 */
+function schemaIndexNodes(list, index) {
+  if (!Array.isArray(list)) return;
+  list.forEach(function (n) {
+    if (!n || typeof n !== "object") return;
+    if (typeof n.id === "string" && n.id && !index[n.id]) index[n.id] = n;
+    schemaIndexNodes(n.children, index);
+  });
+}
+
+/** 按字段路径写值（`card.radius` → 必要时补出 `card` 对象） */
+function schemaSetFieldPath(node, path, value) {
+  const i = path.indexOf(".");
+  if (i < 0) { node[path] = value; return; }
+  const head = path.slice(0, i);
+  if (node[head] === null || typeof node[head] !== "object" || Array.isArray(node[head])) node[head] = {};
+  node[head][path.slice(i + 1)] = value;
+}
+
+/**
+ * 选出生效的模式。
+ *
+ * `activeMode` 丢失 / 写错时的回落顺序：**当前主题对应的内置模式 → 第一个模式**。
+ *
+ * 为什么不直接"没有覆盖"：迁移把用户的 `themeColorsOverride` 收进了
+ * **当前主题那个模式**里，`activeMode` 一坏就"没有覆盖"= 用户改过的配色
+ * **悄悄全丢**。退到 `m_<themeId>` 是唯一能保住它的选择。
+ */
+window.pickActiveMode = function (modes, activeMode, themeId) {
+  if (!Array.isArray(modes) || !modes.length) return null;
+  if (activeMode) {
+    const m = modes.find(function (x) { return x && x.id === activeMode; });
+    if (m) return m;
+  }
+  if (themeId) {
+    const fid = window.builtinModeId(themeId);
+    const m2 = modes.find(function (x) { return x && x.id === fid; });
+    if (m2) return m2;
+  }
+  return modes[0];
+};
+
+/**
+ * 把模式里的一个值**按变量类型**转成能用的字面值。
+ * 转不出来返回 `undefined`（= 跳过，回落 `token.value`）——
+ * 不让一个坏值把下游写坏。校验侧会给警告，不静默。
+ */
+window.coerceTokenValue = function (type, v) {
+  if (type === "color") return window.isHexColor(v) ? v : undefined;
+  if (type === "number") {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : undefined;
+  }
+  // string（以及未知类型）：字符串原样，数字/布尔转成文本
+  if (typeof v === "string") return v;
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  if (typeof v === "boolean") return String(v);
+  return undefined;
+};
 
 /** 状态名（与 AlertPulse.NONE/WARN/CRITICAL/WARN_LOW 对应） */
 window.STATE_NORMAL = "normal";
