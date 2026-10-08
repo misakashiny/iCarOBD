@@ -374,4 +374,58 @@ class DashCanvasTest {
         assertEquals("当前画布也要还原", activeBefore, Store.settings.activeCanvasId)
         assertEquals(DashCanvas.TYPE_PERF, Store.settings.canvases[1].type)
     }
+
+    // ================================================================ 最近一次导入（v1.20.6）
+
+    /**
+     * 这三条用例守的是**同一类事故**：设置项加进 `Settings` 却漏了
+     * `settingsToJson` / `applySettingsJson` 的某一半 ——
+     * 表现是"导入完看得见，重启就没了"，而且**不会报任何错**。
+     */
+    @Test
+    fun `最近一次导入能往返设置文件`() {
+        Store.load()
+        Store.settings.lastImportName = "未命名设计-v1.json"
+        Store.settings.lastImportGauges = 5
+        Store.settings.lastImportAt = 1_760_000_000_000L
+        Store.saveSettings()
+
+        Store.load()
+        assertEquals("加设置项必须同时改 settingsToJson 与 applySettingsJson", "未命名设计-v1.json", Store.settings.lastImportName)
+        assertEquals(5, Store.settings.lastImportGauges)
+        assertEquals(1_760_000_000_000L, Store.settings.lastImportAt)
+    }
+
+    @Test
+    fun `旧配置没有导入字段时是空记录而不是假时间`() {
+        // 老设备的 settings.json 里根本没有这三个键 —— 兜一个"当前时间"会让
+        // 设置页显示一条**从没发生过的**导入记录（比空更糟：用户会以为导进去了）
+        File(dir, "settings.json").writeText("""{"pollInterval":150}""")
+        Store.load()
+        assertEquals("", Store.settings.lastImportName)
+        assertEquals(0, Store.settings.lastImportGauges)
+        assertEquals(0L, Store.settings.lastImportAt)
+        assertEquals("没导入过 → 摘要必须是空串", "", Store.settings.lastImportSummary())
+    }
+
+    @Test
+    fun `导入摘要的格式是文件名加块表加时间`() {
+        val s = Store.Settings()
+        s.lastImportName = "未命名设计-v1.json"
+        s.lastImportGauges = 5
+        s.lastImportAt = 1_760_000_000_000L
+        val line = s.lastImportSummary()
+        assertTrue("要有文件名：$line", line.startsWith("未命名设计-v1.json · 5 块表 · "))
+        // 时间是 `MM-dd HH:mm`。不校验具体值 —— 时区会让它随机器变
+        val ts = line.substringAfterLast("· ")
+        assertTrue("时间要是 MM-dd HH:mm，实际是「$ts」", Regex("\\d{2}-\\d{2} \\d{2}:\\d{2}").matches(ts))
+    }
+
+    @Test
+    fun `导入摘要缺文件名时兜底为未命名设计`() {
+        val s = Store.Settings()
+        s.lastImportGauges = 3
+        s.lastImportAt = 1_760_000_000_000L
+        assertTrue(s.lastImportSummary().startsWith("未命名设计 · 3 块表 · "))
+    }
 }

@@ -143,7 +143,7 @@ if (Test-Path $colorProbe) {
   Write-Host "  (跳过裸色值检查 —— 找不到 guard-color-probe.js)" -ForegroundColor DarkGray
 }
 
-# ---- 控件绑的 PID 是否真实存在（v2.61.0）
+# ---- 控件绑的 PID 是否真实存在（v2.61.0；v2.78.0 起分「已知待办」与「新问题」）
 #
 # 为什么：所有仪表控件的 make() 都是
 #   const info = window.BUILTIN_PIDS[window.resolvePid(d.pid)] || {};
@@ -156,22 +156,39 @@ if (Test-Path $colorProbe) {
 # 用户的第 ① 项（G力值 → obd.gforce）和第 ③ 项（挡位 → obd.gear）
 # **都是这个根因**。
 #
-# ⚠️ **当前按"警告"处理，不 Fail** —— 28 处是存量债务，
-# 一上来就 Fail 会让守卫长期是红的，反而没人看。
-# 等把这 28 个补完（或确认该删）之后，改成 Fail。
+# ⚠️ **为什么剩下那 14 个不再按"警告"报**（v2.78.0 改）：
+# 一路修到 14 个之后，剩下的**不是"忘了配 PID"，是"数据源还不存在"** ——
+# 它们全部卡在 P9（上车用 CAN 探测逆向广播帧的位），**修不动，只能等**。
+# 而**一条长期红着的警告等于没有警告**：它已经报了十几个版本，
+# 看的人只会学会跳过它 —— 真正**新出现的不匹配**（谁把 pid 打错了）
+# 混在同一个列表里，分不出"这是老账"还是"这是刚弄坏的"。
+#
+# 所以探针（guard-pid-probe.js）把两类**分开输出**：
+#   · 存量（PENDING_P9，**每条带原因**）→ 这里只**打印**（深灰），**不算警告**
+#   · 新出现 → 才是警告（**守卫的价值就在这一条**）
+#
+# ⚠️ 存量债务清空之前**不要改成 Fail**：那会让守卫长期是红的。
+# 等 PENDING_P9 清空（P9 做完）之后，把下面的 Warn 改成 Fail。
 #
 $pidProbe = Join-Path $PSScriptRoot "guard-pid-probe.js"
 if (Test-Path $pidProbe) {
-  $pidOut = & node $pidProbe 2>$null
+  # ⚠️ 必须用 @() 包住：PowerShell 会把单元素管道结果解包成字符串
+  $pidOut = @(& node $pidProbe 2>$null)
   $pidSummary = ($pidOut | Select-Object -First 1)
   $pidLast = ($pidOut | Select-Object -Last 1)
+  # 中间那几行 = 探针给的「已知待办」明细（带原因），原样打出来给人看。
+  # 判据是**位置**（第 2 行 ~ 倒数第 2 行）而不是前缀 —— 探针改措辞这里不用跟着改。
+  $pidDetail = @()
+  if ($pidOut.Count -gt 2) { $pidDetail = $pidOut[1..($pidOut.Count - 2)] }
+
   if ($pidLast -eq "[]") {
-    Pass "控件绑的 PID 都存在（$pidSummary）"
+    Pass "控件绑的 PID 都存在，或都在已知待办清单里（$pidSummary）"
   } elseif ($pidLast) {
-    Warn "控件绑了不存在的 PID —— $pidSummary"
+    Warn "控件绑了不存在的 PID（**新出现的**，不在已知待办清单里）—— $pidSummary"
   } else {
     Write-Host "  (跳过 PID 检查 —— 探针没输出)" -ForegroundColor DarkGray
   }
+  if ($pidLast) { $pidDetail | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray } }
 } else {
   Write-Host "  (跳过 PID 检查 —— 找不到 guard-pid-probe.js)" -ForegroundColor DarkGray
 }

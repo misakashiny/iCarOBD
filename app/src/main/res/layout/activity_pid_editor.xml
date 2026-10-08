@@ -6,7 +6,12 @@
     android:background="@color/bg"
     android:orientation="vertical">
 
+    <!--
+      id 是给 PidEditorActivity 的「校验失败要看得见」用的（v1.20.6，P10-2）：
+      结果行在表单最底下，只改文字的话用户根本看不到 —— 需要能滚过去。
+    -->
     <com.icar.obd.ui.view.MaxWidthScrollView
+        android:id="@+id/scrollRoot"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_gravity="center_horizontal"

@@ -64,7 +64,12 @@ class CanSnifferActivity : AppCompatActivity() {
         btnMonitor.setOnClickListener { toggleMonitor() }
         setupFilterPresets()
         FrameMonitor.onStateChanged = { on ->
-            runOnUiThread { btnMonitor.text = if (on) "停止常驻监听" else "开启常驻监听（转向灯）" }
+            runOnUiThread {
+                btnMonitor.text = if (on) "停止常驻监听" else "开启常驻监听（转向灯）"
+                // 状态行也要跟着刷新：常驻监听开着时它显示的是**轮询已暂停**的警示
+                // （P10-3），不是"未开始" —— 否则同一屏上两个说法互相打架
+                refreshStatus()
+            }
         }
 
         spDuration.adapter = ArrayAdapter(
@@ -89,10 +94,17 @@ class CanSnifferActivity : AppCompatActivity() {
         // 用"上一帧在跑、这一帧不跑了"来判定结束 —— 比在 toggle() 里记更可靠：
         // 探测也可能因为超时/出错自己停，那些路径同样该留档。
         var wasRunning = false
+        var lastPhase: CanSniffer.Phase? = null
         CanSniffer.onUpdate = { st ->
-            tvStatus.text = describe(st)
+            refreshStatus()
             btnToggle.text = if (CanSniffer.running) "停止探测" else "开始探测"
             buildRows()
+            // 失败要**弹出来**（v1.20.6，P10-4）：状态行是一行 11sp 的暗色小字，
+            // "准备失败，请重跑一次"埋在里头等于没说 —— 用户会继续对着空结果猜
+            if (st.phase == CanSniffer.Phase.FAILED && lastPhase != CanSniffer.Phase.FAILED) {
+                ObdController.toast(st.message.lineSequence().first())
+            }
+            lastPhase = st.phase
             if (wasRunning && !CanSniffer.running) {
                 val filter = etFilter.text.toString().trim().ifBlank { "（不过滤）" }
                 // 明细 = 聚合结果（按 ID 的帧数），这正是事后要看的；
@@ -105,8 +117,13 @@ class CanSnifferActivity : AppCompatActivity() {
             }
             wasRunning = CanSniffer.running
         }
-        tvStatus.text = describe(CanSniffer.status)
+        refreshStatus()
         buildRows()
+    }
+
+    /** 状态行的**唯一**刷新入口（`FrameMonitor` 与 `CanSniffer` 两条状态都要反映到它） */
+    private fun refreshStatus() {
+        tvStatus.text = describe(CanSniffer.status)
     }
 
     override fun onDestroy() {
@@ -118,8 +135,15 @@ class CanSnifferActivity : AppCompatActivity() {
 
     private fun describe(s: CanSniffer.Status): String = when (s.phase) {
         CanSniffer.Phase.IDLE ->
-            "未开始。探测期间会暂停轮询引擎，并临时打开 ATH1（带 CAN 头）。\n" +
-                "只记录**变化了的**数据，重复帧只计数 —— 防止总线流量把内存和存储撑爆。"
+            // 常驻监听开着时，这一页最该说的话是"轮询已经让位了"（P10-3）——
+            // 原来的"未开始…"会让人以为监听也没在跑（实际上正在跑，只是没在探测）
+            if (FrameMonitor.running) {
+                com.icar.obd.ui.view.MonitorWarnBar.TEXT +
+                    "\n常驻监听在跑，单次探测要等它停掉之后才能开始。"
+            } else {
+                "未开始。探测期间会暂停轮询引擎，并临时打开 ATH1（带 CAN 头）。\n" +
+                    "只记录**变化了的**数据，重复帧只计数 —— 防止总线流量把内存和存储撑爆。"
+            }
         CanSniffer.Phase.PREPARING -> s.message
         CanSniffer.Phase.CAPTURING ->
             "监听中… ${s.elapsedMs / 1000}s · ${s.frameCount} 帧 / ${s.idCount} 个 ID" +
@@ -138,6 +162,7 @@ class CanSnifferActivity : AppCompatActivity() {
         if (FrameMonitor.running) {
             FrameMonitor.stop()
             btnMonitor.text = "开启常驻监听（转向灯）"
+            refreshStatus()
             return
         }
         if (CanSniffer.running) {
@@ -151,6 +176,7 @@ class CanSnifferActivity : AppCompatActivity() {
         }
         FrameMonitor.start()
         btnMonitor.text = "停止常驻监听"
+        refreshStatus()
         ObdController.toast(
             "已开启常驻监听：${sigs.joinToString("/") { it.name }}\n（轮询已暂停，退出前记得停掉它）"
         )

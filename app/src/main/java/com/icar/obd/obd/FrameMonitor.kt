@@ -41,6 +41,16 @@ import kotlinx.coroutines.launch
  * 过滤器会连带挡住正常 OBD 的应答（正常请求回 `7E8`，过滤器只放行 `0x09A`）。
  * `ATAR`/`ATCM000`/`ATCF000` 三条都回 `OK` 却**清不掉**（实车踩过两次），
  * 唯一确定有效的是 `ATZ` 全复位 —— 所以 [stop] 里直接跑一次 [ObdController.initializeAndStart]。
+ *
+ * ## ⚠️ 帧率闸（v1.20.6，P10-5）—— 别把这段删掉
+ *
+ * 单 ID 过滤器下每秒只有 2~11 帧，毫无压力。但**信号跨多个 ID 段**时
+ * [filterPlan] 会退化成"不加过滤器"，于是整条总线的帧（实测 **344 帧/秒**）
+ * 全都要在**主线程**上切行 —— 本项目已经因为主线程堆积 ANR 过一次（v1.18.4）。
+ *
+ * 所以 [onChunk] 有三道闸（见 [FrameRateGate]）：正常 / 限流（按 ID 预筛）/ 过载（整块丢）。
+ * 判定逻辑抽在 [FrameRateGate] 里是为了**能被 JVM 单测压**（这个 object 本身测不了，
+ * `Handler(Looper.getMainLooper())` 是饿汉初始化，JVM 里一碰就抛 `Stub!`）。
  */
 object FrameMonitor {
 
@@ -51,6 +61,31 @@ object FrameMonitor {
     private val main = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lineBuf = StringBuilder()
+
+    /**
+     * 行缓冲里**已经扫过**的位置（v1.20.6）。
+     *
+     * 原来每取一行都从下标 0 重新扫 `\r`/`\n` —— 一个分片里有 k 行时就是
+     * O(k × 长度)。这是主线程热路径（见 [FrameRateGate] 的说明），
+     * 记一个游标就不重复扫了。
+     */
+    private var scanFrom = 0
+
+    /**
+     * **帧率闸**（v1.20.6，P10-5）。判定逻辑在 [FrameRateGate] 里（纯逻辑、可单测）。
+     */
+    private val gate = FrameRateGate()
+
+    /**
+     * 预筛用的行首 ID 集合（大写）。
+     *
+     * 只在限流模式用 —— 见 [matchesMonitoredId] 为什么它不可能漏掉该收的帧。
+     */
+    private var acceptIds: List<String> = emptyList()
+
+    /** 上一次因为帧率闸提示过用户没有（每次开启监听只提示一次，免得刷屏） */
+    private var gateWarned = false
+    private var lastWarnMode = FrameRateGate.Mode.NORMAL
 
     @Volatile
     var running = false
@@ -111,7 +146,15 @@ object FrameMonitor {
         if (ids.size == 1) return listOf("ATCRA%03X".format(ids.first()))
         val blocks = ids.map { it and 0x700 }.distinct()
         if (blocks.size == 1) return listOf("ATCM700", "ATCF%03X".format(blocks.first()))
+        // 跨段 = 加不了过滤器（一个 `ATCRA` 只能放行一个 ID，掩码一次只能覆盖一段）。
+        // 于是整条总线的帧都会灌进主线程 —— 这正是 P10-5 那个 ANR 风险。
+        // 这里**主动说一句**，别让用户事后从"信号偶尔跳一下"去猜；
+        // 真到了 344 帧/秒，[gate] 还会再介入一次（预筛 / 丢帧）。
         AppLog.w(AppLog.M_OBD, "监听信号跨多个 ID 段，本次不加过滤器", "ids=$ids")
+        ObdController.toast(
+            "监听信号跨了 ${blocks.size} 个 ID 段，加不了 CAN 过滤器。\n" +
+                "帧率高时会自动按监听 ID 预筛；若信号断续，请拆成两次监听。"
+        )
         return null
     }
 
@@ -139,12 +182,18 @@ object FrameMonitor {
         }
         // 提前把 header 解析成数值（`"09A"` -> 0x09A），后面按数值比
         cached = sigs.mapNotNull { s -> parseCanId(s.header)?.let { s to it } }
+        // 预筛集合（`09A` / `9A` 两种写法都收 —— 见 acceptIdsOf 的说明）
+        acceptIds = FrameRateGate.acceptIdsOf(cached.map { it.second })
         idCounts.clear()
         changeLogged.clear()
         lastVals.clear()
         frames = 0
         hits = 0
         lineBuf.setLength(0)
+        scanFrom = 0
+        gate.reset()
+        gateWarned = false
+        lastWarnMode = FrameRateGate.Mode.NORMAL
         running = true
         engineWasRunning = ObdController.engine.running
         if (engineWasRunning) ObdController.engine.stop()
@@ -197,8 +246,14 @@ object FrameMonitor {
             busy = false
             val f = frames
             val h = hits
+            val g = gate.describe()
             cached = emptyList()
-            AppLog.i(AppLog.M_OBD, "监听通道停止", "帧=$f 命中=$h 重新初始化 ok=${r?.ok}")
+            acceptIds = emptyList()
+            gate.reset()
+            AppLog.i(
+                AppLog.M_OBD, "监听通道停止",
+                "帧=$f 命中=$h 重新初始化 ok=${r?.ok} | 帧率闸：$g"
+            )
             main.post { onStateChanged?.invoke(false) }
         }
     }
@@ -212,29 +267,118 @@ object FrameMonitor {
                 .joinToString(" ") { "%X=%d".format(it.key, it.value) }
             AppLog.i(
                 AppLog.M_OBD, "监听通道",
-                "帧=$frames 命中=$hits 信号=${cached.size} 各ID[$top]"
+                "帧=$frames 命中=$hits 信号=${cached.size} 各ID[$top] | ${gate.describe()}"
             )
             main.postDelayed(this, LOG_INTERVAL_MS)
         }
     }
 
+    /**
+     * 接收原始分片。**这个方法跑在主线程上**（传输层约定：回调在主线程），
+     * 所以它是整个监听通道的**性能咽喉** —— 每一次改动都要先想清楚
+     * "344 帧/秒时这里会怎样"（见 [FrameRateGate] 与 P10-5）。
+     *
+     * ## 三道闸（v1.20.6）
+     *
+     * 1. **过载**：连切行都不做，整块丢掉（`lineBuf` 里压着的半行也清掉 ——
+     *    半行本来也解不出帧，留着只会把下一块拼成畸形行）；
+     * 2. **限流**：先做**廉价的**行首 ID 预筛，只把监听中的 ID 送进解析路径；
+     * 3. **正常**：照旧全量解析（保留"各 ID 收到多少帧"的诊断）。
+     *
+     * ## 切行的两处优化（同一件事：别做无谓的搬移与重扫）
+     *
+     * - 用 [scanFrom] 游标记住扫到哪，不再每取一行都从下标 0 重扫；
+     * - 行**攒到最后一次性 `delete`**，而不是每行都 `delete(0, br+1)`
+     *   （后者每行都要搬一次整个缓冲区）。
+     */
     private fun onChunk(chunk: String) {
+        val now = System.currentTimeMillis()
+        val m = gate.evaluate(now)
+        if (m == FrameRateGate.Mode.OVERLOAD) {
+            gate.noteChunkDropped(chunk.length)
+            lineBuf.setLength(0)
+            scanFrom = 0
+            warnGate(m)
+            return
+        }
         lineBuf.append(chunk)
-        if (lineBuf.length > LINE_BUF_MAX) lineBuf.setLength(0)
-        while (true) {
-            var br = -1
-            for (i in lineBuf.indices) {
-                val c = lineBuf[i]
-                if (c == '\r' || c == '\n') {
-                    br = i
-                    break
+        if (lineBuf.length > LINE_BUF_MAX) {
+            lineBuf.setLength(0)
+            scanFrom = 0
+        }
+        var cut = indexOfBreak(scanFrom)
+        if (cut < 0) {
+            // 整块没有换行：下次从**末尾**继续扫，别把这段再扫一遍
+            scanFrom = lineBuf.length
+            warnGate(m)
+            return
+        }
+        var consumed = 0
+        while (cut >= 0) {
+            val line = lineBuf.substring(consumed, cut).trim()
+            consumed = cut + 1
+            if (line.isNotEmpty()) {
+                gate.countLine()
+                if (m == FrameRateGate.Mode.THROTTLED && !matchesMonitoredId(line)) {
+                    gate.noteSkipped()
+                } else {
+                    feedLine(line)
                 }
             }
-            if (br < 0) return
-            val line = lineBuf.substring(0, br).trim()
-            lineBuf.delete(0, br + 1)
-            if (line.isNotEmpty()) feedLine(line)
+            cut = indexOfBreak(consumed)
         }
+        // 一次性把消费掉的前缀搬走（见上面第 2 条优化）
+        lineBuf.delete(0, consumed)
+        scanFrom = lineBuf.length
+        warnGate(m)
+    }
+
+    /**
+     * 行首是不是监听中的 CAN ID（**廉价预筛**）。判定在 [FrameRateGate.leadingIdMatches]。
+     *
+     * ## 为什么它**不可能漏掉**该收的帧
+     *
+     * `CanFrame.parseLine` 取的 ID 就是行首那段十六进制（长度 3~8），
+     * 而 [feedLine] 只在 `cid == f.canId` 时才处理。
+     * 所以"行首不等于任何监听 ID"的行，**无论怎么解析都不会命中** ——
+     * 预筛丢掉它，与"解析完再丢掉"结果完全一致，只是省掉了最贵的那一步
+     * （`Regex("\\s+")` 切分 + 逐 token 解析 + 公式求值）。
+     */
+    private fun matchesMonitoredId(line: String): Boolean =
+        FrameRateGate.leadingIdMatches(line, acceptIds)
+
+    /**
+     * 帧率闸介入 / 恢复时的**一次性**提示。
+     *
+     * 只在模式**变化**时动作（否则每个分片都会写一条日志 —— 那就是 v1.3.0
+     * 那场"113 万行日志"事故的翻版）。Toast 每次开启监听最多一条。
+     */
+    private fun warnGate(m: FrameRateGate.Mode) {
+        if (m == lastWarnMode) return
+        lastWarnMode = m
+        if (m == FrameRateGate.Mode.NORMAL) {
+            AppLog.i(AppLog.M_OBD, "监听帧率恢复", gate.describe())
+            return
+        }
+        AppLog.w(AppLog.M_OBD, "监听帧率过高，已介入", gate.describe())
+        if (gateWarned) return
+        gateWarned = true
+        ObdController.toast(
+            if (m == FrameRateGate.Mode.OVERLOAD) {
+                "监听帧率过高（信号跨多个 ID 段，加不了过滤器）——\n" +
+                    "已开始丢帧。请把监听拆成两次，每次只放一个 ID 段"
+            } else {
+                "监听帧率过高：已自动按监听 ID 预筛。\n若信号仍然断续，请把监听拆成两次"
+            }
+        )
+    }
+
+    private fun indexOfBreak(from: Int): Int {
+        for (i in from until lineBuf.length) {
+            val c = lineBuf[i]
+            if (c == '\r' || c == '\n') return i
+        }
+        return -1
     }
 
     private fun feedLine(line: String) {

@@ -119,6 +119,21 @@
                     android:text="导出画布"
                     android:textSize="13sp" />
             </LinearLayout>
+
+            <!--
+                最近一次导入（v1.20.6）：文件名 / 几块表 / 时间。
+
+                为什么要有这一行：用户报过两次"导入之后画布还是空的"，查半天
+                才发现是**根本没导进去**。以前界面上没有任何"上次导了什么"的痕迹，
+                只能翻日志 —— 这一行就是那个缺失的痕迹（且重启后还在）。
+            -->
+            <TextView
+                android:id="@+id/tvLastImport"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:textColor="@color/text_dim"
+                android:textSize="11sp" />
         </LinearLayout>
 
         <!-- ==================== 当前画布外观 ==================== -->

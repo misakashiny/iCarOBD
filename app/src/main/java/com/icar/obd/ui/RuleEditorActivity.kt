@@ -46,6 +46,10 @@ class RuleEditorActivity : AppCompatActivity() {
     private lateinit var actionContainer: LinearLayout
     private lateinit var tvPreview: TextView
     private lateinit var tvTestResult: TextView
+    private lateinit var scrollRoot: android.widget.ScrollView
+
+    /** 试判结果行的正常颜色（从布局读，不写死 —— 见 PidEditorActivity 的同名字段） */
+    private var testColor = 0
 
     private var editing: Rule? = null
 
@@ -75,6 +79,8 @@ class RuleEditorActivity : AppCompatActivity() {
         actionContainer = findViewById(R.id.actionContainer)
         tvPreview = findViewById(R.id.tvPreview)
         tvTestResult = findViewById(R.id.tvTestResult)
+        scrollRoot = findViewById(R.id.scrollRoot)
+        testColor = tvTestResult.currentTextColor
 
         pidList = Store.allPids()
         spLogic.adapter = ArrayAdapter(
@@ -199,18 +205,9 @@ class RuleEditorActivity : AppCompatActivity() {
         updatePreview()
     }
 
-    /** 给用户看的文件名（URI 本身没法看） */
-    private fun audioDisplayName(uri: android.net.Uri): String {
-        val fromQuery = runCatching {
-            contentResolver.query(uri, null, null, null, null)?.use { c ->
-                val i = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                if (i >= 0 && c.moveToFirst()) c.getString(i) else null
-            }
-        }.getOrNull()
-        return fromQuery?.takeIf { it.isNotBlank() }
-            ?: uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
-            ?: "自定义音频"
-    }
+    /** 给用户看的文件名（URI 本身没法看）。三级回退见 [SafFile] */
+    private fun audioDisplayName(uri: android.net.Uri): String =
+        SafFile.displayName(this, uri, "自定义音频")
 
     /** 按钮文案：没选文件时是 📁，选了就显示文件名（让用户一眼看到选了什么） */
     private fun refreshPickButton(btn: View, spec: String, shown: String) {
@@ -374,12 +371,32 @@ class RuleEditorActivity : AppCompatActivity() {
             .onFailure { tvPreview.text = "预览：${it.message}" }
     }
 
+    /**
+     * 试判失败：**Toast + 警示色 + 滚到可见**，与 `PidEditorActivity.fail()` 同一套理由。
+     *
+     * 规则编辑器的"点了没反应"更隐蔽：条件没配全时 `RuleEngine.testRuleOnce` 照样返回
+     * 一个结果，用户看到的是"当前条件下：不成立"，会去怀疑车/信号，
+     * 而真正的原因是**那一行的数据源根本没选**。
+     */
+    private fun fail(row: String, toast: String = row) {
+        tvTestResult.text = row
+        tvTestResult.setTextColor(androidx.core.content.ContextCompat.getColor(this, R.color.danger))
+        scrollRoot.post { runCatching { scrollRoot.smoothScrollTo(0, tvTestResult.top) } }
+        ObdController.toast(toast)
+        AppLog.w(AppLog.M_UI, "规则试判未通过", toast)
+    }
+
     private fun testNow() {
         val r = collect()
-        if (!ObdController.engine.running) {
-            tvTestResult.text = "轮询未运行，请先连接并初始化设备"
+        if (r.conditions.isEmpty() || r.conditions.any { it.sourceId.isBlank() }) {
+            fail("试判: 请至少配置一个有效条件（数据源那一栏是空的）", "请至少配置一个有效条件")
             return
         }
+        if (!ObdController.engine.running) {
+            fail("试判: 轮询未运行，请先连接并初始化设备", "轮询未运行 —— 请先到「连接」页连接并初始化")
+            return
+        }
+        tvTestResult.setTextColor(testColor)
         val ok = RuleEngine.testRuleOnce(r)
         val detail = r.conditions.joinToString("\n") { c ->
             val v = com.icar.obd.obd.VehicleBus.value(c.sourceId)

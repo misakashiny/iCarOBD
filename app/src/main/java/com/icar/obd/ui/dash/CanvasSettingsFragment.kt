@@ -57,6 +57,7 @@ class CanvasSettingsFragment : Fragment() {
     private lateinit var btnPoll: MaterialButton
     private lateinit var swSound: MaterialSwitch
     private lateinit var btnNameLabel: MaterialButton
+    private lateinit var tvLastImport: TextView
 
     /** 轮询间隔候选。**给选项而不是让用户敲数字** —— 这个值直接决定总线负载 */
     private val pollChoices = listOf(60, 80, 100, 120, 150, 200, 250, 300)
@@ -96,12 +97,22 @@ class CanvasSettingsFragment : Fragment() {
             ObdController.toast("读取文件失败")
             return@registerForActivityResult
         }
+        // 文件名要**先记下来**：`importDesign` 会弹确认框，用户点「导入」之后
+        // 才走 applyDesign —— 那时 uri 已经不在作用域里了（v1.20.6）
+        pendingImportName = com.icar.obd.ui.SafFile.displayName(
+            requireContext(), uri, "未命名设计.json"
+        )
         importDesign(text)
     }
+
+    /** 正在导入的这份设计文件的显示名（见 [openDesignFile]） */
+    private var pendingImportName: String = ""
 
     /** 最近一次应用的设计（选完素材文件夹后要**再应用一次**，那时素材才解析得到） */
     private var lastDesign: com.icar.obd.data.DesignFile? = null
     private var lastDesignRaw: String = ""
+    /** 与 [lastDesign] 配套的文件名 —— 重新应用时记录里也要写对名字 */
+    private var lastDesignName: String = ""
 
     /**
      * 选**素材文件夹**（SAF 目录树），整棵复制进 app 私有目录，再重新应用设计。
@@ -139,7 +150,7 @@ class CanvasSettingsFragment : Fragment() {
         )
         ObdController.toast("已导入 $n 个素材文件，重新渲染")
         // 再应用一次 —— 这次 designBaseDir 有值了，素材与背景都能解析
-        lastDesign?.let { applyDesign(it, lastDesignRaw) }
+        lastDesign?.let { applyDesign(it, lastDesignRaw, lastDesignName) }
     }
 
     // ---------------------------------------------------------------- 生命周期
@@ -160,6 +171,7 @@ class CanvasSettingsFragment : Fragment() {
         btnPoll = view.findViewById(R.id.btnPollInterval)
         swSound = view.findViewById(R.id.swSound)
         btnNameLabel = view.findViewById(R.id.btnNameLabel)
+        tvLastImport = view.findViewById(R.id.tvLastImport)
 
         btnAdd.setOnClickListener { showAddDialog() }
         // 导入 / 导出画布（v1.20.2）：与电脑上的 tools/theme-studio 对接的入口。
@@ -221,6 +233,13 @@ class CanvasSettingsFragment : Fragment() {
         tvCount.text = "共 ${canvases.size} 套 · 上限 ${DashCanvas.MAX_CANVASES} 套 · 横滑切换"
         val active = Store.activeCanvas()
         tvCurrent.text = "当前：${active.name} · ${describeCanvas(active)}"
+
+        // 「最近一次导入」：摘要由 `Store.Settings.lastImportSummary()` 一处格式化
+        // （纯函数，有单测）—— 这里只负责加前缀与"还没导入过"的兜底
+        val lastImport = Store.settings.lastImportSummary()
+        tvLastImport.text =
+            if (lastImport.isBlank()) "最近导入：还没导入过设计文件"
+            else "最近导入：$lastImport"
 
         llList.removeAllViews()
         canvases.forEachIndexed { i, c ->
@@ -684,7 +703,11 @@ class CanvasSettingsFragment : Fragment() {
     }
 
     /** 应用设计文件。**先全部校验完再落盘**，避免中途失败留下半个盘面 */
-    private fun applyDesign(d: com.icar.obd.data.DesignFile, rawText: String = "") {
+    private fun applyDesign(
+        d: com.icar.obd.data.DesignFile,
+        rawText: String = "",
+        fileName: String = ""
+    ) {
         // 布局：整体替换当前这一套画布的自定义仪表
         Store.customGauges.clear()
         Store.customGauges.addAll(d.gauges)
@@ -725,21 +748,36 @@ class CanvasSettingsFragment : Fragment() {
 
         // 切到「自定义」：设计文件改的就是它，停在普通/性能上会看不到变化
         Store.settings.dashType = DashSpec.CUSTOM
+
+        // ---- 「最近一次导入」记录（v1.20.6）----
+        //
+        // 为什么必须在这里写（而不是在选文件那一步）：用户点「导入」之前
+        // 还会看到一个确认框，取消掉就不该留下记录 —— **记录的是"真的导进去了"**。
+        //
+        // ⚠️ 顺序要紧：必须在下面 `saveSettings()` **之前**赋值，
+        // 否则这一次的导入要等下一次落盘才记得住（表现是"导完看不见记录，重启才出现"）。
+        val shown = fileName.ifBlank { pendingImportName }.ifBlank { "未命名设计.json" }
+        Store.settings.lastImportName = shown
+        Store.settings.lastImportGauges = d.gauges.size
+        Store.settings.lastImportAt = System.currentTimeMillis()
+
         Store.saveSettings()
         Store.saveDash()
 
         // 记住这一份，供"选完素材文件夹后重新应用"用
         lastDesign = d
         lastDesignRaw = rawText
+        lastDesignName = shown
 
         refresh()
         AppLog.i(
             AppLog.M_UI, "已导入设计文件",
-            "canvas=${Store.activeCanvas().name} name=${d.name} gauges=${d.gauges.size} " +
+            "canvas=${Store.activeCanvas().name} file=$shown name=${d.name} gauges=${d.gauges.size} " +
                 "theme=${d.themeId} bg=${d.background?.path ?: "-"} " +
                 "素材=${d.assets.size} base=${Store.settings.designBaseDir.ifBlank { "(空)" }}"
         )
-        ObdController.toast("已导入 ${d.gauges.size} 块仪表")
+        // Toast 里带上文件名 —— 用户刚选完文件，这里是他确认"选对了没有"的第一现场
+        ObdController.toast("已导入 ${d.gauges.size} 块表：$shown")
 
         // ⚠️ **P0 的真正入口**（v1.20.3）：设计里的素材是相对路径，而导入是走 SAF
         // **单文件** —— 拿不到它所在的目录，`designBaseDir` 永远是空，

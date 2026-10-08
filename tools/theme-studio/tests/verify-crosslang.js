@@ -1,5 +1,5 @@
 /* ==========================================================================
-   verify-studio.js —— 跨语言一致性检查
+   verify-crosslang.js —— 跨语言一致性检查
    --------------------------------------------------------------------------
    **做法**：直接加载工具的真实 js 文件（在沙箱里跑），并从 Kotlin 源码里
    **解析出常量**，逐条比对。不是"看一眼觉得一样"。
@@ -7,7 +7,9 @@
    为什么必须存在：编辑器和 App 是两套实现，一旦分叉，症状是
    「编辑器说没问题、App 加载报错」—— 那是这个项目最该避免的一类 bug。
 
-   跑法：node tools/verify-studio.js
+   跑法：node tools/theme-studio/tests/verify-crosslang.js
+   （⚠️ 它在 `tests/` 下，不是 `tools/` 根目录 —— 这个文件原来叫 verify-studio.js，
+     搬进 tests/ 之后文件头这两行一直没改，实测让接手的人找不到它）
    ========================================================================== */
 "use strict";
 
@@ -188,11 +190,24 @@ function parseKotlinTemplates(src) {
   // 症状：报"工具里多出 tpl_oilPressure"，看起来像 App 侧漏加，其实是**解析器漏读**。
   //
   // 修法：用负向先行断言，确保 `id = "..."` 到 `minVal` 之间**不再出现 `PidDefinition(`**。
+  //
+  // ⚠️ **只解析 `MANUFACTURER_TEMPLATES` 这一段**（v2.78.0 修，对应 P10 第 6 条）。
+  //
+  // 原来除了上面那道断言，还有一道**前缀过滤**：`if (!/^tpl_/.test(id)) continue;`。
+  // 那道过滤是个**会过期的白名单** —— v1.19.13 把实车确认的转向灯
+  // （`mon_turn_left` / `mon_turn_right`，`mode = "MON"`）也放进了**同一个**
+  // `MANUFACTURER_TEMPLATES` 列表：它们两侧都有，却因为不叫 `tpl_` 被静默跳过，
+  // 于是被报成「工具里多出 2 个 PID（App 侧没有）」的**假阳性**。
+  //
+  // 正确的判据是"**它在 `MANUFACTURER_TEMPLATES` 里**"，不是"它叫什么前缀" ——
+  // 前缀白名单每加一类模板就会再漏一次。切片到那个列表之后，前缀与解析无关了。
+  const at = src.indexOf("MANUFACTURER_TEMPLATES");
+  const scope = at >= 0 ? src.slice(at) : src;
+
   const re = /PidDefinition\(\s*id\s*=\s*"([^"]+)"(?:(?!PidDefinition\()[\s\S])*?minVal\s*=\s*(-?[\d.]+)f\s*,\s*maxVal\s*=\s*(-?[\d.]+)f((?:(?!PidDefinition\()[\s\S])*?)\)\s*,/g;
   let m;
-  while ((m = re.exec(src))) {
+  while ((m = re.exec(scope))) {
     const id = m[1];
-    if (!/^tpl_/.test(id)) continue;
     const body = m[0];
     const nm = /name\s*=\s*"([^"]*)"/.exec(body);
     const un = /unit\s*=\s*"([^"]*)"/.exec(body);

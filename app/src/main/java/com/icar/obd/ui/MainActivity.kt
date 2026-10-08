@@ -23,6 +23,7 @@ import com.icar.obd.data.Store
 import com.icar.obd.obd.ObdController
 import com.icar.obd.obd.VehicleBus
 import com.icar.obd.service.ObdService
+import com.icar.obd.ui.view.MonitorWarnBar
 
 /**
  * 主界面：底部导航 + 顶部状态条 + 页面容器。
@@ -137,6 +138,9 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
             findViewById<NavigationBarView>(R.id.navView).selectedItemId = R.id.nav_dashboard
         }
         updateSimBar()
+        // 常驻监听可能是在「CAN 探测」页开的 —— 回到主界面立刻把警示挂上，
+        // 不等下一秒的 tick（用户第一眼就要看到"轮询已暂停"）
+        syncMonitorWarn()
     }
 
     override fun onStop() {
@@ -489,8 +493,22 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
      * 都不产生"两次快速点按"）。
      */
     private var lastTapMs = 0L
+    private var lastTapX = 0f
+    private var lastTapY = 0f
     private var tapDownX = 0f
     private var tapDownY = 0f
+
+    /**
+     * 落点是否在导航栏范围内（v1.20.6 修）。
+     *
+     * 双击兜底的本意是"双击**画布**呼出导航"，不是"双击导航栏"。
+     * 不排除导航栏的话，快速点两个 tab 会被判成双击（见 dispatchTouchEvent 里的说明）。
+     */
+    private fun isOnNav(x: Float, y: Float): Boolean {
+        val nav = findViewById<View>(R.id.navView) ?: return false
+        if (nav.visibility != View.VISIBLE) return false
+        return x >= nav.left && x <= nav.right && y >= nav.top && y <= nav.bottom
+    }
 
     override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
         // ---- 双指横滑 ----
@@ -522,9 +540,17 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
             }
             android.view.MotionEvent.ACTION_UP -> {
                 val moved = kotlin.math.abs(ev.x - tapDownX) + kotlin.math.abs(ev.y - tapDownY)
-                if (moved < dp(24)) {
+                // ⚠️ v1.20.6 修：原判据只看"两次 UP 间隔 <400ms 且各自位移 <24dp"，
+                // **没管两次点在哪儿** —— 于是**快速点两个不同的导航项会被判成双击**，
+                // 反而把导航栏收起来（实测撞到过：想连点两个 tab，结果栏没了）。
+                // 相邻两个 tab 相距约 150px，轻松满足旧判据。
+                // 现在多两道：①落点不能在导航栏上 ②两次落点必须彼此靠近。
+                val onNav = isOnNav(ev.x, ev.y)
+                val nearLast = kotlin.math.abs(ev.x - lastTapX) +
+                    kotlin.math.abs(ev.y - lastTapY) < dp(48)
+                if (moved < dp(24) && !onNav) {
                     val now = System.currentTimeMillis()
-                    if (now - lastTapMs < 400) {
+                    if (now - lastTapMs < 400 && nearLast) {
                         lastTapMs = 0L
                         if (railHidden) {
                             revealRail()
@@ -535,6 +561,8 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
                         }
                     } else {
                         lastTapMs = now
+                        lastTapX = ev.x
+                        lastTapY = ev.y
                     }
                 } else {
                     lastTapMs = 0L
@@ -612,10 +640,28 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
 
     // ------------------------------------------------------------ 状态条
 
+    /**
+     * 常驻监听警示条（v1.20.6，P10-3）。
+     *
+     * 挂在这里（而不是某个 Fragment）是因为它必须**跨页面可见** ——
+     * 判据是"开启监听后不用翻页就能看到"。判定与文案都在 [MonitorWarnBar] 里。
+     *
+     * ⚠️ **刻意不挂 `FrameMonitor.onStateChanged`**：那个槽位是**单值**的，
+     * `CanSnifferActivity` 已经占了（改按钮文案）。这里去赋值会把它顶掉，
+     * 表现为"从 CAN 页返回后按钮文案不刷新"。所以用下面那个 1 秒的 ticker。
+     */
+    private val monitorBar by lazy { MonitorWarnBar(this) }
+
+    private fun syncMonitorWarn() {
+        val host = findViewById<android.view.ViewGroup>(android.R.id.content) ?: return
+        monitorBar.sync(host)
+    }
+
     private fun startRateTicker() {
         stopRateTicker()
         val r = object : Runnable {
             override fun run() {
+                syncMonitorWarn()
                 main.postDelayed(this, 1000)
             }
         }

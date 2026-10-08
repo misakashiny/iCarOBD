@@ -13,7 +13,8 @@
 > | [`HANDOVER.md`](HANDOVER.md) | 详细手册 —— 扩展流程、安全模型、装机清单、踩坑 |
 > | [`CHANGELOG.md`](CHANGELOG.md) | **改过什么** —— 按版本的变更与验证记录 |
 >
-> 规模：**42 个 Kotlin 文件 / 约 7,170 行**，**21 个布局 XML**（资源目录合计 41 个 XML）。
+> 规模：**97 个 Kotlin 文件 / 约 25,600 行**，**26 个布局 XML**（资源目录合计 48 个 XML）。
+> （这些数字会随迭代漂，改完顺手核一遍 —— 见 §4 末尾那条警告。）
 
 ---
 
@@ -95,7 +96,7 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `PidModels.kt` | 238 | **核心数据模型**，全部带 JSON 序列化 | `PidDefinition`、`CompareOp`、`Rule`、`RuleCondition`、`RuleAction`、`GaugeItem`（含 **`cardStyle`** + `CARD_*` / `CARD_NAMES`）、`PidValue` | 🔴 加字段必须同步 `toJson`/`fromJson` |
 | `Formula.kt` | 200 | 自研表达式求值器（词法→语法→求值） | `Formula.eval(expr, data)`、`Formula.check(expr)`、内部 `Lexer`/`Parser` | 🔴 解析正确性命门 |
 | `BuiltInPids.kt` | 106 | 内置 PID 库 | `STANDARD`(20)、`DERIVED`(4)、`MANUFACTURER_TEMPLATES`(4)、`all()` | 🟡 **只增不改** |
-| `Store.kt` | 739 | JSON 持久化 + **多画布（v1.20.0）** | `Settings`、`allPids/findPid/isEnabled/setEnabled`、`upsertPid/deletePid`、`upsertRule/deleteRule`、`exportPidsJson/importPidsJson`、`importTemplatesAsCustom`、**`settingsToJson/applySettingsJson`**（备份复用）、`customThemeJson`、`saveThemes`、**`activeCanvas/canvasIndex/activeCanvasIndex`**、**`snapshotToActiveCanvas/loadActiveCanvas`**、**`switchCanvas/addCanvas/removeCanvas/renameCanvas/moveCanvas`**、`migrateLegacyToCanvas`（私有，一次性） | 🔴 改存储结构要考虑迁移；**加设置项必须同时改 `settingsToJson` 与 `applySettingsJson`**。仪表盘相关：`gridEnabled`/`grid*`（参考线）、**`dashSnapEnabled`**（拖拽吸附，默认 true）、`bgImagePath`、**`bgFit`**（背景铺法）、**`canvasNamePos`**（画布名浮标位置，v1.20.1；**全局**，不跟着画布走）。⚠️ **多画布的两个坑**：① `settings.dashType/gaugeTheme/designJson/bg*/dashPageIndex` 现在的身份是「当前画布的**实时副本**」，落盘/切画布时由 `snapshotToActiveCanvas`/`loadActiveCanvas` 双向同步（不改成转发属性是为了"漏改只是少存一次"而不是"静默读到过期值"）；② `saveDash()` 会写 `settings.json`，所以 **`load()` 必须先读 settings 再读 dash.json**，反了会拿默认设置覆写用户配置 |
+| `Store.kt` | 785 | JSON 持久化 + **多画布（v1.20.0）** | `Settings`、`allPids/findPid/isEnabled/setEnabled`、`upsertPid/deletePid`、`upsertRule/deleteRule`、`exportPidsJson/importPidsJson`、`importTemplatesAsCustom`、**`settingsToJson/applySettingsJson`**（备份复用）、`customThemeJson`、`saveThemes`、**`activeCanvas/canvasIndex/activeCanvasIndex`**、**`snapshotToActiveCanvas/loadActiveCanvas`**、**`switchCanvas/addCanvas/removeCanvas/renameCanvas/moveCanvas`**、`migrateLegacyToCanvas`（私有，一次性）、**`Settings.lastImportSummary()`**（「最近一次导入」的摘要行，纯函数） | 🔴 改存储结构要考虑迁移；**加设置项必须同时改 `settingsToJson` 与 `applySettingsJson`**。仪表盘相关：`gridEnabled`/`grid*`（参考线）、**`dashSnapEnabled`**（拖拽吸附，默认 true）、`bgImagePath`、**`bgFit`**（背景铺法）、**`canvasNamePos`**（画布名浮标位置，v1.20.1；**全局**，不跟着画布走）、**`lastImportName/lastImportGauges/lastImportAt`**（最近一次导入设计文件，v1.20.6；`lastImportSummary()` 是它的**唯一**格式化处，有单测）。⚠️ **多画布的两个坑**：① `settings.dashType/gaugeTheme/designJson/bg*/dashPageIndex` 现在的身份是「当前画布的**实时副本**」，落盘/切画布时由 `snapshotToActiveCanvas`/`loadActiveCanvas` 双向同步（不改成转发属性是为了"漏改只是少存一次"而不是"静默读到过期值"）；② `saveDash()` 会写 `settings.json`，所以 **`load()` 必须先读 settings 再读 dash.json**，反了会拿默认设置覆写用户配置 |
 | `Backup.kt` | 132 | **完整配置备份**：PID + 启用状态 + 规则 + 仪表 + 主题 + 设置 打包成一个 JSON | `export()`、`import(text)`、`currentSummary()`、`APP_TAG/FORMAT`、`Summary/ImportResult` | 🟡 导入是**整体替换**不是合并；分区独立解析 |
 | `Defaults.kt` | 87 | 首次启动的默认规则与仪表 | `defaultRules()`(5条)、`defaultGauges()`（**转发到 `DashLayout.normal()`**）、`seedIfEmpty()` | 🟢 |
 | `DashLayout.kt` | 228 | **内置布局 + 预设布局 + 旧配置迁移 + 拖拽数学** | `presets()`、`normal/perf/line/dualStack/quad/subDual/gForce`、`migrateFromGrid()`、`Drag.snap/move/resize`（**STEP=15 / MIN_SIZE=30**）、**`Drag.snapIf/moveIf/resizeIf`**（可关吸附） | 🟡 放 `data/` 是因为 `Store` 加载时要调迁移；放 `ui/` 会形成 `data → ui` 反向依赖。⚠️ 关掉吸附只去掉「对齐网格」，**夹取永远生效** |
@@ -120,7 +121,9 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `GForceSource.kt` | 187 | **G 值数据源**：加速度计（优先 `LINEAR`，回退 `ACCEL` + 高通估重力）与车速差分 `dv/dt`，可切换 | `MODE_OFF/SENSOR/SPEED`、`setMode`、`onCycle`、`available`、`modeName` | 🟡 OBD 总线上**没有** G 传感器，必须另找来源 |
 | `SignalSimulator.kt` | 308 | **合成数据源**：往 `VehicleBus` 灌波形，**没有车也能调试仪表**。开启时由 UI 负责停掉 `ObdEngine` | `WAVE_*`、`Channel`、`waveAt/phaseAt/valueOf`（纯函数）、`autoChannel`、`applyDemoPreset`、`start/stop/tick` | 🟡 `main` 派发器是 **lazy**（否则 JVM 单测里一碰就抛 `Stub!`，纯函数也跟着测不了） |
 | `CanFrame.kt` | 120 | CAN 广播帧解析 + 按 ID 聚合（纯逻辑） | `parse`、`aggregate` | 🟢 |
-| `CanSniffer.kt` | 180 | **`ATMA` 被动探测**：停轮询 → `ATH1` → 开透传 → `ATMA` → 采集 → 复原。五道防洪水闸门 | `start/stop`、限时 / 只记变化 / 原始流有界 5000 / 不逐帧写日志 / 行缓冲 8KB | 🟡 与 PID 扫描器**不是一回事**（扫描器主动请求，只能发现 ECU 愿答的 PID） |
+| `FrameMonitor.kt` | 418 | **常驻监听通道**：把**广播帧**变成虚拟 PID（`source=monitor`）。停轮询 → `ATH1`/`ATS1`/`ATL1` → 装过滤器（能装就装）→ `ATMA` → 每帧按 `header` 匹配并用 `formula` 求值 → `VehicleBus.put` → `runCycleOnce()` | `start/stop`、`signals()`、`parseCanId`、`filterPlan`（单 ID → `ATCRA`；同段 → `ATCM`+`ATCF`；**跨段 → 不加过滤器**）、**`onChunk`（主线程热路径，三道闸）**、`feedLine`、`matchesMonitoredId`（零分配预筛）、`warnGate` | 🔴 **`onChunk` 跑在主线程**：跨 ID 段时可达 344 帧/秒，本项目已因此 ANR 过一次（v1.18.4）→ 帧率闸不可删（见 `FrameRateGate`）。⚠️ 退出时必须重新初始化（过滤器清不掉）。⚠️ `onStateChanged` 是**单值槽位**，别在别处赋值（会顶掉 CAN 探测页的按钮文案刷新） |
+| `FrameRateGate.kt` | 211 | **帧率闸的纯逻辑**（v1.20.6，P10-5）：正常 / >150 行/秒**限流** / >240 行/秒**过载** + 迟滞（退出阈值 60%） | `Mode`、`evaluate(nowMs)`、`countLine`、`noteSkipped`、`noteChunkDropped`、`describe()`、**`acceptIdsOf`/`leadingIdMatches`**（零分配预筛） | 🔴 抽成独立类是因为 `FrameMonitor` 是 object 且 `Handler(Looper.getMainLooper())` **饿汉初始化** —— JVM 里一碰就抛 `Stub!`，判定不抽出来**测不到**。⚠️ `leadingIdMatches` 是**安全性质**（不许漏掉解析后能命中的行），`FrameRateGateTest` 钉着 |
+| `CanSniffer.kt` | 540 | **`ATMA` 被动探测**：停轮询 → `ATH1`/`ATS1`/`ATL1`（带 3 次重试）→ 开透传 → `ATMA` → 采集 → 复原。五道防洪水闸门 + 「对比基准」差分 | `start/stop`、`Phase`/`Status`、`snapshot/diffAgainstBaseline`、`aggregates/rawFrames`、`aggregateCsv/rawCsv`、`reset` | 🔴 与 PID 扫描器**不是一回事**（扫描器主动请求，只能发现 ECU 愿答的 PID）。⚠️ v1.20.6：`ATH1`/`ATS1` 三次都不 OK → **判定这趟无效**（这两条任一失效必然 0 帧，继续跑只会给出空结果）；`ATL1` 只警告。⚠️ `reset()` **故意不动基准**（否则两次对照之间按清空就把基准换掉了） |
 
 ### 2.5 `service/`
 
@@ -132,8 +135,9 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 
 | 文件 | 行 | 职责 | 关键符号 | 风险 |
 |---|---|---|---|---|
-| `MainActivity.kt` | 546 | 导航 + 权限 + **仪表盘沉浸模式**（收左侧 tab / 收系统栏 / 左边缘把手） | `switchTo`（**commitNow**）、`createFragment`、`ensurePermissions`、`applyKeepScreenOn`、**`applySystemStatusBar`**、**`setRailVisible`/`ensureRailHandle`/`scheduleRailHide`**、`setFullscreen`、`updateSimBar` | 🔴 收起导航栏用**平移**（`translationX`+`alpha`）**不是 GONE** —— GONE 会让页面容器重排、画布尺寸变化、表盘重排并闪一下。⚠️ 沉浸时系统栏用 `BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE`（否则把人锁住） |
+| `MainActivity.kt` | 706 | 导航 + 权限 + **仪表盘沉浸模式**（收左侧 tab / 收系统栏 / 双指手势 / 双击兜底）+ **常驻监听警示条**（v1.20.6） | `switchTo`（**commitNow**）、`createFragment`、`ensurePermissions`、`applyKeepScreenOn`、**`applySystemStatusBar`**、**`setRailVisible`/`ensureRailHandle`/`scheduleRailHide`**、`setFullscreen`、`updateSimBar`、**`syncMonitorWarn`** | 🔴 收起导航栏用**平移**（`translationX`+`alpha`）**不是 GONE** —— GONE 会让页面容器重排、画布尺寸变化、表盘重排并闪一下。⚠️ 沉浸时系统栏用 `BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE`（否则把人锁住）。⚠️ 警示条**不能**挂 `FrameMonitor.onStateChanged`（单值槽位，CAN 探测页已占用）→ 用 1 秒 ticker |
 | `KnowledgeFragment.kt` | 420 | **知识库**（v1.20.2 建 / v1.20.3 改成**导航 tab** + 标签筛选）：13 节术语与探测方法 | `SECTIONS`、`TAG_MAP`（**按节索引**挂标签，正文里不写）、`buildTagChips`、`applyFilter` | 🟡 内容是**文档性质的代码**。⚠️ `ChipGroup(singleSelection)` 会**覆盖**你给 chip 挂的监听 —— 必须用 `setOnCheckedStateChangeListener`。⚠️ 在 `SECTIONS` 中间插节要顺手改 `TAG_MAP` |
+| `SafFile.kt` | 39 | **SAF（`content://`）文件显示名**（v1.20.6）：三级回退（`DISPLAY_NAME` → URI 路径末段 → 调用方兜底） | `displayName(ctx, uri, fallback)` | 🟡 抽成一处是因为"最近一次导入"与规则编辑器选音频都要它 —— 两处各写一遍必然分叉 |
 | `DesignAssets.kt` | 105 | 设计文件**素材**落地（v1.20.3）：把 SAF 目录树整棵复制进 app 私有目录 | `copyTree`、`hasRelativeAssets` | 🔴 解决 P0：素材是相对路径 + 导入走单文件 → `designBaseDir` 永远为空 → 素材全加载失败。用 `DocumentsContract` 遍历，**不引入 `androidx.documentfile`**；文件名做了路径穿越防护 |
 | `ui/view/NavBottomBar.kt` | 46 | **竖屏底部导航栏**（v1.20.5，P0）：把 `BottomNavigationView` 写死的菜单项上限 5 提到 6 | 重写 `getMaxItemCount()` | 🔴 Material 1.12.0 **没有** `setMaxItemCount`（逐字节搜过 classes.jar），只有 getter；但构造函数里是**虚调用** `getMaxItemCount()`，子类重写能在构造期生效。⚠️ 第 6 项用原生 `BottomNavigationView` 会**启动即崩**（只在竖屏暴露 —— 平板横屏用 NavigationRailView 没事） |
 | `DashFragment.kt` | 285 | **仪表盘宿主（v1.20.0 起 = 多画布宿主）**：告警条 + `ViewPager2` + 「页码 → `activeCanvasId`」+ 裁决谁在渲染 | `handlePageSelected`、**`awaitingPos`**（程序化翻页标记）、`updatePageActivation`、`onPageEditing`（**编辑态关横滑**）、`jumpToCanvas`、`onCanvasAdded/Removed/Moved/Renamed`、`refreshSimBanner` | 🔴 `ViewPager2` **分不清"用户滑的"和"我们调的"** —— 程序化翻页必须先记 `awaitingPos`，否则"新增一套画布"会把当前画布切成邻居。渲染/编辑/外观都**不在**这里（见 `ui/dash/`） |
@@ -141,12 +145,12 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `PidFragment.kt` | 243 | PID 列表 + **导出/导入（PID 或完整备份）** + 模板 | `showExportDialog`、`showImportDialog`、`shareJson`、`doImportBackup`、`openBackupFile`、`seedTemplates` | 🟢 |
 | `RuleFragment.kt` | 96 | 规则列表 + 恢复默认 | — | 🟢 |
 | `LogFragment.kt` | 177 | 日志过滤/暂停/导出；UI 刷新合并到 250ms | `updateStats`、`exportLog`、`uiTick` | 🟡 统计必须用 `AppLog.size()`，不要用 `snapshot()` |
-| `PidEditorActivity.kt` | 349 | **核心：PID 编辑器 + 在线测试** | `collect()`、`runTest()`、`save()`、`bindAutoRequest` | 🔴 项目核心 |
-| `RuleEditorActivity.kt` | 341 | 事件规则编辑器（动态条件/动作行） | `addConditionRow`、`addActionRow`、`collect()`、`updatePreview()`、`testNow()` | 🟡 |
+| `PidEditorActivity.kt` | 510 | **核心：PID 编辑器 + 在线测试** | `collect()`、`runTest()`、`save()`、`bindAutoRequest`、**`fail(row, toast)`**（校验失败：Toast + 警示色 + 滚到可见，v1.20.6） | 🔴 项目核心。⚠️ 校验失败的提示**不能只改结果行的小字** —— 那一行在表单最底下，用户看不到（P10-2 踩过两次） |
+| `RuleEditorActivity.kt` | 478 | 事件规则编辑器（动态条件/动作行） | `addConditionRow`、`addActionRow`、`collect()`、`updatePreview()`、`testNow()`、**`fail(row, toast)`**（v1.20.6） | 🟡 `testNow()` 原来**不校验条件是否配全** —— 空条件时 `testRuleOnce` 返回"不成立"，用户会去怀疑车/信号（v1.20.6 已补） |
 | `ScannerActivity.kt` | 252 | 扫描器 UI + 安全确认 | `startScan`、`applyModeDefaults`、`saveHit` | 🔴 危险模式拦截 |
 | `ThemeEditorActivity.kt` | 388 | **主题编辑器**：顶部实时预览 + 声明式字段行（12 色 + 几何/指针环/辉光） | `ColorField`、`buildFields`、`applyDraft`、`pickColor`、`save/saveAs/persist/delete` | 🟡 内置主题只读，保存会自动转「另存为」 |
 | `SimulatorActivity.kt` | 446 | **模拟信号工具**：分组折叠的单行摘要 + 展开详情（波形缩略图用**真正的 `waveAt`**，预览不可能与实际输出脱节） | `periodSteps`、`noiseSteps`、`buildRows`、`toggle`、`refreshHeader` | 🟡 **`onDestroy` 刻意不停模拟**（它是数据源，应像 OBD 连接一样在界面之外继续跑） |
-| `CanSnifferActivity.kt` | 260 | CAN 被动探测页 + 两种 CSV 导出（聚合 / 原始） | `sniffResults`、导出 | 🟡 用 `ColumnFlowLayout` 自动分栏 |
+| `CanSnifferActivity.kt` | 386 | CAN 被动探测页 + 两种 CSV 导出（聚合 / 原始）+ **对比基准** + **常驻监听开关** | `sniffResults`、导出、`toggleMonitor`、`showDiff`、`addMonitorPid`、**`refreshStatus`**（唯一的状态行刷新入口，两条状态都要反映） | 🟡 用 `ColumnFlowLayout` 自动分栏。⚠️ 常驻监听开着时状态行要说"轮询已暂停"（`MonitorWarnBar.TEXT`），不能还说"未开始"。⚠️ `FAILED` 要弹 Toast（状态行是 11sp 暗色小字，埋着等于没说） |
 | `BenchActivity.kt` | 404 | **性能基准页**（四段：8 表×3 档 + 12 表极限） | `segments`、`runAll/runSegment`、`verdictLine`、`buildReport`、`jankMs()` | 🔴 **判据是帧间隔不是 `DrawStats`**（硬件加速下后者只是记录 DisplayList 的耗时）。⚠️ 布局监听器**不得读 `segments[segIndex]`**（会越界崩溃，见 CHANGELOG v1.10.1） |
 | `BenchHarness.kt` | 240 | 基准驱动端：建视图 + **每帧强制重绘** + 预热 + 帧间隔统计 | `build(count, neonPreset)`、`start/stop`、`frameStats(jankMs)`、`WARMUP_MS`、`SEGMENT_SEC` | 🟡 `GaugeTicker.request()` 每帧重调是**刻意的测量手段**，别抄到正常渲染路径 |
 
@@ -167,7 +171,7 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `DashSpec.kt` | 84 | 类型 → 布局列表的**分发**（内容在 `data/DashLayout.kt`） | `NORMAL/PERF/CUSTOM`（**别名指向 `DashCanvas.TYPE_*`**）、`build(type)`、**`buildFor(canvas)`**、`title(type)`、`useDesignFile(type, designJson)` | 🔴 横滑时每页要渲染**自己那一套** → 用 `buildFor(canvas)`；用 `build(type)`（读 `Store.customGauges` = 当前画布）会让所有页显示同一个盘面（滑过去像没切换） |
 | `DashCanvasPagerAdapter.kt` | 69 | `[画布0][画布1]…[设置]` | `getItemId`（**画布 id 派生的稳定值**）、`containsItem`、`createFragment`、`positionOfCanvas`、`settingsPosition`、`SETTINGS_ID` | 🔴 **不能按下标当 itemId**：中间插/删一套画布会让后面每页的 tag 都变 → 正在编辑的那一页被无声销毁 |
 | `DashCanvasPageFragment.kt` | 689 | **每套画布一页**：渲染 + **就地编辑**（取代已删除的 `DashEditorActivity`） | `setPageActive`、`refreshIfActive`、`isEditing`、`render`、**`applyNameLabel`**（浮标四角/隐藏 + 让开「编辑」按钮）、`applyBackground`、`requestEdit`、`convertToCustom`、`startEdit/exitEdit`、`showEditDialog`、`showPresetPicker` | 🔴 只渲染**自己那一套**（`DashSpec.buildFor`）；**只有当前页才渲染**（由宿主 `setPageActive` 裁决，`onResume` 对"页是否可见"没有发言权）；内置布局要先 `convertToCustom`（并清 `designJson`，否则"转了自定义但画面没变"）。浮标位置用 `layout_gravity` + `padding` 设（padding 在四个角上都等价于"离边多远"） |
-| `CanvasSettingsFragment.kt` | 887 | **最后一页（设置）**：画布增/删/改名/排序 + 当前画布外观（主题/背景/设计文件/参考线/卡片）+ 轮询间隔 + 音效 + **画布名浮标位置** | `refresh`、`buildRow`、`showAddDialog/showRenameDialog/showRowMenu`、`showLookMenu`（**动作列表，不做下标算术**）、`importDesign/applyDesign/exportDesign/clearDesignFile`、`showPollDialog`、**`showNamePosDialog`** | 🔴 **列表对话框一律不要带 `setMessage`**：`MaterialAlertDialogBuilder` 同时收到 message 与 `setItems`/`setSingleChoiceItems` 时**列表会被整个丢掉**（实测 `android:id/text1` 节点数 0），对话框只剩标题+说明+取消。说明进标题或进选项文字；说明较长时改**自定义 View**（见 `showPollDialog`，与 `showGridDialog` 同一条路）。⚠️ 887 行偏大，要拆的话沿「画布管理 / 画布外观」切开 |
+| `CanvasSettingsFragment.kt` | 1011 | **最后一页（设置）**：画布增/删/改名/排序 + 当前画布外观（主题/背景/设计文件/参考线/卡片）+ 轮询间隔 + 音效 + **画布名浮标位置** + **最近一次导入记录**（v1.20.6） | `refresh`、`buildRow`、`showAddDialog/showRenameDialog/showRowMenu`、`showLookMenu`（**动作列表，不做下标算术**）、`importDesign/applyDesign/exportDesign/clearDesignFile`、`showPollDialog`、**`showNamePosDialog`**、**`tvLastImport`**、`pendingImportName/lastDesignName` | 🔴 **列表对话框一律不要带 `setMessage`**：`MaterialAlertDialogBuilder` 同时收到 message 与 `setItems`/`setSingleChoiceItems` 时**列表会被整个丢掉**（实测 `android:id/text1` 节点数 0），对话框只剩标题+说明+取消。说明进标题或进选项文字；说明较长时改**自定义 View**（见 `showPollDialog`，与 `showGridDialog` 同一条路）。⚠️ 1011 行偏大，要拆的话沿「画布管理 / 画布外观」切开。⚠️ 「最近一次导入」必须**在 `saveSettings()` 之前**赋值，否则这次导入要等下次落盘才记得住 |
 | `DashRenderer.kt` | 334 | 规格 + 主题 → **自由画布**（归一化坐标绝对定位 + 参考线覆盖层），5Hz 数据推送 | `render(spec, theme)`、`relayout`、**`hasRendered`**、`applyOverlay`、`pushValues`、`pruneOrphans`、`start/stop` | 🔴 不得塞数据获取逻辑；主/副参数由它推给视图。⚠️ `pruneOrphans` 动的是 `Store.customGauges`（**当前画布**），只有当前页该调它。⚠️ **`relayout()` 必须在收到第一次规格之前直接返回**（`hasRendered`）：`lastSpec` 初值是空列表，而容器第一次布局就会触发 relayout —— 不挡的话会打出**误导性的** `无可渲染的表 \| spec=0` 并闪一下空态；多画布后非当前页**故意不渲染**，那些页 100% 会走到这里 |
 | `DashboardBenchmark.kt` | 161 | **性能基准的纯逻辑**：排布 + 假值生成（不碰 View / Store / 总线，**可单测**） | `GAUGES`(8)、`STRESS_GAUGES`(12)、`pids`、`gauges`、`gaugeList(count,cols,rows)`、`cellRect`、`valueAt` | 🟡 用 `sin` 而非锯齿 —— 锯齿的周期跳变会额外触发全量重绘，把峰值拉高、测不出稳态 |
 
@@ -188,6 +192,7 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `GForceGaugeView.kt` | 86 | G力值（圆内 2D 点 + 0.5G 参考圈 + 十字准线） | `MAX_G`、`onDraw` | 🟢 轴向假设见 `GForceSource` |
 | `GaugeViewFactory.kt` | 24 | **样式 → View 的唯一映射处**（编辑器与渲染器共用） | `create(ctx, style)` | 🔴 分两处写必然分叉 |
 | `DashGridOverlayView.kt` | 81 | **参考线覆盖层**（均匀线段，密度/样式可调，常驻 z 序最底） | `linesEnabled`、`cols`、`rows`、`style` | 🟡 **不能叫 `enabled`**（撞 `View.setEnabled` 的 JVM 签名） |
+| `MonitorWarnBar.kt` | 94 | **常驻监听警示条**（v1.20.6，P10-3）：监听期间在顶部挂 `监听中 · 轮询已暂停（转速/水温冻结）`，**跨页面可见** | `sync(host)`、`TEXT`（文案的**唯一**出处，CAN 探测页共用） | 🔴 挂 `android.R.id.content` 而**不是**改 `activity_main.xml` —— 加一行会让 `pageContainer` 变矮 → 画布尺寸变化 → 表盘重排 + 闪一下。⚠️ 判据只有 `FrameMonitor.running` 一处，UI 不再自己判断 |
 | `DashCanvasEditorView.kt` | 319 | **拖拽画布**（ViewGroup；点选 / 拖动 / 手柄缩放 / 网格吸附） | `submit`、`add`、`refresh`、`currentItems`、`hitTest`、`inHandle` | 🟡 坐标一律走 `DashLayout.Drag` |
 | `MaxWidthViews.kt` | 153 | **限宽容器 4 个变体** | `MaxWidthScrollView`、`MaxWidthNestedScrollView`、`MaxWidthLayout`、`MaxWidthLinearLayout` | 🟡 见 `ARCHITECTURE.md` §3 |
 | `ColumnFlowLayout.kt` | 190 | **按宽度自动分 1/2 列的瀑布流容器**（横屏表单不再一行一个超宽输入框） | `assign` / `assignColumns`（纯函数，`onMeasure` 与 `onLayout` **共用同一个**） | 🔴 两处各算一次必然算出不同结果 → 错位。**不用 `layout-land` 副本**（红线 §4.2.13） |
@@ -207,15 +212,15 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 
 ---
 
-### 2.5 单元测试 `app/src/test/java/com/icar/obd/`（**33 个文件 / 598 个用例**）
+### 2.5 单元测试 `app/src/test/java/com/icar/obd/`（**35 个文件 / 617 个用例**）
 
 > ⚠️ 下表的「用例」列**长期滞后于实际**（`run-tests.ps1` 的输出才是准的）——
-> 2026-10-06 实测 `TOTAL=598`。加用例时顺手把这一行和本表改掉。
+> 2026-10-08 实测 `TOTAL=617`。加用例时顺手把这一行和本表改掉。
 
 | 文件 | 用例 | 覆盖 |
 |---|---|---|
 | `data/FormulaTest.kt` | 44 | 文档承诺的全部公式模板、优先级与结合性、内置函数（含 `be16`/`le16`/`s16`/`bits`/`map`）、错误路径（除零 / 变量越界 / 未知函数 / NaN）、`check()` |
-| `data/DashCanvasTest.kt` | 21 | **多画布（v1.20.0/1.20.1）**：`DashCanvas` JSON 往返 / 坏条目跳过 / 名字兜底；**旧配置迁移**（取值完全不变、只迁一次、有画布时 `dash.json` 不再覆盖）；增/删/切/排序（内容互不串台、最后一套删不掉、删当前落到邻居、上限、悬空 id 自愈）；**画布名浮标**（名字表契约 / 越界回落 / 设置往返 / 读取时夹取 / **全局性**）；**备份往返保留全部画布与当前画布** |
+| `data/DashCanvasTest.kt` | 25 | **多画布（v1.20.0/1.20.1）**：`DashCanvas` JSON 往返 / 坏条目跳过 / 名字兜底；**旧配置迁移**（取值完全不变、只迁一次、有画布时 `dash.json` 不再覆盖）；增/删/切/排序（内容互不串台、最后一套删不掉、删当前落到邻居、上限、悬空 id 自愈）；**画布名浮标**（名字表契约 / 越界回落 / 设置往返 / 读取时夹取 / **全局性**）；**备份往返保留全部画布与当前画布**；**最近一次导入（v1.20.6）**（设置往返 / 旧配置缺字段是空记录而不是假时间 / 摘要格式 / 缺文件名兜底） |
 | `obd/ObdProtocolTest.kt` | 42 | `extractData` 各种响应格式（ATH0 / ATH1 / SEARCHING / 多帧 / NO DATA / 15 种错误码 / 兜底分支）、`parse` 端到端、初始化序列、**危险模式拦截**、`scanCandidates`、**ISO-TP 多帧重组**、多 ECU 选序 |
 | `ui/view/AlertPulseTest.kt` | 37 | 等级判定与**迟滞**（含反证用例）、**下限 `levelWithLow`**（方向 / 优先级 / 阈值 0 与 null / `WARN_LOW` 不爆闪）、爆闪时间相位、颜色混合 |
 | `ui/view/EasingTest.kt` | 37 | **缓动纯数学**（v1.10.4）：4 种曲线的单调 / 不过冲 / **帧率无关** / dt 夹取 / 未知模式回落、输入滤波（压尖刺 / 帧率无关 / 收敛）、收敛判据（**数据还在变时不许停** / 稳定后才停 / 吸附与继续是两件事）、5Hz 推送回归 |
@@ -227,6 +232,7 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `ui/view/GaugeAnimatorTest.kt` | 19 | **动画状态机**（v1.10.4）：首帧直达 / null 与 NaN 透传 / 目标稳定后停 / **5Hz 下指针大部分时间都在动** / **τ 变大后动得更久** / 目标跳变后重新计时 / 输入滤波压尖刺 / 重启不抽风 / 四种曲线收敛 / **下降方向也收敛** |
 | `data/PidModelsTest.kt` | 18 | `CompareOp` 七种比较（含 CHANGED 边沿语义）、`RuleAction.describe`、`requestString` / `modeInt` / `pidBytes`、优先级倍率与未知取值兜底 |
 | `obd/CanFrameTest.kt` | 17 | CAN 帧解析 + 按 ID 聚合 |
+| `obd/FrameRateGateTest.kt` | 14 | **帧率闸（v1.20.6，P10-5）**：正常不误伤 / 超软上限进限流 / 超硬上限进过载 / **迟滞**（阈值上下不每秒抖动）/ 同窗口不重复滚动 / 跳过与丢弃分别记账 / `reset` 清干净 / 过载提示要说清"拆成两次"；**预筛的安全性质**（凡解析后能命中的行必须放行、丢掉的是解析后也命不中的行、空集合不筛） |
 | `ui/view/GaugeEasingTest.kt` | 14 | 时间基准缓动：收敛 / 不过冲 / **帧率无关** / **一个 5Hz 周期内不走完（留余量给下次推送）** / 绝对阈值收敛 |
 | `ui/dash/DashboardBenchmarkTest.kt` | 12 | 基准排布（铺满 / 不重叠 / 尺寸一致）+ 假值不越界不 NaN + 压力段 12 格不重叠 + 表数比 1.5× |
 | `data/BackupTest.kt` | 10 | 完整备份：往返 / **整体替换而非合并** / 三类拒绝 / 旧格式迁移 / 缺段容错 |
@@ -257,11 +263,11 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `layout/fragment_pid.xml` | 107 | PID 列表页 | 根 `MaxWidthLinearLayout` 760dp |
 | `layout/fragment_rule.xml` | 62 | 规则列表页 | 根 `MaxWidthLinearLayout` 760dp |
 | `layout/fragment_log.xml` | 97 | 日志页 | 根 `MaxWidthLinearLayout` 900dp |
-| `layout/activity_pid_editor.xml` | 467 | **PID 编辑器**（字段最多） | `MaxWidthScrollView` 720dp |
-| `layout/activity_rule_editor.xml` | 230 | 规则编辑器 | `MaxWidthScrollView` 760dp |
+| `layout/activity_pid_editor.xml` | 473 | **PID 编辑器**（字段最多）。根 `MaxWidthScrollView` 带 id **`scrollRoot`**（v1.20.6：校验失败要能滚到结果行） | `MaxWidthScrollView` 720dp |
+| `layout/activity_rule_editor.xml` | 236 | 规则编辑器。根 `MaxWidthScrollView` 带 id **`scrollRoot`**（同上） | `MaxWidthScrollView` 760dp |
 | `layout/activity_scanner.xml` | 343 | 扫描器 | `MaxWidthNestedScrollView` 760dp |
 | `layout/fragment_dash_canvas.xml` | 272 | **一套画布**（pager 的一页）：`gaugeGrid`（自由画布）+ `lvglDash` + **就地编辑器 `editorCanvas`** + 编辑工具条 2 行 + 画布名浮标 + 右下角「编辑」 | 不限宽（限了预览比例就失真）。⚠️ 浮标的 `layout_gravity`/`padding` 由 `DashCanvasPageFragment.applyNameLabel()` **运行时覆盖**（XML 里的 top|start 只是默认） |
-| `layout/fragment_canvas_settings.xml` | 173 | 画布设置页（pager 最后一页）：画布列表 + 当前画布外观 + 轮询间隔 + 音效 + **画布名浮标** | 根 `MaxWidthNestedScrollView` 720dp |
+| `layout/fragment_canvas_settings.xml` | 186 | 画布设置页（pager 最后一页）：画布列表 + 当前画布外观 + 轮询间隔 + 音效 + **画布名浮标** + **最近导入记录 `tvLastImport`**（v1.20.6） | 根 `MaxWidthNestedScrollView` 720dp |
 | `layout/item_canvas.xml` | 57 | 画布设置页里的一行（名字 + 副标题 + **一个「操作」按钮**；不做四个小按钮，否则每个只剩 40dp） | — |
 | `layout/activity_theme_editor.xml` | 175 | 主题编辑器（工具栏 + 实时预览 + 字段容器；字段行代码生成）。预览表各套一层 `pvCard*` 容器画**卡片底** —— 不套的话调描边/不透明度看不到变化 | 不限宽 |
 | `layout/dialog_gauge_edit.xml` | 168 | 添加/编辑仪表对话框（含**霓虹档位**与**卡片外框**两个单表覆盖项） | `MaxWidthScrollView` 520dp |
@@ -311,7 +317,7 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `tools/theme-studio/png.js` | **极简 PNG 编码器**（零依赖，只用内置 zlib）。PNG 结构 + CRC32 + 绘图原语（rect/roundRect/circle/ring/arc/line/poly）。抗锯齿用**超采样**（4 倍绘制再降采样） |
 | `tools/theme-studio/gen-assets.js` | **生成示例素材**：`node gen-assets.js` → `assets/<分类>/*.png`（**344 个**）+ `assets/builtin.js`（清单）。**全部是几何图形，不含任何车标** |
 | `tools/theme-studio/` | **PC 端主题制作工具**（v2）：`index.html` + `css/studio.css` + `js/{schema,model,validate,presets,canvas,panels,editor,app}.js` + `png.js`（PNG 编码器）+ `gen-assets.js` + `tests/`（**21 个浏览器套件** + `_common.js` 公共前置） + `gen-sample.js` + `sample.json`(v1) + `sample-v2.json` + `README.md` + `CHANGELOG.md`。**双击 index.html 即用，零安装**（经典脚本，不用 ES module/fetch —— 那在 `file://` 下被 CORS 挡）。校验规则与 `DesignFile.kt` 同源，`ThemeStudioSampleTest` 钉着 |
-| `app/src/test/java/com/icar/obd/` | JVM 单元测试 **32 个文件 / 563 个用例**（见 §2.5） |
+| `app/src/test/java/com/icar/obd/` | JVM 单元测试 **35 个文件 / 617 个用例**（见 §2.5） |
 | `docs/screenshots/` | 真机截图：`01~10` 竖屏，`11~17` 横屏 |
 
 ### ⚠️ 改这两个地方时必须成对

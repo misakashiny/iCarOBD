@@ -207,6 +207,21 @@ object CanSniffer {
                 delay(300)
 
                 // 关键命令带**重试**，只认 `OK`。
+                //
+                // ⚠️⚠️ **重试都失败时这趟必须作废**（v1.20.6，P10-4）。
+                //
+                // 原来三次都不 OK 只写一条 E 日志然后**照跑** —— 结果是
+                // `ATH1 -> NO DATA` → 回来的行里没有 CAN ID → `lines=3700 parsedFrames=0`，
+                // 界面上给出一份**空结果**让人猜"是不是车上没信号 / 是不是适配器不行"。
+                // 实车 2026-10-06 反复踩到，每次都白花一趟时间。
+                //
+                // 为什么这两条是**致命**的（而不是只警告）：
+                //  - `ATH1`（带 CAN 头）没有 → `CanFrame.parseLine` 连 ID 都切不出来 → 0 帧；
+                //  - `ATS1`（开空格）没有 → 整帧是一长串十六进制，切不出 token → 0 帧。
+                //    这是 v1.18.9 修过的同一个坑（初始化序列里的 `ATS0` 会把它关掉）。
+                // 两者任一失效，**这趟的产出必然是 0 帧** —— 继续跑只会给出误导性的空结果。
+                // `ATL1` 只是"更容易粘行"的稳健性设置，失败仍然继续（有 `\r` 兜底）。
+                val fatal = ArrayList<String>()
                 for (c in listOf("ATH1", "ATS1", "ATL1")) {
                     var resp = ""
                     for (attempt in 1..3) {
@@ -216,11 +231,35 @@ object CanSniffer {
                     }
                     AppLog.i(AppLog.M_OBD, "探测准备", "$c -> ${resp.trim().take(48)}")
                     if (!resp.contains("OK")) {
-                        AppLog.e(
-                            AppLog.M_OBD, "探测准备未生效",
-                            "$c 连试 3 次都不是 OK（'${resp.trim().take(30)}'）—— 这趟很可能解析不出帧"
+                        if (c == "ATL1") {
+                            AppLog.w(
+                                AppLog.M_OBD, "探测准备未生效",
+                                "$c 连试 3 次都不是 OK（'${resp.trim().take(30)}'）—— 继续，但过载时更容易粘行"
+                            )
+                        } else {
+                            fatal.add(c)
+                            AppLog.e(
+                                AppLog.M_OBD, "探测准备失败",
+                                "$c 连试 3 次都不是 OK（'${resp.trim().take(30)}'）—— 这趟没有 CAN ID，判定无效"
+                            )
+                        }
+                    }
+                }
+                if (fatal.isNotEmpty()) {
+                    // 收尾要做的两件事：把轮询还回去 + 说清"重跑一次"。
+                    // ⚠️ 不走 `finish()` —— 它含一次健康检查与 ATZ 重初始化，
+                    // 而这趟**根本没开过透传**（rawMode 一直是 false），没有什么要复原的。
+                    main.post {
+                        if (engineWasRunning) ObdController.engine.start()
+                        publish(
+                            Status(
+                                Phase.FAILED,
+                                message = "准备失败，请重跑一次（${fatal.joinToString(" / ")} 连续 3 次没有回 OK）\n" +
+                                    "这趟的帧里不会有 CAN ID，继续跑只会得到一份空结果。"
+                            )
                         )
                     }
+                    return@launch
                 }
             }.onFailure {
                 main.post { finish("启动失败：${it.message}") }

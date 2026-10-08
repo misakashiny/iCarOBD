@@ -178,7 +178,44 @@ object Store {
          * **全局偏好，不跟着画布走** —— 跟着走的话，横滑时小字会在四个角之间乱跳。
          */
         var canvasNamePos: Int = DashCanvas.NAME_POS_TOP_START,
-    )
+
+        // ---------- 最近一次导入设计文件（v1.20.6）----------
+
+        /**
+         * **最近一次成功导入**的设计文件：文件名 / 几块表 / 时间。
+         *
+         * ## 为什么需要它（用户报过两次）
+         *
+         * "导入设计文件之后画布还是空的" —— 查了半天才发现是**根本没导进去**
+         * （选错了文件、解析失败后没注意、或者选完素材文件夹又没重新应用）。
+         * 界面上没有任何"上次到底导了什么"的痕迹，所以只能靠翻日志。
+         *
+         * 这三个字段就是那条**一眼可见**的记录（画布设置页显示，
+         * 例：`未命名设计-v1.json · 5 块表 · 10-08 21:30`）。
+         *
+         * 存在 settings 里而不是单独的记录文件：`settingsToJson` 已经是"完整备份"的
+         * schema，放进来备份/恢复自动带上，不用再维护第三份字段清单。
+         */
+        var lastImportName: String = "",
+        /** 那次导入**实际应用**了几块表（不是设计文件里声明了几块 —— 两者可能不同） */
+        var lastImportGauges: Int = 0,
+        /** 导入成功的时刻（`System.currentTimeMillis()`）。0 = 从没导入过 */
+        var lastImportAt: Long = 0L,
+    ) {
+        /**
+         * 「最近一次导入」的一行摘要；从没导入过返回**空串**。
+         *
+         * 放在 data 层而不是 Fragment 里：这是**纯函数**，放这儿才能被 JVM 单测覆盖
+         * （Fragment 里的格式化永远测不到，而"记录写没写对"恰恰是最容易悄悄坏的地方）。
+         */
+        fun lastImportSummary(): String {
+            if (lastImportAt <= 0L) return ""
+            val ts = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
+                .format(java.util.Date(lastImportAt))
+            val name = lastImportName.ifBlank { "未命名设计" }
+            return "$name · $lastImportGauges 块表 · $ts"
+        }
+    }
 
     private lateinit var dir: File
 
@@ -322,6 +359,11 @@ object Store {
             // 让一个手改坏的 settings.json 落到未知分支是不必要的风险
             canvasNamePos = o.optInt("canvasNamePos", DashCanvas.NAME_POS_TOP_START)
                 .coerceIn(0, DashCanvas.NAME_POS_HIDDEN),
+            // 最近一次导入（v1.20.6）。旧配置没有这三个键 → 空记录，
+            // 设置页显示"还没导入过"（**不要**兜一个假时间，那比空更糟）
+            lastImportName = o.optString("lastImportName", ""),
+            lastImportGauges = o.optInt("lastImportGauges", 0),
+            lastImportAt = o.optLong("lastImportAt", 0L),
         )
         // 有画布 → 立刻把「当前画布」灌进实时字段。
         //
@@ -432,6 +474,10 @@ object Store {
         put("canvases", JSONArray().apply { settings.canvases.forEach { put(it.toJson()) } })
         // 画布名浮标的位置：全局偏好（与"当前是哪一套"无关）
         put("canvasNamePos", settings.canvasNamePos)
+        // 最近一次导入的设计文件（v1.20.6）—— 设置页那条"一眼可见"的记录
+        put("lastImportName", settings.lastImportName)
+        put("lastImportGauges", settings.lastImportGauges)
+        put("lastImportAt", settings.lastImportAt)
     }
 
     fun saveSettings() = runCatching {

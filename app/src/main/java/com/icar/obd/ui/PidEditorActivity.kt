@@ -71,6 +71,15 @@ class PidEditorActivity : AppCompatActivity() {
     private val sampleIntervalMs = 500L
     private lateinit var tvBytes: TextView
     private lateinit var tvResult: TextView
+    private lateinit var scrollRoot: android.widget.ScrollView
+
+    /**
+     * 结果行的**正常**颜色（从布局里读一次，不写死）。
+     *
+     * 校验失败时把它染成警示色、成功时染回来 —— 写死颜色的话，
+     * 以后改 `MonoBox` 样式就会出现"正常状态也是红的"。
+     */
+    private var resultColor = 0
 
     private var editing: PidDefinition? = null
     private var isBuiltIn = false
@@ -111,6 +120,8 @@ class PidEditorActivity : AppCompatActivity() {
         tvRx = findViewById(R.id.tvRx)
         tvBytes = findViewById(R.id.tvBytes)
         tvResult = findViewById(R.id.tvResult)
+        scrollRoot = findViewById(R.id.scrollRoot)
+        resultColor = tvResult.currentTextColor
 
         spProtocol.adapter = ArrayAdapter(
             this, android.R.layout.simple_spinner_dropdown_item, protocols
@@ -259,29 +270,59 @@ class PidEditorActivity : AppCompatActivity() {
         )
     }
 
+    /**
+     * **校验失败要让用户看得见**（v1.20.6，P10-2）。
+     *
+     * ## 为什么三样一起做（Toast + 警示色 + 滚到可见）
+     *
+     * 原来失败只把结果行的一行小字改掉（`解析结果: 请先填写 PID`），
+     * 而这一行在**表单最底下** —— 用户点「发送测试请求」后屏幕上什么都没变，
+     * 直接得出"App 坏了 / 车没反应"的结论（P10 表格里写着"今天我自己踩了两次"）。
+     *
+     * 三样各有分工，缺一样都会漏：
+     *  - **Toast**：不管当前滚到哪、不管页面多长，一定看得见 → 这是主判据；
+     *  - **警示色**：人已经盯着结果行时，颜色比小字更早被注意到；
+     *  - **滚过去**：表单长的时候把证据送到眼前，省掉"是不是我没滚下去"的怀疑。
+     *
+     * @param row   写进结果行的整句（带 `解析结果:` / `采样:` 前缀，保持原有措辞）
+     * @param toast 弹出来的短句。默认与 [row] 相同；结果行要带前缀、Toast 要短，就分开传
+     */
+    private fun fail(row: String, toast: String = row) {
+        tvResult.text = row
+        tvResult.setTextColor(androidx.core.content.ContextCompat.getColor(this, R.color.danger))
+        // 结果行在 ScrollView 里，滚到它（`top` 是相对内容顶部的偏移）
+        scrollRoot.post { runCatching { scrollRoot.smoothScrollTo(0, tvResult.top) } }
+        ObdController.toast(toast)
+        AppLog.w(AppLog.M_UI, "PID 编辑器校验未通过", toast)
+    }
+
     private fun runTest() {
         val p = collect()
         if (p.source.equals("monitor", true)) {
-            tvResult.text = "解析结果: 这是**监听型** PID（广播帧），不能主动请求 —— 到「CAN 探测」页开启常驻监听"
+            fail(
+                "解析结果: 这是监听型 PID（广播帧），不能主动请求 —— 到「CAN 探测」页开启常驻监听",
+                "监听型 PID 不能主动请求，请到「CAN 探测」页开启常驻监听"
+            )
             return
         }
         if (p.pid.isBlank()) {
-            tvResult.text = "解析结果: 请先填写 PID"
+            fail("解析结果: 请先填写 PID", "请先填写 PID")
             return
         }
         if (!ObdController.isConnected()) {
-            tvResult.text = "解析结果: 设备未就绪，请先到「连接」页完成初始化"
+            fail("解析结果: 设备未就绪，请先到「连接」页完成初始化", "设备未就绪，请先到「连接」页完成初始化")
             return
         }
         // 先做静态语法检查，省一次总线往返
         Formula.check(p.formula)?.let { err ->
-            tvResult.text = "公式语法错误: $err"
+            fail("公式语法错误: $err", "公式语法错误：$err")
             return
         }
 
         tvTx.text = "TX: ${p.requestString()}（发送中…）"
         tvRx.text = "RX: -"
         tvBytes.text = "数据字节: -"
+        tvResult.setTextColor(resultColor)
         tvResult.text = "解析结果: -"
 
         lifecycleScope.launch {
@@ -327,19 +368,22 @@ class PidEditorActivity : AppCompatActivity() {
     private fun runSample() {
         val p = collect()
         if (p.source.equals("monitor", true)) {
-            tvResult.text = "解析结果: 这是**监听型** PID（广播帧），不能主动请求 —— 到「CAN 探测」页开启常驻监听"
+            fail(
+                "解析结果: 这是监听型 PID（广播帧），不能主动请求 —— 到「CAN 探测」页开启常驻监听",
+                "监听型 PID 不能主动请求，请到「CAN 探测」页开启常驻监听"
+            )
             return
         }
         if (p.pid.isBlank()) {
-            tvResult.text = "采样: 请先填写 PID"
+            fail("采样: 请先填写 PID", "请先填写 PID")
             return
         }
         if (!ObdController.isConnected()) {
-            tvResult.text = "采样: 设备未就绪，请先到「连接」页完成初始化"
+            fail("采样: 设备未就绪，请先到「连接」页完成初始化", "设备未就绪，请先到「连接」页完成初始化")
             return
         }
         Formula.check(p.formula)?.let {
-            tvResult.text = "公式语法错误: $it"
+            fail("公式语法错误: $it", "公式语法错误：$it")
             return
         }
 
@@ -350,6 +394,7 @@ class PidEditorActivity : AppCompatActivity() {
             return
         }
 
+        tvResult.setTextColor(resultColor)
         sampling = true
         btnSample.text = "停止采样"
         val wasRunning = ObdController.engine.running
@@ -400,7 +445,10 @@ class PidEditorActivity : AppCompatActivity() {
             return
         }
         if (p.source.equals("monitor", true)) {
-            tvResult.text = "解析结果: 这是**监听型** PID（广播帧），不能主动请求 —— 到「CAN 探测」页开启常驻监听"
+            fail(
+                "解析结果: 这是监听型 PID（广播帧），不能主动请求 —— 到「CAN 探测」页开启常驻监听",
+                "监听型 PID 不能主动请求，请到「CAN 探测」页开启常驻监听"
+            )
             return
         }
         if (p.pid.isBlank()) {
