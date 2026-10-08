@@ -10,6 +10,21 @@
 
   同样的 id：`navView` / `navDivider` / `pageContainer`。
   （竖屏的分隔线贴导航栏**上边缘**，见下面那条 View 的 layout_gravity。）
+
+  ## ⚠️ 底部导航栏为什么是 `NavBottomBar` 而不是 `BottomNavigationView`（v1.20.5，P0）
+
+  `BottomNavigationView` 的菜单项**硬上限是 5**，而我们有 6 个页面
+  （仪表盘/连接/PID/规则/日志/知识库）。第 6 项会让它在**构造函数里**抛：
+
+      IllegalArgumentException: Maximum number of items supported by
+      BottomNavigationView is 5.
+
+  → **竖屏设备（手机）一启动就崩**。横屏（平板）用 NavigationRailView、没有这个上限，
+  所以 v1.20.4 只在手机上暴露（用户报"手机端打不开"）。
+
+  已核实 **Material 1.12.0 没有 `setMaxItemCount`**（只有 getter），5 是写死的；
+  但 `getMaxItemCount()` **可重写**，且构造函数里是虚调用它 ——
+  所以本地子类 `ui/view/NavBottomBar.kt` 重写成 6 即可（见那个文件的说明）。
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -36,9 +51,9 @@
     <!--
       竖屏：底部悬浮导航。
       横屏见 res/layout-land/activity_main.xml —— 同样的 id，换成左侧 NavigationRailView。
-      MainActivity 用 NavigationBarView 基类接收两者。
+      MainActivity 用 NavigationBarView 基类接收两者，所以不需要判断方向。
     -->
-    <com.google.android.material.bottomnavigation.BottomNavigationView
+    <com.icar.obd.ui.view.NavBottomBar
         android:id="@+id/navView"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

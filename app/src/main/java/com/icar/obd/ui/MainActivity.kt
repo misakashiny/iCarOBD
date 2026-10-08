@@ -57,6 +57,11 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        // ⚠️ v1.20.5：竖屏底部导航栏是**本地子类** `NavBottomBar`（ui/view/NavBottomBar.kt），
+        // 它把菜单项上限从 Material 写死的 5 提到 6 —— 否则第 6 个 tab（知识库）
+        // 会在**构造函数里**抛 `IllegalArgumentException: Maximum number of items ... is 5`，
+        // 手机（竖屏）一启动就崩（v1.20.4 的实际故障；平板横屏用 NavigationRailView，没这个上限）。
+        // 菜单仍由 XML 的 `app:menu` 提供，这里不需要额外代码。
 
         // 导航控件在竖屏是 BottomNavigationView、横屏是 NavigationRailView，
         // 两者都继承 NavigationBarView，因此这里用基类接收，不需要判断方向。

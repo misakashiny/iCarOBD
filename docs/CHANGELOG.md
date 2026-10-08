@@ -41,6 +41,72 @@
 
 ---
 
+## v1.20.5 · 2026-10-08 · 🔴 **P0：手机（竖屏）一启动就崩** —— `BottomNavigationView` 硬上限 5 项
+
+> 用户报「我在手机端是打不开的」。**是我 v1.20.3 引入的崩溃**，与 OTG 无关。
+
+### 现场（手机上抓的）
+
+```
+20:59:04.079  Start proc 27019:com.icar.obd
+20:59:04.211  E/AndroidRuntime: FATAL EXCEPTION: main
+20:59:04.220  Force finishing activity com.icar.obd/.ui.MainActivity
+20:59:04.243  Process com.icar.obd (pid 27019) has died
+```
+
+app 自己的日志里只有一行 `===== iCar OBD 启动 =====`，**130 毫秒后就死**。堆栈：
+
+```
+java.lang.RuntimeException: Unable to start activity ...MainActivity
+  at ...MainActivity.onCreate(MainActivity.kt:58)          ← setContentView
+Caused by: android.view.InflateException: Binary XML file line #52 in
+           com.icar.obd:layout/activity_main: Error inflating class
+           com.google.android.material.bottomnavigation.BottomNavigationView
+Caused by: java.lang.IllegalArgumentException:
+           Maximum number of items supported by BottomNavigationView is 5.
+```
+
+### 根因
+
+`BottomNavigationView`（**竖屏**底部导航）的菜单项**硬上限是 5**。
+v1.20.3 给导航栏加了第 6 个 tab（知识库）→ 竖屏布局里的 `app:menu` 在
+**构造函数里**就 inflate 菜单 → 直接抛异常。
+
+**为什么平板一直没事**：平板是**横屏**，用的是 `NavigationRailView`，
+**没有**这个上限 —— 所以这个 bug **只在手机上暴露**，装机验证时漏了。
+（教训：**竖屏必须单独验一遍**，不能只验平板。）
+
+### 修法
+
+已核实 **Material 1.12.0 根本没有 `setMaxItemCount`** —— 把
+`material-1.12.0/jars/classes.jar` 里的 `NavigationBarView` / `NavigationBarMenu` /
+`BottomNavigationView` 三个类**逐个按字节搜过**，只有 `getMaxItemCount`，没有 setter。
+**这个 5 是写死的、没有公开改法。**
+
+但 `getMaxItemCount()` **可重写**，而且 `BottomNavigationView` 的构造函数里是
+**虚调用**它（`new NavigationBarMenu(context, getClass(), getMaxItemCount())`）——
+Java 的虚调用会派发到子类重写，**在构造过程中就生效**。
+
+所以新增本地子类 **`ui/view/NavBottomBar.kt`**（重写 `getMaxItemCount()` 返回 6），
+竖屏布局改用它，`app:menu` 照旧。**10 行代码，不动 Material 版本。**
+
+### 验证
+
+- **手机（竖屏，小米 24122RKC7C / Android 16）**：`pidof` 有值、无 FATAL、
+  `ResumedActivity = com.icar.obd/.ui.MainActivity` → **能打开了** ✅
+- 平板（横屏）不受影响（它走 `NavigationRailView`）
+- 单测全过、构建守卫通过
+
+### 顺带排除的两个误解
+
+1. 用户提到「OTG 已经连接上了」—— 实测手机 `dumpsys usb` 是 **`host_connected=false`**，
+   即当时处于 **MTP 从设备模式**（正连在电脑上），**并没有进入 USB 主机模式**，
+   所以 OTG 那边也还没生效。
+2. **本 app 完全没有 USB / 串口 / OTG 代码**（只有 `BleTransport` 与 `SppTransport`，
+   权限也只有蓝牙）—— 要支持 USB 版 ELM327 得单独做一条传输层。
+   顺带记录：该手机内核**没有 `ch341` / `pl2303` 驱动**（有 `ftdi_sio` / `cdc_acm`），
+   所以 CH340 类 USB 串口芯片在这台手机上本来也认不出来。
+
 ## v1.20.4 · 2026-10-06 · 导航栏改**悬浮**（不再挤画布）+ 去掉把手改**双指手势**
 
 > 用户三条反馈。第 3 条（P0）查到了**决定性的结论**，见下。
