@@ -35,8 +35,10 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 │   ├── theme-studio/               PC 端主题制作工具（**v2 多文件**，双击 index.html 即用，见 §4）
 ├── docs/                           **全部文档集中在此**
 │   ├── 接手大纲.md                 【入口】项目全貌 + 上手路线 + 红线
-│   ├── 迭代清单.md                 版本清单 + 待办（带验收标准）
-│   ├── 下一步-主题工具与仪表盘重构.md  当前任务规格（§1/§2.4/§2.1步骤1 已完成）
+│   ├── 交接-换电脑.md              **换机专用**：环境变量 / ASCII 联结 / 编译 / 本机实测偏差
+│   ├── 上车监控清单.md             **上车专用**：§4 判据表 + **§11 本趟工单** + 取证 + 已知的坑
+│   ├── 迭代清单.md                 版本清单 + 待办（带验收标准）+ §五 阻塞关系
+│   ├── 下一步-主题工具与仪表盘重构.md  主题工具 + 仪表盘重构的执行规格（**已完成**，留作记录）
 │   ├── ARCHITECTURE.md             为什么
 │   ├── FILE_MAP.md                 本文（改哪里）
 │   ├── HANDOVER.md                 详细手册
@@ -47,9 +49,11 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 │   ├── 动画实现.md                 动画机制（**三层数值过渡** / 爆闪 / 共用时钟）
 │   ├── 仪表框架.md                 8 种仪表 + 「某块表为什么是空的」排查
 │   ├── CAN-信号库与逆向框架.md     **CAN 信号逆向的方法论**（DBC 分析 / 采样率是前提 / 四阶段方案）
-│   ├── 下一步-CAN信号库实现规格.md  **上一条的执行规格**（待定项已全定，照着做即可）
+│   ├── 下一步-CAN信号库实现规格.md  **上一条的执行规格**（S1/S2 已做 = v1.20.7，S3~S5 待做）
+│   ├── 下一步-变量模式与组件变体.md  **主题工具的下一轮执行规格**（变量·模式 / 组件·变体，待评审）
 │   ├── LVGL-放弃记录.md            LVGL 方案为什么被放弃（教训）
 │   ├── 主题格式参考.md             Sky Gauge 格式逆向（已不用，格式知识仍有效）
+│   ├── archive/                    归档的历史文档（`CHANGELOG-v1.0~v1.8.md`）
 │   └── screenshots/                实机截图 20 张 + 索引 README
 ├── dist/                           当前版本 APK（只保留最新一个）
 ├── README.md                       面向使用者
@@ -93,9 +97,11 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 
 | 文件 | 行 | 职责 | 关键符号 | 风险 |
 |---|---|---|---|---|
-| `PidModels.kt` | 636 | **核心数据模型**，全部带 JSON 序列化 | `PidDefinition`（含 v1.20.7 的 **`invalidRaw`/`minDlc`/`ttlMs`**）、`CompareOp`、`Rule`、`RuleCondition`、`RuleAction`、`GaugeItem`（含 **`cardStyle`** + `CARD_*` / `CARD_NAMES`）、`PidValue`（含 **`ttlMs`**）、**`dlcTooShort()` / `hitsInvalidRaw()`**（S2 两条判定的纯函数实现） | 🔴 加字段必须同步 `toJson`/`fromJson`。⚠️ `invalidRaw`/`minDlc`/`ttlMs` **默认值 = 旧行为**，所以默认值一律**不写进 JSON**（零迁移）；`invalidRaw` 的 `null` 与 `0` 必须区分（0 是合法的无效原始值）。⚠️ `dlcTooShort`/`hitsInvalidRaw` 抽在这里而不是 `FrameMonitor` 里，是因为那个 object 在 JVM 里一碰就抛 `Stub!` |
-| `Formula.kt` | 435 | 自研表达式求值器（词法→语法→求值）+ **通用位段函数**（v1.20.7） | `Formula.eval(expr, data)`、`Formula.check(expr)`、**`bitSequence(start,len,motorola)`**（真实位集）、**`bitsAt(data,start,len,motorola,signed)`**、**`rawBits(expr,data)`**（取位段的原始值给 `invalidRaw` 用）、内部 `Lexer`/`Parser` | 🔴 解析正确性命门。⚠️⚠️ **`bits(v,start,len)` 与 `bitsAt(起始位,长度,字节序,符号)` 不是一回事**（类注释里有对照表）：`bits` 的输入是**一个数值**，只能取单字节内的位段；`bitsAt` 自己拿**整帧**按位序遍历，所以跨字节 + 非对齐 + Motorola 都表达得了。⚠️ **判"解到帧外"必须用 `bitSequence` 的真实位集**，不能用线性的 `起始位+长度`（Motorola 是锯齿位序，实测误报过 2 条）。⚠️ `check()` 的假数据是 **64 字节**（CAN FD 上限），26 会让起始位靠后的合法 `bitsAt` 被误判 |
-| `SignalTableCsv.kt` | 587 | **25 列「信号表」的唯一生成/解析实现**（v1.20.7，S1 规格 §3），**纯函数** | `BOM`/`withBom`/`stripBom`（**CSV BOM 的唯一权威**）、`COLUMNS`(25)、`C_*` 列名常量、`Observed`、`template(observed)`、`parse(text)`、`Result`/`Problem`、`formulaOf()`、`noteOf()`、`pidId()`、`normalizeId()`、`parseOrder/parseSign`、`escape/splitRows` | 🔴 **BOM 只在这里定义一次**（三处写 CSV 都引用它 —— `CsvRecorder` 恰恰因为漏了它让 Excel 中文乱码）。⚠️ 导入**按列名**匹配（插列/调序不能让导入错位 —— 错位的后果是"值解错了但看起来正常"）；PID id 由 `(报文ID, 信号名)` 确定性推出 → 重复导入是**覆盖**不是翻倍。⚠️ 判越界/位重叠都用 `Formula.bitSequence`。⚠️ 规格 §3.4 写的「起始位 ≤0 是硬错误」按**意图**实现成「<0 才是」——起始位 0 是合法的（有单测钉住这个偏差） |
+| `PidModels.kt` | 650 | **核心数据模型**，全部带 JSON 序列化 | `PidDefinition`（含 v1.20.7 的 **`invalidRaw`/`minDlc`/`ttlMs`**、v1.20.8 的 **`DEFAULT_MONITOR_TTL_MS`**）、`CompareOp`、`Rule`、`RuleCondition`、`RuleAction`、`GaugeItem`（含 **`cardStyle`** + `CARD_*` / `CARD_NAMES`）、`PidValue`（含 **`ttlMs`**）、**`dlcTooShort()` / `hitsInvalidRaw()`**（S2 两条判定的纯函数实现） | 🔴 加字段必须同步 `toJson`/`fromJson`。⚠️ `invalidRaw`/`minDlc`/`ttlMs` **默认值 = 旧行为**，所以默认值一律**不写进 JSON**（零迁移）；`invalidRaw` 的 `null` 与 `0` 必须区分（0 是合法的无效原始值）。⚠️ `dlcTooShort`/`hitsInvalidRaw` 抽在这里而不是 `FrameMonitor` 里，是因为那个 object 在 JVM 里一碰就抛 `Stub!`。⚠️ **`DEFAULT_MONITOR_TTL_MS` 是"新建监听型信号默认显示超时"的唯一权威**（信号表导入与手工录入都引用它）—— 字段默认值仍是 `0`（存量零迁移），两者**不是一回事**，别合并 |
+| `Formula.kt` | 462 | 自研表达式求值器（词法→语法→求值）+ **通用位段函数**（v1.20.7） | `Formula.eval(expr, data)`、`Formula.check(expr)`、**`bitSequence(start,len,motorola)`**（真实位集）、**`bitsAt(data,start,len,motorola,signed)`**、**`bitsAtArgs(expr)`**（v1.20.8：取出那四个字面量参数，`rawBits` 与 `PidDraft.suggestedMinDlc` **共用**它）、**`rawBits(expr,data)`**（取位段的原始值给 `invalidRaw` 用）、内部 `Lexer`/`Parser` | 🔴 解析正确性命门。⚠️⚠️ **`bits(v,start,len)` 与 `bitsAt(起始位,长度,字节序,符号)` 不是一回事**（类注释里有对照表）：`bits` 的输入是**一个数值**，只能取单字节内的位段；`bitsAt` 自己拿**整帧**按位序遍历，所以跨字节 + 非对齐 + Motorola 都表达得了。⚠️ **判"解到帧外"必须用 `bitSequence` 的真实位集**，不能用线性的 `起始位+长度`（Motorola 是锯齿位序，实测误报过 2 条）。⚠️ `check()` 的假数据是 **64 字节**（CAN FD 上限），26 会让起始位靠后的合法 `bitsAt` 被误判。⚠️ **"是不是 bitsAt 形态"只判一次**（`bitsAtArgs`）—— 两处各判一遍必然分叉（`FormulaTest` 有一条用例专门钉住两边一致） |
+| `SignalTableCsv.kt` | 590 | **25 列「信号表」的唯一生成/解析实现**（v1.20.7，S1 规格 §3），**纯函数** | `BOM`/`withBom`/`stripBom`（**CSV BOM 的唯一权威**）、`COLUMNS`(25)、`C_*` 列名常量、`Observed`、`template(observed)`、`parse(text)`、`Result`/`Problem`、`formulaOf()`、`noteOf()`、`pidId()`、`normalizeId()`、`parseOrder/parseSign`、`escape/splitRows` | 🔴 **BOM 只在这里定义一次**（三处写 CSV 都引用它 —— `CsvRecorder` 恰恰因为漏了它让 Excel 中文乱码）。⚠️ 导入**按列名**匹配（插列/调序不能让导入错位 —— 错位的后果是"值解错了但看起来正常"）；PID id 由 `(报文ID, 信号名)` 确定性推出 → 重复导入是**覆盖**不是翻倍。⚠️ 判越界/位重叠都用 `Formula.bitSequence`。⚠️ 规格 §3.4 写的「起始位 ≤0 是硬错误」按**意图**实现成「<0 才是」——起始位 0 是合法的（有单测钉住这个偏差）。⚠️ `显示超时` 的默认值取自 `PidDefinition.DEFAULT_MONITOR_TTL_MS`（v1.20.8 起**唯一权威**，`PidDraft` 引用同一个常量） |
+| `PidDraft.kt` | 462 | **PID 编辑器「表单 → `PidDefinition`」的纯逻辑 + 全部校验**（v1.20.8，S3），**纯函数** | `SOURCE_POLL/MONITOR`、`SOURCE_VALUES/SOURCE_LABELS`、`MODE_MONITOR/MODE_CALC`、`isMonitor`、`sourceIndexOf/sourceOf`、`Fields`、`Issue`/`Field`、`Result`（`errors`/`warnings`/`ok`）、`of(p)`（→表单，**与 `build` 严格往返**）、`build(f,id,builtIn)`、`suggestedMinDlc(formula)`、`fmtNum` | 🔴 **校验只能有这一份实现**：编辑器的测试/采样/保存三个按钮全走 `build`（以前每个按钮各写一遍 `if (pid.isBlank())`，两条路会慢慢分叉）。⚠️ **`header` 是同一个字段两种含义**：`poll` 时是 `AT SH` 的**目标模块头**（`7E0`，留空 = 广播 `7DF`），`monitor` 时是**广播帧的 CAN ID**（`09A`）—— 界面上按 source 换标签，否则用户会把 CAN ID 填进"模块头"里。⚠️ 监听型的 `mode`/`pid` **不是用户输入**（固定 `MON` / `= header`），界面上藏起来。⚠️ `of()` 把 `ttlMs` **原样**写出来（含 `"0"`）：0 在 JSON 里与"没这个字段"不可区分，当成空就会**改用户数据**。⚠️ 数值字段解析失败一律**硬错误**，不再 `?: 0f` 静默兜底（那正是"被错值骗"的入口）。⚠️ `suggestedMinDlc` 用 `Formula.bitSequence` 的**真实位集**，不能用线性的 `起始位/8+长度` |
+| `SignalDecode.kt` | 168 | **一帧 → 人看得懂的话**（v1.20.8，S4）：拿**已有监听型 PID 的 `formula`** 解帧，供 CAN 探测页显示物理值。**纯函数** | `Decoded`（`value`/`candidate`/`ok`/`reason`/`text()`）、`decode(frame,pid)`、`decodeAll`、`indexByHeader(pids)`、`parseHexData(s)`、`fmtValue(v)` | 🔴 **解不出来就说解不出来，绝不编值**：DLC 不足 / 命中无效原始值 / 公式解到帧外 → `value=null` + `reason`。⚠️ 判定**复用** `PidDefinition.dlcTooShort`/`hitsInvalidRaw`（与运行时 `FrameMonitor` 是**同一对函数**）—— 自己再写一遍就会出现"探测页说够、运行时不收"。⚠️ `indexByHeader` **必须收候选（`enabled=false`）**：按 enabled 过滤会让候选彻底看不见（那就又回到"只能看 hex"）。⚠️ 顺序与 `FrameMonitor.feedLine` 一致（DLC → 求值 → 无效原始值） |
 | `BuiltInPids.kt` | 106 | 内置 PID 库 | `STANDARD`(20)、`DERIVED`(4)、`MANUFACTURER_TEMPLATES`(4)、`all()` | 🟡 **只增不改** |
 | `Store.kt` | 798 | JSON 持久化 + **多画布（v1.20.0）** | `Settings`、`allPids/findPid/isEnabled/setEnabled`、`upsertPid/**upsertPids**`（批量，v1.20.7 信号表导入用 —— 循环调 `upsertPid` 会写盘 N 次，而导入在**主线程**的 SAF 回调里）、`deletePid`、`upsertRule/deleteRule`、`exportPidsJson/importPidsJson`、`importTemplatesAsCustom`、**`settingsToJson/applySettingsJson`**（备份复用）、`customThemeJson`、`saveThemes`、**`activeCanvas/canvasIndex/activeCanvasIndex`**、**`snapshotToActiveCanvas/loadActiveCanvas`**、**`switchCanvas/addCanvas/removeCanvas/renameCanvas/moveCanvas`**、`migrateLegacyToCanvas`（私有，一次性）、**`Settings.lastImportSummary()`**（「最近一次导入」的摘要行，纯函数） | 🔴 改存储结构要考虑迁移；**加设置项必须同时改 `settingsToJson` 与 `applySettingsJson`**。仪表盘相关：`gridEnabled`/`grid*`（参考线）、**`dashSnapEnabled`**（拖拽吸附，默认 true）、`bgImagePath`、**`bgFit`**（背景铺法）、**`canvasNamePos`**（画布名浮标位置，v1.20.1；**全局**，不跟着画布走）、**`lastImportName/lastImportGauges/lastImportAt`**（最近一次导入设计文件，v1.20.6；`lastImportSummary()` 是它的**唯一**格式化处，有单测）。⚠️ **多画布的两个坑**：① `settings.dashType/gaugeTheme/designJson/bg*/dashPageIndex` 现在的身份是「当前画布的**实时副本**」，落盘/切画布时由 `snapshotToActiveCanvas`/`loadActiveCanvas` 双向同步（不改成转发属性是为了"漏改只是少存一次"而不是"静默读到过期值"）；② `saveDash()` 会写 `settings.json`，所以 **`load()` 必须先读 settings 再读 dash.json**，反了会拿默认设置覆写用户配置 |
 | `Backup.kt` | 132 | **完整配置备份**：PID + 启用状态 + 规则 + 仪表 + 主题 + 设置 打包成一个 JSON | `export()`、`import(text)`、`currentSummary()`、`APP_TAG/FORMAT`、`Summary/ImportResult` | 🟡 导入是**整体替换**不是合并；分区独立解析 |
@@ -146,12 +152,12 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `PidFragment.kt` | 243 | PID 列表 + **导出/导入（PID 或完整备份）** + 模板 | `showExportDialog`、`showImportDialog`、`shareJson`、`doImportBackup`、`openBackupFile`、`seedTemplates` | 🟢 |
 | `RuleFragment.kt` | 96 | 规则列表 + 恢复默认 | — | 🟢 |
 | `LogFragment.kt` | 177 | 日志过滤/暂停/导出；UI 刷新合并到 250ms | `updateStats`、`exportLog`、`uiTick` | 🟡 统计必须用 `AppLog.size()`，不要用 `snapshot()` |
-| `PidEditorActivity.kt` | 510 | **核心：PID 编辑器 + 在线测试** | `collect()`、`runTest()`、`save()`、`bindAutoRequest`、**`fail(row, toast)`**（校验失败：Toast + 警示色 + 滚到可见，v1.20.6） | 🔴 项目核心。⚠️ 校验失败的提示**不能只改结果行的小字** —— 那一行在表单最底下，用户看不到（P10-2 踩过两次） |
+| `PidEditorActivity.kt` | 677 | **核心：PID 编辑器 + 在线测试**；**能自己造监听型 PID**（v1.20.8，S3）：`source` / `header` / `invalidRaw` / `minDlc` / `ttlMs` 五个输入口 + **按来源变形**（监听型藏掉 Mode/PID/请求帧/轮询间隔/优先级/多 ECU） | `evaluate()`（→ `PidDraft.build`，**唯一**的校验入口）、**`applySourceUi()`**、`load()`（走 `PidDraft.of`）、`failIssues(r,prefix)`、`runTest()`、`save()`、`bindAutoRequest`、**`fail(row, toast)`**（校验失败：Toast + 警示色 + 滚到可见，v1.20.6） | 🔴 项目核心。⚠️ 校验失败的提示**不能只改结果行的小字** —— 那一行在表单最底下，用户看不到（P10-2 踩过两次）。⚠️ **校验逻辑一律写在 `data/PidDraft.kt`**（纯函数、可 JVM 单测）：写在这个 Activity 里的话，"CAN ID 写错 → 帧永远不命中"这类判定**一条都测不到**。⚠️ **隐藏 ≠ 清空**：切来源只改 `visibility`，输入框里的字还在 → 编辑存量条目、来回切一次、再保存**不会丢值**（有单测 + 装机 md5 证据）。⚠️ 两个测试按钮对监听型**刻意不禁用**（死按钮点不动，用户就学不到"广播帧不能主动请求"） |
 | `RuleEditorActivity.kt` | 478 | 事件规则编辑器（动态条件/动作行） | `addConditionRow`、`addActionRow`、`collect()`、`updatePreview()`、`testNow()`、**`fail(row, toast)`**（v1.20.6） | 🟡 `testNow()` 原来**不校验条件是否配全** —— 空条件时 `testRuleOnce` 返回"不成立"，用户会去怀疑车/信号（v1.20.6 已补） |
 | `ScannerActivity.kt` | 252 | 扫描器 UI + 安全确认 | `startScan`、`applyModeDefaults`、`saveHit` | 🔴 危险模式拦截 |
 | `ThemeEditorActivity.kt` | 388 | **主题编辑器**：顶部实时预览 + 声明式字段行（12 色 + 几何/指针环/辉光） | `ColorField`、`buildFields`、`applyDraft`、`pickColor`、`save/saveAs/persist/delete` | 🟡 内置主题只读，保存会自动转「另存为」 |
 | `SimulatorActivity.kt` | 446 | **模拟信号工具**：分组折叠的单行摘要 + 展开详情（波形缩略图用**真正的 `waveAt`**，预览不可能与实际输出脱节） | `periodSteps`、`noiseSteps`、`buildRows`、`toggle`、`refreshHeader` | 🟡 **`onDestroy` 刻意不停模拟**（它是数据源，应像 OBD 连接一样在界面之外继续跑） |
-| `CanSnifferActivity.kt` | 485 | CAN 被动探测页 + **两个观察表 CSV 导出**（`can-observe-aggregate/raw.csv`）+ **导出信号表模板 / 导入信号表**（v1.20.7）+ **对比基准** + **常驻监听开关** | `sniffResults`、`export`、**`observedRows`/`openSignalTable`/`showImportResult`**、`toggleMonitor`、`showDiff`、`addMonitorPid`、**`refreshStatus`**（唯一的状态行刷新入口，两条状态都要反映） | 🟡 用 `ColumnFlowLayout` 自动分栏。⚠️ 常驻监听开着时状态行要说"轮询已暂停"（`MonitorWarnBar.TEXT`），不能还说"未开始"。⚠️ `FAILED` 要弹 Toast（状态行是 11sp 暗色小字，埋着等于没说）。⚠️ **导入结果对话框只能用 `setMessage` 一段正文** —— `setMessage` + `setItems` 会让**列表整个消失**（规格 §7 陷阱 4，v1.20.1 实测）。⚠️ 导入在**主线程**的 SAF 回调里跑：写库走 `Store.upsertPids`（一次写盘），不要循环调 `upsertPid` |
+| `CanSnifferActivity.kt` | 651 | CAN 被动探测页 + **两个观察表 CSV 导出**（`can-observe-aggregate/raw.csv`）+ **导出信号表模板 / 导入信号表**（v1.20.7）+ **对比基准** + **常驻监听开关** + **解码显示**（v1.20.8，S4：`0x09A → 左转向灯 1`） | `sniffResults`、`export`、**`observedRows`/`openSignalTable`/`showImportResult`**、`toggleMonitor`、`showDiff`、`addMonitorPid`、**`refreshStatus`**（唯一的状态行刷新入口，两条状态都要反映）、**`decodeLines`/`decodeColor`/`decodeSummary`/`decodeReport`/`refreshDecodeIndex`**（S4） | 🟡 用 `ColumnFlowLayout` 自动分栏。⚠️ 常驻监听开着时状态行要说"轮询已暂停"（`MonitorWarnBar.TEXT`），不能还说"未开始"。⚠️ `FAILED` 要弹 Toast（状态行是 11sp 暗色小字，埋着等于没说）。⚠️ **导入结果对话框只能用 `setMessage` 一段正文** —— `setMessage` + `setItems` 会让**列表整个消失**（规格 §7 陷阱 4，v1.20.1 实测）。⚠️ 导入在**主线程**的 SAF 回调里跑：写库走 `Store.upsertPids`（一次写盘），不要循环调 `upsertPid`。⚠️ S4 解码：**未绑定 PID 的 ID 只显示原始 hex**（不猜值）、**候选压暗 + 标「候选」**、**不可信用 danger 色**；解码汇总挂在 `tvStatus` 而**不是**结果流里（`ColumnFlowLayout` 会把结果流切成半宽，看着像某一条的附注）。⚠️ `decodeIndex` **每轮刷新都重建**（用户可能先去 PID 页建一条再回来探测，缓存住就会出现"我明明建了，这里还是 hex"） |
 | `BenchActivity.kt` | 404 | **性能基准页**（四段：8 表×3 档 + 12 表极限） | `segments`、`runAll/runSegment`、`verdictLine`、`buildReport`、`jankMs()` | 🔴 **判据是帧间隔不是 `DrawStats`**（硬件加速下后者只是记录 DisplayList 的耗时）。⚠️ 布局监听器**不得读 `segments[segIndex]`**（会越界崩溃，见 CHANGELOG v1.10.1） |
 | `BenchHarness.kt` | 240 | 基准驱动端：建视图 + **每帧强制重绘** + 预热 + 帧间隔统计 | `build(count, neonPreset)`、`start/stop`、`frameStats(jankMs)`、`WARMUP_MS`、`SEGMENT_SEC` | 🟡 `GaugeTicker.request()` 每帧重调是**刻意的测量手段**，别抄到正常渲染路径 |
 
@@ -216,11 +222,13 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 ### 2.5 单元测试 `app/src/test/java/com/icar/obd/`（**38 个文件 / 694 个用例**）
 
 > ⚠️ 下表的「用例」列**长期滞后于实际**（`run-tests.ps1` 的输出才是准的）——
-> 2026-10-08（v1.20.7）实测 `TOTAL=694`。加用例时顺手把这一行和本表改掉。
+> 2026-10-08（v1.20.8）实测 `TOTAL=737`。加用例时顺手把这一行和本表改掉。
 
 | 文件 | 用例 | 覆盖 |
 |---|---|---|
-| `data/FormulaTest.kt` | 59 | 文档承诺的全部公式模板、优先级与结合性、内置函数（含 `be16`/`le16`/`s16`/`bits`/`map`）、错误路径（除零 / 变量越界 / 未知函数 / NaN）、`check()`；**通用位段 `bitsAt`（v1.20.7）**：Intel·Motorola × 对齐·跨字节 × signed·unsigned、**与 `bits` 的区别**（`bits` 取不到跨字节）、解到帧外必须抛异常而不是补零、参数非法；`bitSequence()` 的真实位序（含锯齿）；`rawBits()`（取位段原始值 / 非 `bitsAt` 形态返回 null / 帧外返回 null） |
+| `data/PidDraftTest.kt` | 27 | **PID 编辑器的表单逻辑（v1.20.8，S3）**：监听型/主动请求型**往返**（字段一个不许变，含 `ttlMs=0` 不许被改成默认值）；`header` 两种含义（监听型必填 + 规范化 `9a→09A`、29 位原样；poll 的模块头可空）；监听型的 `mode`/`pid` 恒被忽略；校验边界逐条（名称·公式空 / PID 奇数 nibble / Mode 非十六进制但 `CALC` 放行 / min·max·间隔·ECU·无效原始值·最小帧长·显示超时的非数·负数·越界 / 最小>最大）；**`suggestedMinDlc` 按真实位集**（Motorola 锯齿，含规格 §7 的 `60,5` 实测案例）；软警告（无效原始值越界 / minDlc 为 0 或偏小）；下拉框映射与 `fmtNum`；有硬错误时 `pid == null` |
+| `data/SignalDecodeTest.kt` | 14 | **探测页解码（v1.20.8，S4）**：实车 09A 三帧（关/左/右）解对；`bitsAt` 形态也能解；`text()` 格式（值·单位·候选）；**三种"不可信"都不给值**（DLC 不足 / 命中无效原始值 / 解到帧外）+ 原因可读；无效原始值**比位段而不是物理值**（并钉住非 `bitsAt` 形态的回落语义）；候选 + 不可信两种标记共存；`indexByHeader`（只收监听型 / **候选必须进来** / header 空退到 pid / 非法与空公式跳过）；`parseHexData` 与 `fmtValue` |
+| `data/FormulaTest.kt` | 61 | 文档承诺的全部公式模板、优先级与结合性、内置函数（含 `be16`/`le16`/`s16`/`bits`/`map`）、错误路径（除零 / 变量越界 / 未知函数 / NaN）、`check()`；**通用位段 `bitsAt`（v1.20.7）**：Intel·Motorola × 对齐·跨字节 × signed·unsigned、**与 `bits` 的区别**（`bits` 取不到跨字节）、解到帧外必须抛异常而不是补零、参数非法；`bitSequence()` 的真实位序（含锯齿）；`rawBits()`（取位段原始值 / 非 `bitsAt` 形态返回 null / 帧外返回 null）；**`bitsAtArgs()`（v1.20.8）**：四个参数的顺序与默认、后面接 `* f ± o` 不影响、**与 `rawBits` 的形态判定必须一致**（分叉的后果是"编辑器建议的帧长与运行时解码的位段对不上"） |
 | `data/SignalTableCsvTest.kt` | 41 | **25 列信号表（v1.20.7，S1）**：模板（BOM / 25 列中文表头 / 每个 ID 一行 / 预填 ID·DLC·取值集合 / 其余留空）；往返（公式生成 / `minDlc` / `ttlMs` / `invalidRaw` / 可信度→`enabled` / `note` 固定格式）；**硬错误逐条**（ID 非法 / 信号名空 / 起始位非数或负 / 长度越界 / 字节序·符号不认识 / 因子 0 / 最小>最大 / **解到帧外**）；**软警告逐条**（dec 不一致 / 字节不符 / 无效原始值越界 / **位重叠** / 多路复用 / 单位·证据空 / DLC 空）；**Motorola 真实位集不误报越界**（规格 §7 陷阱 1 的两个实测案例）；重复导入覆盖；表头缺失 / 列序打乱 / CRLF / 空行；CSV 引号与转义 |
 | `data/DashCanvasTest.kt` | 25 | **多画布（v1.20.0/1.20.1）**：`DashCanvas` JSON 往返 / 坏条目跳过 / 名字兜底；**旧配置迁移**（取值完全不变、只迁一次、有画布时 `dash.json` 不再覆盖）；增/删/切/排序（内容互不串台、最后一套删不掉、删当前落到邻居、上限、悬空 id 自愈）；**画布名浮标**（名字表契约 / 越界回落 / 设置往返 / 读取时夹取 / **全局性**）；**备份往返保留全部画布与当前画布**；**最近一次导入（v1.20.6）**（设置往返 / 旧配置缺字段是空记录而不是假时间 / 摘要格式 / 缺文件名兜底） |
 | `obd/ObdProtocolTest.kt` | 42 | `extractData` 各种响应格式（ATH0 / ATH1 / SEARCHING / 多帧 / NO DATA / 15 种错误码 / 兜底分支）、`parse` 端到端、初始化序列、**危险模式拦截**、`scanCandidates`、**ISO-TP 多帧重组**、多 ECU 选序 |
@@ -320,7 +328,7 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `tools/theme-studio/png.js` | **极简 PNG 编码器**（零依赖，只用内置 zlib）。PNG 结构 + CRC32 + 绘图原语（rect/roundRect/circle/ring/arc/line/poly）。抗锯齿用**超采样**（4 倍绘制再降采样） |
 | `tools/theme-studio/gen-assets.js` | **生成示例素材**：`node gen-assets.js` → `assets/<分类>/*.png`（**344 个**）+ `assets/builtin.js`（清单）。**全部是几何图形，不含任何车标** |
 | `tools/theme-studio/` | **PC 端主题制作工具**（v2）：`index.html` + `css/studio.css` + `js/{schema,model,validate,presets,canvas,panels,editor,app}.js` + `png.js`（PNG 编码器）+ `gen-assets.js` + `tests/`（**21 个浏览器套件** + `_common.js` 公共前置） + `gen-sample.js` + `sample.json`(v1) + `sample-v2.json` + `README.md` + `CHANGELOG.md`。**双击 index.html 即用，零安装**（经典脚本，不用 ES module/fetch —— 那在 `file://` 下被 CORS 挡）。校验规则与 `DesignFile.kt` 同源，`ThemeStudioSampleTest` 钉着 |
-| `app/src/test/java/com/icar/obd/` | JVM 单元测试 **35 个文件 / 617 个用例**（见 §2.5） |
+| `app/src/test/java/com/icar/obd/` | JVM 单元测试（见 §2.5）。**用例数不要写死在这里** —— 跑 `tools/run-tests.ps1` 看 `TOTAL=`（v1.20.7 时是 **38 个文件 / 694 用例**；工作区里可能还有未提交的新测试文件） |
 | `docs/screenshots/` | 真机截图：`01~10` 竖屏，`11~17` 横屏 |
 
 ### ⚠️ 改这两个地方时必须成对
@@ -375,6 +383,9 @@ $ADB exec-out run-as com.icar.obd cat files/log/obd-$(date +%Y%m%d).log
 | 加公式函数（如 `log()`） | `data/Formula.kt` 的 `call()` + `check()` 的提示文案（未知函数列表也要加） |
 | 改「信号表」的列（增列/改名/改顺序） | `data/SignalTableCsv.kt` 的 `C_*` 常量与 `COLUMNS`（**导入是按列名匹配的**，改列名会让旧 CSV 读不到那一列 → 必填列缺失就整行拒绝）。规格同步 `下一步-CAN信号库实现规格.md` §3.1 |
 | 让一种"值不可信"变成 `--` | 判据放 `data/PidModels.kt` 的**纯函数**（照 `dlcTooShort`/`hitsInvalidRaw` 的样子）→ 在 `obd/FrameMonitor.feedLine` 里调 → 结果写 `PidValue(ok=false)`。**不要**在仪表/规则/CSV 里各判一遍（那就是"两份权威"） |
+| 给 PID 编辑器加一个字段（v1.20.8 起） | 三处一起改：`data/PidDraft.kt`（`Fields` + `of()` + `build()` + 校验）→ `res/layout/activity_pid_editor.xml`（控件）→ `ui/PidEditorActivity.kt`（`evaluate()` 读它、`applySourceUi()` 决定对哪一类来源可见）。**校验只写在 `PidDraft` 里**（写在 Activity 里就一条都测不到） |
+| 改"哪些字段对监听型/主动请求型适用" | `ui/PidEditorActivity.applySourceUi()`（只改 `visibility`，**不许清空输入框** —— 隐藏不等于清空，清了就会丢用户的值） |
+| 改探测页"解码显示"的规则 | `data/SignalDecode.kt`（纯函数：`decode` / `text` / `indexByHeader`）→ `ui/CanSnifferActivity.decodeLines/decodeColor/decodeSummary` 负责呈现。**"不可信"的判据必须复用 `PidModels` 的 `dlcTooShort`/`hitsInvalidRaw`**，不要在 `SignalDecode` 里另写一份 |
 | 加一个音效 | wav 放 `res/raw/` + `data/AudioPlayer.kt` 的 `sounds` 表登记一行 |
 | 加一种规则动作类型 | `obd/ObdController.handleAction` + `data/PidModels.kt` 的 `RuleAction.describe()` + `ui/RuleEditorActivity` 的 `actionTypes`/`updateActionHints` |
 | 改内置仪表盘布局 | `data/DashLayout.kt`（**内容**在这里；`ui/dash/DashSpec.kt` 只做"类型 → 列表"的分发） |
@@ -446,7 +457,33 @@ if (-not $ProjectDir) {        ← 这一行被并进上一行注释，整个 if
 - **PowerShell 脚本含中文时必须带 UTF-8 BOM**，否则 Windows PowerShell 5.1 按 ANSI 读取，
   会直接报语法错误（`oncar-check.ps1` / `run-tests.ps1` 都已带 BOM；
   用编辑器改完若 BOM 丢了，记得补回来）。
-| docs/LVGL-放弃记录.md | LVGL 方案放弃记录（动机/成果/原因/保留项/后续） |
+
+---
+
+## 7. 文档清单（`docs/` 逐份职责）
+
+> **权威的读法顺序在 [`接手大纲.md`](接手大纲.md) §2** —— 这里只回答"这份是干什么的"。
+> 新增文档请**同时**加进本节与 §1 的目录树。
+
+| 文件 | 职责 |
+|---|---|
+| docs/接手大纲.md | **唯一入口**：项目全貌 + 上手路线 + 验证方法 + 交付物清单 |
+| docs/交接-换电脑.md | **换机专用**：搬什么 / 工具链怎么起 / 本机实测偏差 |
+| docs/上车监控清单.md | **上车专用**：环境 / 实时监控 / **§4 判据表** / **§11 本趟工单** / 取证 / 已知的坑 |
+| docs/迭代清单.md | 版本清单 + 待办（带验收标准）+ 发版固定动作 + **§五 当前阻塞关系** |
+| docs/ARCHITECTURE.md | **为什么这样设计**：分层边界、数据流、排障、**§4 红线唯一权威清单** |
+| docs/HANDOVER.md | 详细手册：扩展流程（加 PID / 加规则）、安全模型、装机清单、踩坑 |
+| docs/CHANGELOG.md | 逐版本变更 + 根因 + **验证方式 + 遗留问题**（最老的部分在 `docs/archive/`） |
+| docs/主题设计大纲.md | **主题设计系统架构**（节点树 / 素材 / 状态 / 分辨率 / 编辑器分阶段） |
+| docs/UI设计指南.md | `icar.ui/1` 设计文件格式（PC 端做设计用） |
 | docs/UI控件清单.md | **UI 控件清单**：全部自定义 View、控件 ID、颜色/样式/drawable 资源 |
 | docs/动画实现.md | **动画实现分析**：共用时钟 / 数值缓动 / 阈值爆闪，两套机制的区别 |
-| docs/下一步-主题工具与仪表盘重构.md | **下一步执行规格**：主题制作工具 + 仪表盘重构分步方案 |
+| docs/仪表框架.md | 8 种仪表 + 「某块表为什么是空的」排查顺序 |
+| docs/LVGL-放弃记录.md | LVGL 方案放弃记录（动机/成果/原因/保留项/后续） |
+| docs/主题格式参考.md | Sky Gauge 格式逆向（已不用，格式知识仍有效） |
+| docs/CAN-信号库与逆向框架.md | **CAN 信号逆向的方法论**（DBC 分析 / 采样率是前提 / 四阶段方案） |
+| docs/下一步-CAN信号库实现规格.md | **上一条的执行规格**：S1/S2 已做（v1.20.7），S3~S5 待做 |
+| docs/下一步-主题工具与仪表盘重构.md | 主题制作工具 + 仪表盘重构分步方案（**已完成**，留作决策记录） |
+| docs/下一步-变量模式与组件变体.md | **主题工具的下一轮执行规格**（变量·模式 / 组件·变体，待评审，App 侧零改动） |
+| docs/archive/ | 归档的历史文档（`CHANGELOG-v1.0~v1.8.md`，含 LVGL 完整调试日志） |
+| docs/screenshots/ | 真机截图 + 索引 README |

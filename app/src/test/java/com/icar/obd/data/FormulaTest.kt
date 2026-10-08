@@ -480,4 +480,39 @@ class FormulaTest {
     fun `rawBits 解到帧外时返回 null 而不是抛`() {
         assertNull(Formula.rawBits("bitsAt(16,8,0,0)", byteArrayOf(1, 2)))
     }
+
+    // ------------------------------------------- bitsAtArgs：取那四个参数本身（v1.20.8，S3）
+
+    @Test
+    fun `bitsAtArgs 取四个参数 顺序是 起始位 长度 字节序 符号`() {
+        assertArrayEquals(intArrayOf(18, 1, 0, 0), Formula.bitsAtArgs("bitsAt(18,1,0,0)"))
+        assertArrayEquals(intArrayOf(2, 8, 1, 1), Formula.bitsAtArgs("bitsAt(2, 8, 1, 1)"))
+        // 后面的 `* f ± o` 随便，不影响取参数
+        assertArrayEquals(
+            intArrayOf(16, 8, 0, 0),
+            Formula.bitsAtArgs("bitsAt(16,8,0,0) * 0.75 - 48")
+        )
+        // 2 个参数的最小形态：字节序/符号按默认（Intel / unsigned）
+        assertArrayEquals(intArrayOf(0, 8, 0, 0), Formula.bitsAtArgs("bitsAt(0,8)"))
+        // 字节序/符号是"非 0 即真"，2 这种写法也算 Motorola
+        assertArrayEquals(intArrayOf(0, 8, 1, 0), Formula.bitsAtArgs("bitsAt(0,8,2,0)"))
+    }
+
+    @Test
+    fun `bitsAtArgs 与 rawBits 认的是同一个形态`() {
+        // 两处必须一致：`PidDraft` 用 bitsAtArgs 建议 minDlc，`FrameMonitor` 用 rawBits 比无效值。
+        // 分叉的后果是"编辑器说这条要 3 字节、运行时按别的位段解" —— 看不出来的那种错。
+        val forms = listOf(
+            "bitsAt(18,1,0,0)", "bitsAt(0,8)", "bitsAt(2,8,1,1) * 0.5",
+            "bit(C,2)", "A-40", "be16(A,B)", "bits(A,0,8)", "bitsAt(A,8,0,0)", "", "bitsAt(0,0,0,0)"
+        )
+        val data = ByteArray(8) { 0xFF.toByte() }
+        forms.forEach { f ->
+            assertEquals(
+                "形态判定必须一致：「$f」",
+                Formula.rawBits(f, data) != null,
+                Formula.bitsAtArgs(f) != null
+            )
+        }
+    }
 }

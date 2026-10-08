@@ -142,22 +142,28 @@ object Formula {
         (data[linearBit / 8].toInt() shr (linearBit % 8)) and 1
 
     /**
-     * 取表达式里 **`bitsAt(...)` 那一段的原始值**（未乘因子、未加偏移）。
+     * 取出表达式**开头**那个 `bitsAt(起始位,长度,字节序,符号)` 的四个字面量参数。
      *
-     * ## 为什么需要它
+     * @return `[起始位, 长度, 字节序(0/1), 符号(0/1)]`；不是 `bitsAt(...)` 形态、
+     *         参数不是字面量（变量/嵌套调用）、参数个数 < 2、或参数本身非法时返回 `null`
      *
-     * `PidDefinition.invalidRaw`（无效原始值）比的是**原始值**，不是物理值：
-     * 一条 `bitsAt(0,8,0,0) * 0.25 - 48` 的水温信号，`invalidRaw=255` 指的是
-     * **位段本身**等于 255，而不是"算完等于 255"（算完是 15.75）。
-     * 拿物理值去比会**误杀合法值**。
+     * ## 为什么把它单独抽出来（v1.20.8，S3）
+     *
+     * 有**两处**需要这四个数，而且**必须得到同一个答案**：
+     *  - [rawBits]：取位段的原始值，给 `PidDefinition.invalidRaw` 比；
+     *  - `PidDraft.suggestedMinDlc`：按**真实位集**推算"这条信号至少要几个字节"，
+     *    在 PID 编辑器里给用户建议 `minDlc`。
+     *
+     * 抄成两份的后果不是"多几行代码"，而是**编辑器算出的建议帧长与实际解码用的位段不一致** ——
+     * 那正是本项目最怕的那类错："值解错了但看起来完全正常"。
      *
      * ## 只认信号表生成的那种形态
      *
      * 表达式必须以 `bitsAt(数字,数字,数字,数字)` 开头（后面的 `* f ± o` 随便）。
      * 其它形态（`bit(C,2)`、`A-40`、`be16(A,B)`）返回 `null` ——
-     * 此时调用方回落到"拿公式求值结果比"，**宁可漏判也不误判**。
+     * 调用方一律回落到保守做法，**宁可漏判也不误判**。
      */
-    fun rawBits(expr: String, data: ByteArray): Long? {
+    fun bitsAtArgs(expr: String): IntArray? {
         val toks = try {
             Lexer(expr).tokens()
         } catch (t: Throwable) {
@@ -183,8 +189,29 @@ object Formula {
         if (start < 0 || len <= 0) return null
         val motorola = nums.getOrNull(2)?.toInt()?.let { it != 0 } ?: false
         val signed = nums.getOrNull(3)?.toInt()?.let { it != 0 } ?: false
+        return intArrayOf(start, len, if (motorola) 1 else 0, if (signed) 1 else 0)
+    }
+
+    /**
+     * 取表达式里 **`bitsAt(...)` 那一段的原始值**（未乘因子、未加偏移）。
+     *
+     * ## 为什么需要它
+     *
+     * `PidDefinition.invalidRaw`（无效原始值）比的是**原始值**，不是物理值：
+     * 一条 `bitsAt(0,8,0,0) * 0.25 - 48` 的水温信号，`invalidRaw=255` 指的是
+     * **位段本身**等于 255，而不是"算完等于 255"（算完是 15.75）。
+     * 拿物理值去比会**误杀合法值**。
+     *
+     * ## 只认信号表生成的那种形态
+     *
+     * 形态判定与参数解析**全部在 [bitsAtArgs] 里**（单一权威）；这里只负责求值。
+     * 其它形态返回 `null` —— 此时调用方回落到"拿公式求值结果比"，
+     * **宁可漏判也不误判**。
+     */
+    fun rawBits(expr: String, data: ByteArray): Long? {
+        val a = bitsAtArgs(expr) ?: return null
         return try {
-            bitsAt(data, start, len, motorola, signed)
+            bitsAt(data, a[0], a[1], a[2] != 0, a[3] != 0)
         } catch (t: Throwable) {
             null
         }

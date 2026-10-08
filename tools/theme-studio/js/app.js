@@ -1596,6 +1596,207 @@
     }
   };
 
+  // ================================================================ 设计包（.icarzip）
+
+  /**
+   * 把 `assets/xx.png` 这类相对路径 → 包内条目名。
+   *
+   * ⚠️ 与 `PackKit.normPath` 保持一致（那边是纯逻辑，这里是读字节的入口）。
+   * 只在这里做一次归一化，避免"引用收集用 A 规则、写条目用 B 规则"。
+   */
+  function packEntryName(p) {
+    return window.PackKit.normPath(p).replace(/^\/+/, "");
+  }
+
+  /** data URL / 裸 base64 → Uint8Array。解不开返回 null（**不抛**，由调用方报"读不到"） */
+  function dataUrlToBytes(s) {
+    if (typeof s !== "string" || !s) return null;
+    const comma = s.indexOf(",");
+    const isDataUrl = /^data:/i.test(s);
+    if (isDataUrl && comma < 0) return null;
+    const b64 = isDataUrl ? s.slice(comma + 1) : s;
+    try {
+      const bin = atob(b64);
+      const out = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i) & 0xFF;
+      return out;
+    } catch (e) {
+      return null;   // 不是 base64（比如是个普通路径串）—— 交给调用方报缺失
+    }
+  }
+
+  /**
+   * 读一个素材的**原始字节**。
+   *
+   * ## 三个来源，按可靠性排序
+   *
+   * 1. `rawFile` —— 用户导入时的 `File`（**唯一能拿到用户自己图片字节的途径**）
+   * 2. `data`   —— 内置素材的 base64（内嵌在 `assets/builtin-data-*.js` 里）
+   * 3. 内置清单里同路径的条目 —— 有些素材是 `ensureBuiltinAsset()` 登记的，
+   *    它的 `data` 要等懒加载完才填上，这里再查一次清单更稳
+   *
+   * 读不到就**明确返回原因**（而不是给个空字节）—— 空字节会进包、CRC 也对，
+   * 但设备上就是一张坏图，那种失败方式最难查。
+   */
+  async function readAssetBytes(ref) {
+    const d = S.design || {};
+    const list = d.assets || [];
+    const norm = window.PackKit.normPath;
+    const a = (ref.assetId ? list.find(x => x.id === ref.assetId) : null)
+      || list.find(x => norm(x.path) === norm(ref.path))
+      || null;
+
+    const sizeOf = function (b) {
+      return { bytes: b, w: (a && a.w) || 0, h: (a && a.h) || 0 };
+    };
+
+    if (a && a.rawFile && typeof a.rawFile.arrayBuffer === "function") {
+      const buf = await a.rawFile.arrayBuffer();
+      return sizeOf(new Uint8Array(buf));
+    }
+
+    let bytes = a ? dataUrlToBytes(a.data) : null;
+    if (bytes) return sizeOf(bytes);
+
+    const b = (window.BUILTIN_ASSETS || []).find(x => norm(x.path) === norm(ref.path));
+    bytes = b ? dataUrlToBytes(b.data) : null;
+    if (bytes) return { bytes: bytes, w: (b && b.w) || (a && a.w) || 0, h: (b && b.h) || (a && a.h) || 0 };
+
+    return {
+      missing: a
+        ? ("工具里只有它的缩略图（" + (a.name || ref.path) +
+           "）—— 字节来自你导入时选的文件，重开工具后就不再持有。请重新导入一次再导包")
+        : "设计文件里引用了它，但 assets 清单里没有这个素材（请先在素材库里导入）",
+    };
+  }
+
+  /** 二进制下载。与文本版的 download() 分开 —— Blob 类型不同，别混用 */
+  function downloadBytes(filename, bytes, mime) {
+    const blob = new Blob([bytes], { type: mime || "application/octet-stream" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+
+  /**
+   * **导出设计包（.icarzip）** —— 把设计文件与它引用到的素材打成一个文件。
+   *
+   * ## 它治的是什么病
+   *
+   * 设计文件里的素材是**相对路径**，而 App 侧导入走 SAF **单文件** ——
+   * 拿不到旁边的 `assets/`，于是 `designBaseDir` 永远为空 →
+   * **所有素材加载失败** → 控件拼出来的表盘只剩空卡片
+   * （用户报的"画布不显示我做好的内容、显示是空的"，见 docs/CHANGELOG v1.20.3）。
+   *
+   * 有了包，App 侧只要**解开这一个文件**就能拿到全部素材。
+   *
+   * ## ⚠️ 端到端**还没通**
+   *
+   * **App 侧的导入这一轮没做**（那是 app 模块，本轮由另一个 agent 在改）。
+   * 现在导出的包只有工具自己读得回来（自检套件 `verify-pack`）。
+   * 这一点在 README 与 CHANGELOG 里都写明了 —— 不要以为已经能用。
+   *
+   * ## 导出前先自检
+   *
+   * 包**造出来之后立刻用 `ZipKit.verifyZip` 读回来**核一遍（条目数 / 字节数 / CRC）。
+   * 为什么要"自己验自己"：zip 的偏移或 CRC 写错了，**用户是解压时才知道**，
+   * 而那时他已经在设备前面了。这里多花几毫秒，能挡掉整类"包是坏的"。
+   * 顺带把结果放在 `window.__lastPackReport` 上 —— 自检套件读它。
+   */
+  window.exportPackage = async function () {
+    if (!window.ZipKit || !window.PackKit) {
+      toast("设计包模块没加载（js/zip.js、js/pack.js）—— 请确认 index.html 是最新的");
+      return;
+    }
+    const r = validateNow();
+    if (r.errors.length) {
+      if (!confirm("还有 " + r.errors.length + " 个硬错误，App 会拒绝加载。仍然导出设计包？")) return;
+    }
+
+    const designJson = window.toV2Json(S.design);
+    const built = await window.PackKit.buildPackage({
+      design: S.design,
+      designJson: designJson,
+      now: new Date().toISOString(),
+      crc32: window.ZipKit.crc32,
+      readBytes: readAssetBytes,
+    });
+
+    // 条目名必须是设计里的相对路径 —— 这样解压后的目录结构
+    // 与 design.json 里的引用**天然一致**
+    const entries = built.entries.map(e => ({ name: packEntryName(e.name), data: e.data }));
+
+    let zip = null;
+    try {
+      zip = window.ZipKit.buildZip(entries);
+    } catch (e) {
+      toast("打包失败：" + ((e && e.message) || e));
+      return;
+    }
+
+    // ---- 导出后自检（读回来核 条目数 / 字节数 / CRC）
+    const expect = built.entries.map(e => ({
+      name: packEntryName(e.name),
+      size: (typeof e.data === "string" ? window.ZipKit.utf8(e.data) : e.data).length,
+      crc: window.ZipKit.crc32(typeof e.data === "string" ? window.ZipKit.utf8(e.data) : e.data),
+    }));
+    const check = window.ZipKit.verifyZip(zip.bytes, expect);
+
+    window.__lastPackReport = {
+      ok: check.ok,
+      problems: check.problems,
+      counts: {
+        entries: check.entries.length,
+        assets: built.manifest.assets.length,
+        missing: built.manifest.missing.length,
+      },
+      names: check.entries.map(e => e.name),
+      zipBytes: zip.bytes.length,
+      manifest: built.manifest,
+    };
+    /**
+     * 最近一次导出的 zip 字节（base64）。
+     *
+     * ⚠️ **只给自检套件用**，不是产品功能 —— `verify-pack.js` 要拿**真正
+     * 走完整条导出路径**的那份字节去 Node 侧独立解析。测试里"照着重造一份"
+     * 是不算数的：那样测的是重造的那份，而不是用户拿到的那份。
+     *
+     * 大包会在内存里多留一份 base64（约 1.33 倍），可接受 —— 只在点过
+     * 「📦 设计包」之后才有。
+     */
+    window.__lastPackB64 = (function () {
+      let s = "";
+      const CH = 0x8000;   // 分块，避免 apply 参数过多
+      for (let i = 0; i < zip.bytes.length; i += CH) {
+        s += String.fromCharCode.apply(null, zip.bytes.subarray(i, i + CH));
+      }
+      return btoa(s);
+    })();
+
+    const name = window.PackKit.packageFileName(S.design.name);
+    downloadBytes(name, zip.bytes, "application/zip");
+
+    if (!check.ok) {
+      // 自检不过**照样把包给用户**（他可能想自己看看），但必须**明说它有问题**
+      alert("设计包已导出，但**自检没通过**（请把这个截图发出来）：\n\n" +
+        check.problems.slice(0, 8).join("\n"));
+      return;
+    }
+
+    const miss = built.manifest.missing;
+    toast("已导出 " + name + "：" + built.manifest.assets.length + " 个素材 · " +
+      check.entries.length + " 个条目 · " + Math.round(zip.bytes.length / 1024) + " KB" +
+      (miss.length ? " · ⚠️ " + miss.length + " 个素材没进包" : "") +
+      "（App 侧导入待做）");
+    if (miss.length) {
+      alert("有 " + miss.length + " 个被引用的素材**没能进包**：\n\n" +
+        miss.slice(0, 6).map(m => "· " + m.path + "\n  " + m.reason).join("\n") +
+        (miss.length > 6 ? "\n…" : ""));
+    }
+  };
+
   /** 导出 v1：App 当前版本能直接读（丢掉图片/文字/分组/旋转） */
   window.exportV1 = function () {
     const r = validateNow();

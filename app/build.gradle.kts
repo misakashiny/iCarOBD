@@ -14,8 +14,8 @@ android {
         applicationId = "com.icar.obd"
         minSdk = 24
         targetSdk = 34
-        versionCode = 76
-        versionName = "1.20.7"
+        versionCode = 77
+        versionName = "1.20.8"
 
         ndk {
             // 只编 arm64：LVGL 有 192 个 .c 文件，多一个 ABI 编译时间翻倍。

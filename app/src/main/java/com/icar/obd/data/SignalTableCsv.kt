@@ -409,8 +409,11 @@ object SignalTableCsv {
             // 规格 §3.1 列 21：可选，**默认 2000**。
             // 注意 `PidDefinition.ttlMs` 的字段默认是 0（不判断）—— 那是为了旧配置零迁移；
             // 信号表是新导入的广播信号，"停发 2 秒还挂着最后一个值"正是要被消掉的那种骗人。
-            val ttl = if (ttlRaw.isBlank()) 2000 else ttlRaw.toIntOrNull()
-            if (ttlRaw.isNotBlank() && ttl == null) warns.add("显示超时「$ttlRaw」不是整数 —— 按默认 2000ms")
+            // 默认值取自 `PidDefinition.DEFAULT_MONITOR_TTL_MS`（**唯一权威**，
+            // 手工录入那条路 `PidDraft` 也引用同一个常量）。
+            val ttlDef = PidDefinition.DEFAULT_MONITOR_TTL_MS
+            val ttl = if (ttlRaw.isBlank()) ttlDef else ttlRaw.toIntOrNull()
+            if (ttlRaw.isNotBlank() && ttl == null) warns.add("显示超时「$ttlRaw」不是整数 —— 按默认 ${ttlDef}ms")
 
             warns.forEach { problems.add(Problem(line, it, false)) }
 
@@ -430,7 +433,7 @@ object SignalTableCsv {
                 source = "monitor",
                 invalidRaw = invalidRaw,
                 minDlc = needDlc,
-                ttlMs = ttl ?: 2000,
+                ttlMs = ttl ?: ttlDef,
                 group = get(C_MSG_NAME).ifBlank { "监听型(信号表)" },
                 note = noteOf(
                     msgName = get(C_MSG_NAME),

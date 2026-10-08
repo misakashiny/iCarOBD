@@ -58,7 +58,58 @@
                 android:layout_height="42dp"
                 android:background="@drawable/bg_input" />
 
+            <!--
+              数据来源（v1.20.8，S3）。这是本轮补上的最大空白：
+              在它出现之前，用户**造不出** source=monitor 的条目 ——
+              全 app 只有 2 条内置监听 PID，第三条只能靠"导出信号表 → Excel 填 → 导回来"。
+            -->
+            <TextView
+                style="@style/FieldLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="数据来源" />
+
+            <Spinner
+                android:id="@+id/spSource"
+                android:layout_width="match_parent"
+                android:layout_height="42dp"
+                android:background="@drawable/bg_input" />
+
+            <!--
+              header 是**同一个字段、两种含义**（见 PidDraft 类注释）：
+                poll    = AT SH 的目标模块头（7E0/720…，留空 = 广播 7DF）
+                monitor = 广播帧的 CAN ID（09A/2C7…）
+              所以标签与 hint 由代码按 source 换，不写死。
+            -->
+            <TextView
+                android:id="@+id/tvHeaderLabel"
+                style="@style/FieldLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="CAN 目标模块头（AT SH，留空 = 广播 7DF）" />
+
+            <EditText
+                android:id="@+id/etHeader"
+                style="@style/InputEditMono"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="7E0"
+                android:importantForAutofill="no" />
+
+            <TextView
+                android:id="@+id/tvHeaderHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/text_dim"
+                android:textSize="11sp" />
+
+            <!--
+              Mode / PID：**监听型会整行隐藏**（v1.20.8，S3）。
+              监听型的 mode 固定 MON、pid = header（见 PidDraft 类注释）——
+              让人填一个保存时会被覆盖的值，比不显示它更糟。
+            -->
             <LinearLayout
+                android:id="@+id/rowModePid"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal">
@@ -107,19 +158,26 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <TextView
-                style="@style/FieldLabel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="实际请求帧（自动生成，可覆盖）" />
-
-            <EditText
-                android:id="@+id/etRequest"
-                style="@style/InputEditMono"
+            <LinearLayout
+                android:id="@+id/rowRequest"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="22 12 34"
-                android:importantForAutofill="no" />
+                android:orientation="vertical">
+
+                <TextView
+                    style="@style/FieldLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="实际请求帧（自动生成，可覆盖）" />
+
+                <EditText
+                    android:id="@+id/etRequest"
+                    style="@style/InputEditMono"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="22 12 34"
+                    android:importantForAutofill="no" />
+            </LinearLayout>
 
             <TextView
                 style="@style/SectionTitle"
@@ -202,6 +260,31 @@
                     android:text="bit(A,0)"
                     android:textSize="11sp" />
             </LinearLayout>
+
+            <!--
+              监听型信号用的通用位段函数（v1.20.8，S3）。
+              ⚠️ `bits(A,0,7)` 与 `bitsAt(...)` 名字太像，但**不是一回事**：
+              `bits` 的输入是一个数值（只能取单字节内的位），`bitsAt` 自己拿整帧按位序遍历
+              （跨字节 + 非对齐 + Motorola 都表达得了）。信号表生成的一律是 bitsAt 形态。
+              把区别印在界面上，是因为**用错的表现是"解出别的信号的值，看起来却很正常"**。
+            -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnTplBitsAt"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="match_parent"
+                android:layout_height="34dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:text="bitsAt(18,1,0,0)"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/tvFormulaHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/text_dim"
+                android:textSize="11sp"
+                android:text="监听型信号常用 bitsAt(起始位, 长度, 字节序, 符号)：字节序 0=Intel(LE) / 1=Motorola(BE)，符号 0=无符号 / 1=有符号。⚠️ 它和 bits(A,起始位,长度) 不是一回事 —— 后者只能取单字节内的位。" />
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -324,6 +407,7 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/rowGroupInterval"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal">
@@ -349,7 +433,13 @@
                         android:importantForAutofill="no" />
                 </LinearLayout>
 
+                <!--
+                  轮询间隔：**监听型会隐藏这一列**（v1.20.8，S3）。
+                  监听型不进轮询列表（`FrameMonitor` 常驻监听驱动），
+                  填了也没人读 —— 留着它只会让人以为"填小一点值就更新得快"。
+                -->
                 <LinearLayout
+                    android:id="@+id/colInterval"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="10dp"
@@ -372,7 +462,9 @@
                 </LinearLayout>
             </LinearLayout>
 
+            <!-- 轮询优先级 + 多 ECU 序号：**监听型整行隐藏**（两者都只对主动请求有意义） -->
             <LinearLayout
+                android:id="@+id/rowPriorityEcu"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
@@ -421,6 +513,102 @@
                         android:importantForAutofill="no" />
                 </LinearLayout>
             </LinearLayout>
+
+            <!--
+              「让值不骗人」的三个字段（v1.20.8，S3 把它们接到界面上）。
+              它们对应 S2 的三条运行时语义，语义与默认值见 PidDefinition 的字段注释。
+              ⚠️ `显示超时` 只对监听型有意义（主动请求型每次轮询都是新值），
+              所以切到 poll 时那一列会隐藏 —— 但**隐藏不等于清空**，
+              编辑存量条目时它的值原样保留（隐藏的是显示，不是数据）。
+            -->
+            <TextView
+                style="@style/SectionTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="信号校验与新鲜度" />
+
+            <LinearLayout
+                android:id="@+id/rowSignalParams"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/FieldLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="无效原始值（可空）" />
+
+                    <EditText
+                        android:id="@+id/etInvalidRaw"
+                        style="@style/InputEditMono"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:hint="255"
+                        android:importantForAutofill="no"
+                        android:inputType="number" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/FieldLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="最小帧长 DLC（0=不查）" />
+
+                    <EditText
+                        android:id="@+id/etMinDlc"
+                        style="@style/InputEditMono"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:hint="8"
+                        android:importantForAutofill="no"
+                        android:inputType="number" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/colTtl"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/FieldLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="显示超时 ms（0=不判）" />
+
+                    <EditText
+                        android:id="@+id/etTtl"
+                        style="@style/InputEditMono"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:hint="2000"
+                        android:importantForAutofill="no"
+                        android:inputType="number" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tvSignalHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/text_dim"
+                android:textSize="11sp" />
 
             <TextView
                 style="@style/FieldLabel"

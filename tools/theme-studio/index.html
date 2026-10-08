@@ -22,6 +22,10 @@
   <button onclick="pickFile()" title="打开设计文件">打开</button>
   <button class="primary" id="btnSave" onclick="saveFile()" title="保存为 icar.ui/2（完整能力）">保存</button>
   <button onclick="exportV1()" title="导出 App 当前版本能读的格式（无图片/状态/分组/变换）">导出</button>
+  <!-- 设计包（v2.79.0）。**按钮文案刻意不叫「导出」** —— 老套件
+       verify-features 断言的是"有且只有「导出」"，改它的文案会连带改测试。
+       这个按钮的意义是：**把素材一起带走**，解决"推到设备上只剩空卡片"。 -->
+  <button id="btnPack" onclick="exportPackage()" title="导出设计包（.icarzip）：design.json + 这份设计真正引用到的素材 + manifest.json。App 侧导入待做（见 README）">📦 设计包</button>
   <button onclick="exportPng()" title="把当前画布导出成 PNG 预览图（自动去掉选择框与网格）">导出图</button>
   <button onclick="validateNow()" title="校验硬错误与警告">校验</button>
 
@@ -202,6 +206,11 @@
 <script src="js/canvas.js"></script>
 <script src="js/panels.js"></script>
 <script src="js/editor.js"></script>
+<!-- 设计包（v2.79.0）：zip.js 是自写的 store-only ZIP 写入/读回，
+     pack.js 是"哪些素材被引用了 + manifest"的纯逻辑（可在 Node 里直接测）。
+     放在 app.js **之前** —— app.js 的 exportPackage() 要用它们。 -->
+<script src="js/zip.js"></script>
+<script src="js/pack.js"></script>
 <script src="js/app.js"></script>
 <script>
   /* 标签页切换（很小，不值得单独一个文件） */

@@ -144,6 +144,20 @@ data class PidDefinition(
     }
 
     companion object {
+        /**
+         * **新建一条监听型信号时的默认显示超时(ms)**（v1.20.8，S3）。
+         *
+         * 字段 [ttlMs] 自己的默认值是 `0`（= 不判断）—— 那是为了**存量配置零迁移**，
+         * 不能动。但"新建"是另一回事：一条新加的广播信号若不判超时，
+         * 就正好是 S2 要消掉的那种骗人 —— **停发之后仪表还挂着最后一个数字，
+         * 看起来跟实时一样**。
+         *
+         * ⚠️ 只在这里定义一次：信号表导入（[SignalTableCsv.parse]）与
+         * 手工录入（`PidDraft.build`）都引用它。两处各写一个 `2000` 的话，
+         * 将来改默认值必然漏掉一边，而症状是"导进来的和手填的行为不一样"。
+         */
+        const val DEFAULT_MONITOR_TTL_MS = 2000
+
         /** 轮询优先级 */
         const val PRIORITY_HIGH = 0
         const val PRIORITY_NORMAL = 1

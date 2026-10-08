@@ -17,6 +17,7 @@ import com.icar.obd.R
 import com.icar.obd.data.AppLog
 import com.icar.obd.data.ProbeLog
 import com.icar.obd.data.PidDefinition
+import com.icar.obd.data.SignalDecode
 import com.icar.obd.data.SignalTableCsv
 import com.icar.obd.data.Store
 import com.icar.obd.obd.CanDiff
@@ -36,6 +37,26 @@ import java.io.File
  * 克隆版在满速总线上只漏出约 77 帧/秒（摊到 80 个 ID 上 = 每 ID 1 帧/秒），
  * 闪烁类信号根本还原不出来；而**主动请求 Mode 22 时的采样率由我们自己定**（见 PID 扫描器）。
  * 本页现在的正确用法是配合**CAN 过滤器**（`ATCRA`）缩窄观察范围之后的定点观察。
+ *
+ * ## 解码显示（v1.20.8，S4 —— "看得懂"）
+ *
+ * 原来每一行只有 `数据: 00 00 04 00 88 00 03 00`。要从这串 hex 走到
+ * "这是左转向灯"，用户得自己知道 `0x09A` 的 bit2、还得会读 Intel 位序。
+ *
+ * 现在：**拿已有的监听型 PID 的 `formula` 直接解帧**（规格 §2-S4 ——
+ * 这就是这一步便宜的原因：一行数据模型都不用加），把物理值显示在 hex 下面。
+ *
+ * 三条刻意守住的规矩（每一条都对应一次"被骗"）：
+ *  1. **未绑定 PID 的 ID 只显示原始 hex**，不编值、不猜；
+ *  2. **候选（`enabled=false`）标出来**并压暗 —— 它没经过验证，
+ *     不能和已确认的信号长得一样（规格 §1 决策 4）；
+ *  3. **DLC 不足 / 命中无效原始值 / 公式解不出**时显示 `--` 加原因 ——
+ *     判定复用 `PidDefinition.dlcTooShort` / `hitsInvalidRaw`，
+ *     与运行时 `FrameMonitor` 是**同一对函数**（自己再写一遍就会"探测页说够、运行时不收"）。
+ *
+ * 顺带把**观察到的取值集合**也解一遍（聚合器本来就去重存了 ≤8 个）：
+ * 只看"最后一帧"会重犯 `CanFrame.Aggregate.values` 那个已知坑 ——
+ * 周期信号很容易正好停在暗相位（实车 09A 左转/右转两次的 last 都是 `00`）。
  */
 class CanSnifferActivity : AppCompatActivity() {
 
@@ -47,6 +68,15 @@ class CanSnifferActivity : AppCompatActivity() {
     private lateinit var btnMonitor: MaterialButton
     private lateinit var btnDiff: MaterialButton
     private lateinit var diffContainer: android.view.ViewGroup
+
+    /**
+     * 「监听型 PID 按 CAN ID 索引」—— S4 解码的查表入口。
+     *
+     * 每轮刷新都重建（而不是 onCreate 缓存一次）：用户完全可能
+     * **先去 PID 页建一条、再回这一页探测**，缓存住的话那条新信号要等
+     * Activity 重建才生效 —— 而症状正是"我明明建了，这里还是只显示 hex"。
+     */
+    private var decodeIndex: Map<Int, List<PidDefinition>> = emptyMap()
 
     private val durations = listOf(3, 5, 10, 20, 30, 60)
 
@@ -125,7 +155,16 @@ class CanSnifferActivity : AppCompatActivity() {
                 // 用户反馈"记录得太少了"。聚合结果本身就是**蒸馏过的**（每个 ID 一行，
                 // 不是每帧一行），整份存下来不会失控；真要每帧明细，CAN 页还有「导出原始」。
                 val agg = runCatching { CanSniffer.aggregateCsv() }.getOrDefault("")
-                ProbeLog.add(ProbeLog.KIND_CAN, "过滤器 $filter · ${describe(st)}", agg)
+                // S4：解码结果也一起留档。
+                // 为什么值得占这几行：**这是上车验证"解码到底对不对"的唯一物证** ——
+                // 界面上的值刷过去就没了，而探测记录能事后回看（AppLog 第二天就换文件）。
+                val dec = decodeReport()
+                ProbeLog.add(
+                    ProbeLog.KIND_CAN,
+                    "过滤器 $filter · ${describe(st)}" + if (dec.isBlank()) "" else " · 解码 ${boundIdCount()} 个 ID",
+                    agg + dec
+                )
+                if (dec.isNotBlank()) AppLog.i(AppLog.M_OBD, "CAN 解码汇总", dec.replace('\n', ' '))
             }
             wasRunning = CanSniffer.running
         }
@@ -135,7 +174,64 @@ class CanSnifferActivity : AppCompatActivity() {
 
     /** 状态行的**唯一**刷新入口（`FrameMonitor` 与 `CanSniffer` 两条状态都要反映到它） */
     private fun refreshStatus() {
-        tvStatus.text = describe(CanSniffer.status)
+        refreshDecodeIndex()
+        // 解码汇总挂在状态行下面：它是**整页**的结论（这一页有多少 ID 能看懂），
+        // 放进结果流里会被 `ColumnFlowLayout` 分栏切成半宽，看着像某一条的附注
+        val sum = decodeSummary()
+        tvStatus.text = describe(CanSniffer.status) + if (sum.isBlank()) "" else "\n$sum"
+    }
+
+    /** 重建「CAN ID → 监听型 PID」索引。见 [decodeIndex] 为什么每轮都重建 */
+    private fun refreshDecodeIndex() {
+        decodeIndex = SignalDecode.indexByHeader(Store.allPids())
+    }
+
+    /** 本页看到的 ID 里，有多少个绑定了监听型 PID（= 能显示物理值的那些） */
+    private fun boundIdCount(): Int =
+        CanSniffer.aggregates().count { decodeIndex.containsKey(it.canId) }
+
+    /**
+     * S4 的结果汇总（挂在状态行下面）。
+     *
+     * 「一个都没绑定」时**必须说清楚**：否则用户看到的是一屏 hex，
+     * 而他刚在 PID 页建过监听型条目 —— 两件事对不上，就会去怀疑公式写错了。
+     */
+    private fun decodeSummary(): String {
+        val list = CanSniffer.aggregates()
+        if (list.isEmpty()) return ""
+        val bound = boundIdCount()
+        return if (bound == 0) {
+            "解码：${list.size} 个 ID 里**没有一个**绑定了监听型 PID —— 只能显示原始 hex（不猜值）。" +
+                "要解出物理值，到「PID」页新建一条、数据来源选「监听广播帧」。"
+        } else {
+            "解码：${list.size} 个 ID 里有 $bound 个绑定了监听型 PID，下面直接显示物理值；" +
+                "其余只显示原始 hex。标「候选」的是 enabled=false，**没经过验证**。"
+        }
+    }
+
+    /**
+     * 解码明细（给「探测记录」留档用）。空 = 一个都没绑定。
+     *
+     * 格式刻意做成"每行一个 ID"：上车后一眼就能对着实物核对
+     * （"我拨了左转，这里是不是从 0 变成 1"）。
+     */
+    private fun decodeReport(): String {
+        val list = CanSniffer.aggregates()
+        val bound = list.filter { decodeIndex.containsKey(it.canId) }
+        if (bound.isEmpty()) return ""
+        val sb = StringBuilder("\n\n=== 解码（监听型 PID）===\n")
+        bound.forEach { a ->
+            val pids = decodeIndex[a.canId] ?: return@forEach
+            val last = SignalDecode.parseHexData(a.lastData)
+            sb.append(String.format("0x%03X", a.canId)).append(" → ")
+                .append(pids.joinToString(" / ") { SignalDecode.decode(last, it).text() })
+                .append('\n')
+            if (a.values.size >= 2) {
+                sb.append("    观察到的取值: ").append(a.values.joinToString(" | ")).append('\n')
+            }
+        }
+        sb.append("（未绑定的 ID 只显示原始 hex —— 不猜值）\n")
+        return sb.toString()
     }
 
     override fun onDestroy() {
@@ -328,6 +424,7 @@ class CanSnifferActivity : AppCompatActivity() {
 
     private fun buildRows() {
         container.removeAllViews()
+        refreshDecodeIndex()
         val list = CanSniffer.aggregates()
         if (list.isEmpty()) {
             container.addView(
@@ -342,11 +439,23 @@ class CanSnifferActivity : AppCompatActivity() {
         list.forEach { container.addView(row(it)) }
     }
 
+    /**
+     * 一行 = 一个 CAN ID。
+     *
+     * 三行信息：ID 与帧率 / 原始数据与新鲜度 / **解出来的物理值**（S4）。
+     * 解不出来就**什么都不加**（未绑定 PID 的 ID 只有前两行）——
+     * 加一句"（无解码）"会把"这个 ID 本来就没绑信号"和"绑了但解不出"混成一件事。
+     */
     private fun row(a: CanFrame.Aggregate): LinearLayout {
         val period = if (a.count > 1 && a.lastTs > a.firstTs) {
             val avg = (a.lastTs - a.firstTs).toFloat() / (a.count - 1)
             if (avg > 0f) "  周期≈${"%.0f".format(avg)}ms" else ""
         } else ""
+
+        // 「距上次收到多久」是规格 §2-S4 明确要显示的一项：
+        // 广播信号停发时，这一行是唯一能看出"它已经不在说话了"的地方
+        val ageMs = (System.currentTimeMillis() - a.lastTs).coerceAtLeast(0)
+        val age = if (a.lastTs > 0) " · 最后收到 ${"%.1f".format(ageMs / 1000f)} 秒前" else ""
 
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -362,13 +471,70 @@ class CanSnifferActivity : AppCompatActivity() {
             )
             addView(
                 TextView(this@CanSnifferActivity).apply {
-                    text = "数据: ${a.lastData}   变化 ${a.changed} 次"
+                    text = "数据: ${a.lastData}   变化 ${a.changed} 次$age"
                     textSize = 11f
                     gravity = Gravity.START
                     setTextColor(resources.getColor(R.color.text_dim, theme))
                 }
             )
+            // ---- S4：解出来的物理值 ----
+            decodeLines(a).forEach { (line, color) ->
+                addView(
+                    TextView(this@CanSnifferActivity).apply {
+                        text = line
+                        textSize = 12f
+                        setTextColor(color)
+                        layoutParams = LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                        )
+                    }
+                )
+            }
         }
+    }
+
+    /**
+     * 这个 ID 上**已有的监听型 PID** 解出来的值（v1.20.8，S4）。
+     *
+     * 返回 `(文本, 颜色)` 列表：
+     *  - `→ 左转向灯 1`：已确认、解得出 —— 正常字色；
+     *  - `→ 右转向灯 0（候选）`：`enabled=false`，压暗 + 标明候选；
+     *  - `→ 油温 --（DLC 不足 需要=4 实际=2）`：**danger 色** —— 这条不可信。
+     *
+     * 另外把**观察到的取值集合**也解一遍（聚合器去重后 ≤8 个）：
+     * 只看最后一帧会重犯 `Aggregate.values` 那个已知坑 ——
+     * 周期信号很容易正好停在暗相位（实车 09A 左转/右转两次的 last 都是 `00`，分不出左右）。
+     */
+    private fun decodeLines(a: CanFrame.Aggregate): List<Pair<String, Int>> {
+        val pids = decodeIndex[a.canId] ?: return emptyList()
+        if (pids.isEmpty()) return emptyList()
+        val out = ArrayList<Pair<String, Int>>(pids.size + 1)
+        val last = SignalDecode.parseHexData(a.lastData)
+        pids.forEach { p ->
+            val d = SignalDecode.decode(last, p)
+            out.add("  → " + d.text() to decodeColor(d))
+            if (a.values.size >= 2) {
+                // 去重后的"这条信号一共出现过哪几种值"（最多列 4 种，免得一屏放不下）
+                val seen = LinkedHashSet<String>()
+                a.values.forEach { v ->
+                    if (seen.size < 4) seen.add(SignalDecode.decode(SignalDecode.parseHexData(v), p).text())
+                }
+                if (seen.size >= 2) {
+                    out.add(
+                        "     取值集合: " + seen.joinToString(" / ") to
+                            resources.getColor(R.color.text_dim, theme)
+                    )
+                }
+            }
+        }
+        return out
+    }
+
+    /** 可信度 → 颜色。**不可信用 danger 色**：这不是"样式"，是"别拿它当真值" */
+    private fun decodeColor(d: SignalDecode.Decoded): Int = when {
+        !d.ok -> resources.getColor(R.color.danger, theme)
+        d.candidate -> resources.getColor(R.color.text_dim, theme)
+        else -> resources.getColor(R.color.text_primary, theme)
     }
 
     private fun export(name: String, content: String) {
