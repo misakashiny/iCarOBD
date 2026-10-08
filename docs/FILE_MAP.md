@@ -50,7 +50,7 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 │   ├── 动画实现.md                 动画机制（**三层数值过渡** / 爆闪 / 共用时钟）
 │   ├── 仪表框架.md                 8 种仪表 + 「某块表为什么是空的」排查
 │   ├── CAN-信号库与逆向框架.md     **CAN 信号逆向的方法论**（DBC 分析 / 采样率是前提 / 四阶段方案）
-│   ├── 下一步-CAN信号库实现规格.md  **上一条的执行规格**（S1/S2 已做 = v1.20.7，S3~S5 待做）
+│   ├── 下一步-CAN信号库实现规格.md  **上一条的执行规格**（**S1~S5 全部已做**：S1/S2 = v1.20.7、S3/S4 = v1.20.8、S5 = v1.20.10）
 │   ├── 下一步-变量模式与组件变体.md  **主题工具的下一轮执行规格**（变量·模式 / 组件·变体，待评审）
 │   ├── LVGL-放弃记录.md            LVGL 方案为什么被放弃（教训）
 │   ├── 主题格式参考.md             Sky Gauge 格式逆向（已不用，格式知识仍有效）
@@ -147,7 +147,7 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | 文件 | 行 | 职责 | 关键符号 | 风险 |
 |---|---|---|---|---|
 | `MainActivity.kt` | 781 | 导航 + 权限 + **仪表盘沉浸模式**（收左侧 tab / 收系统栏 / **双指手势 ×4 + 双击兜底**）+ **常驻监听警示条**（v1.20.6） | `switchTo`（**commitNow**）、`createFragment`、`ensurePermissions`、`applyKeepScreenOn`、**`applySystemStatusBar`**、**`setRailVisible`/`ensureRailHandle`/`scheduleRailHide`**、`setFullscreen`、`updateSimBar`、**`syncMonitorWarn`**、**`runGesture(slot)`**（**全项目唯一**执行双指手势动作的地方，v1.20.9）、`dashFragment()` | 🔴 收起导航栏用**平移**（`translationX`+`alpha`）**不是 GONE** —— GONE 会让页面容器重排、画布尺寸变化、表盘重排并闪一下。⚠️ 沉浸时系统栏用 `BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE`（否则把人锁住）。⚠️ 警示条**不能**挂 `FrameMonitor.onStateChanged`（单值槽位，CAN 探测页已占用）→ 用 1 秒 ticker。⚠️ 双指/双击一律**旁听不消费**（照旧 `return super.dispatchTouchEvent(ev)`）—— 改成消费会把单指手势一起吃掉。⚠️ **动作执行只能有一处**（`runGesture`），设置页只编辑 `Store.settings` 里那张表；两处各执行一遍迟早"显示的映射"与"真的动作"分叉。⚠️ 「切画布」**要先判当前页**（只在仪表盘页有意义） |
-| `KnowledgeFragment.kt` | 420 | **知识库**（v1.20.2 建 / v1.20.3 改成**导航 tab** + 标签筛选）：13 节术语与探测方法 | `SECTIONS`、`TAG_MAP`（**按节索引**挂标签，正文里不写）、`buildTagChips`、`applyFilter` | 🟡 内容是**文档性质的代码**。⚠️ `ChipGroup(singleSelection)` 会**覆盖**你给 chip 挂的监听 —— 必须用 `setOnCheckedStateChangeListener`。⚠️ 在 `SECTIONS` 中间插节要顺手改 `TAG_MAP` |
+| `KnowledgeFragment.kt` | 1285 | **知识库 + 软件使用手册**（v1.20.2 建 / v1.20.3 改成**导航 tab** + 标签筛选 / **v1.20.11 补 6 节新知识 + 新增手册 12 节**）：共 **31 节**（知识 0~18 答"为什么"、手册 1~12 答"下一步点哪里"，手册每节固定 `【前置】/【步骤】/【判据】/【没成功怎么办】` 四栏） | `Section`（**internal**）、`SECTIONS`、`TAGS`（11 个 + 「全部」）、`TAG_MAP`（**按节索引**挂标签，正文里不写）、`buildTagChips`、`applyFilter`、`tagsOf` | 🟡 内容是**文档性质的代码**，**没有编译期约束** —— 结构守卫在 `ui/KnowledgeFragmentTest.kt`（12 条）。⚠️ `ChipGroup(singleSelection)` 会**覆盖**你给 chip 挂的监听 —— 必须用 `setOnCheckedStateChangeListener`。⚠️ **在 `SECTIONS` 中间插节要顺手改 `TAG_MAP`**（v1.20.11 就把收尾节从索引 12 挪到了 18；错位的后果是"点某个标签筛出别的东西"，页面看起来完全正常）。⚠️ **正文里不许写 Markdown**（`**粗体**`、反引号都会**原样显示** —— 这一页不做渲染，v1.20.2~v1.20.10 一直带着 144 个 `**`，v1.20.11 清掉并有单测守着）；代码注释里的 Markdown 不受影响。⚠️ 标签词表与映射会分叉（多写一个 / 少挂一个 = 某个 chip 永远 0 节），两个方向各有单测 |
 | `SafFile.kt` | 39 | **SAF（`content://`）文件显示名**（v1.20.6）：三级回退（`DISPLAY_NAME` → URI 路径末段 → 调用方兜底） | `displayName(ctx, uri, fallback)` | 🟡 抽成一处是因为"最近一次导入"与规则编辑器选音频都要它 —— 两处各写一遍必然分叉 |
 | `DesignAssets.kt` | 105 | 设计文件**素材**落地（v1.20.3）：把 SAF 目录树整棵复制进 app 私有目录 | `copyTree`、`hasRelativeAssets` | 🔴 解决 P0：素材是相对路径 + 导入走单文件 → `designBaseDir` 永远为空 → 素材全加载失败。用 `DocumentsContract` 遍历，**不引入 `androidx.documentfile`**；文件名做了路径穿越防护 |
 | `ui/view/NavBottomBar.kt` | 46 | **竖屏底部导航栏**（v1.20.5，P0）：把 `BottomNavigationView` 写死的菜单项上限 5 提到 6 | 重写 `getMaxItemCount()` | 🔴 Material 1.12.0 **没有** `setMaxItemCount`（逐字节搜过 classes.jar），只有 getter；但构造函数里是**虚调用** `getMaxItemCount()`，子类重写能在构造期生效。⚠️ 第 6 项用原生 `BottomNavigationView` 会**启动即崩**（只在竖屏暴露 —— 平板横屏用 NavigationRailView 没事） |
@@ -223,13 +223,14 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 
 ---
 
-### 2.5 单元测试 `app/src/test/java/com/icar/obd/`（**42 个文件 / 773 个用例**）
+### 2.5 单元测试 `app/src/test/java/com/icar/obd/`（**44 个文件 / 824 个用例**）
 
 > ⚠️ 下表的「用例」列**长期滞后于实际**（`run-tests.ps1` 的输出才是准的）——
-> 2026-10-09（v1.20.9）实测 `TOTAL=773`。加用例时顺手把这一行和本表改掉。
+> 2026-10-09（v1.20.11）实测 `TOTAL=824`。加用例时顺手把这一行和本表改掉。
 
 | 文件 | 用例 | 覆盖 |
 |---|---|---|
+| `ui/KnowledgeFragmentTest.kt` | 12 | **知识库 / 使用手册的结构守卫（v1.20.11）** —— 这一页没有编译期约束，只守三件会**静默坏掉**的事：**`TAG_MAP` 索引对齐**（条目数 = 节数 / 索引正好是 `0..size-1` / 不漏不跳号 / 不指向不存在的节）；**标签词表不分叉**（映射里用的标签都在词表里、词表里没有死标签、无重复、**数量 ≤ 11**）；**正文里没有 Markdown**（逐节扫成对的 `**` 与反引号；**单个 `*` 是正常的** —— 公式里的乘号如 `A * 0.1 - 48`）。另加：手册正好 **12 节**且编号连续（`手册 N · ` 开头）/ **手册每节四栏齐全**（`【前置】`/`【步骤`/`【判据`/`【没成功怎么办】`，⚠️ 步骤只查前缀 —— 手册 4 拆成 `步骤 A/B`）/ 知识节不许混进 `使用手册` / 标题与正文非空且标题不重复 / **正文不许有 Tab**（Tab 不参与 `trimIndent()` 的公共缩进计算，表现是"整段左边多出一截空白"） |
 | `data/DesignPackTest.kt` | 18 | **设计包（v1.20.9）**：`isZipHead` 三种合法签名 / JSON 不误判 / 太短；`safeEntryName` 拒绝对路径·`..`·反斜杠穿越·空，归一化 `./` `//` `\` 且中文与空格原样保留；**正常包解出后目录结构与设计引用一致**（含中文目录）；**CRC32 / 字节数 / 缺失素材各自报错并指名道姓**（CRC 用十六进制）；格式版本不对 / 没有 manifest / 没有 design.json / manifest 是坏 JSON / 根本不是 zip；**穿越条目 → 整包拒收且一个文件都没写到目录外**；**拒收时不留半个目录**；manifest 的 `missing` 与"包里多出的文件"**放行但列成警告**；纯控件（零素材）的包也能解开 |
 | `data/GestureActionsTest.kt` | 29 | **双指手势映射（v1.20.9；v1.20.10 加切 tab 的 13 条）**：默认值保持升级前手感（右滑呼出/左滑收起/上下翻画布）+ 每个默认值都是合法动作；`slotOf` 四个方向 / **未达阈值返回 -1**（不是某个槽位）/ 阈值 ≤0 不触发 / **斜划按主轴判**；`normalize` 认得的值原样、认不得的**落回该槽默认值**（含 null / 空白 / 拼错 / 越界槽位）；`actionName`/`actionIndex` 对认不得的当「无」；`summary` 文案与需求给的例子逐字一致 / 四个都配上时不补"其余无" / 全「无」时另给一句并提醒双击兜底；**旧配置缺这四个键取默认值**；存→读往返一致且真的写进 JSON；**手改坏的值落回默认**；`setGestureAt` 写进去的一定是合法 id；**v1.20.10**：可选动作是 **7 个**（id/名都不重复）/ **两个新动作的默认值是「无」** / 7 个动作**逐个往返**（`normalize`+`actionName`+`actionIndex`）/ 切 tab 能落盘读回 / **旧配置里不会出现切 tab** / `TAB_TAGS` 顺序 / **下一个走完 6 页回到第一个** / **上一个倒着走完回到最后一个** / **循环边界** / 六个 tab 各走一步都不原地不动且往返回到原点 / **认不得的当前页返回 null（不落回第一个）** / `isTabAction` 只认那两个 / 摘要认得出两个新动作 |
 | `data/PidDraftTest.kt` | 27 | **PID 编辑器的表单逻辑（v1.20.8，S3）**：监听型/主动请求型**往返**（字段一个不许变，含 `ttlMs=0` 不许被改成默认值）；`header` 两种含义（监听型必填 + 规范化 `9a→09A`、29 位原样；poll 的模块头可空）；监听型的 `mode`/`pid` 恒被忽略；校验边界逐条（名称·公式空 / PID 奇数 nibble / Mode 非十六进制但 `CALC` 放行 / min·max·间隔·ECU·无效原始值·最小帧长·显示超时的非数·负数·越界 / 最小>最大）；**`suggestedMinDlc` 按真实位集**（Motorola 锯齿，含规格 §7 的 `60,5` 实测案例）；软警告（无效原始值越界 / minDlc 为 0 或偏小）；下拉框映射与 `fmtNum`；有硬错误时 `pid == null` |
@@ -335,7 +336,7 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `tools/theme-studio/png.js` | **极简 PNG 编码器**（零依赖，只用内置 zlib）。PNG 结构 + CRC32 + 绘图原语（rect/roundRect/circle/ring/arc/line/poly）。抗锯齿用**超采样**（4 倍绘制再降采样） |
 | `tools/theme-studio/gen-assets.js` | **生成示例素材**：`node gen-assets.js` → `assets/<分类>/*.png`（**344 个**）+ `assets/builtin.js`（清单）。**全部是几何图形，不含任何车标** |
 | `tools/theme-studio/` | **PC 端主题制作工具**（v2）：`index.html` + `css/studio.css` + `js/{schema,model,validate,presets,canvas,panels,editor,app}.js` + `png.js`（PNG 编码器）+ `gen-assets.js` + `tests/`（**21 个浏览器套件** + `_common.js` 公共前置） + `gen-sample.js` + `sample.json`(v1) + `sample-v2.json` + `README.md` + `CHANGELOG.md`。**双击 index.html 即用，零安装**（经典脚本，不用 ES module/fetch —— 那在 `file://` 下被 CORS 挡）。校验规则与 `DesignFile.kt` 同源，`ThemeStudioSampleTest` 钉着 |
-| `app/src/test/java/com/icar/obd/` | JVM 单元测试（见 §2.5）。**用例数不要写死在这里** —— 跑 `tools/run-tests.ps1` 看 `TOTAL=`（v1.20.9 时是 **42 个文件 / 773 用例**；工作区里可能还有未提交的新测试文件） |
+| `app/src/test/java/com/icar/obd/` | JVM 单元测试（见 §2.5）。**用例数不要写死在这里** —— 跑 `tools/run-tests.ps1` 看 `TOTAL=`（v1.20.11 时是 **44 个文件 / 824 用例**；工作区里可能还有未提交的新测试文件） |
 | `docs/screenshots/` | 真机截图：`01~10` 竖屏，`11~17` 横屏 |
 
 ### ⚠️ 改这两个地方时必须成对
@@ -402,6 +403,7 @@ $ADB exec-out run-as com.icar.obd cat files/log/obd-$(date +%Y%m%d).log
 | 加一个双指手势动作 | `data/GestureActions.kt`（`ACTION_IDS` / `ACTION_NAMES` / `shortAction` **三处一起加**）+ `ui/MainActivity.runGesture` 的 `when` 加分支。**执行只能在这一处**，设置页只编辑那张表。⚠️ **新动作追加在 `ACTION_IDS` 末尾**（下标被 `Store.Settings` 与设置页 Spinner 用，插中间会让旧配置落错动作）；⚠️ 新动作的**默认值默认是「无」**（`DEFAULTS` 不改 = 升级不改变手感） |
 | 改"切上/下一个 tab"的**循环顺序** | `data/GestureActions.kt` 的 **`TAB_TAGS`**（顺序的唯一一处）+ `res/menu/bottom_nav.xml`（导航栏本身）**两处一起改**；相邻页计算在 `adjacentTab`（纯函数，边界有单测），`MainActivity.navItemIdOf` 只做 tag → `R.id.nav_*` 的映射。**执行复用 `switchTo`**（改导航栏 `selectedItemId`），不要另写一套页面切换 |
 | 改分段轮换（S5）的参数 / 段号 / 合并语义 | `obd/SegmentRotation.kt`（`SEGMENT_COUNT` / `SEGMENT_MS` / `segmentCommands` / `merge`）**唯一一处**；`CanSniffer` 只负责"什么时候调"（`uiTicker` 换段、收尾结算最后一段）。⚠️ **`ATCM700` 掩码与 `ATCF<段>00` 必须成对下发** —— 少了掩码，`ATCF000` 放行的是整条总线而不是第 0 段。⚠️ 判定**不要搬进 `CanSniffer`**（object + `Handler(Looper.getMainLooper())` → JVM 里测不到） |
+| 改知识库 / 使用手册的**内容或标签** | `ui/KnowledgeFragment.kt` 的 `SECTIONS`（正文）+ **`TAG_MAP`（按节索引挂标签，中间插节必须一起改）** + `TAGS`（词表，加标签时别忘）。⚠️ **正文里不许写 Markdown**（`**` / 反引号会原样显示）；⚠️ 手册每节要保住 `【前置】/【步骤】/【判据】/【没成功怎么办】` 四栏。改完跑 `ui/KnowledgeFragmentTest.kt`（12 条结构守卫会告诉你哪里错位/分叉/写了星号） |
 | 改设计包（`.icarzip`）的格式或校验 | 格式由 `tools/theme-studio/js/pack.js` 定义 → App 侧 `data/DesignPack.kt`（`PACK_FORMAT` / `parseManifest` / `unpack`）→ 入口 `ui/dash/CanvasSettingsFragment.importPack`。**两边的字段名必须一致**，改一边不改另一边会让所有旧包被拒收 |
 | 改"设计包解压到哪 / 素材基目录怎么定" | `ui/dash/CanvasSettingsFragment.importPack`（解压目录 = `files/design/<时间戳>/`）+ `applyDesign` 的 `baseDirOverride`（**必须等用户点「导入」才写 `designBaseDir`**） |
 | 增加或调整仪表盘风格 | `ui/view/GaugeTheme.kt`（调色板）；需要新的绘制效果时改对应 `ui/view/*GaugeView.kt` |
