@@ -9,6 +9,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import com.google.android.material.button.MaterialButton
@@ -16,6 +17,7 @@ import com.icar.obd.R
 import com.icar.obd.data.AppLog
 import com.icar.obd.data.ProbeLog
 import com.icar.obd.data.PidDefinition
+import com.icar.obd.data.SignalTableCsv
 import com.icar.obd.data.Store
 import com.icar.obd.obd.CanDiff
 import com.icar.obd.obd.CanFrame
@@ -84,10 +86,20 @@ class CanSnifferActivity : AppCompatActivity() {
             buildRows()
         }
         findViewById<MaterialButton>(R.id.btnSniffExportAgg).setOnClickListener {
-            export("can-aggregate.csv", CanSniffer.aggregateCsv())
+            export("can-observe-aggregate.csv", CanSniffer.aggregateCsv())
         }
         findViewById<MaterialButton>(R.id.btnSniffExportRaw).setOnClickListener {
-            export("can-raw.csv", CanSniffer.rawCsv())
+            export("can-observe-raw.csv", CanSniffer.rawCsv())
+        }
+        // ---- 信号表（v1.20.7，S1）----
+        // 入口刻意放在**探测页**：探测完就在这儿，不用再去设置页找。
+        findViewById<MaterialButton>(R.id.btnSniffExportTemplate).setOnClickListener {
+            export("can-signal-template.csv", SignalTableCsv.template(observedRows()))
+        }
+        findViewById<MaterialButton>(R.id.btnSniffImportSignal).setOnClickListener {
+            // 不用限定 MIME：这份 CSV 可能被 Excel 存成 text/csv、application/vnd.ms-excel，
+            // 甚至 application/octet-stream —— 限定类型的结果是"文件选不中"。
+            openSignalTable.launch(arrayOf("*/*"))
         }
 
         // v1.19.22：探测**结束**时留档到「探测记录」。
@@ -367,6 +379,7 @@ class CanSnifferActivity : AppCompatActivity() {
         runCatching {
             val dir = File(getExternalFilesDir(null), "export").apply { mkdirs() }
             val f = File(dir, name)
+            // `writeText` 默认 UTF-8；BOM 已经由内容自带（见 SignalTableCsv.BOM）
             f.writeText(content)
             val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", f)
             val send = Intent(Intent.ACTION_SEND).apply {
@@ -382,5 +395,91 @@ class CanSnifferActivity : AppCompatActivity() {
         }.onFailure {
             ObdController.toast("导出失败：${it.message}")
         }
+    }
+
+    // ================================================================ 信号表（S1）
+
+    /** 把探测到的每个 ID 折成模板的一行：ID / DLC / 观察到的取值集合 */
+    private fun observedRows(): List<SignalTableCsv.Observed> =
+        CanSniffer.aggregates().map {
+            SignalTableCsv.Observed(canId = it.canId, dlc = it.dlc(), values = it.values.toList())
+        }
+
+    /**
+     * 选一个信号表 CSV（SAF，不需要存储权限 —— 与「导入设计文件」同一套）。
+     *
+     * ⚠️ 校验结果**必须显示出来**：静默拒绝会让人以为"导进去了但没生效"，
+     * 然后去怀疑车/信号 —— 而真正的原因是那一行的 `字节序` 填错了。
+     */
+    private val openSignalTable = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@registerForActivityResult
+        val fileName = SafFile.displayName(this, uri, "信号表.csv")
+        val text = runCatching {
+            contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+        }.getOrNull()
+        if (text.isNullOrBlank()) {
+            ObdController.toast("读取文件失败（文件为空或没有读取权限）")
+            return@registerForActivityResult
+        }
+        val res = runCatching { SignalTableCsv.parse(text) }.getOrElse {
+            ObdController.toast("解析失败：${it.message}")
+            return@registerForActivityResult
+        }
+        // 只有通过的条目才写库；**一次写完**（见 Store.upsertPids 为什么不能循环调）
+        if (res.pids.isNotEmpty()) {
+            Store.upsertPids(res.pids)
+            ObdController.reloadPids()
+        }
+        AppLog.i(
+            AppLog.M_UI, "信号表导入",
+            "文件=$fileName 数据行=${res.totalRows} 收下=${res.accepted} " +
+                "硬错误=${res.errors.size} 软警告=${res.warnings.size}"
+        )
+        showImportResult(fileName, res)
+    }
+
+    /**
+     * 导入结果对话框。
+     *
+     * ⚠️⚠️ **不要用 `setMessage` + `setItems` 的组合**（规格 §7 陷阱 4，v1.20.1 实测）：
+     * 两者同时用时**列表会整个消失**，只剩一行说明。这里只放一段正文。
+     */
+    private fun showImportResult(fileName: String, res: SignalTableCsv.Result) {
+        val sb = StringBuilder()
+        sb.append("文件：").append(fileName).append('\n')
+        sb.append("数据行 ").append(res.totalRows)
+            .append(" · 收下 ").append(res.accepted)
+            .append(" · 硬错误 ").append(res.errors.size)
+            .append(" · 软警告 ").append(res.warnings.size).append('\n')
+        if (res.accepted == 0) {
+            sb.append("\n**一条都没通过**，PID 列表没有任何变化。\n")
+        }
+        val section = { title: String, list: List<SignalTableCsv.Problem>, max: Int ->
+            if (list.isNotEmpty()) {
+                sb.append('\n').append(title).append("（").append(list.size).append("）\n")
+                list.take(max).forEach {
+                    sb.append("第 ").append(it.row).append(" 行：").append(it.message).append('\n')
+                }
+                if (list.size > max) sb.append("… 还有 ").append(list.size - max).append(" 条\n")
+            }
+        }
+        section("硬错误 · 这些行被拒绝", res.errors, 12)
+        section("软警告 · 已收下，请核对", res.warnings, 8)
+        if (res.accepted > 0) {
+            sb.append('\n').append("已写入 PID 列表（监听型）。")
+            sb.append(
+                if (res.pids.any { it.enabled })
+                    "「已确认」的条目已启用 —— 到本页开「常驻监听」就能取到值。"
+                else
+                    "这些条目都是「候选」→ **未启用**，要在「PID」页手动打开。"
+            )
+        }
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle("信号表导入结果")
+            .setMessage(sb.toString())
+            .setPositiveButton("好", null)
+            .show()
     }
 }

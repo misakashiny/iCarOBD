@@ -719,9 +719,22 @@ object Store {
         saveEnabled()
     }
 
-    fun upsertPid(p: PidDefinition) {
-        val i = customPids.indexOfFirst { it.id == p.id }
-        if (i >= 0) customPids[i] = p else customPids.add(p)
+    fun upsertPid(p: PidDefinition) = upsertPids(listOf(p))
+
+    /**
+     * **批量** upsert（v1.20.7，S1 信号表导入用）。
+     *
+     * 为什么不循环调 [upsertPid]：它每次都 `savePids()`（把整份 `pids.json`
+     * 序列化一遍再写盘）。导入一份信号表可能有几十上百行，
+     * 而导入是在**主线程**的 SAF 回调里跑的 —— N 次全量写盘足够卡出 ANR。
+     * 这里只写一次。
+     */
+    fun upsertPids(list: List<PidDefinition>) {
+        if (list.isEmpty()) return
+        list.forEach { p ->
+            val i = customPids.indexOfFirst { it.id == p.id }
+            if (i >= 0) customPids[i] = p else customPids.add(p)
+        }
         savePids()
     }
 

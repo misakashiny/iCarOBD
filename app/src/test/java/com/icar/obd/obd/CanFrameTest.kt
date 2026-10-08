@@ -1,5 +1,6 @@
 package com.icar.obd.obd
 
+import com.icar.obd.data.SignalTableCsv
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -147,34 +148,58 @@ class CanFrameTest {
     }
 
     // ================================================================ CSV
+    //
+    // v1.20.7（S1）：观察表 CSV 改成**中文表头 + BOM + `报文ID(dec)` 冗余列**。
+    // 这三条都要钉住 —— 尤其是 BOM：漏了它 Excel 打开就是中文乱码，
+    // 而那在设备上**看不出来**（文件照样能导出、能打开）。
 
     @Test
-    fun `聚合 CSV 有表头且行数与 ID 数一致`() {
+    fun `观察表 CSV 带 UTF-8 BOM`() {
         val acc = CanFrame.Accumulator()
         acc.feed(frame(0x7E8, 0x10, 0x14), 100L)
-        acc.feed(frame(0x100, 0x01), 200L)
-        val lines = acc.aggregateCsv().trim().split("\n")
-        assertEquals("canId,isExtended,count,changed,lastData,firstTs,lastTs", lines[0])
-        assertEquals(3, lines.size)
-        assertTrue("实际: ${lines[1]}", lines[1].startsWith("7E8,0,1,1,\"10 14\",100,100"))
+        assertTrue("聚合表缺 BOM：Excel 里中文表头会乱码", acc.aggregateCsv().startsWith("\uFEFF"))
+        assertTrue("原始帧表缺 BOM", acc.rawCsv().startsWith("\uFEFF"))
     }
 
     @Test
-    fun `原始帧 CSV 有表头且行数与原始帧数一致`() {
+    fun `聚合 CSV 有中文表头且行数与 ID 数一致`() {
+        val acc = CanFrame.Accumulator()
+        acc.feed(frame(0x7E8, 0x10, 0x14), 100L)
+        acc.feed(frame(0x100, 0x01), 200L)
+        val lines = SignalTableCsv.stripBom(acc.aggregateCsv()).trim().split("\n")
+        assertEquals(
+            "报文ID(hex),报文ID(dec),29位ID,帧数,变化次数,最后数据,首次时间(ms),最后时间(ms)",
+            lines[0]
+        )
+        assertEquals(3, lines.size)
+        assertTrue("实际: ${lines[1]}", lines[1].startsWith("\"7E8\",2024,0,1,1,10 14,100,100"))
+    }
+
+    @Test
+    fun `原始帧 CSV 有中文表头且行数与原始帧数一致`() {
         val acc = CanFrame.Accumulator()
         acc.feed(frame(0x7E8, 0x10), 100L)
         acc.feed(frame(0x7E8, 0x10), 200L)
-        val lines = acc.rawCsv().trim().split("\n")
-        assertEquals("ts,canId,isExtended,dlc,data", lines[0])
+        val lines = SignalTableCsv.stripBom(acc.rawCsv()).trim().split("\n")
+        assertEquals("时间戳(ms),报文ID(hex),报文ID(dec),29位ID,DLC,数据", lines[0])
         assertEquals(3, lines.size)
-        assertEquals("100,7E8,0,1,\"10\"", lines[1])
+        assertEquals("100,\"7E8\",2024,0,1,10", lines[1])
     }
 
     @Test
     fun `29 位 ID 在 CSV 里标记为 extended`() {
         val acc = CanFrame.Accumulator()
         acc.feed(frame(0x18DAF110, 0x10), 1L)
-        assertTrue(acc.aggregateCsv().contains("18DAF110,1,"))
-        assertTrue(acc.rawCsv().contains(",18DAF110,1,"))
+        assertTrue(acc.aggregateCsv().contains("\"18DAF110\",${0x18DAF110},1,"))
+        assertTrue(acc.rawCsv().contains(",\"18DAF110\",${0x18DAF110},1,"))
+    }
+
+    @Test
+    fun `聚合记录最长帧长度 供模板预填 DLC`() {
+        // 同一个 ID 可能既有 4 字节帧又有 8 字节帧；模板要预填**能放下信号的那种**
+        val acc = CanFrame.Accumulator()
+        acc.feed(frame(0x09A, 0x00, 0x00, 0x00, 0x00, 0x88, 0x00, 0x03, 0x00), 1L)
+        acc.feed(frame(0x09A, 0x00, 0x00, 0x00, 0x00), 2L)
+        assertEquals("要取最长的那一帧，不能取最后一帧", 8, acc.aggregates().single().dlc())
     }
 }

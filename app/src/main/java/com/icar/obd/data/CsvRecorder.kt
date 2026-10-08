@@ -63,7 +63,16 @@ class CsvRecorder(private val baseDir: File) {
                     cols.forEach { sb.append(',').append(csvEscape(Store.findPid(it)?.name ?: it)) }
                     extra.keys.forEach { sb.append(',').append(csvEscape(it)) }
                     sb.append('\n')
-                    f.appendText(sb.toString())
+                    // ⚠️⚠️ **BOM 必须写在文件最前面**（v1.20.7 修，规格 §7 陷阱 3）。
+                    //
+                    // 表头用的是 **PID 的中文名**，而 Windows Excel 打开一份**没有 BOM**
+                    // 的 UTF-8 CSV 时会按**系统 ANSI（中文机器上=GBK）**解码 →
+                    // 整行表头乱码。这不是"显示难看"，是**表头认不出来**（列名全成了问号）。
+                    //
+                    // `EF BB BF` 这三个字节就是"这是 UTF-8"的声明。
+                    // 写入位置必须是**文件第一个字节** —— 所以只在写表头这一次加，
+                    // 后面每行的 appendText 都不加（加到中间会变成正文里的乱码字符）。
+                    f.appendText(SignalTableCsv.withBom(sb.toString()))
                     headerWritten = true
                 }
                 val now = System.currentTimeMillis()

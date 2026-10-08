@@ -36,11 +36,45 @@ object VehicleBus {
         valueListeners.forEach { runCatching { it(v) } }
     }
 
-    fun get(id: String): PidValue? = values[id]
+    /**
+     * **新鲜度判定（v1.20.7，S2）—— 取值入口的唯一权威。**
+     *
+     * ## 为什么放在这里
+     *
+     * 广播信号停发时**没人会来清掉总线里的最后一个值**。不在取值时判，
+     * 仪表就会一直挂着"最后一次收到的那一个数字"，看起来和实时一样 ——
+     * 这正是用户说的"被过期值骗"。
+     *
+     * ## 为什么"变成 `ok=false`"就够了（下游零改动，已核实）
+     *
+     * `VehicleBus.value()` 与 `DashRenderer` **都是 `ok` 才给值**：
+     *  - 仪表 → 显示 `--`
+     *  - 规则引擎（[com.icar.obd.obd.RuleEngine] 用 `snapshot()`/`value()`）→ 不误触发
+     *  - CSV（`ObdController` 用 `snapshot()`）→ 记空
+     *
+     * 所以只要**三个入口都过这一关**，下游一行都不用改。`get()` / `value()` /
+     * `snapshot()` 是全部入口 —— 漏掉任何一个都会留下一条"看得见旧值"的路。
+     *
+     * @param now 由调用方传入：一次快照里所有值用**同一个时刻**，
+     *            免得遍历过程中时间在走，出现"同一次快照里两个值判据不同"
+     */
+    private fun fresh(v: PidValue, now: Long): PidValue {
+        if (!v.ok || v.ttlMs <= 0) return v
+        val age = now - v.ts
+        return if (age <= v.ttlMs) v
+        else v.copy(ok = false, error = "值已过期 ${age}ms > ttl ${v.ttlMs}ms")
+    }
 
-    fun value(id: String): Float? = values[id]?.takeIf { it.ok }?.value
+    fun get(id: String): PidValue? = values[id]?.let { fresh(it, System.currentTimeMillis()) }
 
-    fun snapshot(): Map<String, PidValue> = HashMap(values)
+    fun value(id: String): Float? = get(id)?.takeIf { it.ok }?.value
+
+    fun snapshot(): Map<String, PidValue> {
+        val now = System.currentTimeMillis()
+        val out = HashMap<String, PidValue>(values.size)
+        values.forEach { (k, v) -> out[k] = fresh(v, now) }
+        return out
+    }
 
     fun clear() {
         values.clear()

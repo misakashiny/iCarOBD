@@ -1,5 +1,7 @@
 package com.icar.obd.obd
 
+import com.icar.obd.data.SignalTableCsv
+
 /**
  * CAN 帧的解析与聚合 —— **纯逻辑，可单测**。
  *
@@ -53,8 +55,26 @@ object CanFrame {
          */
         val values: LinkedHashSet<String> = LinkedHashSet()
 
+        /**
+         * 观察到的**最长帧**的字节数（v1.20.7）。
+         *
+         * 为什么不是"最后一帧的长度"：同一个 ID 可能既有 4 字节帧又有 8 字节帧
+         * （多路复用/分段），而信号表模板的 `DLC` 列要预填的是**能放下这条信号的那种帧**。
+         * 取最后一帧会让模板的 DLC 随机偏小 → 导入时被"解到帧外"的硬错误拒掉，
+         * 而用户填的其实是对的。取最大值才是"这个 ID 最多能看到几个字节"。
+         */
+        var maxDlc: Int = 0
+
         val isExtended: Boolean get() = canId > 0x7FF
         fun idHex(): String = String.format("%X", canId)
+
+        /**
+         * 观察到帧的数据字节数（**最长的那一帧**）。
+         *
+         * 「导出信号表模板」的 `DLC` 列靠它预填 —— 那正是 §7 陷阱 2 里说的
+         * "别拿 `最小/最大` 当编码范围"的替代品：**帧长只能从帧本身读**。
+         */
+        fun dlc(): Int = maxDlc
     }
 
     /**
@@ -109,6 +129,7 @@ object CanFrame {
             val a = agg.getOrPut(f.canId) { Aggregate(f.canId, firstTs = now) }
             a.count++
             a.lastTs = now
+            if (f.data.size > a.maxDlc) a.maxDlc = f.data.size
             val hex = f.dataHex()
             if (hex != a.lastData) {
                 a.changed++
@@ -136,29 +157,42 @@ object CanFrame {
             agg.clear(); raw.clear(); dropped = 0
         }
 
-        /** 聚合 CSV：一眼看出哪些 ID 在周期性广播 */
+        /**
+         * 聚合 CSV（= 导出「观察表」）：一眼看出哪些 ID 在周期性广播。
+         *
+         * v1.20.7（S1）三处改动：
+         *  - **中文表头** —— 这份文件是给人看的（Excel 里），英文列名没必要；
+         *  - **`报文ID(dec)` 冗余列** —— 信号表要的是十进制 ID，而 `报文ID(hex)` 里
+         *    `9A` / `09A` 两种写法都能出现；把两个都印出来，人抄哪一列都不会错；
+         *  - **UTF-8 BOM** —— 没有它 Windows Excel 按 ANSI 打开，中文表头乱码
+         *    （见 [SignalTableCsv.BOM]）。
+         */
         fun aggregateCsv(): String = buildString {
-            append("canId,isExtended,count,changed,lastData,firstTs,lastTs\n")
+            append(SignalTableCsv.BOM)
+            append("报文ID(hex),报文ID(dec),29位ID,帧数,变化次数,最后数据,首次时间(ms),最后时间(ms)\n")
             aggregates().forEach { a ->
-                append(a.idHex()).append(',')
+                append('"').append(a.idHex()).append('"').append(',')
+                append(a.canId).append(',')
                 append(if (a.isExtended) 1 else 0).append(',')
                 append(a.count).append(',')
                 append(a.changed).append(',')
-                append('"').append(a.lastData).append('"').append(',')
+                append(SignalTableCsv.escape(a.lastData)).append(',')
                 append(a.firstTs).append(',')
                 append(a.lastTs).append('\n')
             }
         }
 
-        /** 原始帧 CSV：信息全，但文件大得多 */
+        /** 原始帧 CSV（= 导出「观察表 · 原始帧」）：信息全，但文件大得多 */
         fun rawCsv(): String = buildString {
-            append("ts,canId,isExtended,dlc,data\n")
+            append(SignalTableCsv.BOM)
+            append("时间戳(ms),报文ID(hex),报文ID(dec),29位ID,DLC,数据\n")
             raw.forEach { r ->
                 append(r.ts).append(',')
-                append(r.frame.idHex()).append(',')
+                append('"').append(r.frame.idHex()).append('"').append(',')
+                append(r.frame.canId).append(',')
                 append(if (r.frame.isExtended) 1 else 0).append(',')
                 append(r.frame.data.size).append(',')
-                append('"').append(r.frame.dataHex()).append('"').append('\n')
+                append(SignalTableCsv.escape(r.frame.dataHex())).append('\n')
             }
         }
     }

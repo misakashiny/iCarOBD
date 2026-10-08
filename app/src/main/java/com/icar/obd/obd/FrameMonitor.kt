@@ -7,6 +7,8 @@ import com.icar.obd.data.Formula
 import com.icar.obd.data.PidDefinition
 import com.icar.obd.data.PidValue
 import com.icar.obd.data.Store
+import com.icar.obd.data.dlcTooShort
+import com.icar.obd.data.hitsInvalidRaw
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -384,7 +386,8 @@ object FrameMonitor {
     private fun feedLine(line: String) {
         val f = CanFrame.parseLine(line) ?: return
         frames++
-        val arr = ByteArray(f.data.size) { (f.data[it] and 0xFF).toByte() }
+        val dlc = f.data.size
+        val arr = ByteArray(dlc) { (f.data[it] and 0xFF).toByte() }
         val raw = f.data.joinToString(" ") { "%02X".format(it and 0xFF) }
         val now = System.currentTimeMillis()
         idCounts[f.canId] = (idCounts[f.canId] ?: 0) + 1
@@ -396,15 +399,49 @@ object FrameMonitor {
             // 且表现为"帧一直在进、命中一直是 0"，极难看出问题。
             // 实车 2026-10-06 就是这样：`帧=581 命中=0`。
             if (cid != f.canId) continue
+            // ---- ① DLC 守卫（v1.20.7，S2）----
+            //
+            // 帧比 minDlc 短 → **不解析**。不检查的后果不是"少一个值"，
+            // 而是按错位的字节解出一个**看起来很像真的**数字。
+            // 判定抽在 `PidDefinition.dlcTooShort` 里（纯函数，可单测）——
+            // 这个 object 在 JVM 里一碰就抛 `Stub!`，写在里面就测不到。
+            if (p.dlcTooShort(dlc)) {
+                // 日志洪水由 AppLog 的重复抑制兜底（同一句 2 秒内只累计计数）。
+                // 消息里带信号名 → 不同信号各自成一条，不会互相盖掉。
+                AppLog.w(
+                    AppLog.M_OBD,
+                    "信号跳过 | 原因=DLC不足 需要=${p.minDlc} 实际=$dlc",
+                    "信号=${p.name}(${p.id}) 报文=${f.idHex()}"
+                )
+                continue
+            }
             val v = runCatching { Formula.eval(p.formula, arr) }.getOrNull() ?: continue
             val fv = v.toFloat()
-            VehicleBus.put(PidValue(p.id, fv, raw, now, true))
+            // ---- ② 无效原始值（v1.20.7，S2）----
+            //
+            // ⚠️ `rawBits` **只在真的配了 invalidRaw 时才解析公式文本** ——
+            // 它在主线程热路径上（344 帧/秒那种场面），不能白花一次词法分析。
+            val bad = if (p.invalidRaw == null) false
+            else p.hitsInvalidRaw(Formula.rawBits(p.formula, arr), v)
+            // 命中无效值 → `ok=false`。下游（仪表/规则/CSV）都是 `ok` 才给值，
+            // 所以显示 `--`、规则不误触发、CSV 记空 —— **下游零改动**。
+            VehicleBus.put(PidValue(p.id, fv, raw, now, !bad, ttlMs = p.ttlMs))
             hits++
             matched = true
             // 取值变化时记一条（每种信号最多 20 条）——
             // 这是"位到底有没有在跳"的**直接证据**，比"有没有听到声音"硬得多
             val cnt = changeLogged[p.id] ?: 0
-            if (cnt < 20 && lastVals[p.id] != fv) {
+            if (bad) {
+                // 无效值要单独说清楚：不然日志里只有一个"看起来很正常"的数字，
+                // 而仪表却显示 `--`，两边对不上会让人以为是仪表坏了
+                if (cnt < 20) {
+                    changeLogged[p.id] = cnt + 1
+                    AppLog.w(
+                        AppLog.M_OBD, "信号命中无效原始值",
+                        "${p.name}(${p.id}) raw=${Formula.rawBits(p.formula, arr)} = invalidRaw(${p.invalidRaw}) → 视为无效"
+                    )
+                }
+            } else if (cnt < 20 && lastVals[p.id] != fv) {
                 changeLogged[p.id] = cnt + 1
                 lastVals[p.id] = fv
                 AppLog.i(AppLog.M_OBD, "监听信号变化", "${p.name}(${p.id}) = $fv")

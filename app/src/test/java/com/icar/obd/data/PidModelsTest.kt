@@ -2,6 +2,7 @@ package com.icar.obd.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -269,5 +270,100 @@ class PidModelsTest {
         assertEquals(-1, g.color)
         assertEquals(0f, g.minVal, 1e-6f)
         assertEquals(100f, g.maxVal, 1e-6f)
+    }
+
+    // ============================================ 运行时三语义的字段（v1.20.7，S2）
+    //
+    // `invalidRaw` / `minDlc` / `ttlMs` 三个字段的**默认值都等于旧行为** →
+    // 存量 `pids.json` 一条都不用迁移。这一组用例就是钉住这条兼容性承诺的。
+
+    @Test
+    fun `三个新字段默认值都等于旧行为`() {
+        val p = PidDefinition()
+        assertNull("null = 不判无效值", p.invalidRaw)
+        assertEquals("0 = 不查帧长", 0, p.minDlc)
+        assertEquals("0 = 不判超时", 0, p.ttlMs)
+    }
+
+    @Test
+    fun `三个新字段 JSON 往返`() {
+        val src = PidDefinition(id = "x", name = "n", invalidRaw = 255, minDlc = 3, ttlMs = 2000)
+        val back = PidDefinition.fromJson(org.json.JSONObject(src.toJson().toString()))
+        assertEquals(255, back.invalidRaw)
+        assertEquals(3, back.minDlc)
+        assertEquals(2000, back.ttlMs)
+    }
+
+    @Test
+    fun `默认值不写出 JSON`() {
+        val o = PidDefinition(id = "x").toJson()
+        assertFalse("默认值写出去只会让存量文件变胖", o.has("invalidRaw"))
+        assertFalse(o.has("minDlc"))
+        assertFalse(o.has("ttlMs"))
+    }
+
+    @Test
+    fun `旧 JSON 缺这三个字段时取默认值`() {
+        // v1.20.6 及以前写出的 pids.json 里根本没有这三个键
+        val legacy = org.json.JSONObject(
+            """{"id":"std_0C","name":"转速","mode":"01","pid":"0C",
+               "formula":"((A*256)+B)/4","enabled":true,"source":"poll"}"""
+        )
+        val p = PidDefinition.fromJson(legacy)
+        assertNull(p.invalidRaw)
+        assertEquals(0, p.minDlc)
+        assertEquals(0, p.ttlMs)
+        // 其余字段照旧，不能因为加了字段就读坏
+        assertEquals("std_0C", p.id)
+        assertEquals("((A*256)+B)/4", p.formula)
+        assertTrue(p.enabled)
+    }
+
+    @Test
+    fun `invalidRaw 的 null 与 0 必须区分`() {
+        // 0 是一个**合法**的无效原始值（"全 0 = 传感器没数据"很常见），
+        // 所以读到 JSON null 时不能塌成 0（那会把一条正常的 0 判成无效）
+        assertNull(PidDefinition.fromJson(org.json.JSONObject("""{"id":"x","invalidRaw":null}""")).invalidRaw)
+        assertEquals(0, PidDefinition.fromJson(org.json.JSONObject("""{"id":"x","invalidRaw":0}""")).invalidRaw)
+    }
+
+    // ------------------------- 两条纯判定（FrameMonitor 热路径调它们，这里钉住）
+
+    @Test
+    fun `dlcTooShort 只在配了 minDlc 时才判`() {
+        val p = PidDefinition(minDlc = 3)
+        assertFalse(p.dlcTooShort(8))
+        assertFalse("刚好够就不算短", p.dlcTooShort(3))
+        assertTrue(p.dlcTooShort(2))
+        assertFalse("minDlc=0 = 不检查（旧行为）", PidDefinition().dlcTooShort(0))
+    }
+
+    @Test
+    fun `hitsInvalidRaw 优先比位段原始值`() {
+        val p = PidDefinition(invalidRaw = 255)
+        // 位段原始值命中 —— 注意物理值 15.75 与 255 毫无关系，
+        // 拿物理值比会**永远不命中**（那正是 `rawBits` 存在的理由）
+        assertTrue(p.hitsInvalidRaw(255L, 15.75))
+        assertFalse(p.hitsInvalidRaw(254L, 15.75))
+    }
+
+    @Test
+    fun `hitsInvalidRaw 在非 bitsAt 公式上退到物理值`() {
+        // 手写公式（`A-40` / `bit(C,2)`）拿不到"位段原始值"，退回物理值比
+        val p = PidDefinition(invalidRaw = 215)
+        assertTrue(p.hitsInvalidRaw(null, 215.0))
+        assertFalse(p.hitsInvalidRaw(null, 214.0))
+    }
+
+    @Test
+    fun `没配 invalidRaw 时永远不命中`() {
+        assertFalse(PidDefinition().hitsInvalidRaw(255L, 255.0))
+        assertFalse(PidDefinition().hitsInvalidRaw(null, 0.0))
+    }
+
+    @Test
+    fun `PidValue 默认不判超时`() {
+        assertEquals(0, PidValue("x", 1f, "", 0L, true).ttlMs)
+        assertEquals(2000, PidValue("x", 1f, "", 0L, true, ttlMs = 2000).ttlMs)
     }
 }

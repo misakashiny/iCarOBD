@@ -41,6 +41,131 @@
 
 ---
 
+## v1.20.7 · 2026-10-08 · P12 S1+S2：**信号表导入/导出** + **运行时三语义（让值不骗人）**
+
+> 执行规格：[`下一步-CAN信号库实现规格.md`](下一步-CAN信号库实现规格.md)。
+> **本轮只做 S1、S2**（S3 录入界面 / S4 探测页解码显示 / S5 轮换扫描 留下一轮）。
+> 目标还是用户那三个：**「抓得更多」「看得懂」「别再被过期/错值骗」** —— 这一轮做的是后两个的一半。
+
+### 新增
+
+- **`data/SignalTableCsv.kt`（新文件）**：25 列「信号表」的**唯一**生成/解析实现，**纯函数、可 JVM 单测**。
+  - 模板：**每个观察到的 CAN ID 一行**，预填 `报文ID(hex)`/`报文ID(dec)`/`DLC`/**观察到的取值集合**，其余留空。
+    第 25 列是模板的核心价值 —— 它把 `turn-signal-09A.md` 里那个人工判据
+    （"操作开关 → 看取值集合变了哪一位"）**印在表里**，人不用自己翻 hex。
+  - 导入：**按列名**匹配（人在 Excel 里插列/调序不会让导入错位 —— 错位的后果是"值解错了但看起来正常"）；
+    硬错误整行拒绝、软警告照收但**汇总显示**；按 `(报文ID, 信号名)` 确定性推 PID id → **重复导入是覆盖不是翻倍**。
+  - **BOM 只在这里定义一次**（`BOM` / `withBom`）：三处写 CSV 的地方都引用它 —— 本项目恰恰因为
+    `CsvRecorder` 漏了 BOM 让 Excel 里的中文表头一直是乱码。
+- **公式语言加通用位段函数 `bitsAt(起始位,长度,字节序,符号)`**（`data/Formula.kt`，规格 §3.5）：
+  字节序 `0=Intel(LE) / 1=Motorola(BE)`，符号 `0=unsigned / 1=signed`。
+  求值器手里**有整帧**，所以它自己按位序遍历 —— 于是**任何一行信号表都能生成公式**，不存在"表达不了"的行。
+  同时把位序逻辑抽成 `Formula.bitSequence()`：**判"解到帧外"与"位重叠"都用它**，
+  ⚠️ **不能用线性的 `起始位+长度`**（Motorola 是锯齿位序；实测在宝马参数表上误报过 2 条越界，都是误报）。
+  另加 `Formula.rawBits()`：取 `bitsAt(...)` 那一段的**原始值**，给 `invalidRaw` 用（见下）。
+  ⚠️ `bits(v,start,len)` 与 `bitsAt(...)` 名字太像 —— **类注释里写了对照表**，别用错。
+- **CAN 探测页**：两个观察表导出改**中文表头 + BOM + `报文ID(dec)` 冗余列**
+  （`can-observe-aggregate.csv` / `can-observe-raw.csv`），新增「**导出信号表模板**」（`can-signal-template.csv`）
+  与「**导入信号表**」（SAF 选文件 → 校验 → 物化成 `PidDefinition(source=monitor)` → 写 `Store`）。
+  入口刻意放在探测页：探测完就在那儿。
+- **`PidDefinition` 加 3 个字段**（规格 §3.2）：`invalidRaw` / `minDlc` / `ttlMs`。
+  **三个默认值都等于旧行为 → 存量 `pids.json` 零迁移**（默认值一律不写进 JSON）。
+- **`PidValue.ttlMs`** + `VehicleBus` 取值入口的**唯一**新鲜度判定：`now - ts > ttlMs` → 返回 `ok=false` 的副本。
+
+### 修复
+
+- **CSV 不带 BOM → Windows Excel 按 ANSI 打开、中文表头乱码**（规格 §7 陷阱 3）：
+  `CsvRecorder` 首次写表头前先写 `\uFEFF`。行车记录 CSV 的表头是 **PID 的中文名**，
+  乱码不是"难看"，是**列名认不出来**。
+- 观察表 CSV 的 `报文ID(dec)` 冗余列：`报文ID(hex)` 有 `9A` / `09A` 两种写法，两个都印出来，人抄哪列都不会错。
+
+### 调整
+
+- `Formula.check()` 的假数据从 **26 字节 → 64 字节**（CAN FD 上限）。
+  26 只够变量 `A..Z`，会让起始位靠后的**合法** `bitsAt` 公式被静态校验误判成"解到帧外"。
+- `Store` 加 `upsertPids(list)`：导入一份信号表可能有上百行，循环调 `upsertPid` 会**写盘上百次**
+  （而导入在**主线程**的 SAF 回调里跑）—— 改成一次写完。
+- `CanFrame.Aggregate` 记 **`maxDlc`**（最长帧）：模板的 `DLC` 列要预填"能放下这条信号的那种帧"，
+  取最后一帧会让 DLC 随机偏小 → 导入时被"解到帧外"误拒。
+
+### S2 的三个语义（让值不再骗人）
+
+| 语义 | 实现 | 为什么这么设计 |
+|---|---|---|
+| **DLC 守卫** | `FrameMonitor.feedLine`：帧长 < `minDlc` → **不解析** + 记一条 `信号跳过 \| 原因=DLC不足 需要=N 实际=M` | 同一个 ID 的 DLC 并不固定（会有 4 字节和 8 字节两种帧），运行时守卫比"假设这个 ID 永远是 8 字节"可靠 |
+| **无效原始值** | 解析出原始值后先比 `invalidRaw` → 命中则 `ok=false` | `0xFF` 按 `A-40` 算出来是 **215℃** —— 仪表照画、规则照触发、CSV 照记。这正是"被错值骗" |
+| **新鲜度** | `PidValue.ttlMs` + `VehicleBus` 取值入口判超时 → `ok=false` 的副本 | 广播停发时**没人来清掉最后一个值**，仪表会一直挂着"最后一次收到的那个数字"，看起来跟实时一样 |
+
+**为什么"变成 `ok=false`"就够了（已核实，下游零改动）**：`VehicleBus.value()` 与 `DashRenderer`
+**都是 `ok` 才给值** → 仪表自动显示 `--`、规则不误触发（`RuleEngine` 用 `snapshot()`/`value()`）、
+CSV 记空（`ObdController` 用 `snapshot()`）。所以三个入口（`get`/`value`/`snapshot`）**必须都过同一关**，
+漏一个就留下一条"看得见旧值"的路。
+
+两条判定（`dlcTooShort` / `hitsInvalidRaw`）**抽成 `data/PidModels.kt` 里的纯函数**，而不是埋在 `FrameMonitor` 里：
+那个 object 在 JVM 里一碰就抛 `Stub!`（`Handler(Looper.getMainLooper())` 是饿汉初始化），写在里面就**一条都测不到**
+（S5 的 `FrameRateGate` 出于同一个理由被抽出来）。
+
+### 验证方式
+
+- `tools/run-tests.ps1` → **`TOTAL=694 FAILED=0`** + 构建守卫通过（617 → 694，**+77**；其中 **76 条是本轮新增**，
+  另 1 条来自工作区里一个**未被 git 跟踪**的既有测试文件 `data/DesignDraftFromImageTest.kt` —— 它不是本轮的产物，
+  也不引用本轮任何新代码，列在这里只是为了把总数对上）：
+  `SignalTableCsvTest` 40 条（25 列往返 / 硬错误逐条 / 软警告逐条 / 位重叠 / Motorola 真实位集 / CSV 引号与 CRLF）、
+  `FormulaTest` 新增 16 条（Intel·Motorola × 对齐·跨字节 × signed·unsigned + `bitSequence` + `rawBits`）、
+  `PidModelsTest` 新增 9 条（3 字段 JSON 往返 + **旧 JSON 缺字段取默认值** + 两条纯判定）、
+  `VehicleBusTtlTest` 9 条（ttl 超时 → `ok=false`，`get`/`value`/`snapshot` 三个入口各一条）、
+  `CanFrameTest` 补 BOM / 中文表头 / `maxDlc`。
+- `:app:assembleDebug` BUILD SUCCESSFUL（**7.24 MB** / 单 ABI `arm64-v8a`）。
+- **装机实测**（小米平板 5 / `7e7d7bb4`，横屏 2560×1600，`versionName=1.20.7 versionCode=76`，
+  坐标全部来自 `uiautomator dump`，**没有复用记忆里的坐标**）：
+
+| # | 项 | 实测到哪一步 |
+|---|---|---|
+| 1 | 探测页新按钮 | `uiautomator dump` 读到「导出观察表」「导出原始帧」「导出信号表模板」「导入信号表」四个按钮及其 bounds ✅ |
+| 2 | 无数据时的导出守卫 | 点「导出信号表模板」→ `dumpsys window` 出现 `Toast` 窗口，截图 OCR 读到 `还没有数据可导出`；`/sdcard/Android/data/com.icar.obd/files/export/` **没有被创建**（确实一个字节都没写）✅ |
+| 3 | **导入信号表（正常路径）** | 手写一份带 BOM 的 25 列 CSV（含一条带逗号的 `值表` 字段）push 到「下载」→ SAF 选中 → 对话框：`文件：signal-ok.csv 数据行 2 · 收下 2 · 硬错误 0 · 软警告 2`（两条软警告正是「单位为空」「证据为空」）✅ |
+| 4 | **落盘字段逐个核对** | `run-as cat files/config/pids.json` 读到 `mon_09A_LeftTurn`：`header=09A` `source=monitor` `mode=MON` `formula=bitsAt(18,1,0,0)` `minDlc=3` `ttlMs=2000` `enabled=true` `group=TurnSignals` `note=信号表\|报文名=…\|值表=0:关,1:开\|…`；`mon_2C7_OilTemp`：`formula=bitsAt(7,8,1,0) - 40` `invalidRaw=255` `minDlc=1` `enabled=false`（候选）✅ |
+| 5 | PID 列表 | 滚动后读到两个新分组：`TurnSignals (1) → LeftTurn · MON 09A · bitsAt(18,1,0,0) · 0~1`、`监听型(信号表) (1) → OilTemp · MON 2C7 · bitsAt(7,8,1,0) - 40 · -40~215 ℃` ✅ |
+| 6 | **导入信号表（坏行）** | 另一份 CSV（1 行合法 + 3 行硬错误）→ 对话框 `数据行 4 · 收下 1 · 硬错误 3 · 软警告 0`，三条硬错误逐行报出：`字节序 不认识：「middle-endian」` / `长度(bit) 必须在 1..32（收到 33）` / `信号解到帧外：起始位=18 长度=1（0）真实位集最高到第 3 字节，而 DLC=2` —— **坏行没有拖垮好行**（收下 1）✅ |
+| 7 | 应用日志 | `[22:41:04][UI][I] 信号表导入 \| 文件=signal-ok.csv 数据行=2 收下=2 硬错误=0 软警告=2`、`[22:42:56][UI][I] 信号表导入 \| 文件=signal-bad.csv 数据行=4 收下=1 硬错误=3 软警告=0`、以及 `轮询列表已刷新 count=25`（**监听型 PID 不进轮询列表**，正确）✅ |
+| 8 | 回归 | `logcat -d -b crash` **空**、`ANR in` **0**；重启后仪表盘正常渲染 ✅ |
+| 9 | **用户配置没被测试改坏** | 与动手前的备份逐字节比 SHA256：`settings.json` / `dash.json` / `rules.json` **全部一致**；测试导入的 3 条 PID 已删（`pids.json` 恢复成"不存在"，与动手前一致）；push 到「下载」的两个 CSV 已删 ✅ |
+
+### 遗留
+
+- ⚠️⚠️ **两个观察表 CSV 与模板 CSV 在平板上没能真正产出来。** 平板**没有配对任何蓝牙设备**
+  （`dumpsys bluetooth_manager` 的 `Bonded devices` 为空），而 `CanSniffer.start()` 要求已连接 →
+  探测跑不起来 → `aggregates()` 为空 → 导出按钮被「还没有数据可导出」挡住（第 2 条实测就是这个）。
+  所以「导出文件第 1 个字节是 `EF BB BF`」这条**只在 JVM 层验到**：
+  用**同一份生产代码**（`aggregateCsv()` / `rawCsv()` / `template()`）+ 同一个 `File.writeText` 落成文件后，
+  PowerShell 读到三个文件的头三字节都是 `EF BB BF`，中文表头与模板预填列也都对
+  （模板：`0x09A,154,,8,…` + 取值集合）。**下一趟上车必须补做设备侧的那一次**。
+- ⚠️ **S2 的三个语义真机一个都没造出来**（同一个原因）。设备上的直接证据是
+  `[22:45:37][OBD][W] 设备未就绪，无法开启常驻监听` —— `FrameMonitor.start()` 要求已连接。
+  所以 `raw=FF → 仪表 --`、`停 2 秒 → --`、`短帧 → 日志有 DLC不足` 这三条
+  **只到单测层面**（`dlcTooShort` / `hitsInvalidRaw` / `VehicleBusTtlTest`），**下一趟上车补验**。
+  「连接」页的**模拟信号造不出这个场景**：`SignalSimulator` 直接写 `ok=true` 且 `ttlMs=0`，
+  也不经过 `FrameMonitor`（没有 invalidRaw / DLC 判定）—— 这不是懒，是它本来就不走那条路。
+- **规格 §3.4 的「起始位 ≤0 是硬错误」按意图实现了**：起始位 **0**（帧首字节最低位）是合法信号，
+  照字面实现会把合法行全部拒掉。所以实现是「起始位 **<0** 才是硬错误」，`长度` 仍然 1..32，
+  并且 `SignalTableCsvTest` 有一条用例专门钉住这个偏差 —— 免得下一个人"照规格改回去"。
+- **`最小/最大` 空白时按编码范围兜底**（`0..2^len-1`，signed 是 `-2^(len-1)..2^(len-1)-1`）。
+  规格把这两列标成必填，但 §2-S1 的验收步骤只让人填"起始位/长度/字节序/符号/因子" ——
+  不给兜底的话那条验收路径走不通。**它们只当显示量程，做掩码只用 `长度(bit)`**（规格 §7 陷阱 2）。
+- **`可信度` 空白按「候选」处理并给软警告**（规格的软警告清单里没有这一条，是本轮补的）：
+  默认"启用"会把没验证的值显示在仪表上，而那正是"被骗"的来源。
+- **`toggleMonitor()` 的按钮文案是个预先存在的小毛病**（不是本轮引入、也没改）：
+  点「开启常驻监听」时若 `FrameMonitor.start()` 因未连接而拒绝，按钮文案仍会被改成「停止常驻监听」。
+  实测第 9 条里就复现了。要修的话应该改成"以 `onStateChanged` 为准"，属下一轮。
+- **`tools/run-tests.ps1` 在 Kotlin 编译失败时会打印上一次的 `TOTAL=`**（读的是 `build/test-results` 里
+  **陈旧**的 XML）并继续跑构建守卫 —— 这一轮我自己就被它骗过一次（先看到 `TOTAL=617 FAILED=0` + 守卫通过，
+  是 `exit code 1` 才让我回头看编译错误）。**本轮没改它**（写入范围只有 `app/`），
+  但建议下一轮给它加一句"gradle 失败就直接退出"。
+- 设备上留了这次导入测试产生的日志行（`信号表导入 | 文件=signal-*.csv`）——
+  它们是真的发生过，不是假数据；`pids.json` 已经删掉，PID 列表回到动手前的状态。
+
+---
+
 ## v1.20.6 · 2026-10-08 · P10 一批：**看得见的失败** + 监听帧率闸 + 导入记录
 
 > 主题是同一件事：**把"看起来没反应"变成"明确告诉你发生了什么"**。

@@ -65,6 +65,44 @@ data class PidDefinition(
      */
     var source: String = "poll",
     /**
+     * **无效原始值**（v1.20.7，S2）。原始值等于它 → 视为无效（`ok=false`，仪表显示 `--`）。
+     * `null` = 不判断。
+     *
+     * ## 为什么要有它（"别再被错值骗"）
+     *
+     * 厂家信号里 `0xFF` / `0xFFFF` 这类"全 1"是**约定的无效值**（传感器没数据时的填充），
+     * 但它按公式算出来是一个**看起来很像真的数字**：水温 `A-40` 收到 `0xFF`
+     * 就是 **215℃** —— 仪表会照画、规则会照触发、CSV 会照记。
+     * 把"命中无效值"变成 `ok=false` 之后，下游**一行都不用改**：
+     * `VehicleBus.value()` 与 `DashRenderer` 都是 `ok` 才给值 → 仪表自动 `--`、
+     * 规则不误触发、CSV 记空。
+     *
+     * ⚠️ 比的是**原始值**（位段本身），不是物理值 —— 见 [Formula.rawBits]。
+     */
+    var invalidRaw: Int? = null,
+    /**
+     * **解码这条信号至少需要几个字节**（v1.20.7，S2）。`0` = 不检查。
+     *
+     * 帧比它短就**不解析**，并记一条 `信号跳过 | 原因=DLC不足`。
+     * 不检查的后果不是"少一个值"，而是**解出垃圾**：帧只有 2 字节时
+     * `Formula` 取第 3 个字节会抛异常（那是安全的），但 `bit(C,2)` 这类
+     * 靠 `A B C` 变量取值的公式在短帧上…… 恰恰也会抛。
+     * 真正的问题是**每个 ID 的 DLC 并不固定**（同一 ID 会有 4 字节和 8 字节两种帧），
+     * 而信号表里填的 DLC 是"这条信号在的那一种"。用运行时守卫把它钉住，
+     * 比在导入时假设"这个 ID 永远是 8 字节"可靠。
+     */
+    var minDlc: Int = 0,
+    /**
+     * **值的新鲜度上限(ms)**（v1.20.7，S2）。超时视为无效（`0` = 不判断）。
+     * 只在 [source] = `"monitor"` 上有意义。
+     *
+     * 广播信号停发时**没人会来清掉总线里的最后一个值** ——
+     * 于是仪表会一直挂着"最后一次收到的那一个数字"，看起来跟实时一样。
+     * 超时判定放在 [com.icar.obd.obd.VehicleBus] 的取值入口（唯一权威），
+     * 所以仪表 `--`、规则不误触发、CSV 记空，下游零改动。
+     */
+    var ttlMs: Int = 0,
+    /**
      * 轮询优先级：0=高 1=中 2=低。
      * **仅在 [intervalMs] = 0（跟随全局）时生效** —— 单独设了间隔就以它为准。
      */
@@ -88,6 +126,11 @@ data class PidDefinition(
         // 空 = 默认广播，不写（旧文件读不到就是空，语义一致）
         if (header.isNotBlank()) put("header", header)
         put("source", source)
+        // v1.20.7（S2）三个新字段：**默认值 = 旧行为**，所以默认值一律不写出去 ——
+        // 存量文件读出来仍是默认值，语义完全一致（零迁移）。
+        invalidRaw?.let { put("invalidRaw", it) }
+        if (minDlc != 0) put("minDlc", minDlc)
+        if (ttlMs != 0) put("ttlMs", ttlMs)
         put("mode", mode); put("pid", pid); put("formula", formula)
         put("unit", unit); put("min", minVal.toDouble()); put("max", maxVal.toDouble())
         warnLow?.let { put("warnLow", it.toDouble()) }
@@ -153,6 +196,10 @@ data class PidDefinition(
             // 缺字段 → 空 = 默认广播（旧文件行为完全不变）
             header = o.optString("header", ""),
             source = o.optString("source", "poll"),
+            // 缺字段 → null / 0 / 0 = **旧行为**（不判无效值、不查帧长、不判超时）
+            invalidRaw = if (o.has("invalidRaw") && !o.isNull("invalidRaw")) o.optInt("invalidRaw") else null,
+            minDlc = o.optInt("minDlc", 0),
+            ttlMs = o.optInt("ttlMs", 0),
             mode = o.optString("mode", "01"),
             pid = o.optString("pid", ""),
             formula = o.optString("formula", "A"),
@@ -171,6 +218,42 @@ data class PidDefinition(
             note = o.optString("note", "")
         )
     }
+}
+
+// ------------------------------------------------- 运行时三语义（v1.20.7，S2）
+//
+// 两条判定抽成**纯函数**放在数据模型旁边，而不是埋在 `FrameMonitor.feedLine` 里：
+// `FrameMonitor` 是 object 且 `Handler(Looper.getMainLooper())` 是饿汉初始化，
+// JVM 单测里一碰就抛 `Stub!` —— 判定写在里面就**一条都测不到**
+// （S5 的 `FrameRateGate` 出于同一个理由被抽出来）。
+//
+// 而且这两个判定**只有一处实现**：`FrameMonitor` 调它们，测试也调它们，
+// 不存在"测的是另一份逻辑"。
+
+/**
+ * **DLC 守卫**：这一帧够不够长来解这条信号。
+ *
+ * `minDlc <= 0` 时永远返回 false（= 旧行为：不检查）。
+ */
+fun PidDefinition.dlcTooShort(actualDlc: Int): Boolean = minDlc > 0 && actualDlc < minDlc
+
+/**
+ * **无效原始值**判定。
+ *
+ * @param rawBits   公式是 `bitsAt(...)` 形态时，传它的**位段原始值**（见 [Formula.rawBits]）；
+ *                  否则传 `null`
+ * @param evaluated 公式求值结果（物理值）
+ *
+ * 优先比 `rawBits`（那才是"原始值"）；公式不是 `bitsAt` 形态时退到
+ * "把物理值四舍五入后比" —— 于是手写的 `bit(C,2)` / `A-40` 这类监听 PID
+ * 也能用 `invalidRaw`。**两种都只与 `invalidRaw` 有关，不影响别的值。**
+ *
+ * `invalidRaw = null`（默认）时永远返回 false → 旧行为不变。
+ */
+fun PidDefinition.hitsInvalidRaw(rawBits: Long?, evaluated: Double): Boolean {
+    val iv = invalidRaw ?: return false
+    val raw = rawBits ?: Math.round(evaluated)
+    return raw == iv.toLong()
 }
 
 // ---------------------------------------------------------------- 规则引擎模型
@@ -535,11 +618,19 @@ data class GaugeItem(
 
 // ---------------------------------------------------------------- 运行时数据
 
+/**
+ * 一次取值。
+ *
+ * @param ttlMs 新鲜度上限（v1.20.7，S2）。`0` = 不判超时（= 旧行为）。
+ *   由**生产者**填（监听通道从 `PidDefinition.ttlMs` 抄过来），
+ *   判定在 [com.icar.obd.obd.VehicleBus] 的取值入口 —— 一处实现，全局生效。
+ */
 data class PidValue(
     val pidId: String,
     val value: Float,
     val rawHex: String,
     val ts: Long,
     val ok: Boolean,
-    val error: String? = null
+    val error: String? = null,
+    val ttlMs: Int = 0
 )

@@ -77,7 +77,7 @@
             android:minWidth="0dp"
             android:paddingStart="2dp"
             android:paddingEnd="2dp"
-            android:text="导出聚合"
+            android:text="导出观察表"
             android:textSize="11sp" />
 
         <com.google.android.material.button.MaterialButton
@@ -92,7 +92,51 @@
             android:minWidth="0dp"
             android:paddingStart="2dp"
             android:paddingEnd="2dp"
-            android:text="导出原始"
+            android:text="导出原始帧"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <!--
+      信号表（v1.20.7，S1）：观察表是「原始材料」、信号表是「结论」——
+      对象不同，所以刻意做成两个文件，不混在一张表里。
+      模板 25 列、每个观察到的 CAN ID 一行，预填 ID/DLC/取值集合，在电脑上填完再导回来。
+    -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingTop="4dp"
+        android:paddingEnd="12dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSniffExportTemplate"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1.4"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:minWidth="0dp"
+            android:paddingStart="2dp"
+            android:paddingEnd="2dp"
+            android:text="导出信号表模板"
+            android:textSize="11sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSniffImportSignal"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="4dp"
+            android:layout_weight="1.4"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:minWidth="0dp"
+            android:paddingStart="2dp"
+            android:paddingEnd="2dp"
+            android:text="导入信号表"
             android:textSize="11sp" />
     </LinearLayout>
     <LinearLayout
