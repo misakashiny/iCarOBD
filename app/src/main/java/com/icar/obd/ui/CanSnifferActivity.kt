@@ -25,6 +25,7 @@ import com.icar.obd.obd.CanFrame
 import com.icar.obd.obd.CanSniffer
 import com.icar.obd.obd.FrameMonitor
 import com.icar.obd.obd.ObdController
+import com.icar.obd.obd.SegmentRotation
 import java.io.File
 
 /**
@@ -61,9 +62,11 @@ import java.io.File
 class CanSnifferActivity : AppCompatActivity() {
 
     private lateinit var tvStatus: TextView
+    private lateinit var tvRotate: TextView
     private lateinit var btnToggle: MaterialButton
     private lateinit var container: ViewGroup
     private lateinit var spDuration: Spinner
+    private lateinit var cbRotate: android.widget.CheckBox
     private lateinit var etFilter: EditText
     private lateinit var btnMonitor: MaterialButton
     private lateinit var btnDiff: MaterialButton
@@ -85,9 +88,11 @@ class CanSnifferActivity : AppCompatActivity() {
         setContentView(R.layout.activity_can_sniffer)
 
         tvStatus = findViewById(R.id.tvSniffStatus)
+        tvRotate = findViewById(R.id.tvSniffRotate)
         btnToggle = findViewById(R.id.btnSniffToggle)
         container = findViewById(R.id.sniffResults)
         spDuration = findViewById(R.id.spSniffDuration)
+        cbRotate = findViewById(R.id.cbSniffRotate)
         etFilter = findViewById(R.id.etSniffFilter)
         btnMonitor = findViewById(R.id.btnMonitorToggle)
         btnDiff = findViewById(R.id.btnSniffDiff)
@@ -95,6 +100,14 @@ class CanSnifferActivity : AppCompatActivity() {
         btnDiff.setOnClickListener { showDiff() }
         btnMonitor.setOnClickListener { toggleMonitor() }
         setupFilterPresets()
+        // 分段轮换（v1.20.10）：勾上之后「采集」下拉框与「过滤器」输入框都不起作用 ——
+        // 时长与过滤都由轮换自己决定。**置灰而不是隐藏**：隐藏会让人以为
+        // 那两个控件消失了；置灰能看出"它还在，只是现在不归你管"。
+        cbRotate.setOnCheckedChangeListener { _, checked ->
+            spDuration.isEnabled = !checked
+            etFilter.isEnabled = !checked
+            refreshStatus()
+        }
         FrameMonitor.onStateChanged = { on ->
             runOnUiThread {
                 btnMonitor.text = if (on) "停止常驻监听" else "开启常驻监听（转向灯）"
@@ -148,7 +161,15 @@ class CanSnifferActivity : AppCompatActivity() {
             }
             lastPhase = st.phase
             if (wasRunning && !CanSniffer.running) {
-                val filter = etFilter.text.toString().trim().ifBlank { "（不过滤）" }
+                val rot = CanSniffer.status.rotation
+                val filter = if (rot != null) {
+                    // 轮换的"过滤器"不是用户填的那个 —— 它逐段下发掩码+段过滤。
+                    // 记下段数与各段范围，否则事后完全看不出这趟是全扫
+                    "分段轮换(${rot.count}段×${SegmentRotation.SEGMENT_MS / 1000}秒 " +
+                        "${SegmentRotation.segmentRange(0)}…${SegmentRotation.segmentRange(rot.count - 1)})"
+                } else {
+                    etFilter.text.toString().trim().ifBlank { "（不过滤）" }
+                }
                 // 明细 = 聚合结果（按 ID 的帧数），这正是事后要看的；
                 // 截断到 60 行，免得一次几万个 ID 把记录撑爆
                 // ⚠️ v1.19.23：原来截断到 60 行 —— 而一次探测看到几百个 ID 很正常，
@@ -179,6 +200,35 @@ class CanSnifferActivity : AppCompatActivity() {
         // 放进结果流里会被 `ColumnFlowLayout` 分栏切成半宽，看着像某一条的附注
         val sum = decodeSummary()
         tvStatus.text = describe(CanSniffer.status) + if (sum.isBlank()) "" else "\n$sum"
+        refreshRotateLine()
+    }
+
+    /**
+     * 轮换进度行（v1.20.10）。
+     *
+     * 为什么**必须有**：一轮轮换 80~90 秒，期间结果区几乎一片空白
+     * （前几秒一个 ID 都没有）。不给进度的话，用户唯一能做的事就是怀疑它卡死了。
+     *
+     * 三段信息各对应一个疑问：
+     *  - `第 3/8 段 0x200~0x2FF` → "它在动吗、动到哪了"
+     *  - `还剩 6.4 秒`           → "还要等多久"
+     *  - `已收 42 个 ID`         → "到底有没有收到东西"
+     */
+    private fun refreshRotateLine() {
+        val r = CanSniffer.status.rotation
+        if (r == null) {
+            tvRotate.visibility = android.view.View.GONE
+            return
+        }
+        tvRotate.visibility = android.view.View.VISIBLE
+        val seg = SegmentRotation.segmentRange(r.index)
+        tvRotate.text = if (r.done) {
+            "轮换完成：$seg · 共 ${r.count} 段 · 已收 ${CanSniffer.status.rotatedIdCount} 个 ID"
+        } else {
+            "轮换中：${r.segmentLabel()} $seg · 本段还剩 ${"%.1f".format(r.remainingMs / 1000f)} 秒" +
+                " · 整轮还剩 ${"%.0f".format(r.totalRemainingMs / 1000f)} 秒" +
+                " · 已收 ${CanSniffer.status.rotatedIdCount} 个 ID"
+        }
     }
 
     /** 重建「CAN ID → 监听型 PID」索引。见 [decodeIndex] 为什么每轮都重建 */
@@ -248,16 +298,32 @@ class CanSnifferActivity : AppCompatActivity() {
             if (FrameMonitor.running) {
                 com.icar.obd.ui.view.MonitorWarnBar.TEXT +
                     "\n常驻监听在跑，单次探测要等它停掉之后才能开始。"
+            } else if (cbRotate.isChecked) {
+                // 勾了轮换但还没开始 → 说清它要多久、会发生什么，
+                // 别让用户以为"和普通探测一样 10 秒"
+                "分段轮换扫描：${SegmentRotation.SEGMENT_COUNT} 段 × " +
+                    "${SegmentRotation.SEGMENT_MS / 1000} 秒 = 约 ${CanSniffer.ROTATE_DURATION_MS / 1000} 秒。\n" +
+                    "自动逐段下发 ${SegmentRotation.MASK_CMD} + ${SegmentRotation.segmentFilter(0)}…" +
+                    "${SegmentRotation.segmentFilter(SegmentRotation.SEGMENT_COUNT - 1)}，" +
+                    "汇总成「整车 ID 清单」。\n" +
+                    "⚠️ 29 位 ID 不在掩码覆盖范围内，本模式看不到。"
             } else {
                 "未开始。探测期间会暂停轮询引擎，并临时打开 ATH1（带 CAN 头）。\n" +
                     "只记录**变化了的**数据，重复帧只计数 —— 防止总线流量把内存和存储撑爆。"
             }
         CanSniffer.Phase.PREPARING -> s.message
         CanSniffer.Phase.CAPTURING ->
-            "监听中… ${s.elapsedMs / 1000}s · ${s.frameCount} 帧 / ${s.idCount} 个 ID" +
-                if (s.dropped > 0) " · 原始流已丢弃 ${s.dropped} 条" else ""
+            if (s.rotation != null) {
+                // 轮换时**不要**在这里重复段号/剩余时间 —— 那是进度行的活
+                "轮换监听中… ${s.elapsedMs / 1000}s · ${s.frameCount} 帧（本段） / ${s.idCount} 个 ID（本段）" +
+                    if (s.dropped > 0) " · 原始流已丢弃 ${s.dropped} 条" else ""
+            } else {
+                "监听中… ${s.elapsedMs / 1000}s · ${s.frameCount} 帧 / ${s.idCount} 个 ID" +
+                    if (s.dropped > 0) " · 原始流已丢弃 ${s.dropped} 条" else ""
+            }
         CanSniffer.Phase.FINISHING -> s.message
-        CanSniffer.Phase.DONE -> s.message + "\n按出现次数排序。次数高但「变化次数」低的 ID 通常是周期性心跳。"
+        CanSniffer.Phase.DONE -> s.message +
+            "\n按出现次数排序。次数高但「变化次数」低的 ID 通常是周期性心跳。"
         CanSniffer.Phase.FAILED -> s.message
     }
     /**
@@ -415,8 +481,20 @@ class CanSnifferActivity : AppCompatActivity() {
                 ObdController.toast("设备未就绪，请先到「连接」页完成初始化")
                 return
             }
+            val rotate = cbRotate.isChecked
             val sec = durations.getOrElse(spDuration.selectedItemPosition) { 10 }
-            CanSniffer.start(sec * 1000L, etFilter.text.toString())
+            CanSniffer.start(
+                duration = sec * 1000L,
+                filterHex = etFilter.text.toString(),
+                rotate = rotate
+            )
+            if (rotate && CanSniffer.running) {
+                ObdController.toast(
+                    "分段轮换开始：${SegmentRotation.SEGMENT_COUNT} 段 × " +
+                        "${SegmentRotation.SEGMENT_MS / 1000} 秒\n" +
+                        "期间轮询已暂停，进度看状态行下面那一行"
+                )
+            }
         }
     }
 

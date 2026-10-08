@@ -41,6 +41,23 @@ import kotlinx.coroutines.launch
  *
  * `ATH1` 必须在前：一旦开了透传，它的响应也会走 `onRawChunk`，
  * `session.raw()` 就等不到 `>` 了，必然超时。
+ *
+ * ## 分段轮换扫描（v1.20.10，P12-S5）—— `rotate = true`
+ *
+ * 一次探测只能看到"这段时间里在说话"的 ID，而 `ATMA` 的采样率摊到几十个 ID 上
+ * 就还原不出闪烁类信号（实测不过滤时约 77 帧/秒）。轮换的做法是
+ * **逐段换掩码过滤器**：8 段 × 10 秒，每段都是全采样率，一轮约 90 秒，
+ * 汇总成「整车 ID 清单」。
+ *
+ * - 段号 / 时长 / 合并语义全在 [SegmentRotation] 与 [RotationPlan]（**纯逻辑，有单测**）——
+ *   **不要**把这些判定搬回这个 object：它持有 `Handler(Looper.getMainLooper())`，
+ *   JVM 里一碰就抛 `Stub!`，搬进来就一条都测不到。
+ * - 换段由 [uiTicker] 判（主线程），因为换段要动 `acc`，而 `acc` 同时被
+ *   主线程的 `onChunk` 写 —— 同一个线程里天然串行。
+ * - ⚠️ **收尾时最后一段要先结算**（[finish] 里的 `closeSegment`）：
+ *   `uiTicker` 一停就没人取最后一段的统计了，症状是"最后一段凭空消失"。
+ * - ⚠️ **29 位 ID 一段都扫不到**：掩码 `ATCM700` 只覆盖 11 位 ID 空间
+ *   （`0x000`~`0x7FF`）。这是本方案的已知边界，不是 bug。
  */
 object CanSniffer {
 
@@ -52,12 +69,30 @@ object CanSniffer {
         val frameCount: Int = 0,
         val idCount: Int = 0,
         val dropped: Int = 0,
-        val message: String = ""
+        val message: String = "",
+        /**
+         * 分段轮换的进度（v1.20.10）。null = 本次不是轮换扫描。
+         *
+         * 放进 [Status] 而不是让界面自己去问：状态行是**唯一**的刷新入口
+         * （`CanSnifferActivity.refreshStatus`），多一个数据源就多一处
+         * "进度行停了但状态还在刷"的机会。
+         */
+        val rotation: RotationPlan.Snapshot? = null,
+        /** 轮换到目前一共收到多少个不同 ID（各段并集） */
+        val rotatedIdCount: Int = 0
     )
 
     const val DEFAULT_DURATION_MS = 10_000L
     const val MIN_DURATION_MS = 3_000L
     const val MAX_DURATION_MS = 60_000L
+
+    /**
+     * 分段轮换扫描一轮的时长（v1.20.10）：8 段 × 10 秒 = **80 秒**。
+     *
+     * 含换段 AT 开销实车约 90 秒（规格 §1 决策 2）。这里给的是**采集时间**，
+     * 换段命令是穿插在采集里发的（不等应答），所以不会额外拉长。
+     */
+    val ROTATE_DURATION_MS: Long get() = SegmentRotation.ROUND_MS
 
     /** 普通 AT 命令的超时。`ATMA` 本身不等响应，用不到它 */
     private const val CMD_TIMEOUT = 2500L
@@ -85,6 +120,40 @@ object CanSniffer {
     private var startedAt = 0L
     private var durationMs = DEFAULT_DURATION_MS
     private var engineWasRunning = false
+
+    // ---------------- 分段轮换扫描（v1.20.10，P12-S5）----------------
+    //
+    // 四块状态各有各的用途，**不能省任何一块**：
+    //  ① `rotation`     —— "现在第几段"的判定（纯逻辑，见 SegmentRotation）
+    //  ② `rotateIndex`  —— 已经**下发过命令**的那一段（-1 = 一条都还没发）
+    //  ③ `segmentAccs`  —— 各段的聚合结果，收尾时合并成「整车 ID 清单」
+    //  ④ `mergedAcc`    —— 跨段的并集（"已收多少 ID"这个进度靠它）
+    //
+    // ⚠️ ②与①必须分开：`rotation.indexAt(now)` 是"时间上该在第几段"，
+    // 而命令是异步发出去的。混用一个变量时，一次被拖慢的 tick 会让
+    // "该换段了"被误判成"已经换过了" —— 那一整段就白跑了。
+
+    /** 本次是不是轮换扫描 */
+    private var rotateMode = false
+
+    /** 轮换状态机；只在 [rotateMode] 时非空 */
+    private var rotation: RotationPlan? = null
+
+    /** 已经下发过命令的段下标（-1 = 还没发过任何一段的） */
+    private var rotateIndex = -1
+
+    /** 各段的聚合（段下标 → 该段的聚合结果），收尾时合并 */
+    private var segmentAccs = ArrayList<Pair<Int, List<CanFrame.Aggregate>>>()
+
+    /** 各段的"帧数 / ID 数"（**必须在换段时立刻记**，不能收尾时再算 —— 那时 acc 已经换掉了） */
+    private var segmentStats = ArrayList<SegmentRotation.SegmentStat>()
+
+    /** 跨段并集：进度里的"已收多少 ID"、以及最终清单的来源 */
+    private var mergedAcc = CanFrame.Accumulator()
+
+    /** 轮换期间当前段的起始时刻（用来算"这一段收了多久"） */
+    private var segmentStartedAt = 0L
+
     /** 本次探测是否真的设过 CAN 过滤器 —— 收尾要不要"重新初始化"取决于它 */
     @Volatile
     private var filterApplied = false
@@ -116,16 +185,110 @@ object CanSniffer {
     private val uiTicker = object : Runnable {
         override fun run() {
             if (status.phase != Phase.CAPTURING) return
+            // ⚠️ 换段**必须在这里判**（而不是起一个独立的定时器）：
+            // 换段要动 `acc`，而 `acc` 同时被主线程的 onChunk 写。
+            // ticker 也在主线程 → 天然串行，不需要任何锁。
+            // 独立定时器就变成两个线程抢同一个累加器了。
+            advanceRotationIfDue()
             publish(
                 status.copy(
                     elapsedMs = System.currentTimeMillis() - startedAt,
                     frameCount = acc.frameCount(),
                     idCount = acc.aggregates().size,
-                    dropped = acc.dropped
+                    dropped = acc.dropped,
+                    rotation = rotation?.snapshot(System.currentTimeMillis() - segmentStartedAt),
+                    rotatedIdCount = if (rotateMode) mergedAcc.aggregates().size else 0
                 )
             )
             main.postDelayed(this, UI_TICK_MS)
         }
+    }
+
+    /**
+     * 到时候就换段（v1.20.10）。**只由主线程调用**（[uiTicker]）。
+     *
+     * ## 为什么用 `elapsed` 算，而不是累加段号
+     *
+     * 见 [SegmentRotation] 的说明：累加式漏一次 tick 就永久偏移。
+     * 这里只做"把已经欠下的段命令补齐"，段号本身完全由时间决定。
+     *
+     * ## 为什么不等 `ATCF` 的应答
+     *
+     * 这一段本来就只有 10 秒，每条命令等一次 `OK` 会花掉 0.5~1 秒 ——
+     * 8 段就是 8 秒（一轮的 10%）。而 `ATCM700`/`ATCF` 是否被接受，
+     * **下一段的 ID 分布自己会说话**（这正是每段都要记日志的原因）。
+     */
+    private fun advanceRotationIfDue() {
+        val rot = rotation ?: return
+        if (status.phase != Phase.CAPTURING) return
+        val elapsed = System.currentTimeMillis() - segmentStartedAt
+        val due = rot.segmentsToAdvance(elapsed, rotateIndex)
+        if (due.isEmpty()) return
+        for (seg in due) {
+            closeSegment(seg)
+            val cmds = SegmentRotation.segmentCommands(seg)
+            for (c in cmds) {
+                // 只发不等应答：换段命令是 AT 层，适配器会照做
+                runCatching { ObdController.transport.send("$c\r") }
+            }
+            rotateIndex = seg
+            AppLog.i(
+                AppLog.M_OBD, "轮换换段",
+                "第 ${seg + 1}/${rot.count} 段 ${SegmentRotation.segmentRange(seg)} " +
+                    "命令=${cmds.joinToString("+")} 距本轮开始=${elapsed}ms"
+            )
+        }
+    }
+
+    /**
+     * 结束当前段：**先记账、再换累加器**（v1.20.10）。
+     *
+     * ## 为什么统计必须在换段那一刻取
+     *
+     * `acc.frameCount()` / `acc.aggregates()` 是**当前**累加器的数 ——
+     * 等收尾时再回头算，那时 `acc` 早就换成别的段了（表现是"每段的帧数
+     * 都是最后一段的数"，而日志看起来完全正常）。
+     *
+     * ## 为什么 `lineBuf` 也要清
+     *
+     * 换段时缓冲区里可能压着**半行**（`ATMA` 的输出不保证按行切分）。
+     * 不清的话，上一段的半行会和下一段的第一块拼成一行 ——
+     * 拼出来的 ID 属于哪一段都说不清，而且它**可能解析成功**，
+     * 于是那份数据是脏的却看不出来。
+     */
+    private fun closeSegment(seg: Int) {
+        val frames = acc.frameCount()
+        val ids = acc.aggregates().size
+        val count = rotation?.count ?: SegmentRotation.SEGMENT_COUNT
+        segmentStats.add(SegmentRotation.SegmentStat(seg, frames, ids))
+        // 空段也记（日志要能看出"这一段一帧都没有"），但**不进合并列表** ——
+        // 空列表进去只是白跑一趟循环
+        if (ids > 0) segmentAccs.add(seg to acc.aggregates())
+        AppLog.i(
+            AppLog.M_OBD, "轮换段结束",
+            "第 ${seg + 1}/$count 段 ${SegmentRotation.segmentRange(seg)} 帧=$frames ID=$ids"
+        )
+        acc = CanFrame.Accumulator()
+        lineBuf.setLength(0)
+    }
+
+    /**
+     * 把各段合并成「整车 ID 清单」（v1.20.10）。收尾时调一次。
+     *
+     * 合并语义（含**段间边界**的补记）在 [SegmentRotation.merge] —— 那里有单测。
+     */
+    private fun mergeSegments() {
+        if (segmentAccs.isEmpty()) return
+        val merged = SegmentRotation.merge(segmentAccs, mergedAcc)
+        acc = merged
+        AppLog.i(
+            AppLog.M_OBD, "轮换合并",
+            "段数=${segmentStats.size} 合计帧=${merged.frameCount()} " +
+                "整车ID=${merged.aggregates().size} " +
+                "各段[" + segmentStats.joinToString(" ") {
+                    "${it.segment + 1}:${it.frameCount}帧/${it.idCount}ID"
+                } + "]"
+        )
     }
 
     private val autoStop = Runnable { finish("到时自动停止") }
@@ -137,7 +300,21 @@ object CanSniffer {
 
     // ================================================================ 开始
 
-    fun start(duration: Long = DEFAULT_DURATION_MS, filterHex: String = "") {
+    /**
+     * 开始一次探测。
+     *
+     * @param duration 采集时长（单段模式用）。**轮换模式下被忽略** ——
+     *   轮换的时长由 [SegmentRotation.ROUND_MS] 决定（8 段 × 10 秒），
+     *   让人填"每段几秒"只会多一个能填错的地方。
+     * @param filterHex 过滤器。**轮换模式下被忽略** —— 轮换自己逐段下发
+     *   `ATCM700` + `ATCF<段>00`（见 [SegmentRotation.segmentCommands]）。
+     * @param rotate true = 分段轮换扫描（v1.20.10，P12-S5）
+     */
+    fun start(
+        duration: Long = DEFAULT_DURATION_MS,
+        filterHex: String = "",
+        rotate: Boolean = false
+    ) {
         if (running) return
         if (FrameMonitor.running) {
             publish(Status(Phase.FAILED, message = "常驻监听正在运行 —— 先把它停掉再做单次探测"))
@@ -151,7 +328,10 @@ object CanSniffer {
             publish(Status(Phase.FAILED, message = "设备未就绪，请先到「连接」页完成初始化"))
             return
         }
-        durationMs = duration.coerceIn(MIN_DURATION_MS, MAX_DURATION_MS)
+        rotateMode = rotate
+        rotation = if (rotate) RotationPlan() else null
+        durationMs = if (rotate) ROTATE_DURATION_MS
+        else duration.coerceIn(MIN_DURATION_MS, MAX_DURATION_MS)
         // 把上一次的结果提升为"基准"：于是"关门探一次、开门探一次"之后，
         // 直接就能对比出是哪一位在动（这是找广播信号位唯一靠谱的办法）
         baseline = lastRun
@@ -160,6 +340,13 @@ object CanSniffer {
         lineBuf.setLength(0)
         lineCount = 0
         rawLogged = 0
+        // ---- 轮换状态清零（每趟都要清：不清的话上一趟的段号会被继承，
+        //      表现是"第二趟从第 5 段开始"，而日志看起来完全正常）----
+        rotateIndex = -1
+        segmentAccs = ArrayList()
+        segmentStats = ArrayList()
+        mergedAcc = CanFrame.Accumulator()
+        segmentStartedAt = 0L
 
         // 1) 停轮询：探测期间自己发的请求会污染观测结果
         engineWasRunning = ObdController.engine.running
@@ -168,7 +355,12 @@ object CanSniffer {
         publish(Status(Phase.PREPARING, message = "正在切到监听模式…"))
         AppLog.i(
             AppLog.M_OBD, "CAN 探测开始",
-            "duration=${durationMs}ms kind=${ObdController.transport.kind} filter=${filterHex.trim().ifBlank { "(无)" }}"
+            "duration=${durationMs}ms kind=${ObdController.transport.kind} " +
+                "filter=" + if (rotate) {
+                    "分段轮换(${SegmentRotation.SEGMENT_COUNT}段)"
+                } else {
+                    filterHex.trim().ifBlank { "(无)" }
+                }
         )
 
         scope.launch {
@@ -277,7 +469,28 @@ object CanSniffer {
                 //    紧接着 11 条 `01 xx` 全部「超时无响应」，看起来像链路死了。
                 //    所以 `finish()` 里**必须**清掉（`ATAR`）。
                 val filt = filterHex.trim()
-                if (filt.isNotBlank()) {
+                if (rotate) {
+                    // ---- 分段轮换（v1.20.10，P12-S5）----
+                    //
+                    // ⚠️ 掩码 + 过滤**必须成对**：
+                    //  - `ATCM700` 只看 CAN ID 的高三位；
+                    //  - `ATCF<段>00` 放行那三位等于段号的那 256 个 ID。
+                    //
+                    // ⚠️⚠️ **`ATCF000` 是全总线，不是"0x0xx 段"**（规格 §7 陷阱 2 的同类坑）。
+                    // 单独发 `ATCF000` 会放行整条总线（帧数虚高、ID 混段）；
+                    // 在 `ATCM700` 掩码之下它才等于"第 0 段"。
+                    // 所以 `segmentCommands(0)` 返回的是**两条**，不能只发后一条。
+                    //
+                    // 第一段在这里发（其余段由 [uiTicker] 到时下发）；
+                    // 不发的话第 0 段会跑在全总线上 —— 那正是最容易被误读成
+                    // "第 0 段 ID 特别多"的一种假象。
+                    filterApplied = true
+                    for (c in SegmentRotation.segmentCommands(0)) {
+                        val rr = runCatching { ObdController.session.raw(c, CMD_TIMEOUT) }.getOrNull()
+                        AppLog.i(AppLog.M_OBD, "探测准备", "$c -> ${(rr ?: "<异常>").trim().take(48)}")
+                    }
+                    rotateIndex = 0
+                } else if (filt.isNotBlank()) {
                     // 两种写法（v1.19.4）：
                     //   `228`               -> 单个 ID，发 `ATCRA228`
                     //   `ATCM700+ATCF400`   -> 原样发多条 AT（掩码过滤**一整段**，如 0x400~0x4FF）
@@ -304,6 +517,10 @@ object CanSniffer {
             runCatching { ObdController.transport.send("ATMA\r") }
 
             startedAt = System.currentTimeMillis()
+            // 轮换：第 0 段的计时从**真正开始采集**那一刻起（不是从 start() 起）——
+            // 用 start() 起算的话，"准备"花掉的 1~2 秒会算进第 0 段，
+            // 于是第 0 段实际只采了 8 秒，而日志写着 10 秒
+            segmentStartedAt = startedAt
             main.post {
                 publish(Status(Phase.CAPTURING, message = "监听中…"))
                 main.postDelayed(uiTicker, UI_TICK_MS)
@@ -382,6 +599,17 @@ object CanSniffer {
         }
 
         finishing = true
+        // ⚠️ **最后一段要先结算**（v1.20.10）：`uiTicker` 只在 CAPTURING 时跑，
+        // 而它一停，"最后一段的帧数/ID 数"就再也没人去取了 ——
+        // 表现是整车清单里**少了最后一段**（`0x700` 那一整段凭空消失），
+        // 而日志上看起来一切正常。这里在切 phase 之前先结账。
+        //
+        // 刻意**不调 `advanceRotationIfDue()`**：那会往适配器补发 AT 命令，
+        // 而此刻正是"停 ATMA + 重新初始化"最不能被打扰的窗口。
+        if (rotateMode && status.phase == Phase.CAPTURING) {
+            if (rotateIndex >= 0) closeSegment(rotateIndex)
+            mergeSegments()
+        }
         main.removeCallbacks(uiTicker)
         main.removeCallbacks(autoStop)
         publish(status.copy(phase = Phase.FINISHING, message = "正在收尾…"))
@@ -442,6 +670,16 @@ object CanSniffer {
 
             val frames = acc.frameCount()
             val ids = acc.aggregates().size
+            // 轮换的收尾话术要说清"这是一份整车清单"——否则用户会以为
+            // 它和单次探测是一回事（单次探测只是"这段时间里在说话的 ID"）
+            val msg = if (rotateMode) {
+                "$reason · 分段轮换完成（${SegmentRotation.SEGMENT_COUNT} 段 × " +
+                    "${SegmentRotation.SEGMENT_MS / 1000} 秒）\n" +
+                    "整车 ID 清单：$ids 个 ID / $frames 帧。" +
+                    "下面按出现次数排序，**按变化次数**排的那一份更值得看。"
+            } else {
+                "$reason · 共 $frames 帧 / $ids 个 ID"
+            }
             main.post {
                 publish(
                     Status(
@@ -450,14 +688,17 @@ object CanSniffer {
                         frameCount = frames,
                         idCount = ids,
                         dropped = acc.dropped,
-                        message = "$reason · 共 $frames 帧 / $ids 个 ID"
+                        message = msg,
+                        rotation = rotation?.snapshot(System.currentTimeMillis() - segmentStartedAt),
+                        rotatedIdCount = if (rotateMode) ids else 0
                     )
                 )
             }
             // 只写汇总，**绝不逐帧写日志**
             AppLog.i(
                 AppLog.M_OBD, "CAN 探测结束",
-                "frames=$frames ids=$ids dropped=${acc.dropped} reason=$reason"
+                "frames=$frames ids=$ids dropped=${acc.dropped} reason=$reason" +
+                    if (rotateMode) " 模式=分段轮换 段数=${segmentStats.size}" else ""
             )
             // ---- 与基准的逐位差分（v1.19.14）----
             // 判据见 [CanDiff]：**某一位从"恒定"变成"在变"，就是这次操作把它拨动的**。
@@ -535,6 +776,14 @@ object CanSniffer {
         // 若在两次对照之间按了清空就把基准也换掉，"对比基准"会失效。
         // （基准的提升只发生在 start() 里。）
         acc = CanFrame.Accumulator()
+        // 轮换的账也一起清：不清的话下一次单段探测的 DONE 状态里
+        // 会带着上一轮轮换的进度快照（界面显示"第 3/8 段"而本次根本不是轮换）
+        rotateMode = false
+        rotation = null
+        rotateIndex = -1
+        segmentAccs = ArrayList()
+        segmentStats = ArrayList()
+        mergedAcc = CanFrame.Accumulator()
         publish(Status(Phase.IDLE))
     }
 }

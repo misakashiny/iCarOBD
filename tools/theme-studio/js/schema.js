@@ -373,9 +373,9 @@ window.normalizeFont = function (f) {
   //（"nodes 里出现 `$` 且 bindings 里没有对应条目"）。
   // 把"颜色悄悄变默认"变成"校验报错"——前者不可发现，后者可以。
   //
-  // ⚠️ **这里是颜色，不认 `$$` 转义**（v2.80.1）：颜色字段的合法值是 `#RRGGBB`，
-  // 不可能有"字面 `$`"这种正常内容，所以 `$$accent` 仍然算引用、仍然硬错误。
-  // 只有 `text` 走 [window.isTextTokenRef] / [window.unescapeTextDollar]。
+  // ⚠️ **这里是颜色，不认任何"字面 `$`"**：颜色字段的合法值是 `#RRGGBB`，
+  // 不可能有"字面 `$`"这种正常内容，所以 `$accent` / `$$accent` 都算引用、都硬错误。
+  // `text` 不走这里（它**永远按字面值存**，见 [window.isTokenRef] 上面那段注释）。
   if (window.isTokenRef(o.color)) return o;
   if (typeof o.color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(o.color)) o.color = window.FONT_DEFAULT.color;
   return o;
@@ -469,20 +469,24 @@ window.THEME_COLOR_FIELDS = [
 /* ==========================================================================
    变量（tokens）/ 模式（modes）/ 绑定（bindings）—— 设计系统的基础设施
    --------------------------------------------------------------------------
-   规格：[`docs/下一步-变量模式与组件变体.md`](../../../docs/下一步-变量模式与组件变体.md) §3 ~ §5。
-   本节只做**纯逻辑**（解析 / 迁移 / 求值），不碰 DOM、不写文件 ——
-   真正把四个新顶层键**写出**是 `model.js` 的下一步（本轮刻意不做）。
+   规格：[`docs/下一步-变量模式与组件变体.md`](../../../docs/下一步-变量模式与组件变体.md) §3 ~ §5
+   与 §十二「已拍板」。第 4~5 步（序列化 / 画布）已在 v2.80.2 落地。
 
    ⚠️ **核心不变式（§3.1，写死不许破）**：
      `nodes` / `pages[].nodes` 里**永远不出现 `$` 引用**，也不出现 `instance` 节点。
      它们是编译产物，由 tokens + modes + activeMode + bindings + library 唯一决定。
      这条是「App 零改动」的全部依据。
 
-   ⚠️ **v2.80.1 补充：`text` 上的 `$$` 是转义，`$` 未绑定只警告**（见 [unescapeTextDollar]）
-      · `text` 字段里**开头的 `$$`** = 一个字面 `$`（`$$100` → 显示 `$100`）
-      · `text` 上"以 `$` 开头但没有 bindings 条目" → **警告**（不是硬错误），文件照常打开
+   ⚠️ **`nodes[].text` 永远是字面值 —— 没有"转义"这回事**（v2.80.2，规格 §十二.3）
+      · 写什么显示什么：`$100` 在工具里和**设备上**都是 `$100`（App 就是
+        `tv.text = node.text`，它不认识任何转义）
+      · `$` 开头只是"**看起来像引用**" → `validate.js` 给一条**警告**（不是硬错误），
+        文件照常打开、按原样显示
       · 颜色 / 数值字段（`font.color` / `labelFont.color` / `card.radius` / `card.alpha`）
-        **保持硬错误** —— 那些字段出现 `$` 必然是调试期笔误，且**不可能有字面 `$`**
+        出现 `$` **仍是硬错误** —— 那些字段不可能有字面 `$`，必然是调试期笔误
+      · 历史：v2.80.1 曾经用 `$$` 当转义（`$$100` 显示 `$100`）。**已取消** ——
+        它是工具单方面的约定，App 原样渲染，于是"工具里 `$100`、平板上 `$$100`"，
+        而且那条警告文案还在教用户这么写。详见 CHANGELOG v2.80.2。
    ========================================================================== */
 
 /**
@@ -574,6 +578,19 @@ window.bindableField = function (path) {
  * 判据收敛成一条：**字符串且以 `$` 开头**。选字符串前缀而不是
  * `{ "$t": "tk1" }` 那种对象，就是因为这条判据足够简单 ——
  * 解析点、校验点、UI 判断全都能用它，不会出现"这里认那里不认"。
+ *
+ * ⚠️ **`text` 上"以 `$` 开头"不等于引用**（v2.80.2，规格 §十二.3）：
+ * `nodes[].text` **永远是字面值**，写什么显示什么。所以：
+ *
+ * | 位置 | `$` 开头的含义 |
+ * |---|---|
+ * | `bindings[nid].text`（**引用该待的地方**） | 就是引用 |
+ * | `nodes[].text`（编译产物） | 只是**看起来像**引用 → 校验给一条**警告**，按原样显示 |
+ * | `nodes[].font.color` 等颜色/数值字段 | 必然是笔误 → **硬错误** |
+ *
+ * 历史：v2.80.1 曾用 `$$` 当转义（`$$100` 显示 `$100`）。**已取消** ——
+ * 它是工具单方面的约定，App 原样渲染（`tv.text = node.text`），
+ * 于是"工具里 `$100`、平板上 `$$100`"，而且警告文案还在教用户这么写。
  */
 window.isTokenRef = function (v) {
   return typeof v === "string" && v.charAt(0) === "$";
@@ -582,50 +599,6 @@ window.isTokenRef = function (v) {
 /** 引用串 → 变量名/变量 id（`"$accent"` → `"accent"`）。不是引用就返回 "" */
 window.tokenRefName = function (v) {
   return window.isTokenRef(v) ? v.slice(1) : "";
-};
-
-/**
- * **`text` 字段的 `$` 转义**（v2.80.1，规格 §4.2 的补丁）。
- *
- * ## 治的是什么病
- *
- * §3.5 的引用判据是"字符串以 `$` 开头"，而 §3.6 把 `text` 列成可绑定字段 ——
- * 于是**字面显示 `$` 的文字**（`$100`、`$PID`、`$`）被判成"引用了变量 `100`"。
- * v2.80.0 那条判据是**硬错误**，后果是**整个文件打不开** ——
- * 而这个项目最怕的就是"文件打不开 / 画布是空的"。
- *
- * 颜色/数值字段**不可能**有字面 `$`（那些字段的合法值是 `#RRGGBB` 或数字），
- * 所以**只有 `text` 有这个风险**。
- *
- * ## 规则（两条，都只作用于 `text`）
- *
- * 1. **`$$` 开头 = 一个字面 `$`**：`$$100` → `$100`，`$$` → `$`。
- *    只认**最开头**那一对，后面原样：`$$$100` → `$` + `$100` = `$$100`
- *    （**不做二次解释** —— 否则"几个 `$` 是字面"就说不清了）。
- * 2. `text` 上"以 `$` 开头但没有 bindings 条目" → **警告**（不是硬错误）。
- *    理由：降为警告**仍然满足 §4.2「不静默」的初衷**（问题被报出来了），
- *    而硬错误等于**用户的文件打不开**；`text` 上的字面 `$` 本来就是**正常内容**。
- *
- * ## ⚠️ 转义**只在 `resolveDesign` 的视图里解开**，解析时**原样保留**
- *
- * 这条是刻意的，不是漏了：
- *   · 解析时解开的话，`toV2Json` 会把 `$100` 写回文件 ——
- *     下次打开就变成"引用了变量 100"（警告），**每存一次退一步**
- *   · 保留 `$$100` 则"文件 → 内存 → 文件"**逐字节稳定**（T2 的同类要求）
- *
- * 于是：`nodes` 里存的永远是**文件里的原样**，画布看到的是解开后的。
- */
-window.TEXT_DOLLAR_ESCAPE = "$$";
-
-/** 这个 `text` 值是不是**变量引用**（`$$` 开头的转义**不算**引用）。颜色/数值**不要**用这个 */
-window.isTextTokenRef = function (v) {
-  return typeof v === "string" && v.charAt(0) === "$" && v.slice(0, 2) !== window.TEXT_DOLLAR_ESCAPE;
-};
-
-/** `text` 值 → 显示值：开头的 `$$` 解析成一个字面 `$`。非字符串 / 没有转义 → 原样返回 */
-window.unescapeTextDollar = function (v) {
-  if (typeof v !== "string") return v;
-  return v.slice(0, 2) === window.TEXT_DOLLAR_ESCAPE ? "$" + v.slice(2) : v;
 };
 
 /** `#RRGGBB`（与 `normalizeFont` / Kotlin 侧同一套判据） */
@@ -798,35 +771,65 @@ window.resolveTokenState = function (design) {
  * **解析：唯一入口**（§4）。
  *
  * ```
- * window.resolveDesign(design) → design'     // 深拷贝，nodes 全部字面化
+ * window.resolveDesign(design) → design'   // 深拷贝，nodes 全部字面化
  * ```
  *
  * 两个调用点，**同一个函数**（§4 的表）：渲染前 `canvas.js` 的 `draw()` 开头、
- * 序列化前 `model.js` 的 `toV2Json()`。
+ * 序列化前 `model.js` 的 `toV2Json()`。**没有参数差异** ——
+ * 画布看到的和导出写出的就是同一份（`text` 永远是字面值，见 §十二.3）。
  *
  * > ⚠️ **不许各写一份。** v2.49.0 已经踩过同一个坑：`model.js` 拼 `themeColors`、
  * > 而画布不读它，于是"切主题画布完全不变"。
  *
  * 顺序（§4.1）：
  * ```
+ * 0. 复原 `nodes` 与 `pages[pageIndex].nodes` 的共享引用（v2.80.2，任务 1）
  * 1. 解析 activeMode → 每个变量的当前值（mode.values[t] ?? token.value）
  * 2. 12 个内置变量 → themeColors（= 内置主题打底 + 覆盖）
  * 3. 遍历 bindings：引用换成字面值，写进对应节点的字段
- * 4. `text` 字段的 `$$` 反转义（v2.80.1）—— **只解视图，不改原 design**
- * 5. 输出深拷贝，原 design 不动
+ * 4. 输出深拷贝，原 design 不动
  * ```
  *
- * ⚠️ 第 4 步**放在第 3 步之后**：绑定写进去的值也要按同一条规则解释
- *（"`text` 的值里开头的 `$$` 显示成一个 `$`"），否则"字面写的"与"绑定来的"
- * 会出现两套显示规则 —— 而 `nodes` 里两者看起来一模一样。
+ * ⚠️ **第 0 步不能省**（v2.80.2 修的坑）：`deepCloneJson` 会把
+ * `nodes` 与 `pages[pageIndex].nodes` 的**共享引用拆成两份**，于是第 3 步
+ * 只写进其中一份。见 [schemaRelinkPageNodes]。
  *
- * **本轮是"骨架"**：求值与绑定落地都已可用，但还没有调用点
- * （`canvas.js` / `model.js` 是第 4、5 步）。没有 `tokens`/`modes` 的老文件
- * 走**老路径**，输出与今天逐字段一致（T2）。
+ * ⚠️ **曾经有过第 4 步"`$$` 反转义"，v2.80.2 已删掉**（规格 §十二.3）：
+ * `text` 现在是**纯字面值**，画布、导出、App 三边看到的是同一个串。
+ * 于是"画布视图"与"文件形态"不再有差别 —— 一个函数、一个输出。
+ *
+ * 没有 `tokens`/`modes` 的老文件走**老路径**，输出与今天逐字段一致（T2）。
  */
 window.resolveDesign = function (design) {
   if (!design || typeof design !== "object") return design;
   const d = window.deepCloneJson(design);
+
+  // ---- 0. 复原 `nodes` 与 `pages[pageIndex].nodes` 的**共享引用**（v2.80.2，任务 1）
+  //
+  // ⚠️ **这一条是"绑定能不能在屏幕上生效"的前提**，不是洁癖。
+  //
+  // 内存里的 design 靠一个别名活着（见 `model.js` 的 `createDesign`）：
+  //     `design.nodes === design.pages[design.pageIndex].nodes`   // 同一个数组
+  // 几千处现有代码（画布 / 面板 / 校验 / 撤销）全都读写 `design.nodes`，
+  // 切页时只换引用 —— 这就是"多页面不用改几千处代码"的全部依据。
+  //
+  // 而 `deepCloneJson` 是**值拷贝**：它把 `nodes` 和 `pages[0].nodes`
+  // 拆成**两份互不相干的副本**。下面第 3 步按 id 索引时只写进了 `d.nodes`
+  // 那一份，`pages[0].nodes` 还是原值 —— 实测（上一轮探针）：
+  //     d.nodes[0].font.color      = #FF0000   ← 绑定生效
+  //     pages[0].nodes[0].font.color = #123456 ← 原值，没被解析
+  //
+  // 后果取决于谁去读：`toV2Json` 的多页分支写的是 `pages[i].nodes`，
+  // 于是一份多页设计的**当前页绑定会被写回成旧值**（导出即丢失）。
+  // 所以修法是把别名**在拷贝上重新接起来**，而不是"两处都写一遍"——
+  // 两处都写会留下"两份真相"，将来一定会分叉（§2.16 的教训）。
+  //
+  // ⚠️ **方向：`d.nodes` 赢**。内存里"活着的那份"是 `d.nodes` ——
+  // 所有编辑都直接改它；而 `pages[pi].nodes` 在几个地方会**落后**
+  //（`app.js` 的 `newDesign` / `applyPreset` 直接 `d.nodes = 新数组`，
+  //  没有同步 `pages[0].nodes`）。反过来让 pages 赢的话，新建 / 套预设之后
+  // `resolveDesign` 会返回**空节点树** —— 画布直接变白。
+  schemaRelinkPageNodes(d);
 
   const st = window.resolveTokenState(d);
   const tokens = st.tokens, modes = st.modes, byId = st.byId, byName = st.byName;
@@ -862,11 +865,12 @@ window.resolveDesign = function (design) {
   d.themeColors = (base || Object.keys(ov).length) ? Object.assign({}, base || {}, ov) : null;
 
   // ---- 3. bindings → nodes（引用换成字面值）
+  //
+  // ⚠️ 用 [schemaEachNodeList] 而不是"nodes + 每个 pages"各遍历一遍：
+  // 上面刚把别名接回来，`d.nodes` 与 `d.pages[pageIndex].nodes` 是**同一个数组** ——
+  // 分别遍历会让同一个节点被处理两次（对 `$$` 反转义来说这是**真的出错**，见下）。
   const index = {};
-  schemaIndexNodes(d.nodes, index);
-  if (Array.isArray(d.pages)) {
-    d.pages.forEach(function (pg) { if (pg && Array.isArray(pg.nodes)) schemaIndexNodes(pg.nodes, index); });
-  }
+  schemaEachNodeList(d, function (list) { schemaIndexNodes(list, index); });
   Object.keys(bindings).forEach(function (nid) {
     const node = index[nid];
     const spec = bindings[nid];
@@ -883,34 +887,70 @@ window.resolveDesign = function (design) {
     });
   });
 
-  // ---- 4. `text` 的 `$$` 反转义（v2.80.1）
+  // ---- 4. （v2.80.2 起**没有这一步**）
   //
-  // ⚠️ **放在 bindings 之后**（理由见上面的顺序说明），并且**只动这个深拷贝** ——
-  // 原 design 里的 `$$100` 一个字都不改，于是"文件 → 内存 → 文件"逐字节稳定。
+  // v2.80.1 在这里做过一次 `text` 的 `$$` 反转义，让画布显示 `$100` 而文件里留 `$$100`。
+  // **已按规格 §十二.3 取消**：`text` 是纯字面值，画布 / 导出 / App 三边同一个串。
   //
-  // 只解 `text`：颜色/数值字段上 `$$` 无意义，判据保持原样（见 [window.isTextTokenRef]）。
-  schemaUnescapeTextDollar(d.nodes);
-  if (Array.isArray(d.pages)) {
-    d.pages.forEach(function (pg) {
-      if (pg && Array.isArray(pg.nodes)) schemaUnescapeTextDollar(pg.nodes);
-    });
-  }
+  // 那条"文件形态 vs 画布视图"的分支（`opts.fileForm`）也跟着删掉了 ——
+  // 少一个概念、少一条会分叉的路径。历史与理由见 CHANGELOG v2.80.2。
 
   return d;
 };
 
 /**
- * 遍历一棵节点树，把每个节点的 `text` 字段做一次 `$$` 反转义（v2.80.1）。
+ * **把 `nodes` 与 `pages[pageIndex].nodes` 的共享引用接到深拷贝上**（v2.80.2）。
  *
- * 递归子树：文字节点可以有子节点，漏了递归等于"嵌套层里的 `$$` 显示不出来"。
+ * 内存里的不变式（`model.js` 的 `createDesign` / `switchPage` 维护）：
+ * ```
+ * design.nodes === design.pages[design.pageIndex].nodes
+ * ```
+ * `deepCloneJson` 会把这条拆掉，所以解析视图必须自己接回来 ——
+ * 否则 bindings 只落在一份上（见 [window.resolveDesign] 第 0 步的长注释）。
+ *
+ * 方向：**以 `d.nodes` 为准**（它才是编辑代码一直在写的那份）。
+ * `pageIndex` 越界 / 没有 pages / 当前页没有 `nodes` 数组时**什么都不做** ——
+ * 这是容错路径（手改坏的 JSON），不该在这里再造一个错误出来。
  */
-function schemaUnescapeTextDollar(list) {
-  if (!Array.isArray(list)) return;
-  list.forEach(function (n) {
-    if (!n || typeof n !== "object") return;
-    if (typeof n.text === "string") n.text = window.unescapeTextDollar(n.text);
-    schemaUnescapeTextDollar(n.children);
-  });
+function schemaRelinkPageNodes(d) {
+  if (!Array.isArray(d.pages) || !d.pages.length) return;
+  let i = Number(d.pageIndex);
+  if (!Number.isFinite(i) || i < 0 || i >= d.pages.length) i = 0;
+  const pg = d.pages[i];
+  if (!pg || typeof pg !== "object") return;
+  if (Array.isArray(d.nodes)) {
+    pg.nodes = d.nodes;                 // 以 nodes 为准（编辑代码写的就是它）
+  } else if (Array.isArray(pg.nodes)) {
+    d.nodes = pg.nodes;                 // 只有 pages 有：反向接上，别让下游拿到 undefined
+  }
+}
+
+/**
+ * 遍历 design 里**每一份互不相同的**节点数组（`nodes` + `pages[].nodes`），每份一次。
+ *
+ * ⚠️ 为什么需要"互不相同"：别名（`nodes === pages[pageIndex].nodes`）接回来之后，
+ * "nodes 一次 + 每个 pages 一次"会把**当前页处理两遍**。
+ *
+ * 现在这一层只有 `schemaIndexNodes`（索引）在跑，重复一遍只是白跑；
+ * 但 v2.80.1~v2.80.2 之间这里跑过 `$$` 反转义 —— 那时候重复一遍是**真的解错**
+ *（`$$$$100` 被解两次成 `$$100`，而且只在多页 design 上出现）。
+ * 留着这个"每份一次"的约定，是为了让**下一个**加进来的遍历不必再想一遍这件事。
+ *
+ * 用数组 `indexOf` 而不是 `Set`：这里最多几个元素，且沙箱（`vm`）里的
+ * 内置对象越少依赖越好（测试沙箱是手工搭的，见 `tests/verify-tokens.js`）。
+ */
+function schemaEachNodeList(d, fn) {
+  const seen = [];
+  function once(list) {
+    if (!Array.isArray(list)) return;
+    if (seen.indexOf(list) >= 0) return;
+    seen.push(list);
+    fn(list);
+  }
+  once(d.nodes);
+  if (Array.isArray(d.pages)) {
+    d.pages.forEach(function (pg) { if (pg && typeof pg === "object") once(pg.nodes); });
+  }
 }
 
 /** 按 id 索引一棵节点树（含子树）。同名 id 只认第一个 */

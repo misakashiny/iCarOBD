@@ -15,6 +15,150 @@
 > 靠"感觉该整理了"不会触发，定成数字才会。
 ---
 
+## v1.20.10 · 2026-10-09 · 手势加**切上/下一个 tab**（7 个动作）+ **P12 S5 分段轮换扫描**
+
+> 两件事。①用户点名要的两个手势动作：在 6 个导航页之间**循环**切页。
+> ②P12 的最后一步 S5：8 段 × 10 秒自动换段，把「哪些 ID 在说话」摸一遍，
+> 汇总成**整车 ID 清单**。帧率闸（v1.20.6 的产物）**一行没动**，直接复用。
+
+### 新增
+
+- **双指手势加「切上一个 tab」/「切下一个 tab」**（`data/GestureActions.kt` +
+  `ui/MainActivity.runGesture`）—— 动作从 **5 个变 7 个**。
+  - **循环顺序只有一处**：`GestureActions.TAB_TAGS = [dash, connect, pid, rule, log, knowledge]`，
+    与 `res/menu/bottom_nav.xml` 一致。计算相邻页的是**纯函数**
+    `GestureActions.adjacentTab`（`floorMod` 回绕），`MainActivity` 只做
+    "tag → `R.id.nav_*`" 的映射。
+  - **⚠️ 两个新动作的默认值都是「无」**（`DEFAULTS` 一个字没改）。
+    v1.20.9 及以前根本没有这两个动作，升级后任何一个方向突然开始切页，
+    用户只会认为"手势坏了"。**这一条有单测钉着**（`GestureActionsTest`）。
+  - **新动作排在 `ACTION_IDS` 末尾** → 原有 5 个动作的下标一个都不动，
+    旧的 `settings.json` 读回来仍落在同一个动作上。
+  - **复用 `switchTo`**：改的是导航栏的 `selectedItemId`，由
+    `OnItemSelectedListener` 走**同一条**页面切换路径（不另写一套，
+    否则"手势切过去的页面"与"点导航栏切过去的页面"会不是同一个 Fragment）。
+  - **认不得的当前页返回 null、什么都不做**（不落回第一个）——
+    落回第一个等于"一次手势把用户从任何页面拽到仪表盘"，那正是
+    `GestureActions` 刻意不给的"跳指定页"能力。
+  - 设置页对话框的说明补了一句"切 tab 在 6 个导航页之间循环"。
+- **P12 S5 · 分段轮换扫描**（新文件 `obd/SegmentRotation.kt` + `obd/CanSniffer.kt` +
+  `ui/CanSnifferActivity.kt` + 布局加一个勾选框与一行进度）——
+  8 段（`0x000`~`0x7FF`）× 每段 10 秒，自动换段，一轮 **80 秒采集**（含 AT 开销约 90 秒）。
+  - **掩码 + 过滤成对下发**：`ATCM700` + `ATCF<段>00`（段 0 → `ATCF000` … 段 7 → `ATCF700`）。
+    ⚠️ **`ATCF000` 单独发是全总线、不是"第 0 段"**（规格 §7 的同类坑）——
+    少了 `ATCM700` 掩码就会得到一份"第 0 段 ID 特别多"的假象，
+    而帧数/ID 看起来都正常。`segmentCommands(seg)` 一次返回**两条**，
+    单测逐段钉住。
+  - **判定全是纯逻辑**（新文件 `SegmentRotation.kt` 里的 `object SegmentRotation` +
+    `class RotationPlan`）：段号 / 段范围 / 命令 / 合并语义 / 轮换状态机。
+    理由与 `FrameRateGate` 一样 —— `CanSniffer` 是 `object` 且持有
+    `Handler(Looper.getMainLooper())`，**JVM 里一碰就抛 `Stub!`**，
+    判定写在里面就一条都测不到。⚠️ 状态机**刻意不叫 `SegmentRotation`**：
+    同名 `object` + `class` 会把 object 的作用域整个弄坏，
+    而报错会跑到**调用方**去（这次真踩了，见"踩坑"）。
+  - **"现在第几段"是算出来的**（`elapsed / segmentMs`），不是累加出来的：
+    累加式漏一次 tick 就永久偏移，而 ticker 是 500ms 一次的主线程回调。
+    `segmentsToAdvance` 返回**列表**：被拖慢的一拍会把欠下的段命令补齐，
+    跳过一段的代价是"那一段的 ID 一个都没收到，而日志看起来一切正常"。
+  - **换段在 `uiTicker` 里判**（不是独立定时器）：换段要动 `acc`，
+    而 `acc` 同时被主线程的 `onChunk` 写 —— 同一个线程里天然串行，不需要锁。
+  - **收尾时最后一段先结算**（`finish()` 里 `closeSegment`）：`uiTicker` 一停
+    就没人取最后一段的统计了，症状是"`0x700` 那一整段凭空消失"。
+  - **合并要补记"段间边界"**（`SegmentRotation.merge`）：每段的累加器都从零开始，
+    所以段内 `changed` 少算一次（首帧没有"上一帧"可比）。补的判据是
+    "这一段的第一帧与上一段的最后一帧不同 → 那是一次真实变化"。
+    不补的后果不是"数字小一点"，而是**按 changed 排序会把跨段跳动的信号埋掉** ——
+    而那正是要找的东西。`count`/`values`/`maxDlc` 也一并合（`Accumulator.feedRepeated`）。
+  - **每段都有明确日志**（否则出问题没法查）：
+    `轮换换段`（第几段/范围/命令/距本轮开始）、
+    `轮换段结束`（第几段/帧数/ID 数）、
+    `轮换合并`（段数/合计帧/整车 ID/各段逐条）。
+  - **界面有进度，不让用户盯着一片空白等 90 秒**（新的一行 `tvSniffRotate`）：
+    `轮换中：第 3/8 段 0x200~0x2FF · 本段还剩 6.4 秒 · 整轮还剩 51 秒 · 已收 42 个 ID`。
+    勾上「分段轮换」后「采集」下拉框与「过滤器」输入框**置灰**（不是隐藏）——
+    隐藏会让人以为控件消失了，置灰能看出"它还在，只是现在不归你管"。
+  - **结果走的是同一条导出路径**：合并后的 `acc` 就是普通累加器，
+    `aggregates()` / `aggregateCsv()` / 「导出信号表模板」/ S4 解码显示**零改动**。
+  - ⚠️ **29 位 ID 一段都扫不到**：掩码 `ATCM700` 只覆盖 11 位 ID 空间。
+    这是方案的已知边界（不是 bug），界面上在勾选后的提示里说清了。
+- **`CanFrame.Accumulator.feedRepeated(f, now, times)`** —— 补"同一个值又出现了 N 次"，
+  与 `repeat(times) { feed(f, now) }` 逐字段等价（有单测）。不循环调 `feed`
+  是因为后者每次都建一次 `dataHex()` 字符串并查 `values`，而轮换合并要补的
+  次数可能上千。**刻意不追加原始帧流**：补的是聚合计数，不是新观测。
+
+### 修复
+
+- **无**（本轮没有修既有缺陷；`FrameRateGate` / `FrameMonitor` 的帧率闸**一行未动**）。
+
+### 踩坑（记下来，别再犯）
+
+- **`object X` 与 `class X` 同名会让整个 object 的作用域坏掉**：Kotlin 报
+  `Redeclaration`，然后 object 里**所有成员**都变成 `Unresolved reference` ——
+  而报错出现在**调用方**（`CanSniffer.kt` 里 20 多条"`Unresolved reference 'aggregates'`"），
+  根因看起来像是 `CanFrame` 坏了。这次的第一版就是把状态机也叫
+  `SegmentRotation`，改成 `RotationPlan` 之后所有报错一次消失。
+- **不要用 PowerShell 的 `-replace` + `Set-Content` 改这些带中文的源文件**：
+  一次 `Set-Content` 把 `CanSniffer.kt` 的中文全部变成 `?`、并且**吃掉换行**，
+  文件从 764 行变成 1 行。已 `git checkout` 还原后重做。
+  带中文的源码只能用编辑工具逐处改。
+
+### 验证方式
+
+- `tools/run-tests.ps1` **812 全过**（基线 773 → 812，**+39**：`SegmentRotationTest` 22 /
+  `GestureActionsTest` +13 / `CanFrameTest` +4）+ 构建守卫通过。
+- `:app:assembleDebug` 通过；APK 进 `dist/iCarOBD-debug-v1.20.10-android.apk`
+  （`aapt dump badging` 核对：`versionCode=79 versionName=1.20.10`）。
+- **装机（小米平板 5，横屏，`adb -s 7e7d7bb4`）** —— 坐标全部**先 `uiautomator dump` 再点**：
+
+  | 判据 | 结果 | 证据 |
+  |---|---|---|
+  | 升级后手势总结**不变**（旧配置原样读回） | ✅ | 设置页那一行：`当前：左滑收起导航 · 右滑呼出导航 · 上滑下一套画布 · 下滑上一套画布` |
+  | 对话框里**7 个动作**、两个新动作在列 | ✅ | 点开「双指左滑」Spinner，dump 出 7 项：`无 / 呼出导航 / 收起导航 / 切上一套画布 / 切下一套画布 / 切上一个 tab / 切下一个 tab` |
+  | 新动作**默认是「无」**（升级不改变手感） | ✅ | 四个槽位 dump 出来仍是 `收起导航 / 呼出导航 / 切下一套画布 / 切上一套画布` |
+  | 改一个为「切下一个 tab」→ **落盘** | ✅ | `run-as cat files/config/settings.json` → `"gestureLeft": "tab_next"` |
+  | **重启后仍在** | ✅ | `am force-stop` → 重开 → 设置页那一行变成 `当前：左滑下一个 tab · 右滑呼出导航 · 上滑下一套画布 · 下滑上一套画布` |
+  | 用户配置**只动了这一处** | ✅ | 与动手前备份逐键对比：`新增键 0 / 丢失键 0 / 变了: gestureLeft 'nav_hide' -> 'tab_next'`（其余 6 个文件 SHA256 不变） |
+  | 分段轮换的界面（勾选框 + 进度行） | ✅ | `cbSniffRotate` `checked=true enabled=true`；`spSniffDuration` 与 `etSniffFilter` 同时变 `enabled=false`（置灰）；状态行文案变成 `分段轮换扫描：8 段 × 10 秒 = 约 80 秒。自动逐段下发 ATCM700 + ATCF000…ATCF700，汇总成「整车 ID 清单」。⚠️ 29 位 ID 不在掩码覆盖范围内，本模式看不到。` |
+  | 无崩溃 / 无 ANR / 无 E 级日志 | ✅ | `logcat -b crash` 为空（`last-crash.log` 停在 **10-07**，早于本轮改动）；`ANR in com.icar.obd` **0** 条；当日应用日志 363 行、`[E]` **0** 条 |
+
+- ⚠️ **没有验到的**（见下「遗留问题」）：双指手势**本身**（adb 发不出多点触控）、
+  **分段轮换的真机数据路径**（平板没连着适配器）。
+
+### 遗留问题
+
+- ⚠️ **双指手势本身 adb 验不了**（`adb input swipe` 只能发单指）→
+  "划一下到底会不会切 tab"**需手指实测**。本轮验到的是
+  "设置页能看到 7 个动作 + 新两项默认「无」+ 改完落盘 + 重启仍在"，
+  以及"动作执行"这一侧的**单测 + 代码审查**。
+- ⚠️ **分段轮换的真机数据路径没验成** —— 平板 `Bonded devices` 里
+  **有** `EC:5B:73:0C:84:D6 [BR/EDR] Mazda`（比前几版的"完全没配对"好一点），
+  但适配器当前 `STATE_DISCONNECTED`（车不在旁边 / 没上电）→
+  `CanSniffer.start()` 卡在 `ObdController.isConnected()`，
+  点「开始探测」只会弹一个 Toast、应用日志里没有 `CAN 探测开始`。
+  **只到单测层面 + 界面层面**，段轮换/换段日志/整车清单**都没跑过**。
+  **不要把这一版当成"已验证"**。上车后的判据见下。
+- ⚠️ **29 位 ID 扫不到**（掩码 `ATCM700` 只覆盖 11 位 ID 空间）—— 方案边界，不是 bug。
+
+#### 上车后怎么验 S5（判据，别漏）
+
+1. 连接页完成初始化（`READY`）→ CAN 探测页 → 勾「分段轮换」→ 开始探测。
+2. **界面**：状态行下面出现进度行，每 ~0.5 秒刷新一次，文案形如
+   `轮换中：第 3/8 段 0x200~0x2FF · 本段还剩 6.4 秒 · 整轮还剩 51 秒 · 已收 42 个 ID`；
+   段号必须**依次** 1→8，最后一段跑完后变成 `轮换完成：第 8/8 段 0x700~0x7FF · 共 8 段 · 已收 N 个 ID`。
+3. **日志**（应用日志页或 `run-as cat files/log/obd-<日期>.log`），一轮里应当各有 **8 条**：
+   - `轮换换段 | 第 N/8 段 0x…~0x… 命令=ATCM700+ATCFN00 距本轮开始=…ms`
+   - `轮换段结束 | 第 N/8 段 0x…~0x… 帧=X ID=Y`
+   最后一条 `轮换合并 | 段数=8 合计帧=… 整车ID=… 各段[1:…帧/…ID 2:… …]`。
+4. **判据（这三条任一不成立就是有问题）**：
+   - `各段[...]` 里 **8 段的帧数不能都是 0**（全 0 = 过滤器没生效或车没在广播）；
+   - 各段 ID 数**不该都相同且很大**（那说明 `ATCF` 没起作用、每段都在收全总线）；
+   - `整车ID` 应当 **≥ 各段里最大的那个 ID 数**，且小于各段之和（同一 ID 会在多段出现）。
+5. **无 ANR**：`adb logcat -d -b events | grep am_anr` 为空。
+6. ⚠️ 轮换结束后**必须**等收尾走完（它含一次 `ATZ` 重新初始化，几秒钟）——
+   否则后续 AT 命令会超时（`探测收尾重新初始化` 那条日志出现即为收尾完成）。
+
+---
+
 ---
 
 ---

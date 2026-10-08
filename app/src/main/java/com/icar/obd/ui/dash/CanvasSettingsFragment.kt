@@ -1163,11 +1163,11 @@ class CanvasSettingsFragment : Fragment() {
     }
 
     /**
-     * **双指手势 → 动作**（v1.20.9）。
+     * **双指手势 → 动作**（v1.20.9；v1.20.10 加「切上/下一个 tab」）。
      *
      * ## 为什么是 4 个 Spinner，而不是"点一行弹一次列表"
      *
-     * 4 个手势 × 5 个动作是个小矩阵，一次看全比点 4 次、每次记着上次选了什么要好。
+     * 4 个手势 × 7 个动作是个小矩阵，一次看全比点 4 次、每次记着上次选了什么要好。
      * 而且这里**刻意不用 `setMessage` + 列表**（本项目踩过：`MaterialAlertDialogBuilder`
      * 同时收到 message 与列表时**列表会被整个丢掉**，见 [showNamePosDialog] 的说明）。
      *
@@ -1193,7 +1193,8 @@ class CanvasSettingsFragment : Fragment() {
         }
         root.addView(TextView(ctx).apply {
             text = "双指滑动才触发（旁听，不抢单指操作）。\n" +
-                "切画布只在仪表盘页生效；「双击」始终是呼出导航的兜底，不可改。"
+                "切画布只在仪表盘页生效；切 tab 在 ${GestureActions.TAB_TAGS.size} 个导航页之间循环。\n" +
+                "「双击」始终是呼出导航的兜底，不可改。"
             textSize = 12f
             setTextColor(androidx.core.content.ContextCompat.getColor(ctx, R.color.text_secondary))
         })

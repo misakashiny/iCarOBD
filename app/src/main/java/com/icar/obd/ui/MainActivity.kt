@@ -524,6 +524,9 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
      *
      * "切画布"要**先判当前页**：它只在仪表盘页有意义。在 PID/日志页上切当前画布，
      * 用户看不到任何变化却改了配置 —— 那是最糟的一种"静默生效"。
+     *
+     * "切上/下一个 tab"（v1.20.10）**没有页面限制**（任何页都能切，这才是它有用的原因），
+     * 但它**复用 [switchTo]**，循环顺序与边界在 `GestureActions.adjacentTab` 里。
      */
     private fun runGesture(slot: Int) {
         val action = Store.settings.gestureAt(slot)
@@ -550,11 +553,53 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
                     dashFragment()?.stepCanvas(delta)
                 }
             }
+            // ---- 切上/下一个 tab（v1.20.10）----
+            //
+            // ⚠️ **复用 `switchTo`**（"切 tab 要复用现有的页面切换路径"）：
+            // 它内部已经处理了"hide 全部 + show/新建 + commitNow + 状态栏"，
+            // 另写一套的结果是"手势切过去的页面与点导航栏切过去的不是同一个 Fragment"。
+            //
+            // 循环顺序与边界都在 [GestureActions.adjacentTab]（纯函数，有单测）——
+            // 这里**不许**再写一遍 `+1 / -1` 的取模。
+            GestureActions.TAB_PREV, GestureActions.TAB_NEXT -> {
+                // ⚠️ `currentTag()` **必须先取**：它读的是导航栏的 `selectedItemId`，
+                // 而下面那一行就是去改它 —— 改完再读，日志里就成了"X → X"。
+                val from = currentTag()
+                val next = GestureActions.adjacentTab(action, from)
+                if (next == null) {
+                    // 认不得的当前页 → **什么都不做**（不落回第一个：那是"跳页"，
+                    // 正是这张表刻意不给的能力）
+                    AppLog.w(AppLog.M_UI, "$gesture：切 tab 被忽略", "page=$from 不认得")
+                } else {
+                    navItemIdOf(next)?.let { id ->
+                        // 改选中项 → 触发 nav 的 OnItemSelectedListener → switchTo（唯一入口）
+                        findViewById<NavigationBarView>(R.id.navView).selectedItemId = id
+                    }
+                    AppLog.i(AppLog.M_UI, "$gesture：切 tab", "$from → $next")
+                }
+            }
             else -> AppLog.d(
                 AppLog.M_UI, "$gesture：未绑定动作",
                 "到「仪表盘 → 设置 → 手势」里改"
             )
         }
+    }
+
+    /**
+     * 导航页 tag → 导航栏菜单项 id（v1.20.10）。
+     *
+     * 与 [currentTag] / [switchTo] 是同一张映射的**两个方向** —— 所以只有这一处写它。
+     * 认不得的 tag 返回 null（`GestureActions.TAB_TAGS` 里多写一个、而菜单里没有时，
+     * 表现为"手势切过去没反应"而不是崩）。
+     */
+    private fun navItemIdOf(tag: String): Int? = when (tag) {
+        "dash" -> R.id.nav_dashboard
+        "connect" -> R.id.nav_connect
+        "pid" -> R.id.nav_pid
+        "rule" -> R.id.nav_rule
+        "log" -> R.id.nav_log
+        "knowledge" -> R.id.nav_knowledge
+        else -> null
     }
 
     /** 仪表盘页（`switchTo` 用的 tag 就是 "dash"） */

@@ -213,8 +213,44 @@
   /** 画布用色。每次 draw 刷新一次 —— 切主题后立刻生效 */
   let C = null;
 
+  /**
+   * **这一帧的解析视图**（v2.80.2 第 5 步，规格 §4）。
+   *
+   * 画布画的必须是 `window.resolveDesign(S.design)` 的输出 —— 与导出
+   * （`model.js` 的 `toV2Json`）**同一个函数**。§4 那句话是踩过坑才写下的：
+   * v2.49.0 时 `model.js` 自己拼 `themeColors`、而画布不读它，
+   * 于是"切主题画布完全不变"。两处实现迟早分叉，症状就是
+   * 「画布上看到的」和「导出后 App 看到的」不一样。
+   *
+   * ⚠️ **一帧只解析一次**（`draw()` 开头赋值）：
+   *   · 性能：解析是深拷贝，每个绘制函数各自解析一遍是纯浪费
+   *   · 更重要的是**一致性**：同一帧里两处拿到不同的视图，
+   *     画面会撕裂（比如一半是新绑定值、一半是旧值）
+   */
+  let RD = null;
+
+  /**
+   * 当前生效的主题配色：**只认解析视图**。
+   *
+   * 兜底走 `window.currentTheme()`（老路径：内置主题 + `themeColorsOverride`），
+   * 只在"解析视图没给出配色"时才会用到 —— 也就是**没主题、也没覆盖**的设计，
+   * 那时 `currentTheme()` 返回的正好是内置 `neon`，与改动前的画布完全一致
+   *（所以这条兜底不会让任何一份存量设计的画面变色）。
+   */
+  function themeColors() {
+    if (RD && RD.themeColors) return RD.themeColors;
+    return window.currentTheme ? window.currentTheme() : {};
+  }
+
   function draw() {
     if (!S.design) return;
+    // ---- 第 5 步：**渲染前走唯一入口**（§4）
+    //
+    // 把 bindings 的字面值、`text` 的 `$$` 反转义、模式解析出来的配色
+    // 一次性算好；下面全部读这一份。
+    // `S.design` 一个字都不改（解析结果只是"这一帧的视图"）——
+    // 用户的编辑永远作用在 bindings / nodes 上，不会因为画一次就被写回。
+    RD = window.resolveDesign ? window.resolveDesign(S.design) : null;
     C = window.readCanvasColors();
     const W = cv.width, H = cv.height;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -232,7 +268,7 @@
     // 注意与上一行 `C.out`（画布外的留边）的区别：
     //   `C.out` 是**工具 UI 层**（"这里不是设计区"的提示），不跟主题；
     //   `C.in`  是**设计内容**（App 里的仪表背景就是它），跟主题。
-    ctx.fillStyle = (window.currentTheme ? window.currentTheme().background : C.in);
+    ctx.fillStyle = themeColors().background || C.in;
     const m0 = nodeToCanvasMatrix();
     ctx.fillRect(m0.e, m0.f, CANVAS * m0.a, CANVAS * m0.d);
 
@@ -242,8 +278,13 @@
     drawBackground();
 
     // 节点树（按 z 升序 = 先画在下）
+    //
+    // ⚠️ 画的是**解析视图**里的 `nodes`（第 5 步），不是 `S.design.nodes`：
+    // 绑定的字段（颜色 / 文字 / 圆角 / 透明度）只有解析后才生效。
+    // 命中测试、选中框、面板仍然用 `S.design.nodes` —— 它们要改的是**真相**，
+    // 而不是"这一帧看起来的样子"。
     const M = nodeToCanvasMatrix();
-    drawList(S.design.nodes, M);
+    drawList(RD ? RD.nodes : S.design.nodes, M);
 
     // 选择框与手柄（画在最上）
     drawSelection();
@@ -728,7 +769,7 @@ function uniformMatrix(m, w, h) {
     // 判据与 `drawGaugeLabel` 完全一致：等于默认值就视为"没设过"。
     ctx.fillStyle = (f.color && f.color !== window.FONT_DEFAULT.color)
       ? f.color
-      : (window.currentTheme ? window.currentTheme().label : f.color);
+      : (themeColors().label || f.color);
     ctx.font = window.fontShort(f);
     ctx.textAlign = f.align;
     ctx.textBaseline = "middle";
@@ -771,7 +812,10 @@ function uniformMatrix(m, w, h) {
     //
     // v2.50.0 试过接这 4 处，当时 `verify-font` 红了 2 条，误判成"标签色导致"。
     // 真相是**指纹太稀疏**（v2.55.0 已修：步长 331→97、四通道）。
-    const T = window.currentTheme();
+    //
+    // v2.80.2：改读 [themeColors]（= 解析视图里的 `themeColors`）——
+    // 模式 / 变量改出来的配色必须立刻反映到画布上，与导出同一份来源。
+    const T = themeColors();
       // 标签与量程
       // ⚠️ 字号按控件尺寸成比例（固定 11px 在 90 单位的小表上占 12%，显得巨大）
       // 字体来自 `n.labelFont`；**没设过就用"按控件尺寸成比例"的自动字号**
@@ -947,7 +991,8 @@ function uniformMatrix(m, w, h) {
   function drawGaugeNode(n) {
     // ⚠️ 主题色必须**在这里取一次**（v2.49.0）。
     // 之前这里全是硬编码 `#00D8FF`，所以切主题画布毫无反应。
-    const T = window.currentTheme();
+    // v2.80.2：改读 [themeColors]（解析视图的那一份），理由同 drawGaugeLabel。
+    const T = themeColors();
 
     const info = window.BUILTIN_PIDS[n.pid];
     const label = info ? info.name : (n.rawPid || n.pid || "未绑定");

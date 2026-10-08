@@ -10,7 +10,8 @@ import java.io.File
 import java.nio.file.Files
 
 /**
- * **双指手势映射**（v1.20.9）：方向判定 / 取值归一化 / 摘要文案 / 落盘。
+ * **双指手势映射**（v1.20.9；v1.20.10 加「切上/下一个 tab」）：
+ * 方向判定 / 取值归一化 / 摘要文案 / 落盘 / **循环切 tab 的边界**。
  *
  * ## 为什么这批用例值得写
  *
@@ -19,6 +20,9 @@ import java.nio.file.Files
  * 2. **旧配置的兜底是这一版最危险的一处**：v1.20.8 及以前的 `settings.json`
  *    根本没有这四个键，兜错了的表现是"升级之后手势全没了"——
  *    而那时用户只会说"新版有问题"，现场（旧配置）已经没了。
+ * 3. **循环边界**（v1.20.10）：最后一个 tab 的"下一个"要回到第一个、
+ *    第一个的"上一个"要到最后一个。写错的表现是"在知识库页往上滑一下没反应"，
+ *    而用户不会想到"这是最后一项" —— 他只会说"手势时灵时不灵"。
  *
  * `Store` 是单例且会落盘，所以每个用例前都指到临时目录（与 `DashCanvasTest` 同一套做法）。
  */
@@ -71,6 +75,181 @@ class GestureActionsTest {
         GestureActions.DEFAULTS.forEach {
             assertTrue("默认值 $it 不在可选动作里", GestureActions.ACTION_IDS.contains(it))
         }
+    }
+
+    // ============================================== v1.20.10 新增的两个动作
+
+    @Test
+    fun `可选动作是 7 个，且 id 与名都不重复`() {
+        assertEquals(7, GestureActions.ACTION_IDS.size)
+        assertEquals(7, GestureActions.ACTION_NAMES.size)
+        assertEquals(GestureActions.ACTION_IDS.size, GestureActions.ACTION_IDS.distinct().size)
+        assertEquals(GestureActions.ACTION_NAMES.size, GestureActions.ACTION_NAMES.distinct().size)
+        // 中文名不许有空白项（Spinner 里会出现一个看不见的选项）
+        GestureActions.ACTION_NAMES.forEach { assertTrue("动作名不该为空", it.isNotBlank()) }
+    }
+
+    @Test
+    fun `两个新动作的默认值是「无」—— 升级不改变现有手感`() {
+        // 这是本版最要紧的一条：v1.20.9 及以前根本没有这两个动作，
+        // 升级后任何一个方向突然开始切页，用户只会认为"手势坏了"
+        GestureActions.DEFAULTS.forEach {
+            assertTrue("默认值 $it 里不该出现新动作", !GestureActions.isTabAction(it))
+        }
+        // 出厂默认的四个槽位，逐个再确认一遍
+        for (slot in 0 until GestureActions.SLOT_COUNT) {
+            val def = GestureActions.DEFAULTS[slot]
+            assertTrue("槽位 $slot 的默认值 $def 不该是切 tab", !GestureActions.isTabAction(def))
+        }
+    }
+
+    @Test
+    fun `7 个动作全部往返：normalize 认得、actionName 有名、actionIndex 指得回自己`() {
+        GestureActions.ACTION_IDS.forEachIndexed { i, id ->
+            // 读回：认得的 id 必须原样保留（四个槽位都试）
+            for (slot in 0 until GestureActions.SLOT_COUNT) {
+                assertEquals("槽位 $slot 认不得 $id", id, GestureActions.normalize(slot, id))
+            }
+            // 名字与下标必须一一对上（Spinner 靠 actionIndex，摘要靠 actionName）
+            assertEquals(GestureActions.ACTION_NAMES[i], GestureActions.actionName(id))
+            assertEquals(i, GestureActions.actionIndex(id))
+        }
+    }
+
+    @Test
+    fun `切 tab 两个动作能被写进配置并原样读回来`() {
+        Store.settings.setGestureAt(GestureActions.SLOT_LEFT, GestureActions.TAB_NEXT)
+        Store.settings.setGestureAt(GestureActions.SLOT_RIGHT, GestureActions.TAB_PREV)
+        assertEquals(GestureActions.TAB_NEXT, Store.settings.gestureAt(GestureActions.SLOT_LEFT))
+        assertEquals(GestureActions.TAB_PREV, Store.settings.gestureAt(GestureActions.SLOT_RIGHT))
+
+        // 落盘 → 读回，一个字段都不能丢（写出去的是归一化后的值）
+        val json = Store.settingsToJson()
+        assertEquals(GestureActions.TAB_NEXT, json.getString("gestureLeft"))
+        assertEquals(GestureActions.TAB_PREV, json.getString("gestureRight"))
+        Store.applySettingsJson(JSONObject(json.toString()))
+        assertEquals(GestureActions.TAB_NEXT, Store.settings.gestureAt(GestureActions.SLOT_LEFT))
+        assertEquals(GestureActions.TAB_PREV, Store.settings.gestureAt(GestureActions.SLOT_RIGHT))
+    }
+
+    @Test
+    fun `旧配置缺新键时取默认值（仍然是旧的五个动作，不会是切 tab）`() {
+        // 这条模拟的正是"从 v1.20.9 升上来"：键在、但值只可能是旧五选一
+        val old = JSONObject()
+            .put("gestureLeft", GestureActions.NAV_HIDE)
+            .put("gestureRight", GestureActions.NAV_SHOW)
+            .put("gestureUp", GestureActions.CANVAS_NEXT)
+            .put("gestureDown", GestureActions.CANVAS_PREV)
+        Store.applySettingsJson(old)
+        for (slot in 0 until GestureActions.SLOT_COUNT) {
+            assertTrue(
+                "槽位 $slot 读出了切 tab 动作",
+                !GestureActions.isTabAction(Store.settings.gestureAt(slot))
+            )
+        }
+        // 更旧的配置（连四个键都没有）同样不许出现切 tab
+        Store.applySettingsJson(JSONObject().put("sound", true))
+        for (slot in 0 until GestureActions.SLOT_COUNT) {
+            assertEquals(GestureActions.DEFAULTS[slot], Store.settings.gestureAt(slot))
+        }
+    }
+
+    // ==================================================== 循环切 tab（v1.20.10）
+
+    @Test
+    fun `循环顺序是仪表盘 连接 PID 规则 日志 知识库`() {
+        assertEquals(
+            listOf("dash", "connect", "pid", "rule", "log", "knowledge"),
+            GestureActions.TAB_TAGS
+        )
+    }
+
+    @Test
+    fun `下一个 tab 依次走完六个页并回到第一个`() {
+        val expected = listOf("connect", "pid", "rule", "log", "knowledge", "dash")
+        var cur = GestureActions.TAB_TAGS.first()
+        expected.forEach { want ->
+            cur = GestureActions.adjacentTab(GestureActions.TAB_NEXT, cur)
+                ?: error("从 $cur 找不到下一个")
+            assertEquals(want, cur)
+        }
+    }
+
+    @Test
+    fun `上一个 tab 依次倒着走完六个页并回到最后一个`() {
+        val expected = listOf("knowledge", "log", "rule", "pid", "connect", "dash")
+        var cur = GestureActions.TAB_TAGS.first()
+        expected.forEach { want ->
+            cur = GestureActions.adjacentTab(GestureActions.TAB_PREV, cur)
+                ?: error("从 $cur 找不到上一个")
+            assertEquals(want, cur)
+        }
+    }
+
+    @Test
+    fun `循环边界：最后一个的下一个是第一个、第一个的上一个是最后一个`() {
+        val last = GestureActions.TAB_TAGS.last()
+        val first = GestureActions.TAB_TAGS.first()
+        assertEquals(first, GestureActions.adjacentTab(GestureActions.TAB_NEXT, last))
+        assertEquals(last, GestureActions.adjacentTab(GestureActions.TAB_PREV, first))
+        // 位移形式也要一致（MainActivity 走的是 actionId 那个重载，两条路都得对）
+        assertEquals(first, GestureActions.adjacentTab(last, 1))
+        assertEquals(last, GestureActions.adjacentTab(first, -1))
+    }
+
+    @Test
+    fun `六个 tab 各走一步都落在表内，且不会原地不动`() {
+        GestureActions.TAB_TAGS.forEach { t ->
+            val next = GestureActions.adjacentTab(GestureActions.TAB_NEXT, t)
+            val prev = GestureActions.adjacentTab(GestureActions.TAB_PREV, t)
+            assertTrue("$t 的下一个不在表里", GestureActions.TAB_TAGS.contains(next))
+            assertTrue("$t 的上一个不在表里", GestureActions.TAB_TAGS.contains(prev))
+            // 原地不动 = 用户划了一下什么都没发生
+            assertTrue("$t 的下一个还是自己", next != t)
+            assertTrue("$t 的上一个还是自己", prev != t)
+            // 上一步再下一步必须回到原点（往返）
+            assertEquals(t, GestureActions.adjacentTab(GestureActions.TAB_NEXT, prev))
+            assertEquals(t, GestureActions.adjacentTab(GestureActions.TAB_PREV, next))
+        }
+    }
+
+    @Test
+    fun `认不得的当前页与非法位移都返回 null，不落回第一个`() {
+        // 落回第一个 = 一次手势把用户从任何页面拽到仪表盘，那是"跳页"
+        assertEquals(null, GestureActions.adjacentTab(GestureActions.TAB_NEXT, ""))
+        assertEquals(null, GestureActions.adjacentTab(GestureActions.TAB_NEXT, null))
+        assertEquals(null, GestureActions.adjacentTab(GestureActions.TAB_NEXT, "dashboard"))
+        assertEquals(null, GestureActions.adjacentTab(GestureActions.TAB_NEXT, "dash "))
+        assertEquals(null, GestureActions.adjacentTab("", "dash"))
+        assertEquals(null, GestureActions.adjacentTab("tab_prevv", "dash"))
+        assertEquals(null, GestureActions.adjacentTab(GestureActions.NAV_SHOW, "dash"))
+        // 位移形式只认 ±1
+        assertEquals(null, GestureActions.adjacentTab("dash", 0))
+        assertEquals(null, GestureActions.adjacentTab("dash", 2))
+        assertEquals(null, GestureActions.adjacentTab("dash", -3))
+    }
+
+    @Test
+    fun `isTabAction 只认那两个，其余一律 false`() {
+        assertTrue(GestureActions.isTabAction(GestureActions.TAB_NEXT))
+        assertTrue(GestureActions.isTabAction(GestureActions.TAB_PREV))
+        listOf(
+            GestureActions.NONE, GestureActions.NAV_SHOW, GestureActions.NAV_HIDE,
+            GestureActions.CANVAS_PREV, GestureActions.CANVAS_NEXT
+        ).forEach { assertTrue("$it 不该被当成切 tab", !GestureActions.isTabAction(it)) }
+        assertTrue(!GestureActions.isTabAction(null))
+        assertTrue(!GestureActions.isTabAction("乱写的"))
+    }
+
+    @Test
+    fun `摘要文案认得出两个新动作`() {
+        val map = listOf(
+            GestureActions.TAB_NEXT,  // 左滑
+            GestureActions.TAB_PREV,  // 右滑
+            GestureActions.NONE,      // 上滑
+            GestureActions.NONE       // 下滑
+        )
+        assertEquals("当前：左滑下一个 tab · 右滑上一个 tab · 其余无", GestureActions.summary(map))
     }
 
     // ================================================================ 方向判定

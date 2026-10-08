@@ -146,6 +146,63 @@ object CanFrame {
             return true
         }
 
+        /**
+         * 直接设某个 CAN ID 的 `count` / `changed`（v1.20.10，分段轮换的合并用）。
+         *
+         * ## 为什么需要"直接设"而不是"喂够帧数"
+         *
+         * `Aggregate.values` 是**去重**的（有界 8 个），拿它重建每一帧是不可能的：
+         * 一段里 `01 → 02 → 01` 出现 3 帧、`values` 只有两个元素 ——
+         * 照它喂出来 `count` 会变成 2（真值 3）。而 `count` 正是
+         * "这条 ID 有多吵"的判据，少算了它整车清单的排序就不可信。
+         *
+         * ## 为什么在这里而不是让调用方改 `Aggregate`
+         *
+         * `Aggregate` 的 `count` / `changed` 是 `var`，但它是**聚合器的内部状态**；
+         * 让外面随手改会让"谁能改这两个数"变成一件说不清的事。
+         * 收在这里，语义就一句话：**这是"合并多段结果"的专用入口**。
+         *
+         * @param count 该 ID 的总帧数
+         * @param changed 该 ID 的总变化次数（**含跨段边界那一次**，由调用方算好）
+         */
+        fun setCounts(canId: Int, count: Int, changed: Int) {
+            val a = agg[canId] ?: return
+            a.count = count
+            a.changed = changed
+        }
+
+        /**
+         * 把**同一个值**重复喂 [times] 次（v1.20.10，分段轮换的合并用）。
+         *
+         * 为什么不循环调 [feed]：`feed` 每次都走 `dataHex()` 建字符串 + 查 `values`，
+         * 而这里要补的是"这条 ID 在这一段里又出现了 N 次" —— 值确定相同，
+         * 那些活全是白做的。轮换合并时 N 可能上千（8 段 × 每段几百帧）。
+         *
+         * 语义与 `repeat(times) { feed(f, now) }` **完全一致**：
+         * `count` 累加、`changed` 只在值真的变了时 +1（这里值相同，所以对
+         * "已经在 `values` 里的值"它一次都不会加）、`values` 只加一次、
+         * `raw` 不追加（与 `feed` 一样：原始流只留**解析出的**帧，
+         * 而这里补的是聚合计数，不是新观测）。
+         *
+         * ⚠️ 判据写成 `hex != a.lastData`（**不是** `a.lastData.isEmpty()`）：
+         * `Aggregate.lastData` 的初值是空串，所以**第一帧永远算一次变化** ——
+         * 这正是 `feed` 的行为，两边必须逐字一致，否则合并出来的 `changed`
+         * 会比单段跑出来的少一次。
+         */
+        fun feedRepeated(f: Frame, now: Long, times: Int) {
+            if (times <= 0) return
+            val a = agg.getOrPut(f.canId) { Aggregate(f.canId, firstTs = now) }
+            val hex = f.dataHex()
+            if (hex != a.lastData) {
+                a.changed++
+                a.lastData = hex
+            }
+            a.count += times
+            a.lastTs = now
+            if (f.data.size > a.maxDlc) a.maxDlc = f.data.size
+            if (a.values.size < 8 || a.values.contains(hex)) a.values.add(hex)
+        }
+
         fun aggregates(): List<Aggregate> =
             agg.values.sortedByDescending { it.count }
 

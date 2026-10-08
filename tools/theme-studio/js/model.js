@@ -864,45 +864,81 @@ function cleanPart(p) {
 }
 
 function toV2Json(d) {
+    // ================================================================ 第 4 步：导出也走 `resolveDesign`
+    //
+    // §4「唯一入口」：**不许各写一份**。v2.49.0 已经踩过这个坑 ——
+    // `model.js` 自己拼 `themeColors`、而画布不读它，于是"切主题画布完全不变"。
+    // 两处实现迟早分叉，症状是「画布上看到的」和「导出后 App 看到的」不一样。
+    //
+    // ⚠️ 这里**没有**"文件形态 vs 画布视图"的区别（v2.80.2 起）：
+    // v2.80.1 曾经让 `text` 在文件里存 `$$100`、画布上显示 `$100`（`$$` 转义），
+    // 那条约定**已按规格 §十二.3 取消** —— 因为 App 侧就是 `tv.text = node.text`，
+    // 它不认识 `$$`，于是"工具里 `$100`、平板上 `$$100`"。
+    // 现在 `nodes[].text` 是纯字面值，画布 / 导出 / App 三边同一个串。
+    const rd = (typeof window.resolveDesign === "function") ? window.resolveDesign(d) : d;
     const root = {
       schema: window.SCHEMA_V2,
-      meta: { name: d.name, author: d.author, description: d.description },
+      meta: { name: rd.name, author: rd.author, description: rd.description },
       canvas: {
         unit: window.CANVAS,
-        designW: d.canvas.designW,
-        designH: d.canvas.designH,
-        scaleMode: d.canvas.scaleMode,
+        designW: rd.canvas.designW,
+        designH: rd.canvas.designH,
+        scaleMode: rd.canvas.scaleMode,
         note: "每轴 0..360。x/y 是左上角（相对父节点），w/h 是尺寸；rotation 绕自身中心",
       },
     };
-    if (d.themeId) root.theme = d.themeId;
+    if (rd.themeId) root.theme = rd.themeId;
 // **内嵌配色**（P8-5）：把主题的颜色一起写进设计文件，
 // 这样换台机器 / 用户删了自建主题，配色也不会丢。
 // 字段名与 GaugeTheme.toJson 逐字一致 → App 侧直接 fromJson。
-  const baseTheme = window.GAUGE_THEMES[d.themeId];
-  if (baseTheme || (d.themeColorsOverride && Object.keys(d.themeColorsOverride).length)) {
-    // 内置配色打底 + 用户的**局部覆盖**（v2.31.0）。
-    //
-    // 用"打底 + 覆盖"而不是"整份替换"：用户只调了主色时，
-    // 其余字段仍然跟着内置主题走 —— 换主题后只调过的那一个字段保留，
-    // 其余跟着新主题变（这比"整份冻结"更符合直觉）。
-    root.themeColors = Object.assign({}, baseTheme || {}, d.themeColorsOverride || {});
+//
+// ⚠️ 第 4 步起，这个值由 `resolveDesign` 算（**唯一入口**）：有变量系统时
+// 由 `tokens` + `modes` + `activeMode` 推出来，没有时照旧走 `themeColorsOverride`。
+// 两条路都必须给出**完整 15 字段**（12 色 + glow + title + description）——
+// 那是 `verify-crosslang.js` 逐条核对的跨语言契约（§8.1），也是 T1 等价性的判据。
+  if (rd.themeColors) root.themeColors = rd.themeColors;
+
+  // ---- 变量 / 模式 / 绑定（第 4 步，规格 §3）
+  //
+  // ⚠️ **空的一律不写**。存量文件（绝大多数）没有变量系统，导出结果必须
+  // **逐字节不变** —— 那是"对 App 与存量文件零影响"的凭据（T2）。
+  // 写空数组的话每个老文件一存盘就多四行噪音，而且"没有变量"和
+  // "有变量但都是空的"就分不出来了。
+  //
+  // 这四段对 App 是**未知顶层键**：`DesignFile.kt` 用 `optJSONObject` / `optJSONArray`
+  // 读，未知键返回 null，不报错（§8）。所以写出去是安全的，读不读是 App 的自由。
+  if (rd.tokens && rd.tokens.length) {
+    root.tokens = rd.tokens.map(function (t) {
+      const o = { id: t.id, name: t.name, type: t.type, value: t.value === undefined ? null : t.value };
+      if (typeof t.builtin === "string" && t.builtin) o.builtin = t.builtin;
+      return o;
+    });
   }
-    if (d.background && d.background.path) {
-      const bg = { path: d.background.path, fit: d.background.fit };
+  if (rd.modes && rd.modes.length) {
+    root.modes = rd.modes.map(function (m) {
+      return { id: m.id, name: m.name, values: Object.assign({}, m.values || {}) };
+    });
+  }
+  // `activeMode` 单独判：`modes` 被手改坏（空数组）时也不能把用户写的 activeMode 悄悄抹掉
+  if (typeof rd.activeMode === "string" && rd.activeMode) root.activeMode = rd.activeMode;
+  const binds = bindingsToJson(rd.bindings);
+  if (Object.keys(binds).length) root.bindings = binds;
+
+    if (rd.background && rd.background.path) {
+      const bg = { path: rd.background.path, fit: rd.background.fit };
       // 尺寸只在非 0 时写出（0 = 按铺法自动，写出来只是噪音）
-      if (d.background.w) bg.w = d.background.w;
-      if (d.background.h) bg.h = d.background.h;
+      if (rd.background.w) bg.w = rd.background.w;
+      if (rd.background.h) bg.h = rd.background.h;
       root.background = bg;
     }
-    if (d.assets && d.assets.length) {
-      root.assets = d.assets.map(a => ({
+    if (rd.assets && rd.assets.length) {
+      root.assets = rd.assets.map(a => ({
         id: a.id, name: a.name, kind: a.kind, path: a.path,
         w: a.w || 0, h: a.h || 0, bytes: a.bytes || 0,
       }));
     }
-    if (d.controls && d.controls.length) {
-      root.controls = d.controls.map(c => ({
+    if (rd.controls && rd.controls.length) {
+      root.controls = rd.controls.map(c => ({
         id: c.id, name: c.name, node: nodeToJson(c.node),
       }));
     }
@@ -912,18 +948,47 @@ function toV2Json(d) {
   // 会被**静默忽略** —— 实测就踩到了（测试删掉 nodes[0].pid，校验却报通过）。
   // 单页是绝大多数情况（v1 升级来的全是单页），保持和以前**逐字节一致**的输出，
   // 既向后兼容，也不会有"两处真相"。
-  const pageList = d.pages || [{ id: "pg0", name: "主页面", nodes: d.nodes || [] }];
+  const pageList = rd.pages || [{ id: "pg0", name: "主页面", nodes: rd.nodes || [] }];
   if (pageList.length > 1) {
     root.pages = pageList.map((pg, i) => ({
       id: pg.id,
       name: pg.name,
-      nodes: sortByZ(i === (d.pageIndex || 0) ? d.nodes : pg.nodes).map(nodeToJson),
+      nodes: sortByZ(i === (rd.pageIndex || 0) ? rd.nodes : pg.nodes).map(nodeToJson),
     }));
   }
-    root.nodes = sortByZ(d.nodes).map(nodeToJson);
+    root.nodes = sortByZ(rd.nodes).map(nodeToJson);
     return JSON.stringify(root, null, 2);
   }
   window.toV2Json = toV2Json;
+
+  /**
+   * 序列化 `bindings`（第 4 步，§3.4）。
+   *
+   * 只写**白名单字段 + `$` 引用**这两条判据都成立的条目 —— 与
+   * `validate.js` 的 `parseBindings` 同一套判据。
+   *
+   * 为什么要在这儿再筛一遍（内存里的 `bindings` 解析时已经筛过了）：
+   * 写出去的东西会**原样被下一次打开读回来**。如果这里把一条非引用的值
+   * （比如 `"font.color": "red"`）写进文件，下次打开就会自己给自己报一条
+   * "不是变量引用 —— 已忽略"的警告 —— 自己造的警告最伤，用户根本不知道从哪来的。
+   *
+   * 顺带把"每个节点一坨空对象"也挡掉（全空 = 不写这个节点）。
+   */
+  function bindingsToJson(bindings) {
+    const out = {};
+    if (!bindings || typeof bindings !== "object" || Array.isArray(bindings)) return out;
+    Object.keys(bindings).forEach(function (nid) {
+      const spec = bindings[nid];
+      if (!spec || typeof spec !== "object" || Array.isArray(spec)) return;
+      const one = {};
+      // 按白名单顺序写 → 键序稳定（同一个 design 每次导出逐字节相同）
+      window.BINDABLE_FIELD_PATHS.forEach(function (p) {
+        if (window.isTokenRef(spec[p])) one[p] = spec[p];
+      });
+      if (Object.keys(one).length) out[nid] = one;
+    });
+    return out;
+  }
 
   /**
    * 导出 **v1**（App 当前版本能直接读）。

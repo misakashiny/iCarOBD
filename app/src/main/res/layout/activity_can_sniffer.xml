@@ -66,6 +66,21 @@
             android:layout_weight="1"
             android:paddingStart="4dp" />
 
+        <!--
+          分段轮换扫描（v1.20.10，P12-S5）：8 段 × 10 秒，自动换段，一轮约 90 秒。
+          勾上之后「采集」下拉框不起作用 —— 时长由轮换自己决定（每段 10 秒）。
+          为什么不做成下拉框里的一项「8×10 秒」：那样会让人以为可以调
+          「每段几秒」，而轮换的每段时长是规格里定死的（10 秒才能采到慢周期报文）。
+        -->
+        <CheckBox
+            android:id="@+id/cbSniffRotate"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="6dp"
+            android:paddingEnd="2dp"
+            android:text="分段轮换"
+            android:textSize="11sp" />
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnSniffExportAgg"
             style="@style/Widget.Material3.Button.OutlinedButton"
@@ -225,6 +240,23 @@
         android:paddingBottom="4dp"
         android:textColor="@color/text_dim"
         android:textSize="11sp" />
+
+    <!--
+      轮换进度（v1.20.10）：第几段 / 还剩多久 / 已收多少 ID。
+      **单独一行、单独的颜色**，不能并进上面那行状态里 ——
+      轮换一轮要 80~90 秒，用户全程盯着一片空白，进度必须一眼可见。
+      不是轮换时这一行是 GONE（不占高度，也不留一行空白）。
+    -->
+    <TextView
+        android:id="@+id/tvSniffRotate"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="4dp"
+        android:textColor="@color/text_primary"
+        android:textSize="12sp"
+        android:visibility="gone" />
 
     <ScrollView
         android:layout_width="match_parent"

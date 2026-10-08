@@ -202,4 +202,66 @@ class CanFrameTest {
         acc.feed(frame(0x09A, 0x00, 0x00, 0x00, 0x00), 2L)
         assertEquals("要取最长的那一帧，不能取最后一帧", 8, acc.aggregates().single().dlc())
     }
+
+    // ============================================== feedRepeated（v1.20.10）
+
+    @Test
+    fun `feedRepeated 与重复调 feed 的结果逐字段相同`() {
+        // 分段轮换的合并靠它补"这一段剩下的帧数"。**判据必须与 feed 完全一致** ——
+        // 差一次的后果是合并出来的 changed 比单段跑出来的少，
+        // 而"按 changed 排序"正是找闪烁信号的那张表。
+        val a = CanFrame.Accumulator()
+        val b = CanFrame.Accumulator()
+        val f1 = frame(0x100, 0x01)
+        val f2 = frame(0x100, 0x02)
+        repeat(3) { a.feed(f1, 100L) }
+        a.feed(f2, 200L)
+        repeat(2) { a.feed(f2, 300L) }
+
+        b.feed(f1, 100L)
+        b.feedRepeated(f1, 100L, 2)      // 补齐第 2、3 帧
+        b.feed(f2, 200L)
+        b.feedRepeated(f2, 300L, 2)      // 补齐第 5、6 帧
+
+        val x = a.aggregates().single()
+        val y = b.aggregates().single()
+        assertEquals(x.count, y.count)
+        assertEquals(x.changed, y.changed)
+        assertEquals(x.lastData, y.lastData)
+        assertEquals(x.maxDlc, y.maxDlc)
+        assertEquals(x.values, y.values)
+        assertEquals(6, y.count)
+        assertEquals(2, y.changed)
+    }
+
+    @Test
+    fun `feedRepeated 的首次出现也算一次变化（与 feed 的判据一致）`() {
+        val acc = CanFrame.Accumulator()
+        acc.feedRepeated(frame(0x7E8, 0x10), 1L, 5)
+        val x = acc.aggregates().single()
+        assertEquals(5, x.count)
+        // `Aggregate.lastData` 初值是空串 → 第一帧永远算一次变化（feed 也是这个行为）
+        assertEquals(1, x.changed)
+        assertEquals("10", x.lastData)
+    }
+
+    @Test
+    fun `feedRepeated 的 times 为 0 或负数时什么都不做`() {
+        val acc = CanFrame.Accumulator()
+        acc.feedRepeated(frame(0x7E8, 0x10), 1L, 0)
+        acc.feedRepeated(frame(0x7E8, 0x10), 1L, -5)
+        assertTrue("不该凭空建出条目", acc.aggregates().isEmpty())
+        assertEquals(0, acc.frameCount())
+    }
+
+    @Test
+    fun `feedRepeated 不追加原始帧流（与 feed 不同，这是刻意的）`() {
+        // `feed` 会把帧塞进有界的 raw 列表；`feedRepeated` 补的是**聚合计数**，
+        // 不是新观测 —— 若也追加，8 段合并会把 raw 列表撑满并挤掉真实数据
+        val acc = CanFrame.Accumulator()
+        acc.feedRepeated(frame(0x7E8, 0x10), 1L, 1000)
+        assertEquals(1000, acc.frameCount())
+        assertEquals(0, acc.rawFrames().size)
+        assertEquals(0, acc.dropped)
+    }
 }

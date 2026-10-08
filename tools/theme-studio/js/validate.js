@@ -827,7 +827,7 @@ themeColors: (root.themeColors && typeof root.themeColors === "object" && !Array
    * 这条是「App 零改动」的全部依据：App 不认识 `$`，拿到引用串会**静默回落**
    * 成默认色 —— 不报错、不崩，就是颜色不对，直到推上设备才发现。
    *
-   * ## v2.80.1：按字段分**两档**（原来的"一律硬错误"会把文件锁死）
+   * ## v2.80.1 起按字段分**两档**（原来的"一律硬错误"会把文件锁死）
    *
    * | 字段 | 判据 | 为什么 |
    * |---|---|---|
@@ -836,7 +836,16 @@ themeColors: (root.themeColors && typeof root.themeColors === "object" && !Array
    *
    * ⚠️ **降为警告仍然满足 §4.2「不静默」的初衷** —— 问题照样被报出来了，
    * 只是不再用"打不开文件"这种代价最高、而收益最低的方式报。
-   * 文案必须说清**怎么办**（`$$` 转义 / 补 bindings 条目），否则用户只知道"有问题"。
+   * 文案必须说清**怎么办**，否则用户只知道"有问题"。
+   *
+   * ## ⚠️ v2.80.2：`text` 上**没有转义**，文案不许再教 `$$`（规格 §十二.3）
+   *
+   * v2.80.1 的文案是"如果这是要显示的字面 `$`，请写成 `$$100`" ——
+   * **那句话在教用户写出设备显示错的文件**：App 侧就是 `tv.text = node.text`，
+   * 它不认识 `$$`，于是平板上显示 `$$100` 而工具里显示 `$100`。
+   *
+   * 现在 `nodes[].text` **永远是字面值**，写什么显示什么。所以"这是字面 `$`"
+   * 这件事**根本不需要任何操作** —— 文案要说的只是"想绑定变量才需要加条目"。
    *
    * @param roots    [{ list, path }]，path 是报错文案里的前缀（`nodes` / `pages[0].nodes`）
    * @param bindings 解析后的 bindings（判"这条引用有没有被声明"）
@@ -849,18 +858,16 @@ themeColors: (root.themeColors && typeof root.themeColors === "object" && !Array
         const spec = bindings[n.id];
         window.BINDABLE_FIELD_PATHS.forEach(p => {
           const v = getFieldPath(n, p);
-          // ⚠️ `text` 用 [window.isTextTokenRef]：`$$100` 是**转义**，不是引用。
-          // 颜色/数值用 [window.isTokenRef]（判据不变，`$$` 在那些字段上没有意义）。
-          const isRef = (p === "text") ? window.isTextTokenRef(v) : window.isTokenRef(v);
-          if (!isRef) return;
+          // ⚠️ 两个字段类别用**同一条判据**（v2.80.2 起不再有 `text` 专用的转义判据）：
+          // "字符串且以 `$` 开头" = 看起来像引用。区别只在**报的档位**。
+          if (!window.isTokenRef(v)) return;
           if (spec && window.isTokenRef(spec[p])) return;   // 绑定里写了这条 → 正常状态
           if (p === "text") {
-            // ⚠️ 文案要给出**两条出路**，缺一条用户就只会来问"那我该怎么办"。
-            // `$$` 那条把原来的串原样带上（`$100` → `$$100`），用户直接抄。
-            warnings.push(npath + ".text 是 `" + v + "`，但 bindings 里没有这条 —— "
-              + "如果这是要显示的字面 `$`，请写成 `" + window.TEXT_DOLLAR_ESCAPE + v.slice(1) + "`；"
-              + "如果是要绑定变量，请给这个节点加 bindings 条目（`\"text\": \"" + v + "\"`）。"
-              + "文件照常打开，这段文字现在按原样显示。");
+            // ⚠️ 文案要给出**出路**，而且**不许**再提 `$$`：
+            // `text` 是字面值，用户什么都不用做就能显示 `$`；只有"想绑定"才需要动作。
+            warnings.push(npath + ".text 是 `" + v + "`，看起来像变量引用，但 bindings 里没有这条 —— "
+              + "如果这是要**显示的字面内容**，不用管这条（文件照常打开，就按 `" + v + "` 显示）；"
+              + "如果是要**绑定变量**，请给这个节点加 bindings 条目（`\"text\": \"" + v + "\"`）。");
             return;
           }
           errors.push(npath + "." + p + " 是 `" + v + "`，但 bindings 里没有这条 —— "
@@ -878,9 +885,9 @@ themeColors: (root.themeColors && typeof root.themeColors === "object" && !Array
    *
    * 字段在 nodes 里**不存在**时不报：那只是"还没写过值"，不是漂移。
    *
-   * ⚠️ v2.80.1：比较的是**显示值**，`text` 上的 `$$` 转义先解开（与 [window.resolveDesign]
-   * 同一条规则）。否则 `nodes` 里写 `$$100`、而变量值正好是 `$100` 时，
-   * 两者**显示完全相同**却会被报成漂移 —— 假警告比不报更伤（用户会去改一个本来对的地方）。
+   * ⚠️ 直接比**字面值**。v2.80.1 这里比的是"显示值"（`text` 上的 `$$` 先解开）——
+   * v2.80.2 取消转义之后 `text` 就是字面值，那一层间接没有了
+   *（少一个"两处规则要对齐"的地方）。
    */
   function checkDrift(roots, bindings, st, warnings) {
     Object.keys(bindings).forEach(nid => {
@@ -897,18 +904,13 @@ themeColors: (root.themeColors && typeof root.themeColors === "object" && !Array
             if (want === undefined) return;       // 变量没值：解析时也跳过，不算漂移
             const raw = getFieldPath(n, p);
             if (raw === undefined) return;        // 还没写过值
-            if (displayValue(p, raw) === displayValue(p, want)) return;
+            if (raw === want) return;
             warnings.push(n.id + " 的 " + p + " 在 nodes 里是 " + trimNum(raw)
               + "，但 bindings 指向 " + ref + "（= " + trimNum(want) + "）。已按 bindings 重建。");
           });
         });
       });
     });
-  }
-
-  /** 漂移比较用的"显示值"：只有 `text` 上的 `$$` 转义需要先解开 */
-  function displayValue(path, v) {
-    return (path === "text") ? window.unescapeTextDollar(v) : v;
   }
 
   /** 深度优先遍历节点树（含子树），带上报错用的字段路径 */

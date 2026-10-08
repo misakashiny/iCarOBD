@@ -13,7 +13,7 @@
    ## 覆盖
    T1 等价性（迁移前 = 迁移后，逐字段）  T2 老文件行为不变（且**不写出新键**）
    T3 `$` 防线（normalizeFont 原样保留 + 颜色/数值的 `$` 报硬错误 + **`text` 的 `$` 只警告**
-      + **`$$` 转义**）  T4 漂移（警告不是错误，且**以 bindings 为准**）
+      + **`$$` 转义已取消**（规格 §十二.3）：`text` 是纯字面值）  T4 漂移（警告不是错误，且**以 bindings 为准**）
    T7 12 个内置变量与 THEME_COLOR_FIELDS 一一对应
    T8 `values` 只存差异（删掉覆盖回落 token.value）
    T5 / T6 / T9 属于后续步骤（撤销栈 / 属性面板 / 组件展开），本套件写不了。
@@ -262,8 +262,174 @@ const FIFTEEN = TWELVE.concat(["glow", "title", "description"]);
       "切回来 → 用户改过的主色还在（覆盖没有丢）");
   }
 
+  // ============================================================ 2b) 第 4 步：导出
+  console.log("\n=== 2b. 第 4 步：序列化四个新键 + 导出走 resolveDesign（T1c / App 兼容硬断言） ===");
+
+  /** 递归收集一棵节点树里所有 `type`（App 只认四种，见 §8） */
+  function allTypes(list, acc) {
+    (list || []).forEach(n => { if (n && typeof n === "object") { acc.push(n.type); allTypes(n.children, acc); } });
+    return acc;
+  }
+  const FOUR_TYPES = "group,image,gauge,text";
+
+  {
+    // ---- T1c：**真正落盘的那条路**（`toV2Json`），不是 `resolveDesign`
+    //
+    // T1a/T1b 验的是解析函数；而"存量设计的配色会不会变"取决于**导出**。
+    // 第 4 步把 `toV2Json` 接上 `resolveDesign` 之后，必须**逐字段还是那个值**。
+    CASES.forEach(([themeId, override, label]) => {
+      const { design, json } = legacyExport(themeId, override);
+      const before = json.themeColors || null;
+      const after = JSON.parse(tool.toV2Json(migrate(JSON.parse(JSON.stringify(design)))));
+      deepEq(after.themeColors || null, before,
+        "T1c 迁移后 **toV2Json 导出**的 themeColors 与迁移前逐字段相同 —— " + label);
+    });
+  }
+
+  {
+    // ---- 四个新键真的写出来了（且内容 = 内存里的那份）
+    //
+    // 样本是**健康的**：nodes 里的字面值已经等于 bindings 推出来的值（= 工具自己写过的文件）。
+    // 漂移的情况在下面单独一段（"已按 bindings 重建"必须真的落到文件里）。
+    const root = mkRoot({
+      tokens: [
+        { id: "tk_accent", name: "accent", type: "color", value: "#FF8A00", builtin: "accent" },
+        { id: "tk_t", name: "title", type: "string", value: "$100" },
+        { id: "tk_r", name: "radius", type: "number", value: 24 },
+      ],
+      modes: [{ id: "m_neon", name: "霓虹赛道", values: { tk_accent: "#FF0000" } }],
+      activeMode: "m_neon",
+      bindings: { n1: { "font.color": "$accent", "text": "$title" }, n2: { "card.radius": "$radius" } },
+    });
+    root.nodes[0].font.color = "#FF0000";     // 与模式推出来的值一致
+    root.nodes[0].text = "$100";              // 与 token 的值一致
+    root.nodes[1].card.radius = 24;
+    const r = parse(root);
+    eq(r.errors.length, 0, "第 4 步样本：0 错误");
+    eq(r.warnings.length, 0, "第 4 步样本：0 警告（健康文件不该被打扰）");
+    const out = JSON.parse(tool.toV2Json(r.design));
+
+    eq(Array.isArray(out.tokens) && out.tokens.length, 3, "第 4 步 `tokens` 写出来了（3 个）");
+    deepEq(out.tokens[0], { id: "tk_accent", name: "accent", type: "color", value: "#FF8A00", builtin: "accent" },
+      "第 4 步 `tokens[0]` 逐字段与内存一致（含 `builtin` —— 它是「喂给 themeColors」的凭据）");
+    eq(out.modes.length, 1, "第 4 步 `modes` 写出来了");
+    eq(out.modes[0].values.tk_accent, "#FF0000", "第 4 步 `modes[].values` 只存差异，原样写出");
+    eq(out.activeMode, "m_neon", "第 4 步 `activeMode` 写出来了");
+    deepEq(out.bindings, { n1: { "font.color": "$accent", "text": "$title" }, n2: { "card.radius": "$radius" } },
+      "第 4 步 `bindings` 写出来了（白名单字段 + `$` 引用，一条不多一条不少）");
+
+    // ---- App 兼容硬断言（§8）：写出去的 `nodes` 必须是**字面值**
+    eq(out.nodes[0].font.color, "#FF0000", "第 4 步 绑定字段在导出里是**字面值**（#FF0000，来自当前模式）");
+    eq(out.nodes[1].card.radius, 24, "第 4 步 数字绑定字段同样是字面值（24）");
+    const types = allTypes(out.nodes, []);
+    eq(types.filter(t => FOUR_TYPES.split(",").indexOf(t) < 0).length, 0,
+      "App 硬断言：导出的 `nodes` 里只有 group / image / gauge / text 四种 type（未知 type 会让 App 报硬错误）");
+    const dollarFields = [];
+    (function scan(list) {
+      (list || []).forEach(n => {
+        if (!n) return;
+        ["font", "labelFont"].forEach(f => {
+          if (n[f] && typeof n[f].color === "string" && n[f].color.charAt(0) === "$") dollarFields.push(n.id + "." + f + ".color");
+        });
+        if (n.card && typeof n.card.radius === "string" && n.card.radius.charAt(0) === "$") dollarFields.push(n.id + ".card.radius");
+        scan(n.children);
+      });
+    })(out.nodes);
+    eq(dollarFields.length, 0, "App 硬断言：导出的 `nodes` 里**没有** `$` 引用（App 会静默回落成默认色）");
+
+    // ---- 完整 15 字段（跨语言契约，§8.1）
+    eq(Object.keys(out.themeColors).sort().join(","), FIFTEEN.slice().sort().join(","),
+      "第 4 步 导出的 `themeColors` 仍是完整 15 字段（12 色 + glow + title + description）");
+    eq(out.themeColors.accent, "#FF0000", "第 4 步 模式里的覆盖进了 themeColors");
+  }
+
+  {
+    // ---- 漂移（nodes 里是旧值）→ 导出的必须是**bindings 推出来的值**
+    //
+    // 这是"已按 bindings 重建"这句话的落盘证据：警告说了要重建，
+    // 那就必须真的重建 —— 否则用户看到警告、改了 JSON、再存盘，
+    // 文件里还是旧值，而 App 拿到的就是那个旧值（最要命的一类）。
+    const root = mkRoot({
+      tokens: [
+        { id: "tk_accent", name: "accent", type: "color", value: "#FF8A00", builtin: "accent" },
+        { id: "tk_r", name: "radius", type: "number", value: 24 },
+      ],
+      modes: [{ id: "m_neon", name: "霓虹赛道", values: {} }],
+      activeMode: "m_neon",
+      bindings: { n1: { "font.color": "$accent" }, n2: { "card.radius": "$radius" } },
+    });
+    // mkRoot 里 n1.font.color = #FF8A00（正好等于变量值）、n2.card.radius = 12（不等于 24）
+    const r = parse(root);
+    eq(r.errors.length, 0, "第 4 步 漂移样本：0 错误（漂移只警告）");
+    eq(r.warnings.length, 1, "第 4 步 漂移样本：恰好 1 条警告（card.radius）");
+    const out = JSON.parse(tool.toV2Json(r.design));
+    eq(out.nodes[1].card.radius, 24, "第 4 步 漂移：导出写的是 **bindings 的值（24）**，不是 nodes 里的旧值 12");
+    eq(r.design.nodes[1].card.radius, 12, "第 4 步 漂移：原 design 没被改（视图 ≠ 真相）");
+  }
+
+  {
+    // ---- 绑定来的 `$` 开头字符串：**原样写文件**（没有 `$$` 这回事）
+    //
+    // 规格 §9.1 第 4 步担心"写回文件会被下次打开当成引用，每存一次退一步"。
+    // 这条把它变成**可测的事实**：导出 → 重新 parse → 0 错误 0 警告 + 值不变。
+    // （不会退步的原因：`bindings` 同时写进文件 —— `checkDollarInNodes` 见到
+    //   声明过的引用直接放过，漂移检测比的又是同一个字面值。）
+    const root = mkRoot({
+      tokens: [{ id: "tk_t", name: "title", type: "string", value: "$100" }],
+      bindings: { n1: { "text": "$title" } },
+    });
+    const r = parse(root);
+    const j1 = tool.toV2Json(r.design);
+    const out1 = JSON.parse(j1);
+    eq(out1.nodes[0].text, "$100",
+      "第 4 步 绑定来的 `$100` **原样写文件**（`$$` 转义已取消 —— 写 `$$100` 设备上就会多一个 `$`）");
+    eq(out1.bindings.n1.text, "$title", "第 4 步（前提）`bindings` 同时写了出去 —— 这才是「不会被当成引用」的原因");
+
+    const r2 = parse(JSON.parse(j1));
+    eq(r2.errors.length, 0, "第 4 步 往返：重新打开 **0 错误**");
+    eq(r2.warnings.length, 0,
+      "第 4 步 往返：**0 警告**（没有「每存一次退一步」—— 引用被 bindings 声明了）");
+    eq(tool.resolveDesign(r2.design).nodes[0].text, "$100", "第 4 步 往返：画布显示值不变");
+    const j2 = tool.toV2Json(r2.design);
+    eq(j2 === j1, true, "第 4 步 往返：**文件 → 内存 → 文件 逐字节稳定**（第二次导出与第一次完全相同）");
+  }
+
+  {
+    // ---- 反向：`$$100` 这种**字面内容**一个字都不许动（逐字节稳定，与上面形成对照）
+    //
+    // ⚠️ 取消转义之后 `$$100` 就是普通文本：**工具、导出、App 三边都是 `$$100`**。
+    // 它多一条"看起来像引用"的警告 —— 这是取消转义要付的代价，如实钉住。
+    const root = mkRoot();
+    root.nodes[0].text = "$$100";
+    const r = parse(root);
+    eq(r.errors.length, 0, "第 4 步 `$$100` 样本：0 错误");
+    eq(r.warnings.filter(w => w.indexOf("bindings 里没有这条") >= 0).length, 1,
+      "第 4 步 `$$100` 样本：1 条警告（它确实以 `$` 开头）");
+    const out = JSON.parse(tool.toV2Json(r.design));
+    eq(out.nodes[0].text, "$$100", "第 4 步 `$$100` 原样写回（用户的文件内容一个字不动）");
+    const j1 = tool.toV2Json(r.design);
+    const j2 = tool.toV2Json(parse(JSON.parse(j1)).design);
+    eq(j2 === j1, true, "第 4 步 `$$100`：文件 → 内存 → 文件 **逐字节稳定**");
+    eq(tool.resolveDesign(r.design).nodes[0].text, "$$100",
+      "第 4 步（对照）画布上也是 `$$100` —— 画布 / 文件 / App **三边同一个串**");
+  }
+
+  {
+    // ---- 多页：当前页的绑定值也必须落到 `pages[i].nodes`（任务 1 修的就是这里）
+    const root = aliasRoot();
+    delete root.bindings.n1["text"];
+    const r = parse(root);
+    const out = JSON.parse(tool.toV2Json(r.design));
+    eq(Array.isArray(out.pages) && out.pages.length, 2, "第 4 步 多页设计写出了 `pages`（2 页）");
+    eq(out.pages[0].nodes[0].font.color, "#FF8A00",
+      "第 4 步 多页：**当前页** `pages[0].nodes` 里的绑定是字面值（任务 1 之前这里会写成旧值 #123456）");
+    eq(out.pages[1].nodes[0].font.color, "#FF8A00", "第 4 步 多页：非当前页的绑定同样落盘");
+    eq(allTypes(out.pages[0].nodes, []).filter(t => FOUR_TYPES.split(",").indexOf(t) < 0).length, 0,
+      "App 硬断言：多页的 `pages[].nodes` 里也只有那四种 type");
+  }
+
   // ============================================================ 3) T2 向后兼容
-  console.log("\n=== 3. T2 老文件行为完全不变（且**不写出**新顶层键） ===");
+  console.log("\n=== 3. T2 老文件行为完全不变（没有变量系统时**不写出**新顶层键） ===");
 
   {
     const r = parse(mkRoot());
@@ -277,46 +443,48 @@ const FIFTEEN = TWELVE.concat(["glow", "title", "description"]);
     // nodes 逐字节不变（没有 `$` 可字面化）
     deepEq(tool.resolveDesign(r.design).nodes, r.design.nodes, "T2 resolveDesign 后 nodes **逐字节相同**");
 
-    // 最硬的一条：**不写出任何新顶层键**（这才是"App 侧一行都不用改"的凭据）
+    // 最硬的一条：**没有变量系统的老文件不写出任何新顶层键**
+    //（这才是"对 App 与存量文件零影响"的凭据：一存盘不会多出四段噪音）
     const out = JSON.parse(tool.toV2Json(r.design));
     ["tokens", "modes", "activeMode", "bindings"].forEach(k => {
-      eq(Object.prototype.hasOwnProperty.call(out, k), false, "T2 导出的 JSON 里没有 `" + k + "`（第 4 步才写）");
+      eq(Object.prototype.hasOwnProperty.call(out, k), false,
+        "T2 没有变量系统 → 导出的 JSON 里没有 `" + k + "`（空的一律不写）");
     });
-    // 即使内存里的 design **有**变量系统，本轮也照样不写出（第 4 步刻意不做）
+    // ⚠️ 第 4 步起，**有**变量系统就**要**写出（上面那条是"空的不写"，不是"永远不写"）。
+    // 反向验证：如果这里仍然不写，第 4 步就等于没做 —— 用户编辑的 tokens 一存盘就没了。
     const d2 = migrate(JSON.parse(JSON.stringify(r.design)));
     eq(d2.tokens.length, 12, "（前置）迁移后内存里确实有 12 个变量");
     const out2 = JSON.parse(tool.toV2Json(d2));
-    eq(Object.prototype.hasOwnProperty.call(out2, "tokens"), false,
-      "T2 即便 design 里有 tokens，本轮也**不写出** —— 对 App 与存量文件零影响");
+    ["tokens", "modes", "activeMode"].forEach(k => {
+      eq(Object.prototype.hasOwnProperty.call(out2, k), true,
+        "T2 有变量系统 → 导出的 JSON 里**有** `" + k + "`（第 4 步：不写 = 用户的编辑存不下来）");
+    });
+    eq(out2.bindings, undefined, "T2 但 `bindings` 是空的 → 照旧不写（空的不写，与 tokens 同一条规则）");
     deepEq(out2.themeColors, out.themeColors, "T2 迁移前后 toV2Json 的 themeColors 也逐字段相同");
   }
 
   // ============================================================ 4) T3 `$` 防线
-  console.log("\n=== 4. T3 `$` 防线（颜色/数值硬错误 + `text` 警告 + `$$` 转义） ===");
+  console.log("\n=== 4. T3 `$` 防线（颜色/数值硬错误 + `text` 只警告；`$$` 转义已取消） ===");
 
   eq(tool.normalizeFont({ color: "$accent" }).color, "$accent",
     "T3 normalizeFont 对 `$accent` **原样保留**（不回落默认色）");
   eq(tool.normalizeFont({ color: "$tk1" }).color, "$tk1", "T3 按 id 的引用同样保留");
   eq(tool.normalizeFont({ color: "$$accent" }).color, "$$accent",
-    "T3 **颜色**上的 `$$` 不是转义 —— 原样保留（转义只在 `text` 上识别）");
+    "T3 **颜色**上的 `$$` 没有任何特殊含义 —— 原样保留（`$$` 转义已取消，见规格 §十二.3）");
   eq(tool.normalizeFont({ color: "#abc" }).color, tool.FONT_DEFAULT.color,
     "T3 真正非法的颜色**仍然**回落默认色（防线只放过 `$`，没有放宽其它）");
   eq(tool.normalizeFont({}).color, tool.FONT_DEFAULT.color, "T3 缺字段仍然回落默认色");
   eq(tool.normalizeFont({ color: "#FF8A00" }).color, "#FF8A00", "T3 合法颜色不受影响");
 
-  // ---- `$$` 转义助手（纯函数，先把规则本身钉死，后面才谈"校验怎么用")
-  eq(tool.unescapeTextDollar("$$100"), "$100", "T3 `$$100` → `$100`（开头的 `$$` 是一个字面 `$`）");
-  eq(tool.unescapeTextDollar("$$"), "$", "T3 `$$` → `$`");
-  eq(tool.unescapeTextDollar("$$$100"), "$$100",
-    "T3 `$$$100` → `$$100`（只认最开头那一对，**不做二次解释**）");
-  eq(tool.unescapeTextDollar("$100"), "$100", "T3 单个 `$` **不是**转义（仍是引用语法）");
-  eq(tool.unescapeTextDollar("a$$b"), "a$$b", "T3 **不在开头**的 `$$` 不转义");
-  eq(tool.unescapeTextDollar("转速"), "转速", "T3 没有 `$` 的文本原样返回");
-  eq(tool.unescapeTextDollar(123), 123, "T3 非字符串原样返回（不炸）");
-  eq(tool.isTextTokenRef("$accent"), true, "T3 `$accent` 在 `text` 上仍是引用");
-  eq(tool.isTextTokenRef("$$100"), false, "T3 `$$100` 在 `text` 上**不是**引用（它是转义）");
+  // ---- `$$` 转义**已取消**（规格 §十二.3）：`text` 是纯字面值，判据只剩一条
+  eq(typeof tool.unescapeTextDollar, "undefined",
+    "T3 `unescapeTextDollar` **已删除**（`$$` 转义取消后它没有意义，留着会有人再调用它）");
+  eq(typeof tool.isTextTokenRef, "undefined", "T3 `isTextTokenRef` 同样已删除（`text` 与颜色用同一条判据）");
+  eq(typeof tool.TEXT_DOLLAR_ESCAPE, "undefined", "T3 `TEXT_DOLLAR_ESCAPE` 常量也已删除");
   eq(tool.isTokenRef("$$100"), true,
-    "T3 但 [isTokenRef] 的判据没变 —— `$$100` 在**颜色/数值**上仍然算引用（只放过 `text`）");
+    "T3 `$$100` 也算「看起来像引用」（字符串以 `$` 开头）—— 在 `text` 上给警告、在颜色/数值上给硬错误");
+  eq(tool.isTokenRef("$accent"), true, "T3 `$accent` 同样是引用语法");
+  eq(tool.isTokenRef("转速"), false, "T3 不以 `$` 开头的文本不是引用（最常见的正常情况）");
 
   /**
    * 把 5 处白名单字段各写一个 `$` 引用（bindings 按需给）。
@@ -375,41 +543,41 @@ const FIFTEEN = TWELVE.concat(["glow", "title", "description"]);
     eq(r.design === null, false, "T3 **文件照常打开**（硬错误 = 用户的文件打不开，是本项目最怕的失效方式）");
     ok(hasLine(r.warnings, "nodes[0].text 是 `$100`", "bindings 里没有这条"),
       "T3 报出了**警告**，且指出了位置与原因");
-    ok(hasLine(r.warnings, "请写成 `$$100`"),
-      "T3 警告给出了**字面 `$` 的出路**：写成 `$$100`（把用户原来的串原样带上，直接抄）");
-    ok(hasLine(r.warnings, "如果是要绑定变量", "bindings 条目"),
+    ok(hasLine(r.warnings, "不用管这条"),
+      "T3 警告给出**字面内容的出路**：什么都不用做（v2.80.2 起 `text` 就是字面值）");
+    ok(hasLine(r.warnings, "如果是要", "绑定变量", "bindings 条目"),
       "T3 警告给出了**绑定的出路**：加 bindings 条目（只给一条出路等于没给）");
-    ok(hasLine(r.warnings, "文件照常打开"), "T3 警告明确告诉用户「文件照常打开」（不吓人）");
-    eq(r.design.nodes[0].text, "$100", "T3 解析后 design 里**原样保留** `$100`（不解开、不改写）");
+    eq(r.warnings.some(w => w.indexOf("$$") >= 0), false,
+      "T3 ⚠️ 警告里**不许再出现 `$$`**（规格 §十二.3：那句话在教用户写出设备显示错的文件）");
+    eq(r.design.nodes[0].text, "$100", "T3 解析后 design 里**原样保留** `$100`");
     eq(tool.resolveDesign(r.design).nodes[0].text, "$100",
       "T3 没有绑定 → resolveDesign 也原样显示 `$100`（不猜用户意图）");
   }
   {
-    // ---- `$$` 转义：`$$100` → `$100`，而且**不该有警告**（它是合法的字面 `$`）
+    // ---- `$$100` 现在是**普通字面文本**：显示 `$$100`（工具与设备一致），只给一条警告
+    //
+    // v2.80.1 它被当成"转义"（显示 `$100`、0 警告）；v2.80.2 取消转义后，
+    // 它就是一个"看起来像引用"的普通串 —— 这也是**取消转义要付的代价**，
+    // 如实钉住：多一条警告，但显示与设备一致（设备上本来就是 `$$100`）。
     const root = mkRoot();
     root.nodes[0].text = "$$100";
     const r = parse(root);
     eq(r.errors.length, 0, "T3 `$$100` → 0 错误");
-    eq(r.warnings.length, 0, "T3 `$$100` → **0 警告**（它是转义，不是「忘了加绑定」）");
-    eq(r.design.nodes[0].text, "$$100", "T3 design 里保留文件里的原样 `$$100`（存盘必须逐字节稳定）");
-    eq(tool.resolveDesign(r.design).nodes[0].text, "$100", "T3 resolveDesign 解开成 `$100`（画布显示这个）");
+    eq(r.design === null, false, "T3 `$$100` 不拦文件");
+    eq(r.warnings.filter(w => w.indexOf("bindings 里没有这条") >= 0).length, 1,
+      "T3 `$$100` → **1 条警告**（它确实以 `$` 开头；转义取消后这不再被豁免）");
+    eq(r.design.nodes[0].text, "$$100", "T3 design 里保留原样 `$$100`");
+    eq(tool.resolveDesign(r.design).nodes[0].text, "$$100",
+      "T3 画布/导出/App **三边都是 `$$100`**（没有任何一处会把它变成 `$100`）");
     eq(JSON.parse(tool.toV2Json(r.design)).nodes[0].text, "$$100",
-      "T3 导出回文件仍然是 `$$100` —— 「存一次退一步」的坑不存在");
+      "T3 导出回文件仍然是 `$$100`（逐字节稳定）");
   }
   {
-    const root = mkRoot();
-    root.nodes[0].text = "$$";
-    const r = parse(root);
-    eq(r.errors.length, 0, "T3 单独一个 `$$` → 0 错误");
-    eq(r.warnings.length, 0, "T3 `$$` 也不警告");
-    eq(tool.resolveDesign(r.design).nodes[0].text, "$", "T3 `$$` → `$`");
-  }
-  {
-    // ---- 反向：转义**只**在 `text` 上。颜色上的 `$$` 仍然是硬错误
+    // ---- 反向：颜色上的 `$$accent` 仍然是硬错误（颜色字段不可能有字面 `$`）
     const root = mkRoot();
     root.nodes[0].font.color = "$$accent";
     const r = parse(root);
-    eq(r.design, null, "T3 颜色字段上的 `$$accent` **仍是硬错误**（颜色不可能有字面 `$`，`$$` 在那里没意义）");
+    eq(r.design, null, "T3 颜色字段上的 `$$accent` **仍是硬错误**（颜色不可能有字面 `$`）");
     eq(r.errors.length, 1, "T3 恰好 1 条硬错误（实测 " + r.errors.length + " 条）");
     ok(hasLine(r.errors, "font.color", "引用不能写在 nodes 里"), "T3 报的正是 font.color");
   }
@@ -442,21 +610,35 @@ const FIFTEEN = TWELVE.concat(["glow", "title", "description"]);
     ok(hasLine(r.warnings, "nodes[0].text", "bindings 里没有这条"), "T3 报的正是被摘掉的那一条");
   }
   {
-    // ---- 漂移比较用**显示值**：nodes 里 `$$100` 与变量值 `$100` 显示相同 → **不报漂移**
+    // ---- 漂移比较：`text` 现在**逐字比字面值**（转义取消后没有"显示值"这一层）
+    const root = mkRoot({
+      tokens: [{ id: "tk_t", name: "title", type: "string", value: "$100" }],
+      bindings: { n1: { "text": "$title" } },
+    });
+    root.nodes[0].text = "$100";                 // 与变量值**逐字相同**
+    const r = parse(root);
+    eq(r.errors.length, 0, "T3 绑定 + 字面值一致：0 错误");
+    eq(r.warnings.length, 0, "T3 值逐字相同 → **0 警告**（不误报漂移）");
+    eq(tool.resolveDesign(r.design).nodes[0].text, "$100", "T3 绑定写值：`$100`");
+  }
+  {
+    // 反向：**真的**不同（nodes 是 `$$100`，变量是 `$100`）→ 漂移必须照报
+    //
+    // v2.80.1 这一条是"不报"（因为显示值都被解成 `$100`）；转义取消后
+    // 两者是**不同的字面值**，所以必须报 —— 这正是取消转义带来的行为变化，钉住它。
     const root = mkRoot({
       tokens: [{ id: "tk_t", name: "title", type: "string", value: "$100" }],
       bindings: { n1: { "text": "$title" } },
     });
     root.nodes[0].text = "$$100";
     const r = parse(root);
-    eq(r.errors.length, 0, "T3 转义 + 绑定：0 错误");
-    eq(r.warnings.length, 0,
-      "T3 `$$100` 与变量值 `$100` **显示完全相同** → 不报漂移（假警告比不报更伤：用户会去改一个本来对的地方）");
-    eq(tool.resolveDesign(r.design).nodes[0].text, "$100",
-      "T3 解析后 text = `$100`（转义解开 + 绑定写值，两条路结果一致）");
+    eq(r.errors.length, 0, "T3 `$$100` vs 变量 `$100`：0 错误");
+    ok(hasLine(r.warnings, "n1 的 text 在 nodes 里是 $$100", "已按 bindings 重建"),
+      "T3 两个**字面值**不同 → 漂移照报（不再有「显示相同」这种豁免）");
+    eq(tool.resolveDesign(r.design).nodes[0].text, "$100", "T3 以 bindings 为准");
   }
   {
-    // 反向：**真的**不同（`$$100` 显示 `$100`，变量是「转速」）→ 漂移必须照报
+    // 反向：变量是「转速」→ 漂移照报（与上面同一条判据，换个值再验一次）
     const root = mkRoot({
       tokens: [{ id: "tk_t", name: "title", type: "string", value: "转速" }],
       bindings: { n1: { "text": "$title" } },
@@ -545,6 +727,107 @@ const FIFTEEN = TWELVE.concat(["glow", "title", "description"]);
     // 切到没有覆盖的模式 → 同样回落
     r.design.activeMode = "m_ice";
     eq(tool.resolveDesign(r.design).themeColors.accent, "#FF8A00", "T8 切到空模式 → 同样回落默认值");
+  }
+
+  // ============================================================ 6b) 共享引用（任务 1）
+  console.log("\n=== 6b. `nodes` 与 `pages[].nodes` 的共享引用：bindings 必须**两处都生效** ===");
+
+  // 内存里的不变式（model.js createDesign / switchPage 维护）：
+  //     design.nodes === design.pages[design.pageIndex].nodes
+  // `deepCloneJson` 会把它拆成两份，于是 bindings 只落进其中一份 ——
+  // 上一轮探针实测：d.nodes[0].font.color=#FF0000，pages[0].nodes[0].font.color=#123456。
+  // 这条不变式是"多页面不用改几千处代码"的全部依据，所以**解析视图必须把它接回来**。
+  function aliasRoot() {
+    const t = (id, text) => ({
+      id: id, type: "text", name: text, x: 10, y: 10, w: 120, h: 30,
+      text: text, font: { family: "sans", size: 8, weight: 700, align: "center", color: "#123456" },
+    });
+    return {
+      schema: "icar.ui/2",
+      meta: { name: "别名" },
+      canvas: { unit: 360, designW: 2560, designH: 1600, scaleMode: 0 },
+      theme: "neon",
+      pages: [
+        { id: "pg0", name: "主页面", nodes: [t("n1", "第一页")] },
+        { id: "pg1", name: "第二页", nodes: [t("n9", "第二页")] },
+      ],
+      tokens: [
+        { id: "tk_accent", name: "accent", type: "color", value: "#FF8A00", builtin: "accent" },
+        { id: "tk_t", name: "title", type: "string", value: "绑定来的" },
+      ],
+      modes: [{ id: "m_neon", name: "霓虹赛道", values: {} }],
+      activeMode: "m_neon",
+      bindings: { n1: { "font.color": "$accent", "text": "$title" }, n9: { "font.color": "$accent" } },
+    };
+  }
+
+  {
+    const r = parse(aliasRoot());
+    eq(r.errors.length, 0, "6b 样本本身合法（0 错误）");
+    // 解析出来的 design 满足不变式（**同一个数组引用**，不是"内容相同"）
+    eq(r.design.nodes === r.design.pages[0].nodes, true,
+      "6b 解析后的 design：`nodes` 与 `pages[0].nodes` 是**同一个数组**（不变式的前提）");
+    eq(r.design.nodes === r.design.pages[1].nodes, false, "6b 第二页是**另一个**数组（不许被接成一份）");
+
+    const v = tool.resolveDesign(r.design);
+    // ① 引用也被接回来（不然 bindings 只写进一份）
+    eq(v.nodes === v.pages[0].nodes, true,
+      "6b **任务 1 的核心断言**：解析视图里 `nodes` 与 `pages[0].nodes` 仍是同一个数组");
+    // ② 两处都拿到解析后的字面值
+    eq(v.nodes[0].font.color, "#FF8A00", "6b `nodes[0].font.color` 被解析成字面值");
+    eq(v.pages[0].nodes[0].font.color, "#FF8A00",
+      "6b **`pages[0].nodes[0].font.color` 同样被解析**（上一轮就是这里漏了，探针实测是 #123456）");
+    eq(v.pages[0].nodes[0].text, "绑定来的", "6b 同一份数组上的 `text` 绑定也生效");
+    // ③ 第二页的节点在**它自己那份数组**上被解析（索引是全局的，不是只索引当前页）
+    eq(v.pages[1].nodes[0].font.color, "#FF8A00", "6b 非当前页的节点同样按 bindings 字面化");
+    // ④ 原 design 一个字都没改（视图 ≠ 真相）
+    eq(r.design.nodes[0].font.color, "#123456", "6b 原 design 的 nodes 没被改动");
+    eq(r.design.pages[0].nodes[0].font.color, "#123456", "6b 原 design 的 pages 也没被改动");
+  }
+  {
+    // ---- 反向：别名一旦拆开（`app.js` 的 `newDesign` / `applyPreset` 就是这么干的：
+    //      直接 `d.nodes = 新数组`，没有同步 `pages[0].nodes`），解析视图必须**以 nodes 为准**
+    //
+    // 为什么这条必须钉死：反过来让 pages 赢的话，新建 / 套预设之后 `resolveDesign`
+    // 会返回**空节点树** —— 第 5 步把画布接上去之后，画布直接变白。
+    const r = parse(aliasRoot());
+    const stale = r.design.pages[0].nodes;               // 落后的那一份
+    r.design.nodes = [{                                  // 模拟 applyPreset
+      id: "n5", type: "text", name: "预设", x: 1, y: 2, w: 100, h: 20,
+      text: "预设节点", font: { family: "sans", size: 8, weight: 700, align: "center", color: "#000000" },
+    }];
+    r.design.bindings = { n5: { "font.color": "$accent" } };
+
+    const v = tool.resolveDesign(r.design);
+    eq(v.nodes.length, 1, "6b 别名被拆开时：以 `nodes` 为准（不是落后空页）");
+    eq(v.nodes[0].id, "n5", "6b 拿到的是新节点");
+    eq(v.pages[0].nodes === v.nodes, true, "6b 解析视图把别名**修好了**（两处都是新那份）");
+    eq(v.pages[0].nodes[0].font.color, "#FF8A00", "6b 新节点上的绑定生效（导出时不会再写成旧值）");
+    eq(stale.length, 1, "6b（前置）原 design 里那份落后的 pages[0].nodes 确实还是旧的");
+    eq(r.design.pages[0].nodes === stale, true, "6b 原 design 没被就地修改（只有视图被修好）");
+  }
+  {
+    // ---- `$$$$100` 现在只是一个**普通字面串**（转义取消后没有任何一层会改写它）
+    //
+    // 这条以前钉的是"同一份数组只能反转义一次"（`$$$$100` → `$$$100`，解两次会变 `$$100`）。
+    // 转义取消后那个坑不存在了，但**这条断言仍然值得留着**：它钉的是
+    // "解析视图不碰 `text`" —— 哪天有人再加一层文本处理，这里会立刻红。
+    const root = aliasRoot();
+    root.pages[0].nodes[0].text = "$$$$100";
+    delete root.bindings.n1["text"];                     // 别让绑定把 text 覆盖掉
+    const r = parse(root);
+    eq(r.errors.length, 0, "6b `$$$$100` 样本：0 错误");
+    eq(tool.resolveDesign(r.design).pages[0].nodes[0].text, "$$$$100",
+      "6b `$$$$100` **一个字符都不变**（`text` 是纯字面值，画布 / 导出 / App 三边一致）");
+    eq(tool.resolveDesign(r.design).nodes[0].text, "$$$$100", "6b `nodes` 那一份同样原样");
+  }
+  {
+    // ---- 容错：没有 `pages` 的 design（手搭的对象 / 老调用方）不许炸
+    const r = parse(aliasRoot());
+    delete r.design.pages;
+    const v = tool.resolveDesign(r.design);
+    eq(v.nodes[0].font.color, "#FF8A00", "6b 没有 `pages` 时照常解析 `nodes`（不抛异常）");
+    eq(v.pages === undefined, true, "6b 没有 `pages` 时不凭空造一个出来（视图与输入同形）");
   }
 
   // ============================================================ 7) 坏输入不炸
@@ -653,15 +936,24 @@ const FIFTEEN = TWELVE.concat(["glow", "title", "description"]);
     eq(b3.errors.length, 0, "反向·破坏 3（`$` 进了 text）：**不是**错误");
     eq(b3.design === null, false, "反向·破坏 3：**文件照常打开**（与破坏 1 的颜色字段形成对照）");
     ok(hasLine(b3.warnings, "nodes[0].text 是 `$PID`", "bindings 里没有这条"), "反向·破坏 3：必须报**警告**");
-    ok(hasLine(b3.warnings, "请写成 `$$PID`"), "反向·破坏 3：警告给出 `$$` 转义这条出路");
+    ok(hasLine(b3.warnings, "不用管这条"), "反向·破坏 3：警告说清「想显示字面内容就什么都不用做」");
+    eq(b3.warnings.some(w => w.indexOf("$$") >= 0), false,
+      "反向·破坏 3：⚠️ 文案里**不许再出现 `$$`**（那句话在教用户写出设备显示错的文件）");
+    eq(tool.resolveDesign(b3.design).nodes[0].text, "$PID",
+      "反向·破坏 3：**按原样显示 `$PID`**（不猜用户意图，也不改写）");
 
-    // 健康对照：同样想显示字面 `$`，**用转义写** → 一条警告都不该有
-    const broke3fixed = JSON.parse(JSON.stringify(broke3));
-    broke3fixed.nodes[0].text = "$$PID";
+    // 健康对照：**真的**想绑定 → 加一条 bindings 条目，警告就不该有了
+    //
+    // （v2.80.1 这里对照的是"写成 `$$PID`"—— 那条路已取消：它会让设备显示 `$$PID`。）
+    const broke3fixed = JSON.parse(JSON.stringify(healthy));
+    broke3fixed.tokens = [{ id: "tk_p", name: "PID", type: "string", value: "$PID" }];
+    broke3fixed.bindings = { n1: { "text": "$PID" } };
     const b3f = parse(broke3fixed);
-    eq(b3f.errors.length, 0, "反向·破坏 3 的**正确写法**：0 错误");
-    eq(b3f.warnings.length, 0, "反向·破坏 3 的**正确写法**：0 警告（转义是合法内容，不该被打扰）");
-    eq(tool.resolveDesign(b3f.design).nodes[0].text, "$PID", "反向·破坏 3 的**正确写法**：显示 `$PID`");
+    eq(b3f.errors.length, 0, "反向·破坏 3 的**正确写法**（加绑定）：0 错误");
+    eq(b3f.warnings.filter(w => w.indexOf("bindings 里没有这条") >= 0).length, 0,
+      "反向·破坏 3 的**正确写法**：0 条「没有绑定」警告");
+    eq(tool.resolveDesign(b3f.design).nodes[0].text, "$PID",
+      "反向·破坏 3 的**正确写法**：显示 `$PID`（绑定来的值）");
   }
 
   // ============================================================ 汇总
