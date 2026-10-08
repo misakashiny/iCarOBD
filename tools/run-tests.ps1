@@ -93,6 +93,29 @@ Push-Location $Link
 $code = $LASTEXITCODE
 Pop-Location
 
+# ⚠️⚠️ **必须先判 gradle 的退出码**（v1.20.8 修，这是个会骗人的坑）⚠️⚠️
+#
+# 原实现在这里**直接**去读 `build/test-results/*.xml` —— 而 **Kotlin 编译失败时，
+# 那个目录里留着的是上一次成功运行的陈旧 XML**。于是脚本照样打印上一次的
+# `TOTAL=694 FAILED=0` 并继续跑构建守卫，**看起来一切正常**。
+#
+# 实际代价：P12 S1+S2 那一轮编译其实是**失败**的，是靠 `exit code 1` 才回头看出来的。
+# 一个"永远绿"的验证脚本比没有验证更危险 —— 它让人以为验过了。
+#
+# 所以：gradle 非 0 → 立刻**删掉陈旧的 test-results**（让它不可能再被误读）并退出。
+if ($code -ne 0) {
+    Write-Host ''
+    Write-Host "===== gradle 失败（exit=$code）=====" -ForegroundColor Red
+    Write-Host '  编译或测试没跑起来 —— 下面不可能有本轮结果，已直接退出。' -ForegroundColor Red
+    Write-Host '  ⚠️ 往上找 "e: file:///..." 那几行就是编译错误，先修它。' -ForegroundColor Yellow
+    $stale = Join-Path $Link 'app\build\test-results\testDebugUnitTest'
+    if (Test-Path $stale) {
+        Remove-Item $stale -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host '  已删除陈旧的 test-results（防止下一次再被误读成"全过"）。' -ForegroundColor DarkGray
+    }
+    exit $code
+}
+
 Write-Host ''
 $total = 0; $fail = 0
 $resDir = Join-Path $Link 'app\build\test-results\testDebugUnitTest'
