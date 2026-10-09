@@ -52,10 +52,12 @@ class DashFragment : Fragment(), com.icar.obd.obd.ObdController.Listener {
 
     private lateinit var pager: ViewPager2
     private lateinit var adapter: DashCanvasPagerAdapter
-    private lateinit var banner: TextView
 
-    private val main = Handler(Looper.getMainLooper())
-    private var hideBanner: Runnable? = null
+    /**
+     * 页面内那条横条。v1.20.12 起它**只**负责常驻的「⚠ 模拟数据（非真车）」提醒 ——
+     * 规则提示已经搬到 `MainActivity` 的灵动岛浮层（见 [onAlert]）。
+     */
+    private lateinit var banner: TextView
 
     /**
      * 程序化翻页的目标页；`-1` = 没有正在进行的程序化翻页。
@@ -340,8 +342,7 @@ class DashFragment : Fragment(), com.icar.obd.obd.ObdController.Listener {
      */
     private fun refreshSimBanner() {
         if (com.icar.obd.obd.SignalSimulator.running) {
-            hideBanner?.let { main.removeCallbacks(it) }
-            hideBanner = null                     // 常驻，不自动隐藏
+            // 常驻，不自动隐藏
             banner.text = "⚠ 模拟数据（非真车）· 到「连接 → 模拟信号」关闭"
             banner.visibility = View.VISIBLE
         } else {
@@ -349,20 +350,29 @@ class DashFragment : Fragment(), com.icar.obd.obd.ObdController.Listener {
         }
     }
 
-    /** 规则触发时由 [com.icar.obd.obd.ObdController] 回调（在任意线程） */
+    /**
+     * 规则触发时由 [com.icar.obd.obd.ObdController] 回调（在任意线程）。
+     *
+     * ## ⚠️ v1.20.12：这里**不再**显示告警条了
+     *
+     * 规则提示统一改由 `MainActivity` 的**灵动岛**浮层出（见 `ui/view/IslandNotice.kt`）。
+     * 原因有两层：
+     *
+     * 1. **单一权威**：原来"规则提示"有两处（系统 Toast + 这条页面内告警条），
+     *    而它们出现的时机/停留时长/文案还可能分叉；
+     * 2. **它是那个 P0 的触发条件**：告警条是 `fragment_dash.xml` 里
+     *    `LinearLayout` 的子 View，`layout_weight=1` 的 pager 会给它让位 ——
+     *    于是**每次告警都让画布重新量一次**，走到 `DashRenderer.relayout()`。
+     *    那条路以前是在 layout 期间重建视图（8 块表落成 0×0），
+     *    表现就是用户说的「规则 toast 一弹、整个画布都会不见」。
+     *    根因已经在 `DashRenderer.relayout()` 修掉（post 到下一轮消息），
+     *    这里顺手把"每次告警都让画布重排"这件事本身也去掉。
+     *
+     * 告警条本身**留着**：它还负责常驻的「⚠ 模拟数据（非真车）」提醒
+     * （见 [refreshSimBanner]），那条是"状态"不是"事件"，本来就该一直在页面上。
+     */
     override fun onAlert(msg: String) {
-        view?.post { showAlert(msg) }
-    }
-
-    private fun showAlert(msg: String) {
-        banner.text = msg
-        banner.visibility = View.VISIBLE
-        hideBanner?.let { main.removeCallbacks(it) }
-        val r = Runnable {
-            banner.visibility = View.GONE
-            refreshSimBanner()      // 告警消失后把常驻的「模拟数据」提示恢复
-        }
-        hideBanner = r
-        main.postDelayed(r, 4000)
+        // 提示由 MainActivity 的灵动岛负责；这里刻意什么都不做，
+        // 免得又长回"两套提示"（这个项目因为"两份权威"栽过三次）
     }
 }

@@ -2,6 +2,7 @@ package com.icar.obd.ui.view
 
 import android.content.Context
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.TextView
@@ -81,6 +82,16 @@ class MonitorWarnBar(private val ctx: Context) {
         bar?.let { runCatching { h.removeView(it) } }
         bar = null
     }
+
+    /**
+     * 警示条当前占的高度（像素）；没显示时 0。
+     *
+     * v1.20.12 加：顶部多了一个「灵动岛」胶囊（[IslandNotice]），
+     * 两者都在 `Gravity.TOP`，叠在一起会糊成两行 —— 灵动岛拿这个值往下让一行。
+     * 没布局完时 `height` 还是 0，调用方**每秒都会再问一次**（主界面那个 ticker），
+     * 所以不需要在这里等布局。
+     */
+    fun heightPx(): Int = bar?.takeIf { it.visibility == View.VISIBLE }?.height ?: 0
 
     private fun dp(v: Int): Int = (v * ctx.resources.displayMetrics.density).toInt()
 

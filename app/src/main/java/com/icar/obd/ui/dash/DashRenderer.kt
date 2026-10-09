@@ -126,7 +126,6 @@ class DashRenderer(
         }
 
         clearCells()
-
         val valid = spec.filter { it.pidId.isNotBlank() && Store.findPid(it.pidId) != null }
         if (valid.isEmpty()) {
             // 同样：以前只显示空态、不打原因 —— 而"为什么一条都留不下"才是要看的
@@ -179,6 +178,7 @@ class DashRenderer(
             cells.add(Cell(item, view, host))
         }
         pushValues()
+        scheduleSizeCheck()
         // 成功路径也留一条（有界：每次渲染一行）—— 和上面两条失败日志一起，
         // 让「到底渲染没渲染」**只靠日志就能定性**，不用再去量像素
         AppLog.d(AppLog.M_UI, "仪表盘已落盘", "表=${valid.size} 容器=${cw}x${ch}")
@@ -242,6 +242,8 @@ class DashRenderer(
         } else {
             emptyView.visibility = View.GONE
         }
+        // v1 那条自检（见 scheduleSizeCheck）在 v2 这条路上同样需要
+        scheduleSizeCheck()
     }
 
     /** v2 设计的空态原因。**要说人话** —— 用户看不懂"PID 全部查不到"这种内部话 */
@@ -254,6 +256,40 @@ class DashRenderer(
         append("（详见日志「设计渲染」）")
     }
 
+    /**
+     * 尺寸变化后按上一次的规格重排。
+     *
+     * ## ⚠️⚠️ 为什么**必须 post 到下一轮消息**，不能在这里同步重建（v1.20.12 修的 P0）
+     *
+     * 这个方法唯一的调用者是 [init] 里那个 `container.addOnLayoutChangeListener` ——
+     * 而它是在 **`View.layout()` 内部**被回调的。
+     *
+     * 在 layout 期间 `addView` 出来的子 View，父容器**这一轮的 `onMeasure` 已经跑完**，
+     * 于是它**永远不会被 measure**；`FrameLayout.onLayout` 取
+     * `getMeasuredWidth()/getMeasuredHeight()`（都是 0）把它摆成 **0×0 @ (0,0)**。
+     * 症状：8 块表**都在 View 树上**（`childCount=9`、日志照打「仪表盘已落盘 | 表=8」），
+     * 但屏幕上一块都看不见 —— 用户原话：
+     * **「当规则 toast 弹出提示的时候、整个画布都会不见」**。
+     *
+     * ### 触发链（已用 logcat 实测钉死，不是推测）
+     *
+     * ```
+     * 规则动作 toast → ObdController.handleAction → emitAlert
+     *   → DashFragment.onAlert → showAlert：alertBanner VISIBLE
+     *   → fragment_dash.xml 是 LinearLayout，pager 是 weight=1 → pager 高度 2272 → 2164
+     *   → gaugeGrid 尺寸变化 → 走到这里 → 在 layout 里重建 → 8 块表 0×0
+     * 4 秒后告警条收起 → 高度 2164 → 2272 → **又**在 layout 里重建一次 → 仍然 0×0
+     * ```
+     *
+     * 所以它**不会自愈**：只有切页 / 旋转这类"在 layout 之外"的重建路径才会恢复
+     * （实测：滑到设置页再滑回来，画布立刻回来 —— 这正是当初定位它的突破口）。
+     *
+     * ### 为什么 post 就对了
+     *
+     * `post` 的重建发生在**这一轮 traversal 之外**，`addView` 正常触发下一轮
+     * measure + layout + draw，所以**不会闪**（不存在"先画一帧空的再补"）。
+     * 判定本身抽到了 [CanvasRebuildPolicy]（纯逻辑，有单测）。
+     */
     fun relayout() {
         // ⚠️ **首次渲染之前不能走这条路**（v1.20.1 修）。
         //
@@ -265,10 +301,81 @@ class DashRenderer(
         // 为什么多画布之后必须挡：每一页都有自己的渲染器，而**非当前页故意不渲染**
         // （见 DashCanvasPageFragment.setPageActive）—— 那些页面被布局时
         // 100% 会走到这里，日志里会堆一排查不出所以然的"PID 全部查不到"。
-        if (!hasRendered) return
-        if (container.width == lastW && container.height == lastH) return
-        val d = lastDesign
-        if (d != null) renderDesign(d, lastTheme) else render(lastSpec, lastTheme)
+        if (!CanvasRebuildPolicy.needsRebuild(
+                hasRendered, container.width, container.height, lastW, lastH
+            )
+        ) return
+        postRebuild()
+    }
+
+    /** 已经排了一次待重建（同一帧里连续几次尺寸变化只重建一次） */
+    private var rebuildPosted = false
+
+    /**
+     * 把"按上一次的规格重建"排到下一轮消息里。**所有重建都必须走这里** ——
+     * 理由见 [relayout] 的类注释（layout 期间 addView 的子 View 不会被 measure）。
+     */
+    private fun postRebuild() {
+        if (rebuildPosted) return
+        rebuildPosted = true
+        container.post {
+            rebuildPosted = false
+            // 排队期间尺寸可能又变了（也可能已经变回来）—— 再判一次，省一次无谓重建
+            if (!CanvasRebuildPolicy.needsRebuild(
+                    hasRendered, container.width, container.height, lastW, lastH
+                )
+            ) return@post
+            val d = lastDesign
+            if (d != null) renderDesign(d, lastTheme) else render(lastSpec, lastTheme)
+        }
+    }
+
+    /** 自检已经补过一次重建（只补一次，避免"补了还是 0 尺寸"时死循环） */
+    private var healed = false
+
+    /**
+     * 重建之后的**自检**：等这次布局跑完，量一下每块表的真实尺寸。
+     *
+     * ## 为什么必须有它
+     *
+     * `0×0` 那种失败**在 View 树上和日志里都看不出来**：`childCount` 正常、
+     * `仪表盘已落盘 | 表=8` 照打、`uiautomator dump` 里那一层甚至整个消失
+     * （因为它 `isVisibleToUser=false` 被跳过）—— 只有**像素**能看出来。
+     * 这正是这次 P0 拖到"用户报了两轮"才定位的原因。
+     *
+     * 所以这里在**布局结束之后**（`OnGlobalLayoutListener`）量一次真实尺寸：
+     * 发现 0 尺寸就记一条 W（让下一次能一条日志定性），并补重建一次。
+     */
+    private fun scheduleSizeCheck() {
+        val vto = container.viewTreeObserver
+        vto.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                val obs = container.viewTreeObserver
+                if (obs.isAlive) obs.removeOnGlobalLayoutListener(this)
+
+                val sizes = ArrayList<Pair<Int, Int>>(container.childCount)
+                // 0 号是常驻的参考线覆盖层（MATCH_PARENT），不参与判定
+                for (i in 1 until container.childCount) {
+                    val c = container.getChildAt(i)
+                    sizes.add(c.width to c.height)
+                }
+                val bad = CanvasRebuildPolicy.zeroSizedCount(sizes)
+                if (bad == 0) {
+                    healed = false
+                    return
+                }
+                val heal = CanvasRebuildPolicy.shouldHeal(bad, sizes.size, healed)
+                AppLog.w(
+                    AppLog.M_UI, "画布有 0 尺寸的表（屏幕上就是'画布不见了'）",
+                    "0尺寸=$bad/${sizes.size} 容器=${container.width}x${container.height} " +
+                        "补重建=$heal（若反复出现，说明又有人在 layout 期间动了 View 树）"
+                )
+                if (heal) {
+                    healed = true
+                    postRebuild()
+                }
+            }
+        })
     }
 
     private fun clearCells() {

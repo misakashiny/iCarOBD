@@ -811,7 +811,52 @@ object Store {
     fun deletePid(id: String) {
         customPids.removeAll { it.id == id }
         customGauges.removeAll { it.pidId == id }
+        // ⚠️ v1.20.12：启用状态覆盖也要一起清掉。
+        // 不清的话 `enabled.json` 会永久留着一个指向已删条目的 id
+        // （每删一条攒一个，谁也不知道它是什么），而且"删除后重新建一条同 id"
+        // 会被这条陈旧覆盖静默改掉启用状态。
+        if (enabledOverride.remove(id) != null) saveEnabled()
         savePids(); saveDash()
+    }
+
+    /**
+     * **清理重复 PID**（v1.20.12）—— 用户要求「检查 PID 页面、将重复多余的清除掉」。
+     *
+     * ## 为什么是一个动作，而不是"这一版手工删几条"
+     *
+     * 重复不是一次性的：导入别人的 JSON（[importPidsJson] 会给每条换新 id）、
+     * 从 CAN 探测里"加为监听"、复制厂家模板 —— 每一条路都可能再产生一批。
+     * 所以给一个**可重复执行**的清理入口，判据在 [PidDedup]（纯逻辑，有单测）。
+     *
+     * ## 安全闸（三样缺一不可）
+     *
+     * 1. **只删自定义**：`builtIn=true` 的条目一律不碰 —— 内置表是刻意设计的，
+     *    删了会让别的画布/设计文件里的别名对不上；
+     * 2. **被引用的不删**：任何仪表或规则的 `pidId`/`sourceId` 指向它就不删 ——
+     *    否则仪表会变空、规则永远不成立（任务里那条硬约束）；
+     * 3. **先返回清单，由调用方确认**：这里**只负责算和删**，
+     *    不负责弹窗 —— 界面上必须先把"要删哪些、为什么"显示给用户看。
+     *
+     * @return 实际删掉的条数
+     */
+    fun cleanupDuplicatePids(): List<PidDedup.Duplicate> {
+        val gaugeIds = customGauges.map { it.pidId }
+        val ruleIds = rules.flatMap { r -> r.conditions.map { it.sourceId } }
+        val dups = PidDedup.removable(
+            PidDedup.findDuplicates(allPids()), gaugeIds, ruleIds
+        )
+        if (dups.isEmpty()) return emptyList()
+        dups.forEach { d ->
+            customPids.removeAll { it.id == d.pid.id }
+            customGauges.removeAll { it.pidId == d.pid.id }
+            enabledOverride.remove(d.pid.id)
+        }
+        savePids(); saveDash(); saveEnabled()
+        AppLog.i(
+            AppLog.M_DATA, "已清理重复 PID",
+            "删=${dups.size} 条：${dups.joinToString(", ") { "${it.pid.name}(${it.reason})" }}"
+        )
+        return dups
     }
 
     fun upsertRule(r: Rule) {
@@ -849,20 +894,40 @@ object Store {
      * 这是给阿特兹研究工作流用的起点：模板里的 PID 号是占位值，
      * 用扫描器扫出真实地址后，在 PID 编辑器里改号 → 测试 → 保存 → 启用。
      * 复制出来的条目 builtIn=false，因此可以随便改、随便删。
+     *
+     * ## ⚠️ v1.20.12 修：**不许复制已经实车确认的监听型**
+     *
+     * 原实现无条件复制 `MANUFACTURER_TEMPLATES` 全表，而那张表里混着
+     * **两条实车确认过的真条目**（`mon_turn_left` / `mon_turn_right`，
+     * 2026-10-06 在阿特兹上确认：CAN `0x09A` 的 bit2/bit3）。
+     * 复制它们的结果是 PID 页里**凭空多出两条一模一样的信号** ——
+     * 同一个报文、同一个位段，只是 id 和分组不同（副本还 `enabled=false`，纯死重量）。
+     * 这正是用户说的「重复多余的」。
+     *
+     * 判据用 [PidDedup.isMonitor]：**监听型一律不复制**（它们不是"待验证的占位模板"，
+     * 而是已经能用的东西；用户真想再要一条，用「+ 新增 PID」自己建）。
+     *
+     * @return 实际复制了几条
      */
     fun importTemplatesAsCustom(): Int {
         var n = 0
-        BuiltInPids.MANUFACTURER_TEMPLATES.forEach { t ->
-            val copy = t.copy(
-                id = java.util.UUID.randomUUID().toString(),
-                builtIn = false,
-                enabled = false,
-                group = "阿特兹候选(待验证)"
-            )
-            customPids.add(copy)
-            n++
-        }
+        BuiltInPids.MANUFACTURER_TEMPLATES
+            .filterNot { PidDedup.isMonitor(it) }
+            .forEach { t ->
+                val copy = t.copy(
+                    id = java.util.UUID.randomUUID().toString(),
+                    builtIn = false,
+                    enabled = false,
+                    group = "阿特兹候选(待验证)"
+                )
+                customPids.add(copy)
+                n++
+            }
         savePids()
+        AppLog.i(
+            AppLog.M_DATA, "厂家模板已复制为自定义",
+            "复制=$n 条（跳过监听型 ${BuiltInPids.MANUFACTURER_TEMPLATES.count { PidDedup.isMonitor(it) }} 条 —— 它们是实车确认过的真条目，不是模板）"
+        )
         return n
     }
 }

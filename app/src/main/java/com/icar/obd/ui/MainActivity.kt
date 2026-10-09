@@ -24,6 +24,7 @@ import com.icar.obd.data.Store
 import com.icar.obd.obd.ObdController
 import com.icar.obd.obd.VehicleBus
 import com.icar.obd.service.ObdService
+import com.icar.obd.ui.view.IslandNotice
 import com.icar.obd.ui.view.MonitorWarnBar
 
 /**
@@ -289,6 +290,9 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
 
     override fun onDestroy() {
         ObdController.removeListener(this)
+        // 灵动岛的收起节拍要停掉：它是 Handler 上的 postDelayed 循环，
+        // 不停的话 Activity 没了它还在跑（而且会抓着旧的 content）
+        island.dismissNow()
         super.onDestroy()
     }
 
@@ -748,9 +752,26 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
      */
     private val monitorBar by lazy { MonitorWarnBar(this) }
 
+    /**
+     * 灵动岛式悬浮提示（v1.20.12）。
+     *
+     * 规则动作 `toast` 原来走两处：系统 Toast + `DashFragment` 里那条**页面内的告警条**。
+     * 后者是 `fragment_dash.xml` 的 `LinearLayout` 子 View（`layout_weight=1` 的 pager 给它让位），
+     * 于是**每次告警都会让画布重新量一次** —— 那正是 v1.20.12 那个
+     * 「规则 toast 一弹、整个画布不见」的**触发条件**（根因见 `DashRenderer.relayout`）。
+     *
+     * 现在规则提示统一由这里出：**浮在 `android.R.id.content` 上、不占任何布局**，
+     * 而且**跨页面可见**（用户可能正在 PID 页改东西）。页面内那条告警条只再负责
+     * 一件事：常驻的「⚠ 模拟数据（非真车）」提醒。
+     */
+    private val island by lazy { IslandNotice(this) }
+
     private fun syncMonitorWarn() {
         val host = findViewById<android.view.ViewGroup>(android.R.id.content) ?: return
         monitorBar.sync(host)
+        // 灵动岛与警示条都在顶部：让灵动岛避开警示条那一行（见 IslandNotice 约束 ③）
+        island.attach(host)
+        island.setTopOffsetPx(monitorBar.heightPx())
     }
 
     private fun startRateTicker() {
@@ -817,7 +838,13 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
     }
 
     override fun onAlert(msg: String) {
-        // 告警条由 DashFragment 自己展示；这里只保证状态条刷新
+        // 规则动作 `toast` 的提示出口（v1.20.12）—— 灵动岛胶囊。
+        // 回调可能在任意线程（RuleEngine 由轮询线程驱动），所以自己 post 回主线程。
+        main.post {
+            // 宿主可能还没挂上（Activity 刚起 / 旋转重建）—— attach 一次再显示
+            findViewById<android.view.ViewGroup>(android.R.id.content)?.let { island.attach(it) }
+            island.show(msg)
+        }
     }
 
     companion object {

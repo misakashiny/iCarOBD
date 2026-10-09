@@ -102,6 +102,25 @@
             android:text="导出 JSON"
             android:textSize="11sp" />
 
+        <!--
+          清理重复（v1.20.12）：用户要求「检查 PID 页面、将重复多余的清除掉」。
+
+          **默认 GONE** —— 没有重复时它根本不出现，不占位置、也不诱导用户去点。
+          有重复时才显示成「清理 N 条重复」，点开是一个**逐条列出理由**的确认框
+          （判据见 data/PidDedup.kt，纯逻辑有单测）。
+        -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnDedup"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="清理重复"
+            android:textSize="11sp"
+            android:visibility="gone" />
+
 
     </LinearLayout>
 

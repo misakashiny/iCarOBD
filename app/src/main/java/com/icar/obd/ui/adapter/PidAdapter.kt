@@ -44,8 +44,17 @@ class PidAdapter(
 
     private var source: List<PidDefinition> = emptyList()
 
-    fun submit(list: List<PidDefinition>) {
+    /**
+     * 被判为「和别的条目重复」的 id → 判据文案（v1.20.12）。
+     *
+     * 由 `PidFragment` 用 `data/PidDedup.kt` 算好传进来 —— 适配器**自己不做判定**：
+     * 判定要能被单测（`PidDedupTest`），放在 View 层就测不到了。
+     */
+    private var duplicateNote: Map<String, String> = emptyMap()
+
+    fun submit(list: List<PidDefinition>, duplicates: Map<String, String> = emptyMap()) {
         source = list
+        duplicateNote = duplicates
         rebuild()
     }
 
@@ -122,7 +131,13 @@ class PidAdapter(
             // 「标灰 + 备注写明长按重新启用」够用，也不破坏原有交互。
             val unsupported = ObdController.isUnsupported(pid.id)
             itemView.alpha = if (unsupported) 0.45f else 1f
-            if (unsupported) {
+            // ---- v1.20.12：重复条目标出来（用户要求「检查 PID 页面、将重复多余的清除掉」）----
+            // 优先显示"重复"，因为它比"本车不支持"更需要用户动手（后者已经自动退出轮询了）
+            val dupNote = duplicateNote[pid.id]
+            if (dupNote != null) {
+                tvNote.visibility = View.VISIBLE
+                tvNote.text = "⚠ 重复：$dupNote —— 可用上方「清理重复」一键删掉"
+            } else if (unsupported) {
                 tvNote.visibility = View.VISIBLE
                 tvNote.text = "本车不支持，已退出轮询 —— 长按重新启用"
             } else if (pid.note.isBlank()) {

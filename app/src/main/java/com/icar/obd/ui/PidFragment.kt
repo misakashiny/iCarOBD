@@ -15,6 +15,7 @@ import com.google.android.material.button.MaterialButton
 import com.icar.obd.R
 import com.icar.obd.data.AppLog
 import com.icar.obd.data.Backup
+import com.icar.obd.data.PidDedup
 import com.icar.obd.data.Store
 import com.icar.obd.obd.ObdController
 import com.icar.obd.ui.adapter.PidAdapter
@@ -86,6 +87,8 @@ class PidFragment : Fragment() {
         view.findViewById<MaterialButton>(R.id.btnProbeLog).setOnClickListener {
             startActivity(Intent(requireContext(), ProbeLogActivity::class.java))
         }
+        // 清理重复（v1.20.12）—— 按钮默认 GONE，refresh() 里按实际情况显形
+        view.findViewById<MaterialButton>(R.id.btnDedup).setOnClickListener { showDedupDialog() }
     }
 
     override fun onResume() {
@@ -94,7 +97,44 @@ class PidFragment : Fragment() {
     }
 
     private fun refresh() {
-        adapter.submit(Store.allPids())
+        val all = Store.allPids()
+        // 重复清单：**只算一次**，按钮文案 / 行内标注 / 对话框共用（三处各算一次迟早会分叉）
+        val gaugeIds = Store.customGauges.map { it.pidId }
+        val ruleIds = Store.rules.flatMap { r -> r.conditions.map { it.sourceId } }
+        duplicates = PidDedup.removable(PidDedup.findDuplicates(all), gaugeIds, ruleIds)
+        adapter.submit(all, duplicates.associate { it.pid.id to it.reason })
+        val btn = view?.findViewById<MaterialButton>(R.id.btnDedup) ?: return
+        btn.visibility = if (duplicates.isEmpty()) View.GONE else View.VISIBLE
+        btn.text = "清理 ${duplicates.size} 条重复"
+    }
+
+    /** 上一次 [refresh] 算出来的可清理重复条目 */
+    private var duplicates: List<PidDedup.Duplicate> = emptyList()
+
+    /**
+     * 清理重复（v1.20.12）。
+     *
+     * **先把清单和理由摆出来再删** —— 本项目最忌"静默改用户数据"。
+     * 而且清单里**只会出现"重复且没有任何仪表/规则引用"的条目**
+     * （安全闸见 `Store.cleanupDuplicatePids` 的注释），所以删完
+     * 不可能出现空仪表或失效规则。
+     */
+    private fun showDedupDialog() {
+        if (duplicates.isEmpty()) {
+            ObdController.toast("没有发现重复的 PID")
+            return
+        }
+        AlertDialog.Builder(requireContext())
+            .setTitle("清理 ${duplicates.size} 条重复 PID")
+            .setMessage(PidDedup.confirmMessage(duplicates))
+            .setPositiveButton("删除这 ${duplicates.size} 条") { _, _ ->
+                val removed = Store.cleanupDuplicatePids()
+                ObdController.reloadPids()
+                ObdController.toast("已清理 ${removed.size} 条重复 PID")
+                refresh()
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     // ------------------------------------------------------------ 导出
