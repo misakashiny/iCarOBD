@@ -2,11 +2,15 @@ package com.icar.obd.ui.dash
 
 import android.content.Intent
 import android.os.Bundle
+import android.text.InputType
+import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.GridLayout
 import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
@@ -18,12 +22,14 @@ import com.icar.obd.R
 import com.icar.obd.data.AppLog
 import com.icar.obd.data.DashCanvas
 import com.icar.obd.data.GestureActions
+import com.icar.obd.data.IslandStyle
 import com.icar.obd.data.Store
 import com.icar.obd.obd.ObdController
 import com.icar.obd.ui.DashFragment
 import com.icar.obd.ui.ThemeEditorActivity
 import com.icar.obd.ui.view.DashboardBackground
 import com.icar.obd.ui.view.GaugeTheme
+import com.icar.obd.ui.view.IslandCapsuleView
 
 /**
  * **画布设置页**（ViewPager2 的最后一页，滑到最右）。
@@ -60,6 +66,8 @@ class CanvasSettingsFragment : Fragment() {
     private lateinit var tvGestureSummary: TextView
     private lateinit var swSound: MaterialSwitch
     private lateinit var btnNameLabel: MaterialButton
+    private lateinit var btnIsland: MaterialButton
+    private lateinit var tvIslandSummary: TextView
     private lateinit var tvLastImport: TextView
 
     /**
@@ -285,6 +293,8 @@ class CanvasSettingsFragment : Fragment() {
         tvGestureSummary = view.findViewById(R.id.tvGestureSummary)
         swSound = view.findViewById(R.id.swSound)
         btnNameLabel = view.findViewById(R.id.btnNameLabel)
+        btnIsland = view.findViewById(R.id.btnIsland)
+        tvIslandSummary = view.findViewById(R.id.tvIslandSummary)
         tvLastImport = view.findViewById(R.id.tvLastImport)
 
         btnAdd.setOnClickListener { showAddDialog() }
@@ -309,6 +319,7 @@ class CanvasSettingsFragment : Fragment() {
         btnPoll.setOnClickListener { showPollDialog() }
         btnGestures.setOnClickListener { showGestureDialog() }
         btnNameLabel.setOnClickListener { showNamePosDialog() }
+        btnIsland.setOnClickListener { showIslandDialog() }
         swSound.setOnCheckedChangeListener { _, checked ->
             // 程序化回填（见 [binding]）**不是用户操作**，不许产生任何副作用 ——
             // v1.20.9 之前这里没有这道闸，于是"在别处改过音效后滑到设置页"
@@ -408,6 +419,8 @@ class CanvasSettingsFragment : Fragment() {
         // 手势那一行：按钮只写"手势"，映射写在下面一行小字里 ——
         // 4 个方向全塞进按钮文字会很长，而这一页的按钮都是等宽的
         tvGestureSummary.text = Store.settings.gestureSummary()
+        // 灵动岛那一行：按钮只写"灵动岛"，五组取值写在下面一行小字里（同上）
+        tvIslandSummary.text = Store.settings.islandSummary()
         if (swSound.isChecked != Store.settings.soundEnabled) {
             swSound.isChecked = Store.settings.soundEnabled
         }
@@ -1278,5 +1291,282 @@ class CanvasSettingsFragment : Fragment() {
             }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    // ---------------------------------------------------------------- 灵动岛样式（v1.20.13）
+
+    /**
+     * **灵动岛样式**（v1.20.13）—— 用户原话：「灵动岛的通知我希望可以自定义样式」。
+     *
+     * ## 为什么是"五组有限选项 + 实时预览"，不是自由样式编辑器
+     *
+     * 判据在 [IslandStyle] 的类注释里（自由坐标能把它拖到画布正中间 ——
+     * 那正是 v1.20.12 花一整版修掉的病）。这里补一条界面侧的理由：
+     * **五组取值的组合效果光看文字想不出来**（"靠右 + 大 + 琥珀底"到底什么样？），
+     * 而用户是拿它和画布的关系做决定的 —— 所以对话框里必须有预览。
+     *
+     * ## 预览为什么不可能"和真弹出来的不一样"
+     *
+     * 预览用的是**同一个** `IslandCapsuleView` + **同一个** `IslandStyle.spec`，
+     * 连对齐规则（`Gravity.START/CENTER/END`）都是照抄 `IslandNotice.layoutParams` 的。
+     * 红线 4.5「样式→View 映射只能一处」就是为了防这类分叉。
+     *
+     * ## 与「手势」那一行同一条写法
+     *
+     * 选项**先设好再挂监听**（程序化 `setSelection` 也会触发 `onItemSelected`）；
+     * 「取消」**什么都不写** —— 编辑中的取值放在局部变量里，确定时才落盘。
+     */
+    private fun showIslandDialog() {
+        val ctx = requireContext()
+        val density = ctx.resources.displayMetrics.density
+        val pad = (density * 20).toInt()
+
+        val root = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, pad / 2)
+        }
+        root.addView(TextView(ctx).apply {
+            text = "规则提示的悬浮胶囊（灵动岛）。默认值就是现在的样子。\n" +
+                "位置只改水平对齐 —— 纵向永远让开「监听警示条」那一行。\n" +
+                "胶囊不占布局、也不抢触摸（从它上面横滑照常翻页）。"
+            textSize = 12f
+            setTextColor(androidx.core.content.ContextCompat.getColor(ctx, R.color.text_secondary))
+        })
+
+        // ---- 实时预览（放在选项上面：先看效果，再调参数）----
+        val preview = FrameLayout(ctx).apply {
+            setBackgroundColor(0x33FFFFFF)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, (density * 78).toInt()
+            ).apply { topMargin = (density * 10).toInt() }
+        }
+        val pvCapsule = IslandCapsuleView(ctx)
+        preview.addView(
+            pvCapsule,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            ).apply { topMargin = (density * 10).toInt() }
+        )
+        root.addView(preview)
+
+        // 编辑中的自定义颜色。放在局部变量里（闭包捕获）——
+        // 「取消」必须一个字节都不写（本项目最忌静默改用户数据）
+        var bg = Store.settings.islandBgColor
+        var fg = Store.settings.islandFgColor
+
+        /** 加一行「标签 + Spinner」，返回 Spinner（与手势对话框同一个写法） */
+        fun addChoice(label: String, names: List<String>, selected: Int): Spinner {
+            root.addView(TextView(ctx).apply {
+                text = label
+                textSize = 12f
+                setPadding(0, (density * 12).toInt(), 0, 0)
+            })
+            val sp = Spinner(ctx).apply {
+                adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_dropdown_item, names)
+                setSelection(selected.coerceIn(0, (names.size - 1).coerceAtLeast(0)))
+            }
+            root.addView(sp)
+            return sp
+        }
+
+        val spPos = addChoice(
+            "位置", IslandStyle.POS_NAMES, IslandStyle.normalizePos(Store.settings.islandPos)
+        )
+        val spSize = addChoice(
+            "尺寸（字号 + 内边距）", IslandStyle.SIZE_NAMES, IslandStyle.normalizeSize(Store.settings.islandSize)
+        )
+        val spCorner = addChoice(
+            "圆角", IslandStyle.CORNER_NAMES, IslandStyle.normalizeCorner(Store.settings.islandCorner)
+        )
+        val spHold = addChoice(
+            "停留时长", IslandStyle.HOLD_NAMES, IslandStyle.holdIndex(Store.settings.islandHoldMs)
+        )
+        val spColor = addChoice(
+            "配色（默认：跟随主题）", IslandStyle.COLOR_MODE_NAMES,
+            IslandStyle.normalizeColorMode(Store.settings.islandColorMode)
+        )
+
+        val btnBg = MaterialButton(ctx).apply {
+            textSize = 13f
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, (density * 44).toInt()
+            ).apply { topMargin = (density * 10).toInt() }
+        }
+        val btnFg = MaterialButton(ctx).apply {
+            textSize = 13f
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, (density * 44).toInt()
+            ).apply { topMargin = (density * 6).toInt() }
+        }
+        root.addView(btnBg)
+        root.addView(btnFg)
+
+        /** 当前选项解析成 Spec —— 与真弹提示时走的**是同一个函数** */
+        fun specOf(): IslandStyle.Spec = IslandStyle.spec(
+            pos = spPos.selectedItemPosition,
+            size = spSize.selectedItemPosition,
+            corner = spCorner.selectedItemPosition,
+            holdMs = IslandStyle.HOLD_CHOICES_MS[
+                spHold.selectedItemPosition.coerceIn(0, IslandStyle.HOLD_CHOICES_MS.lastIndex)
+            ],
+            colorMode = spColor.selectedItemPosition,
+            bg = bg,
+            fg = fg,
+        )
+
+        fun applyPreview() {
+            val s = specOf()
+            pvCapsule.applySpec(s)
+            // 带一个 `+N`：把"还有别的告警"这件事也一起预览出来
+            // （自定义配色下 `+N` 跟文字色走，这一点光看代码看不出来）
+            pvCapsule.setContent("冷却液温度过高", 2)
+            val lp = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                when (s.pos) {
+                    IslandStyle.POS_START -> Gravity.TOP or Gravity.START
+                    IslandStyle.POS_END -> Gravity.TOP or Gravity.END
+                    else -> Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                }
+            )
+            lp.topMargin = (density * 10).toInt()
+            when (s.pos) {
+                IslandStyle.POS_START -> lp.marginStart = (density * 10).toInt()
+                IslandStyle.POS_END -> lp.marginEnd = (density * 10).toInt()
+            }
+            pvCapsule.layoutParams = lp
+
+            // 自定义色只在「自定义」档下有意义 —— 置灰比让它点了没反应好
+            val custom = spColor.selectedItemPosition == IslandStyle.COLOR_CUSTOM
+            btnBg.isEnabled = custom
+            btnFg.isEnabled = custom
+            btnBg.text = "背景色：${IslandStyle.hexOf(bg)}" + if (custom) "" else "（跟随主题）"
+            btnFg.text = "文字色：${IslandStyle.hexOf(fg)}" + if (custom) "" else "（跟随主题）"
+        }
+
+        btnBg.setOnClickListener {
+            pickIslandColor(
+                "背景色", bg, IslandStyle.BG_PRESETS, IslandStyle.BG_PRESET_NAMES
+            ) { bg = it; applyPreview() }
+        }
+        btnFg.setOnClickListener {
+            pickIslandColor(
+                "文字色", fg, IslandStyle.FG_PRESETS, IslandStyle.FG_PRESET_NAMES
+            ) { fg = it; applyPreview() }
+        }
+
+        val onSel = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) =
+                applyPreview()
+
+            override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
+        }
+        listOf(spPos, spSize, spCorner, spHold, spColor).forEach { it.onItemSelectedListener = onSel }
+
+        applyPreview()
+
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle("灵动岛样式（全局）")
+            .setView(android.widget.ScrollView(ctx).apply { addView(root) })
+            .setPositiveButton("确定") { _, _ ->
+                Store.settings.islandPos = IslandStyle.normalizePos(spPos.selectedItemPosition)
+                Store.settings.islandSize = IslandStyle.normalizeSize(spSize.selectedItemPosition)
+                Store.settings.islandCorner = IslandStyle.normalizeCorner(spCorner.selectedItemPosition)
+                Store.settings.islandHoldMs = IslandStyle.HOLD_CHOICES_MS[
+                    spHold.selectedItemPosition.coerceIn(0, IslandStyle.HOLD_CHOICES_MS.lastIndex)
+                ]
+                Store.settings.islandColorMode =
+                    IslandStyle.normalizeColorMode(spColor.selectedItemPosition)
+                Store.settings.islandBgColor = IslandStyle.normalizeColor(bg, IslandStyle.THEME_BG)
+                Store.settings.islandFgColor = IslandStyle.normalizeColor(fg, IslandStyle.THEME_FG)
+                Store.saveSettings()
+                refresh()
+                AppLog.i(AppLog.M_UI, "灵动岛样式设置", Store.settings.islandSummary())
+                ObdController.toast(Store.settings.islandSummary())
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /**
+     * 取色：**有界调色板 + 手打色值**（与 `ThemeEditorActivity.pickColor` 同一套交互）。
+     *
+     * 为什么不只给色板：色板覆盖不了"车机主题色"这种具体诉求，而用户手里往往
+     * 已经有一个色值（从主题工具里抄来的）。为什么不只给输入框：
+     * 车上打字很痛苦，色板点一下就完事。
+     *
+     * ⚠️ 色值解析走 [IslandStyle.parseHex]（纯函数，有单测）——
+     * 这里**不再写第二份**解析（两份迟早分叉）。
+     */
+    private fun pickIslandColor(
+        label: String,
+        current: Int,
+        presets: IntArray,
+        names: List<String>,
+        onPick: (Int) -> Unit,
+    ) {
+        val ctx = requireContext()
+        val density = ctx.resources.displayMetrics.density
+        val pad = (density * 12).toInt()
+
+        val root = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad, pad, 0)
+        }
+        val hex = EditText(ctx).apply {
+            hint = "#RRGGBB"
+            inputType = InputType.TYPE_CLASS_TEXT
+            setText(IslandStyle.hexOf(current))
+            setPadding(pad, pad, pad, pad)
+        }
+        root.addView(hex)
+
+        val grid = GridLayout(ctx).apply { columnCount = 4 }
+        names.forEachIndexed { i, n ->
+            val color = presets[i]
+            grid.addView(TextView(ctx).apply {
+                text = n
+                textSize = 11f
+                gravity = Gravity.CENTER
+                setBackgroundColor(color)
+                // 浅底色上用黑字、深底色上用白字 —— 否则"白"这个色块上的白字看不见
+                val r = (color shr 16) and 0xFF
+                val g = (color shr 8) and 0xFF
+                val b = color and 0xFF
+                setTextColor(if (0.299 * r + 0.587 * g + 0.114 * b > 140) 0xFF000000.toInt() else 0xFFFFFFFF.toInt())
+                layoutParams = GridLayout.LayoutParams().apply {
+                    width = 0
+                    height = (density * 40).toInt()
+                    columnSpec = GridLayout.spec(i % 4, 1f)
+                    rowSpec = GridLayout.spec(i / 4)
+                    setMargins((density * 3).toInt(), (density * 3).toInt(), (density * 3).toInt(), (density * 3).toInt())
+                }
+                setOnClickListener { hex.setText(IslandStyle.hexOf(color)) }
+            })
+        }
+        root.addView(grid)
+
+        // ⚠️ 用 `setPositiveButton(null)` + 自己接管点击：默认写法**一定会 dismiss**，
+        // 于是"色值打错了"会连对话框一起关掉，用户得重开一次
+        val dlg = MaterialAlertDialogBuilder(ctx)
+            .setTitle("选择颜色 · $label")
+            .setView(root)
+            .setPositiveButton("确定", null)
+            .setNegativeButton("取消", null)
+            .create()
+        dlg.setOnShowListener {
+            dlg.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
+                val parsed = IslandStyle.parseHex(hex.text.toString())
+                if (parsed == null) {
+                    ObdController.toast("颜色格式应为 #RRGGBB 或 #AARRGGBB")
+                    return@setOnClickListener
+                }
+                onPick(parsed)
+                dlg.dismiss()
+            }
+        }
+        dlg.show()
     }
 }

@@ -255,6 +255,31 @@
                 android:insetBottom="0dp"
                 android:text="画布名浮标"
                 android:textSize="13sp" />
+
+            <!--
+                灵动岛样式（v1.20.13）：用户要求「灵动岛的通知我希望可以自定义样式」。
+
+                与「手势」那一行同一个写法：按钮只写功能名，当前样式写在下面一行小字里 ——
+                五组取值全塞进按钮文字会很长，而这一页的按钮都是等宽的。
+            -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnIsland"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:layout_marginTop="6dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:text="灵动岛"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tvIslandSummary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="@color/text_dim"
+                android:textSize="11sp" />
         </LinearLayout>
 
         <TextView

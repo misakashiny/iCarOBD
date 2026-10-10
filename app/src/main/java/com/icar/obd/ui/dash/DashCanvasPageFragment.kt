@@ -21,6 +21,7 @@ import com.icar.obd.data.DashCanvas
 import com.icar.obd.data.DashLayout
 import com.icar.obd.data.GaugeItem
 import com.icar.obd.data.PidDefinition
+import com.icar.obd.data.PidMerge
 import com.icar.obd.data.Store
 import com.icar.obd.obd.ObdController
 import com.icar.obd.ui.DashFragment
@@ -613,7 +614,12 @@ class DashCanvasPageFragment : Fragment() {
 
     private fun showEditDialog(index: Int) {
         val existing: GaugeItem? = if (index >= 0) editor.itemAt(index) else null
-        val pids: List<PidDefinition> = Store.allPids()
+        // ⚠️ 列表里把"已合并的同义条目"收起来（v1.20.13，见 data/PidMerge.kt），
+        // 但**这块表当前绑的 id 必须保留**：下面 `indexOfFirst` 找不到时 spinner 会停在
+        // 0 号（发动机转速），点一下「确定」就把老仪表**静默改成转速表**了。
+        val pids: List<PidDefinition> = PidMerge.filterForList(
+            Store.allPids(), setOfNotNull(existing?.pidId)
+        )
         if (pids.isEmpty()) {
             ObdController.toast("没有可用通道，请先添加 PID")
             return

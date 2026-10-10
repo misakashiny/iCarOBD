@@ -142,6 +142,8 @@ View
 | `TextView` | `tvGestureSummary` | 手势当前映射的一句话总结（`当前：右滑呼出导航 · 其余无`） |
 | `MaterialSwitch` | `swSound` | 音效（全局，改完当次生效） |
 | `MaterialButton` | `btnNameLabel` | **画布名浮标位置**（左上/右上/左下/右下/隐藏，全局） |
+| `MaterialButton` | `btnIsland` | **灵动岛样式**（v1.20.13，全局）：位置 3 / 尺寸 3 / 圆角 3 / 停留 3 / 配色 2（自定义 = 8 色背景板 + 4 色文字板 + 手打 `#RRGGBB`）。对话框里有**实时预览**（用与真弹胶囊**同一个** `IslandCapsuleView` + `IslandStyle.spec`） |
+| `TextView` | `tvIslandSummary` | 灵动岛当前样式的一句话总结（`当前：顶部居中 · 中 · 圆角大（胶囊） · 4 秒 · 跟随主题`）。**默认值 = v1.20.12 的样子** |
 | `item_canvas.xml` | `tvName` / `tvSub` / `btnRowMenu` | 每行：名字（`●` = 当前）/ 副标题 / 「操作」菜单（改名·上移·下移·前往·删除） |
 
 ### fragment_connect.xml —— 连接页
@@ -414,8 +416,9 @@ View
 | **单指点击导航栏** | `NavigationBarView` | 切页 | 否 | 双击判据里排除了导航栏区域 |
 | **单指长按「仪表盘」** | `NavigationBarView` 子项 | 全屏开关 | 否 | —— |
 | **系统边缘手势**（单指） | 系统 | 返回 / 回桌面 | 否 | ⚠️ v1.20.3 那条"左边缘把手"就撞在这里，**已整个停用** |
+| **灵动岛胶囊**（浮层） | 不消费任何触摸 | 规则提示（v1.20.12） | 样式可配（v1.20.13，设置页「灵动岛」） | **不抢**：`IslandCapsuleView` 构造里 `isClickable=false` / `isFocusable=false`，**子 `TextView` 也一样**。实测（v1.20.13，平板横屏）**从胶囊正上方起手横滑照常翻页**（居中 / 靠左 / 靠右三档各验） |
 
-**四条不许破的约定**：
+**五条不许破的约定**：
 
 1. **双指与双击一律"旁听、不消费"** —— 都在 `MainActivity.dispatchTouchEvent` 里判，
    最后照旧 `return super.dispatchTouchEvent(ev)`。改成消费（返回 true）会把单指手势一起吃掉，
@@ -427,6 +430,12 @@ View
    那边要是也执行一遍，迟早出现"设置页显示的映射"与"真的执行的动作"不一致。
 4. **双击兜底不可配置、不可关** —— 它是"卡在仪表盘页出不去"的保险
    （双指手势没法用 adb 验，只能靠用户的手指）。
+5. **任何浮层都不许抢触摸、也不许改布局**（v1.20.13 把这条写下来，因为它现在有两个使用者：
+   `MonitorWarnBar` 与灵动岛胶囊）。挂 `android.R.id.content`、`WRAP_CONTENT`、
+   `isClickable=false`（**子 View 也要设**）。改成可点会吃掉从它上面起手的横滑；
+   改成在 `activity_main.xml` 里加一行会让 `pageContainer` 变矮 → 画布尺寸变化 →
+   表盘重排（v1.20.4 的教训，也是 v1.20.12 那个"画布全消失"的触发条件）。
+   ⚠️ 灵动岛的**位置档位只能改水平对齐**：给它纵向自由度 = 用户能把胶囊拖到画布正中间。
 
 **"切画布"要判当前页**：只在仪表盘页有意义。在 PID / 日志页上切会改配置却看不到变化 ——
 所以 `runGesture` 先判 `currentTag() == "dash"`，不满足就弹一句明说。

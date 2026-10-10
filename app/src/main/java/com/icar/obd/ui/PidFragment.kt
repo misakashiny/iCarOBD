@@ -16,6 +16,7 @@ import com.icar.obd.R
 import com.icar.obd.data.AppLog
 import com.icar.obd.data.Backup
 import com.icar.obd.data.PidDedup
+import com.icar.obd.data.PidMerge
 import com.icar.obd.data.Store
 import com.icar.obd.obd.ObdController
 import com.icar.obd.ui.adapter.PidAdapter
@@ -102,10 +103,27 @@ class PidFragment : Fragment() {
         val gaugeIds = Store.customGauges.map { it.pidId }
         val ruleIds = Store.rules.flatMap { r -> r.conditions.map { it.sourceId } }
         duplicates = PidDedup.removable(PidDedup.findDuplicates(all), gaugeIds, ruleIds)
-        adapter.submit(all, duplicates.associate { it.pid.id to it.reason })
+        // ⚠️ 显示用列表 = 去掉"已合并"的同义条目（v1.20.13，见 data/PidMerge.kt）。
+        // 判定与去重**都基于完整的 `all`** —— 过滤只发生在"拿去给 RecyclerView"这一步，
+        // 于是轮询 / 派生 / 老配置引用一个都不受影响（有单测钉着）。
+        adapter.submit(
+            PidMerge.filterForList(all),
+            duplicates.associate { it.pid.id to it.reason },
+            mergeNotes
+        )
         val btn = view?.findViewById<MaterialButton>(R.id.btnDedup) ?: return
         btn.visibility = if (duplicates.isEmpty()) View.GONE else View.VISIBLE
         btn.text = "清理 ${duplicates.size} 条重复"
+    }
+
+    /**
+     * 「已合并」条目的说明（v1.20.13）。
+     *
+     * 与 `duplicates` 同一个考虑：**只算一次**，交给适配器去显示 ——
+     * 适配器自己不做判定（判定要能被 JVM 单测覆盖，放 View 层就测不到了）。
+     */
+    private val mergeNotes: Map<String, String> by lazy {
+        mapOf(PidMerge.KEEP_ID to PidMerge.mergeNote())
     }
 
     /** 上一次 [refresh] 算出来的可清理重复条目 */

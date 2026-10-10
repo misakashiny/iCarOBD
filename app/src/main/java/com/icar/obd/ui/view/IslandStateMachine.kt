@@ -25,8 +25,15 @@ package com.icar.obd.ui.view
  * 当前信息永远是最新的，同时不丢"还有别的"这个事实。
  */
 internal class IslandStateMachine(
-    /** 一条提示展开停留多久 */
-    private val holdMs: Long = HOLD_MS,
+    /**
+     * 一条提示展开停留多久。
+     *
+     * v1.20.13 起是 `var` —— 停留时长进了设置（2 / 4 / 6 秒，见
+     * `data/IslandStyle.HOLD_CHOICES_MS`），而设置可以在**运行中**改。
+     * 调用方（`IslandNotice.show`）每次弹提示前按当前设置赋一次值即可，
+     * 不需要为了改时长重建状态机（重建会把"还在显示的那条"一起丢掉）。
+     */
+    var holdMs: Long = HOLD_MS,
 ) {
 
     /** 一次"当前该显示成什么样"的快照。UI 只认它，不自己维护状态 */

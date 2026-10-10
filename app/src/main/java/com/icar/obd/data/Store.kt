@@ -195,6 +195,30 @@ object Store {
         var gestureUp: String = GestureActions.DEFAULTS[GestureActions.SLOT_UP],
         var gestureDown: String = GestureActions.DEFAULTS[GestureActions.SLOT_DOWN],
 
+        // ---------- 灵动岛样式（v1.20.13）----------
+
+        /**
+         * 灵动岛提示的五组样式，取值与默认值全在 [IslandStyle] 里。
+         *
+         * **旧配置里没有这七个键** —— [Store.applySettingsJson] 逐个过
+         * [IslandStyle] 的归一化函数兜默认值，而默认值**就是 v1.20.12 的样子**，
+         * 所以升级后观感逐像素不变（这一条有单测钉着：`IslandStyleTest`）。
+         *
+         * 为什么不存成一个 JSON 子对象：七个键各自独立，缺哪个兜哪个；
+         * 子对象缺一项就整份作废（与手势那四个键同一条理由）。
+         */
+        var islandPos: Int = IslandStyle.POS_DEFAULT,
+        var islandSize: Int = IslandStyle.SIZE_DEFAULT,
+        var islandCorner: Int = IslandStyle.CORNER_DEFAULT,
+        /** 停留时长（毫秒）。取值必须是 [IslandStyle.HOLD_CHOICES_MS] 里的一项 */
+        var islandHoldMs: Int = IslandStyle.HOLD_DEFAULT_MS,
+        /** [IslandStyle.COLOR_THEME] 或 [IslandStyle.COLOR_CUSTOM] */
+        var islandColorMode: Int = IslandStyle.COLOR_MODE_DEFAULT,
+        /** 自定义底色（仅在 [islandColorMode] == [IslandStyle.COLOR_CUSTOM] 时有意义） */
+        var islandBgColor: Int = IslandStyle.THEME_BG,
+        /** 自定义文字色（同上） */
+        var islandFgColor: Int = IslandStyle.THEME_FG,
+
         // ---------- 最近一次导入设计文件（v1.20.6）----------
 
         /**
@@ -255,6 +279,27 @@ object Store {
         /** 设置页那一行「当前：…」；格式化只有一处（[GestureActions.summary]，纯函数有单测） */
         fun gestureSummary(): String =
             GestureActions.summary(listOf(gestureLeft, gestureRight, gestureUp, gestureDown))
+
+        /**
+         * 灵动岛的**已解析样式**（v1.20.13）。
+         *
+         * ⚠️ 显示层**只能**从这里拿样式，不许自己去读那七个原始字段 ——
+         * 归一化（手改坏的 JSON / 全透明色）只在 [IslandStyle.spec] 一处发生。
+         */
+        fun islandStyle(): IslandStyle.Spec = IslandStyle.spec(
+            pos = islandPos,
+            size = islandSize,
+            corner = islandCorner,
+            holdMs = islandHoldMs,
+            colorMode = islandColorMode,
+            bg = islandBgColor,
+            fg = islandFgColor,
+        )
+
+        /** 设置页那一行小字；格式化只有一处（[IslandStyle.summary]，纯函数有单测） */
+        fun islandSummary(): String = IslandStyle.summary(
+            islandPos, islandSize, islandCorner, islandHoldMs, islandColorMode
+        )
 
         private fun rawGesture(slot: Int): String = when (slot) {
             GestureActions.SLOT_LEFT -> gestureLeft
@@ -423,6 +468,28 @@ object Store {
             gestureDown = GestureActions.normalize(
                 GestureActions.SLOT_DOWN, o.optString("gestureDown", "")
             ),
+            // 灵动岛样式（v1.20.13）。旧配置**没有这七个键** → 逐个过 IslandStyle 的
+            // 归一化函数，而它们的默认值就是 v1.20.12 写死的样子 —— 所以升级后
+            // 提示的位置/大小/配色/停留/圆角**一处都不变**（有单测钉着）。
+            // ⚠️ 兜底值必须写 `IslandStyle.*_DEFAULT`，**不能**写字面量 ——
+            // 两处各写一份的话，以后改默认值必然漏掉一处。
+            islandPos = IslandStyle.normalizePos(o.optInt("islandPos", IslandStyle.POS_DEFAULT)),
+            islandSize = IslandStyle.normalizeSize(o.optInt("islandSize", IslandStyle.SIZE_DEFAULT)),
+            islandCorner = IslandStyle.normalizeCorner(
+                o.optInt("islandCorner", IslandStyle.CORNER_DEFAULT)
+            ),
+            islandHoldMs = IslandStyle.normalizeHoldMs(
+                o.optInt("islandHold", IslandStyle.HOLD_DEFAULT_MS)
+            ),
+            islandColorMode = IslandStyle.normalizeColorMode(
+                o.optInt("islandColorMode", IslandStyle.COLOR_MODE_DEFAULT)
+            ),
+            islandBgColor = IslandStyle.normalizeColor(
+                o.optInt("islandBg", IslandStyle.THEME_BG), IslandStyle.THEME_BG
+            ),
+            islandFgColor = IslandStyle.normalizeColor(
+                o.optInt("islandFg", IslandStyle.THEME_FG), IslandStyle.THEME_FG
+            ),
             // 最近一次导入（v1.20.6）。旧配置没有这三个键 → 空记录，
             // 设置页显示"还没导入过"（**不要**兜一个假时间，那比空更糟）
             lastImportName = o.optString("lastImportName", ""),
@@ -544,6 +611,15 @@ object Store {
         put("gestureRight", settings.gestureAt(GestureActions.SLOT_RIGHT))
         put("gestureUp", settings.gestureAt(GestureActions.SLOT_UP))
         put("gestureDown", settings.gestureAt(GestureActions.SLOT_DOWN))
+        // 灵动岛样式（v1.20.13）：写出去的是**归一化后**的值
+        // （读回来的可能是手改坏的串/越界档位，见 Settings.islandStyle）
+        put("islandPos", IslandStyle.normalizePos(settings.islandPos))
+        put("islandSize", IslandStyle.normalizeSize(settings.islandSize))
+        put("islandCorner", IslandStyle.normalizeCorner(settings.islandCorner))
+        put("islandHold", IslandStyle.normalizeHoldMs(settings.islandHoldMs))
+        put("islandColorMode", IslandStyle.normalizeColorMode(settings.islandColorMode))
+        put("islandBg", IslandStyle.normalizeColor(settings.islandBgColor, IslandStyle.THEME_BG))
+        put("islandFg", IslandStyle.normalizeColor(settings.islandFgColor, IslandStyle.THEME_FG))
         // 最近一次导入的设计文件（v1.20.6）—— 设置页那条"一眼可见"的记录
         put("lastImportName", settings.lastImportName)
         put("lastImportGauges", settings.lastImportGauges)

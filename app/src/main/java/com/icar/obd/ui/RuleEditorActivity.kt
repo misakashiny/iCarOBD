@@ -16,6 +16,7 @@ import com.icar.obd.R
 import com.icar.obd.data.AppLog
 import com.icar.obd.data.CompareOp
 import com.icar.obd.data.PidDefinition
+import com.icar.obd.data.PidMerge
 import com.icar.obd.data.Rule
 import com.icar.obd.data.RuleAction
 import com.icar.obd.data.RuleCondition
@@ -90,6 +91,14 @@ class RuleEditorActivity : AppCompatActivity() {
 
         val id = intent.getStringExtra(EXTRA_ID)
         val rule = id?.let { rid -> Store.rules.firstOrNull { it.id == rid } }
+
+        // ⚠️ 列表里把"已合并的同义条目"收起来（v1.20.13，见 data/PidMerge.kt），
+        // 但**这条规则当前绑的 id 必须保留** —— `addConditionRow` 的
+        // `indexOfFirst` 找不到时 spinner 停在 0 号（发动机转速），保存时
+        // 会把条件**静默改成转速**（老规则变样，用户不会想到是列表过滤干的）。
+        pidList = PidMerge.filterForList(
+            pidList, rule?.conditions?.map { it.sourceId } ?: emptyList()
+        )
 
         if (rule != null) {
             editing = rule

@@ -52,9 +52,22 @@ class PidAdapter(
      */
     private var duplicateNote: Map<String, String> = emptyMap()
 
-    fun submit(list: List<PidDefinition>, duplicates: Map<String, String> = emptyMap()) {
+    /**
+     * 「已合并」条目的说明：id → 文案（v1.20.13）。
+     *
+     * 由 `PidFragment` 用 `data/PidMerge.kt` 算好传进来 —— 与 [duplicateNote] 同一条约定：
+     * 判定与文案都在 `data/`（能单测），适配器只负责**显示**。
+     */
+    private var mergeNote: Map<String, String> = emptyMap()
+
+    fun submit(
+        list: List<PidDefinition>,
+        duplicates: Map<String, String> = emptyMap(),
+        merged: Map<String, String> = emptyMap(),
+    ) {
         source = list
         duplicateNote = duplicates
+        mergeNote = merged
         rebuild()
     }
 
@@ -134,9 +147,16 @@ class PidAdapter(
             // ---- v1.20.12：重复条目标出来（用户要求「检查 PID 页面、将重复多余的清除掉」）----
             // 优先显示"重复"，因为它比"本车不支持"更需要用户动手（后者已经自动退出轮询了）
             val dupNote = duplicateNote[pid.id]
+            // ---- v1.20.13：已合并的同义条目，说明另一条去哪了 ----
+            // 优先级排在"重复"之后、"本车不支持"之前 —— 它是一句**解释**
+            // （"为什么列表里少了一条"），比"本车不支持"更需要先看到。
+            val merged = mergeNote[pid.id]
             if (dupNote != null) {
                 tvNote.visibility = View.VISIBLE
                 tvNote.text = "⚠ 重复：$dupNote —— 可用上方「清理重复」一键删掉"
+            } else if (merged != null) {
+                tvNote.visibility = View.VISIBLE
+                tvNote.text = merged
             } else if (unsupported) {
                 tvNote.visibility = View.VISIBLE
                 tvNote.text = "本车不支持，已退出轮询 —— 长按重新启用"
