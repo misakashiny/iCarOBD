@@ -19,6 +19,8 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import com.icar.obd.data.AppLog
+import com.icar.obd.data.TreeWalkBudget
 import com.icar.obd.data.UiInspectorInfo
 import com.icar.obd.data.UiInspectorInfo.InspectorSnapshot
 
@@ -66,11 +68,45 @@ import com.icar.obd.data.UiInspectorInfo.InspectorSnapshot
  * 本类**没有任何一行**去改被检视控件的属性（规格 §8）。它只读 + 画自己的浮层。
  * 仪表盘的自绘区（`BaseGaugeView` / `DashGridOverlayView`）**会明说**不是控件
  * —— 免得用户以为"点了表盘没反应 = 坏了"（规格 §8 最后一条）。
+ *
+ * ## v1.20.15：面板上加了「检视 开 / 暂停」开关（用户点名要的）
+ *
+ * 用户原话：「悬浮窗上面加个检视器的开关」。开关与 `×` 分工：
+ *
+ * | | 触摸 | 面板 | 怎么恢复 |
+ * |---|---|---|---|
+ * | **检视 开** | 被接管 | 在 | 点一下变「暂停」 |
+ * | **检视 暂停** | **放行（App 正常用）** | **还在** | 点一下变「开」 |
+ * | **`×`** | 放行 | **摘掉** | 只能回设置页重开 |
+ *
+ * ⚠️ 两条硬约束：
+ * - **暂停时面板本体不许抢触摸**（[UiInspectorInfo.panelStealsTouch]）——
+ *   只留开关与 `×` 两小块可点，否则会挡住画布横滑与编辑手势；
+ * - **开关自己的点击不能被"检视消费"吃掉** —— 命中判定（[isOnPanel]）**先排除浮层自己**，
+ *   宿主据此把这一次触摸交回 `super`，开关才收得到点击。
+ *
+ * ## v1.20.15：触摸路径上的加固（ANR 之后补的）
+ *
+ * 那一轮 ANR 的真根因在 [UiInspectorInfo.chainLine]（纯函数死循环），**不在这里**；
+ * 但"在触摸路径上做无界遍历"本身是雷，所以一并加固：
+ *
+ * 1. **遍历有界**：[hitTest] 走 [TreeWalkBudget]（深度上限 / 节点数上限 / 按身份去重断环）；
+ * 2. **便宜**：坐标查询复用同一个 `IntArray`，一次触摸不再按节点数分配数组；
+ * 3. **异常兜底**：[inspect] 返回 `false` = 解析失败，**宿主据此放行这一次触摸** ——
+ *    宁可漏检，不能卡死。
  */
 class UiInspectorOverlay(
     private val ctx: Context,
     /** 用户点了面板右上角的 `×` —— 由宿主负责落盘 + 收起（宿主是**唯一**的开关写者） */
     private val onRequestClose: () -> Unit = {},
+    /**
+     * 用户拨了面板上的「检视 开 / 暂停」开关（v1.20.15）。
+     *
+     * 传的是**目标状态**：`true` = 暂停（放行触摸），`false` = 恢复接管。
+     * 与 [onRequestClose] 一样，浮层**只上报意图**，状态由宿主写
+     * （[UiInspectorOverlay.paused] 是唯一权威）—— 免得两处各写一份状态。
+     */
+    private val onRequestPause: (Boolean) -> Unit = {},
 ) {
 
     private val main = Handler(Looper.getMainLooper())
@@ -82,6 +118,32 @@ class UiInspectorOverlay(
     private var tvType: TextView? = null
     private var tvId: TextView? = null
     private var tvBody: TextView? = null
+
+    /** 面板底部那行固定提示（v1.20.15：暂停时换文案） */
+    private var tvHint: TextView? = null
+
+    /** 面板上那个「检视 开 / 暂停」开关（v1.20.15） */
+    private var toggle: TextView? = null
+
+    /**
+     * 坐标查询的**复用**数组。
+     *
+     * `getLocationOnScreen` 只是往这个数组里写两个 int，用完即弃 ——
+     * 而一次触摸要查几十上百个节点，每个节点 new 一个 `IntArray(2)` 是纯浪费。
+     * 只在主线程用（触摸路径），所以复用是安全的。
+     */
+    private val locTmp = IntArray(2)
+
+    /** [rectOf] 要同时拿两个控件的位置，所以第二个复用数组 */
+    private val baseTmp = IntArray(2)
+
+    /**
+     * 上一次**已经画到面板上**的暂停态。
+     *
+     * 宿主那个 1 秒的 ticker 会反复调 [setPaused]，而重画面板要新建 `GradientDrawable`、
+     * 重设三段文案 —— 主线程上的纯浪费。`null` = 面板刚建好、什么都还没画。
+     */
+    private var appliedPaused: Boolean? = null
 
     /** 最近一次渲染出的行（长按复制用）。没检视过就是空 */
     private var lastLines: List<String> = emptyList()
@@ -97,12 +159,20 @@ class UiInspectorOverlay(
     /**
      * 挂上浮层。**幂等**，可以每次 `onResume` 与每秒的 ticker 各调一次
      * （与 `MonitorWarnBar.sync` / `IslandNotice.attach` 同一套写法）。
+     *
+     * ## ⚠️ v1.20.15：多一道"父容器还活着吗"的检查
+     *
+     * 原来只比 `host !== h`。但"宿主引用没变、浮层却被从父容器上摘掉了"是可能的
+     * （Activity 重建、`content` 换了一茬、别处 `removeView`）——
+     * 那时 `panel != null` 会让 `show()` 直接 `return`，
+     * **浮层就永远挂不回去了**（用户看到的是"开着检视却什么都没有"）。
+     * 现在多比一句 `panel?.parent !== h`：对不上就**先摘干净再重建**。
      */
     fun show(h: ViewGroup) {
-        if (host !== h) {
-            // 宿主变了（旋转重建 / 换 Activity）：旧浮层已经随着旧 content 一起没了
-            panel = null
-            highlight = null
+        if (host !== h || panel?.parent !== h) {
+            // 宿主变了（旋转重建 / 换 Activity），或浮层挂到了一个已经失效的父容器上
+            // —— 旧的引用一律作废（旧 content 已经没了，removeView 也是安全的）
+            hide()
             host = h
         }
         if (panel != null) return
@@ -129,6 +199,7 @@ class UiInspectorOverlay(
         p.post { placeDefault() }
 
         render("控件检视", "", listOf("点屏幕上任意控件查看它的信息"))
+        applyPausedToPanel()
     }
 
     /** 摘掉浮层（触摸立刻恢复正常）。幂等 */
@@ -141,6 +212,9 @@ class UiInspectorOverlay(
         tvType = null
         tvId = null
         tvBody = null
+        tvHint = null
+        toggle = null
+        appliedPaused = null
         lastLines = emptyList()
     }
 
@@ -150,7 +224,50 @@ class UiInspectorOverlay(
         panel = null
         highlight = null
         host = null
+        tvType = null
+        tvId = null
+        tvBody = null
+        tvHint = null
+        toggle = null
+        appliedPaused = null
         lastLines = emptyList()
+    }
+
+    /**
+     * **暂停 / 恢复**（v1.20.15）。由宿主在写完 [paused] 之后调。
+     *
+     * 做两件事：
+     * 1. 面板本体按 [UiInspectorInfo.panelStealsTouch] 决定抢不抢触摸
+     *    （暂停时连拖动监听一起摘掉，否则它会"旁听"并吃掉 MOVE）；
+     * 2. 开关文案 / 配色 / 底部提示换成对应状态 —— **用户必须一眼看出现在是哪个状态**。
+     */
+    fun setPaused(p: Boolean) {
+        applyPausedToPanel()
+    }
+
+    private fun applyPausedToPanel() {
+        val p = panel ?: return
+        // ⚠️ 幂等短路：宿主那个 1 秒的 ticker 会反复调 `setPaused`，
+        // 而这里要新建 `GradientDrawable`、重设文案 —— 状态没变就**一点都不做**。
+        if (appliedPaused == paused) return
+        appliedPaused = paused
+        val steals = UiInspectorInfo.panelStealsTouch(paused)
+        p.isClickable = steals
+        // 暂停时必须把拖动监听也摘掉：`isClickable=false` 只影响"自己要不要消费"，
+        // 而 OnTouchListener 一旦返回 true 就是消费 —— 留着它照样会挡住画布横滑。
+        p.setOnTouchListener(if (steals) dragListener else null)
+        p.background = panelBackground(paused)
+        toggle?.let { t ->
+            t.text = UiInspectorInfo.toggleLabel(paused)
+            t.setTextColor(if (paused) WARN else ACCENT)
+            t.background = pillBackground(if (paused) WARN else ACCENT)
+            t.contentDescription = if (paused) "恢复控件检视（重新接管触摸）" else "暂停控件检视（放行触摸）"
+        }
+        tvHint?.text = if (paused) {
+            UiInspectorInfo.HINT_PAUSED
+        } else {
+            UiInspectorInfo.HINT_DOC + "\n" + UiInspectorInfo.HINT_OPS
+        }
     }
 
     // ------------------------------------------------------------ 给宿主用
@@ -164,10 +281,9 @@ class UiInspectorOverlay(
     fun isOnPanel(rawX: Float, rawY: Float): Boolean {
         val p = panel ?: return false
         if (p.visibility != View.VISIBLE || p.width <= 0) return false
-        val loc = IntArray(2)
-        p.getLocationOnScreen(loc)
-        return rawX >= loc[0] && rawX < loc[0] + p.width &&
-            rawY >= loc[1] && rawY < loc[1] + p.height
+        p.getLocationOnScreen(locTmp)
+        return rawX >= locTmp[0] && rawX < locTmp[0] + p.width &&
+            rawY >= locTmp[1] && rawY < locTmp[1] + p.height
     }
 
     /**
@@ -176,18 +292,48 @@ class UiInspectorOverlay(
      * 传的是 `MotionEvent.rawX/rawY`（屏幕坐标）：面板、警示条、导航栏都在
      * `android.R.id.content` 里各占一块，用**窗口局部坐标**会在系统栏显示/隐藏时错位，
      * 屏幕坐标没有这个问题。
+     *
+     * ## 返回值 = "这一次解析成功了吗"（v1.20.15 加的）
+     *
+     * `false` 表示**解析失败**（抛了任何 `Throwable`，含 `StackOverflowError`），
+     * 宿主据此**放行这一次触摸**（不消费）。
+     *
+     * 为什么必须这样：`inspect` 跑在 `dispatchTouchEvent` 里，它一不返回就是 ANR。
+     * 检视器是**开发/调试工具**，"这一次没检视到"的代价远小于"整个 App 卡死"。
+     * 宁可漏检，不能卡死。
      */
-    fun inspect(rawX: Float, rawY: Float) {
-        val h = host ?: return
-        val hit = hitTest(h, rawX, rawY)
-        if (hit == null) {
-            highlight?.setTarget(null)
-            render(UiInspectorInfo.NO_HIT, "", listOf("这里是空白区（没有控件）"))
-            return
+    fun inspect(rawX: Float, rawY: Float): Boolean {
+        val h = host ?: return false
+        return runCatching {
+            val hit = hitTest(h, rawX, rawY)
+            if (hit == null) {
+                highlight?.setTarget(null)
+                render(UiInspectorInfo.NO_HIT, "", listOf("这里是空白区（没有控件）"))
+            } else {
+                highlight?.setTarget(rectOf(hit))
+                val snap = snapshotOf(hit, h)
+                render(
+                    snap.typeName, UiInspectorInfo.idLine(snap.idEntry),
+                    UiInspectorInfo.renderBody(snap)
+                )
+            }
+            true
+        }.getOrElse { t ->
+            // 兜底：解析炸了就把高亮清掉、面板上说明一句，然后**放行触摸**。
+            // 这里再包一层 runCatching —— 兜底本身也不许把主线程带下去。
+            runCatching {
+                highlight?.setTarget(null)
+                render(
+                    "检视解析失败", "",
+                    listOf(
+                        (t.javaClass.simpleName.ifBlank { "Throwable" }) +
+                            "：这一次触摸已放行（App 照常可用）"
+                    )
+                )
+            }
+            AppLog.w(AppLog.M_UI, "控件检视解析失败（已放行触摸）", t.toString())
+            false
         }
-        highlight?.setTarget(rectOf(hit))
-        val snap = snapshotOf(hit, h)
-        render(snap.typeName, UiInspectorInfo.idLine(snap.idEntry), UiInspectorInfo.renderBody(snap))
     }
 
     // ------------------------------------------------------------ 命中解析
@@ -201,16 +347,34 @@ class UiInspectorOverlay(
      * 这时显示的是容器的信息，同样有用（能看出层级与 id）。
      *
      * 浮层自己（面板 / 高亮层）**必须排除**，否则点哪儿都命中高亮层。
+     *
+     * ## ⚠️ v1.20.15：遍历**有界**（[TreeWalkBudget]）
+     *
+     * 这条路径在**主线程**上（`dispatchTouchEvent`），"转不出来"就是 ANR。
+     * 所以三道闸：
+     * - **深度上限** `MAX_DEPTH`（32）—— 超过就不再往下钻；
+     * - **节点数上限** `MAX_NODES`（4000）—— 到了就收手；
+     * - **按身份去重** —— 同一个 View 一次遍历只认领一次，**父子互指也不会转圈**。
+     *
+     * 用尽预算是**收手**而不是报错：这一下退化成"没检视到"，触摸照常放行。
      */
-    private fun hitTest(root: ViewGroup, sx: Float, sy: Float): View? {
+    private fun hitTest(root: ViewGroup, sx: Float, sy: Float): View? =
+        hitTest(root, sx, sy, 0, TreeWalkBudget())
+
+    private fun hitTest(
+        root: ViewGroup, sx: Float, sy: Float, depth: Int, budget: TreeWalkBudget
+    ): View? {
+        if (!budget.canEnter(depth)) return null
         for (i in root.childCount - 1 downTo 0) {
-            val c = root.getChildAt(i)
+            val c = root.getChildAt(i) ?: continue
             if (c.visibility != View.VISIBLE) continue
             if (c === panel || c === highlight) continue
+            // 认领（去重 + 计数）**必须在读它的属性之前** —— 预算是"要做多少活"的上限
+            if (!budget.claim(TreeWalkBudget.ViewKey(c))) return null
             if (c.width <= 0 || c.height <= 0) continue
             if (!containsPoint(c, sx, sy)) continue
             if (c is ViewGroup) {
-                val deeper = hitTest(c, sx, sy)
+                val deeper = hitTest(c, sx, sy, depth + 1, budget)
                 if (deeper != null) return deeper
             }
             return c
@@ -224,22 +388,22 @@ class UiInspectorOverlay(
      * 用 `getLocationOnScreen` 而不是 `left/top` 一路加：导航栏收起走的是
      * `translationX`（见 `MainActivity.setRailVisible`），滚动容器还有 `scrollY` ——
      * 自己算偏移迟早会漏一项，而 `getLocationOnScreen` 把这些**全都算进去了**。
+     *
+     * v1.20.15：写进**复用**的 [locTmp]，不再按节点 new 数组（这条路径在触摸上）。
      */
     private fun containsPoint(v: View, sx: Float, sy: Float): Boolean {
-        val loc = IntArray(2)
-        v.getLocationOnScreen(loc)
-        return sx >= loc[0] && sx < loc[0] + v.width && sy >= loc[1] && sy < loc[1] + v.height
+        v.getLocationOnScreen(locTmp)
+        return sx >= locTmp[0] && sx < locTmp[0] + v.width &&
+            sy >= locTmp[1] && sy < locTmp[1] + v.height
     }
 
     /** 控件在**高亮层坐标系**里的矩形（两层都挂在 content 上，差一个 content 原点） */
     private fun rectOf(v: View): Rect {
         val hl = highlight
-        val base = IntArray(2)
-        (hl ?: v).getLocationOnScreen(base)
-        val loc = IntArray(2)
-        v.getLocationOnScreen(loc)
-        val l = loc[0] - base[0]
-        val t = loc[1] - base[1]
+        (hl ?: v).getLocationOnScreen(baseTmp)
+        v.getLocationOnScreen(locTmp)
+        val l = locTmp[0] - baseTmp[0]
+        val t = locTmp[1] - baseTmp[1]
         return Rect(l, t, l + v.width, t + v.height)
     }
 
@@ -349,11 +513,17 @@ class UiInspectorOverlay(
      * 父链：**从根到该控件**（含它自己）。规格 §3 的"层级"。
      * 到 [root]（`android.R.id.content`）为止 —— 再往上（`DecorView` 那一串）
      * 每个控件都一样，写出来只是噪声。
+     *
+     * v1.20.15：加一道**硬上限**（[TreeWalkBudget.MAX_DEPTH] 的两倍）。
+     * 正常到 `root` 就 `break` 了，用不到它；但"往上找父链"同样是**主线程上的无界循环**，
+     * 万一哪天 `root` 不在这个 View 的祖先链上（浮层挂错父容器），
+     * 没有上限就会一路走到 `DecorView` 之外 —— 加一个上限是零成本的保险。
      */
     private fun chainOf(v: View, root: ViewGroup): List<String> {
         val names = ArrayList<String>(8)
         var cur: View? = v
-        while (cur != null) {
+        var guard = TreeWalkBudget.MAX_DEPTH * 2
+        while (cur != null && guard-- > 0) {
             names += cur.javaClass.simpleName
             if (cur === root) break
             val p = cur.parent
@@ -398,22 +568,19 @@ class UiInspectorOverlay(
     private fun buildPanel(): LinearLayout {
         val root = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(10).toFloat()
-                // 半透明（规格 §2 要求）——但要比灵动岛实一点：这一屏全是小字
-                setColor(0xE60F141C.toInt())
-                setStroke(dp(1), 0x6600D8FF.toInt())
-            }
+            background = panelBackground(paused)
             val ph = dp(10)
             val pv = dp(8)
             setPadding(ph, pv, ph, pv)
             elevation = dp(12).toFloat()
-            isClickable = true      // 拖动与长按要能拿到触摸（见 setOnTouchListener）
+            // ⚠️ v1.20.15：这个 `isClickable` **不是恒 true** 了 ——
+            // 暂停时由 [applyPausedToPanel] 拨回 false，让面板本体不抢触摸
+            //（只留开关与 × 两小块可点）。拖动与长按要能拿到触摸，所以检视中是 true。
+            isClickable = UiInspectorInfo.panelStealsTouch(paused)
             isFocusable = false
         }
 
-        // ---- 标题行：类型 + 关闭 ----
+        // ---- 标题行：类型 + 【检视 开/暂停】+ 关闭 ----
         val head = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -426,6 +593,28 @@ class UiInspectorOverlay(
         }
         tvType = t
         head.addView(t, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+
+        // ---- 检视开关（v1.20.15，用户点名要的）----
+        //
+        // 为什么是「一个可点的小 TextView」而不是 `Switch`：
+        // ① 面板只有 320dp 宽，Switch 会把它挤掉一行；
+        // ② 文案本身就是状态（`检视 开` / `检视 暂停`），不需要再配一个 label；
+        // ③ **可点区域只有这一小块** —— 用户明确要求"面板其余部分仍不抢触摸"，
+        //    一个 Switch 的触摸热区比它看上去大得多，反而容易挡住画布横滑。
+        //
+        // ⚠️ 点击回调走 [onRequestPause]，状态由宿主写 —— 浮层自己不维护 `paused`。
+        val sw = TextView(ctx).apply {
+            textSize = 11f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(3), dp(8), dp(3))
+            isClickable = true
+            isFocusable = false
+            setOnClickListener { onRequestPause(!paused) }
+        }
+        toggle = sw
+        head.addView(sw)
+
         val close = TextView(ctx).apply {
             text = "×"
             textSize = 17f
@@ -462,15 +651,36 @@ class UiInspectorOverlay(
         // ---- 底部提示（固定，不随控件变）----
         // 第一行就是规格 §5 要的那句：**id 拿去哪儿搜**。这是这个功能真正的价值所在
         // （id → `UI样式与排版总表.md` → `文件:行` + 全部样式值 + "改了会出事"的坑）。
-        root.addView(TextView(ctx).apply {
-            text = UiInspectorInfo.HINT_DOC + "\n" + UiInspectorInfo.HINT_OPS
+        // v1.20.15：暂停时换成"触摸已放行、怎么恢复"（用户必须一眼看出现在能正常用 App）。
+        val hint = TextView(ctx).apply {
             textSize = 10f
             setTextColor(0xFF5F6E85.toInt())
             setPadding(0, dp(4), 0, 0)
-        })
+        }
+        tvHint = hint
+        root.addView(hint)
 
         installDragAndLongPress(root)
+        // 注意：这里**不能**调 `applyPausedToPanel()` —— 此刻 `panel` 字段还没赋值
+        // （赋值在 `show()` 里 `buildPanel()` 返回之后）。开关文案/配色由 `show()` 收尾时统一刷。
         return root
+    }
+
+    /** 面板底色。检视中 = 青色描边；**暂停 = 琥珀色描边**（一眼看出现在不接管触摸） */
+    private fun panelBackground(paused: Boolean): GradientDrawable = GradientDrawable().apply {
+        shape = GradientDrawable.RECTANGLE
+        cornerRadius = dp(10).toFloat()
+        // 半透明（规格 §2 要求）——但要比灵动岛实一点：这一屏全是小字
+        setColor(0xE60F141C.toInt())
+        setStroke(dp(1), if (paused) 0x66FFB300.toInt() else 0x6600D8FF.toInt())
+    }
+
+    /** 开关那块小药丸的底色（同色系描边 + 极淡的白填充，保证在任何底色上都看得见） */
+    private fun pillBackground(color: Int): GradientDrawable = GradientDrawable().apply {
+        shape = GradientDrawable.RECTANGLE
+        cornerRadius = dp(6).toFloat()
+        setColor(0x33FFFFFF)
+        setStroke(dp(1), color)
     }
 
     /** 面板内容更新。`title` 走标题行，`idText` 走黄色那行，`bodyLines` 走正文 */
@@ -498,48 +708,56 @@ class UiInspectorOverlay(
      * ⚠️ 监听器**挂在面板自己身上**（不是全局）：面板的触摸由宿主
      * `MainActivity` 原样放行（见 [isOnPanel]），所以这里拿到的是**只有面板范围内**的触摸。
      * 面板一旦被摘掉，监听器跟着一起没了 —— 平时它对触摸零影响（约束 ①）。
+     *
+     * ⚠️ v1.20.15：监听器改成**字段**（[dragListener]），因为**暂停时要把它摘下来** ——
+     * 用户明确要求"面板其余部分仍不抢触摸"。只把 `isClickable` 拨成 false 不够：
+     * OnTouchListener 一旦返回 `true` 就是消费，留着它照样会挡住画布横滑。
      */
     private fun installDragAndLongPress(p: LinearLayout) {
+        if (UiInspectorInfo.panelStealsTouch(paused)) p.setOnTouchListener(dragListener)
+    }
+
+    /** 面板的拖动 + 长按复制（见 [installDragAndLongPress]）。挂/摘由 [applyPausedToPanel] 管 */
+    private val dragListener = View.OnTouchListener { v, e ->
+        val p = v as? LinearLayout ?: return@OnTouchListener false
+        val lp = p.layoutParams as? FrameLayout.LayoutParams ?: return@OnTouchListener false
         val slop = ViewConfiguration.get(ctx).scaledTouchSlop
-        p.setOnTouchListener { _, e ->
-            val lp = p.layoutParams as? FrameLayout.LayoutParams ?: return@setOnTouchListener false
-            when (e.actionMasked) {
-                android.view.MotionEvent.ACTION_DOWN -> {
-                    downRawX = e.rawX
-                    downRawY = e.rawY
-                    startLeft = lp.leftMargin
-                    startTop = lp.topMargin
-                    moved = false
-                    main.removeCallbacks(longPress)
-                    main.postDelayed(longPress, LONG_PRESS_MS)
-                    true
-                }
-                android.view.MotionEvent.ACTION_MOVE -> {
-                    val dx = e.rawX - downRawX
-                    val dy = e.rawY - downRawY
-                    // 一超过触摸阈值就算"在拖"，长按立刻取消 ——
-                    // 否则想挪一下位置会顺手把信息复制进剪贴板
-                    if (!moved && kotlin.math.abs(dx) + kotlin.math.abs(dy) > slop) {
-                        moved = true
-                        main.removeCallbacks(longPress)
-                    }
-                    if (moved) {
-                        val dm = ctx.resources.displayMetrics
-                        lp.leftMargin = (startLeft + dx.toInt())
-                            .coerceIn(0, (dm.widthPixels - p.width).coerceAtLeast(0))
-                        lp.topMargin = (startTop + dy.toInt())
-                            .coerceIn(0, (dm.heightPixels - p.height).coerceAtLeast(0))
-                        p.requestLayout()
-                    }
-                    true
-                }
-                android.view.MotionEvent.ACTION_UP,
-                android.view.MotionEvent.ACTION_CANCEL -> {
-                    main.removeCallbacks(longPress)
-                    true
-                }
-                else -> false
+        when (e.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN -> {
+                downRawX = e.rawX
+                downRawY = e.rawY
+                startLeft = lp.leftMargin
+                startTop = lp.topMargin
+                moved = false
+                main.removeCallbacks(longPress)
+                main.postDelayed(longPress, LONG_PRESS_MS)
+                true
             }
+            android.view.MotionEvent.ACTION_MOVE -> {
+                val dx = e.rawX - downRawX
+                val dy = e.rawY - downRawY
+                // 一超过触摸阈值就算"在拖"，长按立刻取消 ——
+                // 否则想挪一下位置会顺手把信息复制进剪贴板
+                if (!moved && kotlin.math.abs(dx) + kotlin.math.abs(dy) > slop) {
+                    moved = true
+                    main.removeCallbacks(longPress)
+                }
+                if (moved) {
+                    val dm = ctx.resources.displayMetrics
+                    lp.leftMargin = (startLeft + dx.toInt())
+                        .coerceIn(0, (dm.widthPixels - p.width).coerceAtLeast(0))
+                    lp.topMargin = (startTop + dy.toInt())
+                        .coerceIn(0, (dm.heightPixels - p.height).coerceAtLeast(0))
+                    p.requestLayout()
+                }
+                true
+            }
+            android.view.MotionEvent.ACTION_UP,
+            android.view.MotionEvent.ACTION_CANCEL -> {
+                main.removeCallbacks(longPress)
+                true
+            }
+            else -> false
         }
     }
 
@@ -641,6 +859,40 @@ class UiInspectorOverlay(
         @Volatile
         var enabled: Boolean = false
 
+        /**
+         * **检视暂停了没有**（v1.20.15，面板上那个开关）。
+         *
+         * ## 默认值 = `false`（**开启即接管**）—— 这是刻意的，写清楚
+         *
+         * `false` 的含义是"不暂停"，也就是**设置页一打开检视，触摸立刻被接管**，
+         * 与 v1.20.14 逐字节一致 —— 这样 v1.20.14 那 8 条判据
+         * （尤其"检视开着横滑不翻页"）**不需要重新解释**。
+         *
+         * 为什么不默认"暂停"：那会让"打开检视"看起来**没生效**
+         * （用户点哪儿都正常，会以为开关坏了）。默认接管、按一下才暂停，
+         * 状态变化才是"用户按出来的"，而不是"猜出来的"。
+         *
+         * ## 与 [enabled] 的分工
+         *
+         * - [enabled] = 浮层**在不在**（关掉 = 摘掉浮层，要恢复得回设置页）；
+         * - [paused] = 浮层在、但**触摸放行**（临时状态，随时能按回来）。
+         *
+         * ## 落盘？**不落**（与 [enabled] 同一条理由）
+         *
+         * 它是临时状态：App 重启 / 旋屏重建都回到"接管"。
+         * 进程内、`@Volatile`（读它的是主线程的 `dispatchTouchEvent`，与 [enabled] 同理）。
+         */
+        @Volatile
+        var paused: Boolean = false
+
+        /**
+         * **此刻检视是否真的在接管触摸** = [enabled] 且 未 [paused]。
+         *
+         * 宿主 `MainActivity.dispatchTouchEvent` 只认这一个判据 ——
+         * 别再在别处写 `enabled && !paused`（两处各写一份 = 迟早不一致）。
+         */
+        val active: Boolean get() = UiInspectorInfo.inspecting(enabled, paused)
+
         /** 面板宽度上限（dp） */
         private const val PANEL_W_DP = 320
 
@@ -651,6 +903,9 @@ class UiInspectorOverlay(
         private const val LONG_PRESS_MS = 500L
 
         private val ACCENT = 0xFF00D8FF.toInt()
+
+        /** 暂停态的点缀色（琥珀）—— 与检视中的青色明确区分 */
+        private val WARN = 0xFFFFB300.toInt()
     }
 
     /**

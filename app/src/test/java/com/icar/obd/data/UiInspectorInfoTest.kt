@@ -344,6 +344,126 @@ class UiInspectorInfoTest {
         assertEquals("A\nB", UiInspectorInfo.clipboardText(listOf("A", "B")))
     }
 
+    // ------------------------------------------------------------ 父链：死循环回归（v1.20.15 ANR）
+
+    /**
+     * 🔴 **这一条是 v1.20.14 那个卡死级 ANR 的回归测试**（不是"顺手加的一条"）。
+     *
+     * ## 故障现场（真机 7e7d7bb4 / Android 13，`logcat` 原文）
+     *
+     * ```
+     * I am_anr: [0,15409,com.icar.obd,... Input dispatching timed out
+     *            (... Waited 5000ms for MotionEvent(action=DOWN))]
+     * W MIUIScout App: at com.icar.obd.data.UiInspectorInfo.chainLine(UiInspectorInfo.kt:226)
+     *                  at ...UiInspectorInfo.render(UiInspectorInfo.kt:324)
+     *                  at ...UiInspectorInfo.renderBody(UiInspectorInfo.kt:342)
+     *                  at ...UiInspectorOverlay.inspect(UiInspectorOverlay.kt:190)
+     *                  at ...MainActivity.consumeForInspector(MainActivity.kt:904)
+     *                  at ...MainActivity.dispatchTouchEvent(MainActivity.kt:631)
+     * ```
+     *
+     * ## 旧实现为什么会死循环
+     *
+     * `while (parts.size > 2 && body.length > CHAIN_MAX)` 每轮
+     * `rest = parts.drop(1)` → 去掉开头省略号 → `parts = [省略号] + rest`。
+     * 第一轮之后 `parts` 的头**就是省略号**，`drop(1)` 只丢掉那个标记，
+     * 下一行又原样加回来 —— `parts`/`body` 是**不动点**，长度永远 > 56 → **永不退出**。
+     *
+     * ## 为什么必须带 `timeout`
+     *
+     * 死循环在 JVM 单测里的表现不是"断言失败"，而是**整个测试进程挂住**
+     * （Gradle 看起来像卡死，不报错）—— 没有 timeout 的话这条用例会把
+     * `run-tests.ps1` 变成"跑不完"，那比失败更难查。
+     * `timeout` 一超时就是 `TestTimedOutException` → **失败**，这才是能报警的形态。
+     *
+     * ## 这条输入是**算出来的**，不是抄来的
+     *
+     * 折叠成 5 段后 `|c1| + |c_{n-2}| + |c_{n-1}| > 42` 就进死循环。
+     * 下面这串：`LinearLayout`(12) + `AppCompatImageView`(19) + `MaterialButton`(14) = 45 > 42
+     * → 第一轮之后 59 > 56 → 旧实现必挂。
+     */
+    @Test(timeout = 5000)
+    fun `父链超长时不会死循环`() {
+        val line = UiInspectorInfo.chainLine(
+            listOf(
+                "ContentFrameLayout", "LinearLayout", "FrameLayout", "AppCompatImageView",
+                "LinearLayout", "MaterialButton",
+            )
+        )
+        assertTrue("必须收敛：$line", line.length <= 3 + 60)
+        assertTrue("尾部（最近的父容器）必须完整：$line", line.endsWith("MaterialButton"))
+    }
+
+    /**
+     * 同类输入的**穷举**版本：任意长度、任意类名，都不许转不出来。
+     *
+     * 上面那条只覆盖"算出来的那一个点"，这一条覆盖一整片 ——
+     * 因为死循环的触发条件是**长度算术**，靠人眼看是看不全的。
+     */
+    @Test(timeout = 10000)
+    fun `任意父链都不许死循环`() {
+        val names = listOf(
+            "ContentFrameLayout", "FrameLayout", "LinearLayout", "NestedScrollView",
+            "RecyclerView", "AppCompatImageView", "MaterialButton", "TextView",
+            "ViewPager", "CoordinatorLayout", "ConstraintLayout", "SwitchCompat",
+        )
+        var cases = 0
+        for (n in 1..names.size) {
+            // 只取前 n 个 + 各种"长尾巴"，保证既有超长也有超短
+            for (tail in 0..2) {
+                val chain = names.take(n) + List(tail) { "VeryLongWidgetClassName" }
+                val line = UiInspectorInfo.chainLine(chain)
+                cases++
+                assertTrue("长度必须收敛（n=$n tail=$tail）：$line", line.length <= 3 + 60)
+                assertFalse("不许出现两个连着的省略号：$line", line.contains("… > …"))
+                assertTrue("前缀固定：$line", line.startsWith("层级 "))
+            }
+        }
+        assertTrue("至少得跑几十种组合，实际 $cases", cases >= 30)
+    }
+
+    /**
+     * 超长链的**形状**契约（不是"能跑完就行"）：
+     * 从头部整段丢，**最近两层永远完整**，且只留一个省略号标记。
+     */
+    @Test(timeout = 5000)
+    fun `超长父链丢头部，只留一个省略号`() {
+        val line = UiInspectorInfo.chainLine(
+            listOf(
+                "ContentFrameLayout", "LinearLayout", "FrameLayout", "AppCompatImageView",
+                "LinearLayout", "MaterialButton",
+            )
+        )
+        assertEquals("层级 … > LinearLayout > MaterialButton", line)
+    }
+
+    // ------------------------------------------------------------ 检视开关（v1.20.15）
+
+    @Test
+    fun `面板开关的文案跟着状态走`() {
+        assertEquals("检视 开", UiInspectorInfo.toggleLabel(false))
+        assertEquals("检视 暂停", UiInspectorInfo.toggleLabel(true))
+    }
+
+    @Test
+    fun `只有开着且没暂停才算接管触摸`() {
+        // 关着 → 不接管（无论暂停与否）
+        assertFalse(UiInspectorInfo.inspecting(enabled = false, paused = false))
+        assertFalse(UiInspectorInfo.inspecting(enabled = false, paused = true))
+        // 开着 + 没暂停 → 接管（v1.20.14 的默认行为，8 条判据依赖它）
+        assertTrue(UiInspectorInfo.inspecting(enabled = true, paused = false))
+        // 开着 + 暂停 → **放行**（用户要的"暂停时触摸恢复正常，但面板仍在"）
+        assertFalse(UiInspectorInfo.inspecting(enabled = true, paused = true))
+    }
+
+    @Test
+    fun `暂停时面板本体不抢触摸`() {
+        // 用户明确要求：只让开关与 × 那一小块可点，面板其余部分不许抢触摸，
+        // 否则会挡住画布横滑与编辑手势。
+        assertTrue(UiInspectorInfo.panelStealsTouch(paused = false))
+        assertFalse(UiInspectorInfo.panelStealsTouch(paused = true))
+    }
+
     // ------------------------------------------------------------ 落盘纪律
 
     @Test

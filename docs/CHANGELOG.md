@@ -15,6 +15,145 @@
 > 靠"感觉该整理了"不会触发，定成数字才会。
 ---
 
+## v1.20.15 · 2026-10-11 · **修 v1.20.14 的卡死级 ANR**（纯函数死循环）+ 浮窗加「检视 开 / 暂停」开关
+
+> 用户原话：「悬浮窗上面加个检视器的开关」+「开着检视器切页后卡死」。
+
+### 🔴 修复：控件检视开着、点中某个控件 → 主线程死循环 → ANR（**v1.20.14 引入，卡死级**）
+
+**现象**（真机 7e7d7bb4 / Android 13 / 2560×1600 横屏，`logcat -b events` 原文）：
+
+```
+I am_anr: [0,15409,com.icar.obd,... Input dispatching timed out
+           (... is not responding. Waited 5000ms for MotionEvent(action=DOWN))]
+```
+
+`logcat` 里 MIUI 看门狗（`MIUIScout App`）打出的主线程栈，**三次现场完全一致**：
+
+```
+at com.icar.obd.data.UiInspectorInfo.chainLine(UiInspectorInfo.kt:226)
+at com.icar.obd.data.UiInspectorInfo.render(UiInspectorInfo.kt:324)
+at com.icar.obd.data.UiInspectorInfo.renderBody(UiInspectorInfo.kt:342)
+at com.icar.obd.ui.view.UiInspectorOverlay.inspect(UiInspectorOverlay.kt:190)
+at com.icar.obd.ui.MainActivity.consumeForInspector(MainActivity.kt:904)
+at com.icar.obd.ui.MainActivity.dispatchTouchEvent(MainActivity.kt:631)
+```
+
+**根因（不是遍历 View 树，也不是浮层挂错父容器）**：
+`data/UiInspectorInfo.kt` 的 `chainLine`（父链截断）里那个收敛循环**不收敛**：
+
+```kotlin
+while (parts.size > 2 && body.length > CHAIN_MAX) {
+    var rest = parts.drop(1)                                   // ← 第一轮之后
+    while (rest.isNotEmpty() && rest.first() == ELLIPSIS) rest = rest.drop(1)
+    parts = listOf(ELLIPSIS) + rest                            // ← 又加回来
+    body = parts.joinToString(SEP)
+}
+```
+
+第一轮把链首换成省略号之后，**`parts` 的头就是省略号**，于是下一轮
+`parts.drop(1)` 恰好只丢掉那个**标记**，紧接着 `listOf(ELLIPSIS) + rest` 把它原样加回来 ——
+`parts` 与 `body` 成了**不动点**：只要第一轮之后长度仍 > `CHAIN_MAX`(56)，`while` **永不退出**。
+
+触发窗口很窄但真实：链折叠成 5 段后 `|c1| + |c_{n-2}| + |c_{n-1}| > 42`（长度 59 > 56）就进去。
+实测在「连接」页点中一个 `MaterialButton`（父链含
+`ContentFrameLayout / LinearLayout / AppCompatImageView / MaterialButton`）命中；
+而 v1.20.14 验收时点的 `btnGestures` 父链恰好算出来 53 ≤ 56，**刚好躲过** ——
+所以上一版"8 条判据全过"是真的，这个 bug 也是真的，**是覆盖面的问题，不是造假**。
+
+**为什么"切页后才卡死"**：`inspect()` 只在 `ACTION_DOWN` 时解析命中的控件，
+而**命中哪个控件决定父链长度**。仪表盘/设置页点到的控件父链短，连接页/PID 页/日志页
+里的 `MaterialButton` / `MaterialTextView` 父链长 —— 换页 = 换了一棵更深的树。
+（**用户的怀疑方向"反向遍历 View 树卡住"是起点不是结论**：遍历本身没问题，
+死在拿到命中控件之后拼字符串的那一步。）
+
+**修法**：收敛条件从"字符串长度"改成 **`dropCount` 单调递增的有界 for 循环**
+（轮数上界 `clean.size + 1`），把每轮要拼什么抽成无循环的纯函数 `chainBody(clean, dropCount)`。
+**结构上不可能不终止**，不再依赖"每轮真的变短"这个假设。
+
+### 🔧 加固（无论根因是什么都该做的四条，本轮一并落地）
+
+| 要求 | 落点 |
+|---|---|
+| **遍历必须有界** | 新增 `data/TreeWalkBudget.kt`（纯类，JVM 可测）：深度上限 32 / 节点数上限 4000 / **按身份去重断环**。`UiInspectorOverlay.hitTest` 每次触摸开一个预算，用尽就**收手**（退化成"没检视到"）。`chainOf`（向上找父链）也加了硬上限 |
+| **主线程不许做重活** | 坐标查询从"每个节点 `new IntArray(2)`"改成复用 `locTmp`/`baseTmp`；`applyPausedToPanel` 加**幂等短路**（宿主每秒的 ticker 反复调它，状态没变一点都不做，不再每秒新建 `GradientDrawable`） |
+| **切页 / `onPause` 安全摘浮层** | `MainActivity.onPause()` 摘掉浮层（只摘视图，**不动** `enabled`/`paused`，`onResume` 原样挂回）；`switchTo()` 末尾立刻对齐一次；`show()` 多一道 `panel?.parent !== h` 检查 —— 挂到失效父容器上会**先摘干净再重建**，不会再出现"开着检视却什么都没有" |
+| **异常兜底：放行触摸** | `inspect()` 现在返回 `Boolean`；整段包 `runCatching`（连 `StackOverflowError` 一起接），失败就清高亮 + 面板写明，返回 `false`；`MainActivity.dispatchTouchEvent` 与 `consumeForInspector` 据此**不消费**这一次触摸。**宁可漏检，不能卡死** |
+
+### 新增：浮窗上的「检视 开 / 暂停」开关
+
+用户要的「悬浮窗上面加个检视器的开关」。与右上角 `×` 的分工：
+
+| | 触摸 | 面板 | 恢复方式 |
+|---|---|---|---|
+| **检视 开**（默认） | 被接管 | 在 | 点一下变「暂停」 |
+| **检视 暂停** | **放行（App 正常用）** | **还在** | 点一下变「开」 |
+| **`×`** | 放行 | **摘掉** | 回设置页重开 |
+
+- 开关是面板标题行里一个**小药丸 TextView**（不是 `Switch`）：320dp 宽的面板塞不下 Switch，
+  而且**可点热区只有这一小块** —— 用户明确要求"面板其余部分仍不抢触摸"，Switch 的热区比看上去大。
+- **暂停时面板本体不抢触摸**：`isClickable=false` **并且**把拖动 `OnTouchListener` 摘掉
+  （只改 `isClickable` 不够 —— 监听器返回 `true` 照样消费）。面板描边从青转**琥珀**、底部提示换成"触摸已放行"。
+- **开关自己的点击不会被检视吃掉**：命中判定 `isOnPanel` **先排除浮层自己**，宿主据此把这次触摸交回 `super`。
+- **默认值 = 接管**（`paused = false`，写进 `UiInspectorOverlay.paused` 的注释）：
+  默认接管才看得出开关生效，且 v1.20.14 那 8 条判据的语义**一个字都不用改**。
+- **暂停不落盘**（与 `enabled` 同一条理由：它是临时状态，App 重启/旋屏都回到接管）。
+
+### 验证
+
+- `run-tests.ps1` → **TOTAL=958 FAILED=0** + 构建守卫通过 + **exit 0**（基线 944 → +14：
+  `UiInspectorInfoTest` 33 → 39 条，新增 `TreeWalkBudgetTest` 8 条）；
+- `:app:assembleDebug` 过；APK **7,370,856 B**（7.03 MB）sha256=`6723CB47…` 已进 `dist/` 并装机；
+- **装机实测**（平板 `7e7d7bb4` / Android 13 / 2560×1600 横屏，坐标一律先 `uiautomator dump` 再点）：
+
+  **① 复现（先证明 bug 是真的）**：v1.20.14 装机包上「开检视 → 切到连接页 → 点画布」
+  稳定复现 `am_anr: … Waited 5000ms for MotionEvent(action=DOWN)`；
+  `/data/anr/` 里同时躺着**用户报的那一次**（`anr_2026-10-11-00-10-33`）与我复现的那次。
+  主线程栈由 MIUI 看门狗打出，**三次现场逐帧一致**，全部停在 `chainLine`。
+
+  **② 任务 1**：检视开着，在**连接 / PID / 日志 / 规则 / 知识库 / 仪表盘 6 个页**
+  各点 3~6 下 → `logcat -b events | grep am_anr` **0 条**；
+  `uiautomator dump` **2.7s** 返回（主线程没被占住）；
+  每页面板都解析出了控件，例如连接页
+  `尺寸 655.1×48dp（实测；声明 MATCH_PARENT × 48dp）… 层级 … > AppCompatSpinner > AppCompatCheckedTex…`
+  —— 那**正是以前必挂的"从头部丢"那条路径**（现在渲染成 `… > X > Y` 并且**返回了**）。
+
+  **③ 任务 2（17/17 通过）**：ACTIVE 时点 `swSound` 与横滑**都被消费**（开关不动、不翻页）
+  → 点面板开关 → 变「检视 暂停」，面板仍在、面板根 `clickable=false`、
+  药丸描边色取样 `#00D8FF` → `#FFB300`
+  → **暂停后**点 `swSound` **生效**、横滑**能翻页**（画布名 `画布 2` 出现）
+  → 再点开关 → 恢复接管（点控件 / 横滑又被消费）→ 右上角 `×` 仍能彻底关闭，关闭后一切正常。
+
+  **④ v1.20.14 那 8 条判据一条没坏**，逐条对过：开关→浮窗出现 · 关掉→消失且触摸恢复 ·
+  **检视开着横滑不翻页** · 关掉后横滑恢复 · **画布像素不受影响** ·
+  点有 id 控件显示资源名 · 点无 id 控件显示「（无 id）」· 点仪表盘自绘区出提示。
+  其中**像素**是逐点比对（画布本体区 `800,200`–`1700,1100`，步长 2 = 202,500 个采样点）：
+  `ACTIVE / PAUSED / CLOSED` 三态两两 **changed = 0 / 202,500 = 0.000%**，
+  且**同状态重复截图的噪声也是 0**（所以这个 0 不是"截图没变"的假象）。
+  自绘区那条命中 `CircularGaugeView`，面板出现 `⚠ 这里是仪表盘自绘区：刻度/指针/数值不是控件，检视不到`。
+
+  **⑤ 新加的 `onPause` 摘浮层**：HOME → 回 App，浮层自动挂回、仍是接管态、页面状态不丢。
+
+### 遗留（如实）
+
+- 新增的 `TreeWalkBudget` 只测到**判定逻辑**（8 条）；"`hitTest` 确实按预算收手"需要
+  一棵超过 4000 节点的真实 View 树才验得到，本轮**没有构造**，属未验证。
+- `×`（彻底关闭）与设置页开关两条路的**状态一致性**靠代码审查（都走 `setInspectorEnabled`），
+  未做自动化断言。
+- 拖动浮窗、长按复制仍然只能用手指验（`adb` 发不出这两类手势）。
+- **本轮没有"人眼看过一眼"**：当前模型没有图像输入。面板外观的证据是
+  `uiautomator` 节点（开关文案 `检视 开` / `检视 暂停`、`contentDescription`、bounds）
+  加截图像素取样（药丸描边色）—— 布局是否好看、字有没有被挤掉，**没有人确认过**。
+- ⚠️ 动手前那次"整目录备份"（`tar cf -` 重定向）**实际是坏的**：
+  PowerShell 的 `>` 把 adb 的 stdout 按 UTF-16 文本写，产物头部是 `FF FE` 而不是 tar 的 `ustar`。
+  有效的那份只有单独存的 `settings.json`。收尾时已用 `cmd /c` + `adb exec-out` 重做了一份
+  二进制安全的备份（`_dev_backup/post-verify-20261011/`，5 个文件），
+  并逐字段核过：**测试前后 `settings.json` 的标量差异 = 0**（`sound` / `activeCanvasId` / 画布套数都没变）。
+  **下次备份 config 一律用 `adb exec-out` + `cmd /c` 重定向，别用 PowerShell 的 `>`。**
+
+
+---
+
 ## v1.20.14 · 2026-10-10 · **控件检视器**（点控件看它的类型 / ID / 样式）
 
 > 用户原话：「开启之后显示悬浮窗、**点击控件后悬浮窗会显示控件的类型、ID、样式之类的东西**」。

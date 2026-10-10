@@ -199,6 +199,10 @@
 <script src="assets/builtin-index.js"></script>
 <!-- 拼音表（v2.51.0）：必须在小面板之前 —— 素材库的搜索要用它 -->
 <script src="js/pinyin.js"></script>
+<!-- 弹簧 / 表盘几何 / 数字鼓（v2.81.0）。**必须在 canvas.js 与 app.js 之前** ——
+     两边都要用它：canvas 画盘面与指针，app 的实时数据主循环推弹簧。
+     它自己不依赖任何东西（纯函数），所以放多前都行，放这儿是为了读起来顺。 -->
+<script src="js/spring.js"></script>
 <script src="js/schema.js"></script>
 <script src="js/model.js"></script>
 <script src="js/validate.js"></script>

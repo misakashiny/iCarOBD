@@ -826,6 +826,19 @@ kbd {
   font-weight: 600; margin-bottom: 10px; }
 .setRow { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 12px; }
 .setRow > label { flex: 0 0 88px; color: #9aa8bc; }
+/*
+ * 设置面板里的输入框（v2.81.0，弹簧参数 k / c）。
+ *
+ * ⚠️ 必须**显式**写：`.prow input` 那套统一高度只管属性面板（`.prow` 里），
+ * 设置对话框里原来只有按钮，没有输入框 —— 不写的话会退回浏览器默认的
+ * 20px 高、白底，在深色面板里非常刺眼。
+ */
+.setRow input[type=number], .setRow input[type=text] {
+  box-sizing: border-box; height: 26px; min-width: 0; flex: 1 1 auto;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--divider); border-radius: var(--r-md);
+  padding: 0 6px; font-size: 12px; font-family: inherit;
+}
 .setPresets { display: flex; gap: 6px; }
 .setPresets button { flex: 1 1 auto; height: 26px; box-sizing: border-box; font-size: 12px; }
 .setFoot { margin-top: 12px; text-align: right; }

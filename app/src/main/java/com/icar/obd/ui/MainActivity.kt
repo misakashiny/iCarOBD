@@ -154,6 +154,21 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
         stopRateTicker()
     }
 
+    /**
+     * **离开前台就把检视浮层摘干净**（v1.20.15）。
+     *
+     * 为什么：浮层挂在 `android.R.id.content` 上，而 `content` 会随 Activity
+     * 重建 / 换窗口而失效。留一个"挂在一个已经不在窗口里的父容器上"的浮层，
+     * 轻则看不见（用户以为开关坏了），重则点到它的失效坐标上。
+     *
+     * ⚠️ **只摘视图，不动 `enabled`/`paused`** —— 回来时 [onResume] →
+     * [applyInspectorState] 会把浮层按原状态重新挂上（用户感知是"没变过"）。
+     */
+    override fun onPause() {
+        super.onPause()
+        inspector.hide()
+    }
+
     // ------------------------------------------------ 全屏显示（v1.19.19）
 
     private var fullscreen = false
@@ -628,7 +643,20 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
         // 开着的时候反过来：**除了浮窗自己**，所有触摸都消费掉（返回 true），
         // 于是 ViewPager2 的横滑、拖表盘、双击呼出导航**都不会发生** ——
         // 这正是判据 5 要的"检视模式下横滑画布不翻页"。
-        if (UiInspectorOverlay.enabled && consumeForInspector(ev)) return true
+        // ⚠️ v1.20.15：判据从 `enabled` 换成 `active`（= `enabled && !paused`）——
+        // `paused` 是面板上那个「检视 开 / 暂停」开关。暂停 = 这一段整个跳过
+        // = **触摸完全恢复**，而浮层还留着（用户随时能按回来）。
+        //
+        // ⚠️ v1.20.15 第二处加固：整段包 `runCatching`。检视器是调试工具，
+        // 它这一路**任何异常都不许把主线程带走**（不返回 = ANR）。
+        // 抛了就当作"没消费"，触摸照常交给 `super` —— **宁可漏检，不能卡死**。
+        if (UiInspectorOverlay.active) {
+            val consumed = runCatching { consumeForInspector(ev) }.getOrElse { t ->
+                AppLog.w(AppLog.M_UI, "控件检视触摸处理异常（已放行触摸）", t.toString())
+                false
+            }
+            if (consumed) return true
+        }
         // ---- 双指手势（旁听，不消费）----
         if (ev.pointerCount >= 2) {
             when (ev.actionMasked) {
@@ -745,6 +773,10 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
         tx.commitNow()
         AppLog.d(AppLog.M_UI, "切换页面", tag)
         applySystemStatusBar(tag)
+        // v1.20.15：切页后**立刻**把检视浮层对齐一次。
+        // 宿主 content 本身没换，但浮层可能已经被 [onPause] 摘掉、或挂在一个失效的父容器上
+        // —— `applyInspectorState` 是幂等的，早对齐一秒就少一秒"开着检视却什么都没有"。
+        applyInspectorState()
     }
 
     private fun createFragment(tag: String): Fragment = when (tag) {
@@ -797,20 +829,31 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
      * "两处各写一份开关状态"的问题。
      */
     private val inspector by lazy {
-        UiInspectorOverlay(this) { setInspectorEnabled(false) }
+        UiInspectorOverlay(
+            this,
+            onRequestClose = { setInspectorEnabled(false) },
+            // v1.20.15：面板上那个「检视 开 / 暂停」开关。浮层只上报意图，
+            // 状态照旧由这里写（与 `×` 走同一条路，不存在"两处各写一份状态"）。
+            onRequestPause = { paused -> setInspectorPaused(paused) },
+        )
     }
 
     /**
-     * 把"检视开着没有"落实到界面上。**幂等**，可以每秒调一次
+     * 把"检视开着没有 / 暂停没有"落实到界面上。**幂等**，可以每秒调一次
      * （与 [syncMonitorWarn] 同一套写法）。
      *
-     * ⚠️ 状态的**唯一权威**是 [UiInspectorOverlay.enabled]（进程内，刻意不落盘 ——
-     * 理由见那边的长注释：它一开就吃掉全部触摸，绝不能活到下一次启动）。
+     * ⚠️ 状态的**唯一权威**是 [UiInspectorOverlay.enabled] + [UiInspectorOverlay.paused]
+     * （进程内，刻意不落盘 —— 理由见那边的长注释：它一开就吃掉全部触摸，
+     * 绝不能活到下一次启动）。
      */
     private fun applyInspectorState() {
         val host = findViewById<android.view.ViewGroup>(android.R.id.content) ?: return
         if (UiInspectorOverlay.enabled) {
             inspector.show(host)
+            // v1.20.15：面板上的开关状态也要**每次都对齐** ——
+            // `show()` 在宿主重建时会重新建面板，那时开关文案得跟着当前状态走。
+            // （浮层内部对"状态没变"做了幂等短路，所以每秒调一次也不做事。）
+            inspector.setPaused(UiInspectorOverlay.paused)
             // ⚠️ 检视期间**保持导航栏可见**（v1.20.14 实测补的）。
             //
             // 不加这一句会有一个死胡同：检视模式**消费全部触摸**（规格 §4.1 的硬约束），
@@ -822,7 +865,11 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
             // 导航栏是本项目**悬浮**的（v1.20.4：平移不占布局），所以让它显示
             // **不会改变画布尺寸**（判据 6 仍然成立）。配合下面
             // [consumeForInspector] 对导航栏的放行，用户就能在检视模式下自由切页。
-            if (railHidden) setRailVisible(true)
+            //
+            // v1.20.15：只在**真的在接管**（`active`）时才强推。
+            // 暂停之后触摸已经放行、用户能自己滑出导航栏，
+            // 再按住它反而是"暂停了却还改不了仪表盘的沉浸态"。
+            if (UiInspectorOverlay.active && railHidden) setRailVisible(true)
         } else {
             inspector.hide()
         }
@@ -842,10 +889,42 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
             return
         }
         UiInspectorOverlay.enabled = on
+        // v1.20.15：关掉时把"暂停"一起复位 —— 下次从设置页打开 = **重新接管**
+        // （默认值的理由写在 `UiInspectorOverlay.paused` 那边：默认接管才看得出开关生效）
+        if (!on) UiInspectorOverlay.paused = false
         applyInspectorState()
         AppLog.i(
             AppLog.M_UI, if (on) "开启控件检视" else "关闭控件检视",
-            "浮窗=${if (on) "已挂上，触摸被接管" else "已摘掉，触摸恢复正常"}"
+            if (on) "浮窗=已挂上，触摸被接管" else "浮窗=已摘掉，触摸恢复正常"
+        )
+    }
+
+    /**
+     * **暂停 / 恢复**面板上那个检视开关（v1.20.15）。
+     *
+     * - `paused = true`：**触摸放行**（App 能正常用：横滑翻画布、点按钮、拖表盘），
+     *   **但浮层留着** —— 用户随时能按回来，不用再跑一趟设置页；
+     * - `paused = false`：重新接管触摸。
+     *
+     * 与 [setInspectorEnabled] 的分工见 `UiInspectorOverlay.paused` 的注释。
+     * 这是**唯一**写 [UiInspectorOverlay.paused] 的地方（浮层只上报意图）。
+     */
+    fun setInspectorPaused(paused: Boolean) {
+        if (!UiInspectorOverlay.enabled) {
+            // 没开检视就无所谓暂停 —— 顺手复位，免得留下一个"看不见的暂停"
+            UiInspectorOverlay.paused = false
+            return
+        }
+        if (UiInspectorOverlay.paused == paused) {
+            applyInspectorState()
+            return
+        }
+        UiInspectorOverlay.paused = paused
+        applyInspectorState()
+        AppLog.i(
+            AppLog.M_UI, if (paused) "暂停控件检视" else "恢复控件检视",
+            if (paused) "浮窗仍在，触摸已放行（App 可正常操作）"
+            else "浮窗仍在，触摸被重新接管"
         )
     }
 
@@ -900,8 +979,12 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
             return false
         }
         // 只在 DOWN 时解析：一次触摸只检视一个控件（MOVE/UP 不该反复刷新面板）
+        //
+        // ⚠️ v1.20.15：`inspect` 现在**有返回值** —— `false` = 这一次解析失败
+        // （浮层没挂上 / 遍历抛了异常）。那时**不消费**，把触摸原样放行。
+        // 这是"宁可漏检，不能卡死"的落点：检视器坏掉时 App 必须照常能用。
         if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
-            inspector.inspect(ev.rawX, ev.rawY)
+            if (!inspector.inspect(ev.rawX, ev.rawY)) return false
         }
         return true
     }

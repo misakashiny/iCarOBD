@@ -58,6 +58,26 @@
     /** 画布上的控件是否显示 PID id（顶栏 🏷 PID 切换） */
     showPid: false,
     previewValues: null,  // {pidId: value} 实时模拟注入的值
+    /**
+     * **弹簧池**（v2.81.0）：实时模拟时指针/弧/鼓的**位置**。
+     *
+     * ⚠️ 与 `previewValues` 的分工是**刻意的**：
+     *   - `previewValues` 是**真值** —— 数字读数、条形、状态灯、阈值判定都读它
+     *   - `simSprings` 是**机械位置** —— 只有"会动的金属件"（指针）读它
+     *
+     * 读数跟着弹簧走的话，一个 1234 的转速会被显示成 1187.4 这种"没意义的小数"，
+     * 而阈值判定会**晚到**（弹簧到位需要时间）—— 那是错的，真车上报警是即时的。
+     */
+    simSprings: null,
+    /** 属性让位仲裁（v2.81.0）。见 spring.js 的 `AnimArbiter` */
+    anim: null,
+    /**
+     * **补间值**（v2.81.0）：由"作者编排的动画"写（比如开机自检扫表）。
+     *
+     * 与 `previewValues` 同一形状。让位标志指向 `"tween"` 时，指针读这里而不是弹簧 ——
+     * 这就是参考实现里"主循环每帧覆写 rotation，把扫表压掉"那个坑的解药。
+     */
+    tweenValues: null,
     assetUrls: {},        // assetId -> objectURL（本机预览）
     thumbs: {},           // assetId -> dataURL（localStorage 缓存）
     drag: null,
@@ -65,6 +85,11 @@
     hoverHandle: -1,
   };
   window.CanvasState = S;
+
+  // 弹簧池与让位仲裁**在这里建**（v2.81.0）：渲染层要读它们，
+  // 而 app.js 比 canvas.js 晚加载。参数（k/c）由 app.js 从界面设置里灌进来。
+  S.simSprings = new window.SpringBank();
+  S.anim = new window.AnimArbiter();
 
   const HANDLE = 9;       // 手柄边长（屏幕 px）
   const ROT_OFFSET = 26;  // 旋转柄离顶边的距离
@@ -916,6 +941,86 @@ function uniformMatrix(m, w, h) {
   }
   window.hitPart = hitPart;
 
+  // ================================================================ 弹簧 / 盘面（v2.81.0）
+
+  /**
+   * 指针该画在**哪个值**上 —— 两套系统仲裁的**唯一**落地点。
+   *
+   * 优先级：
+   *   1. 让位标志被 `"tween"` 占着 → 用补间写的值（作者编排的动画，如自检扫表）
+   *   2. 实时模拟开着 → 用弹簧的**当前位置**（不是真值 —— 真值每 16ms 硬跳一次）
+   *   3. 其它 → 真值（摆位置 / 拖属性面板的数值时，指针必须**立刻**到位）
+   *
+   * ⚠️ 为什么实时数据走弹簧、而**读数与状态灯不走**：
+   * 弹簧到位需要时间，读数和报警判定跟着它走就是"晚到"，
+   * 而真车上报警是即时的 —— 那属于**把预览做得和真车不一样**，不是美化。
+   */
+  function needleValue(pid, raw) {
+    if (S.anim && !S.anim.allows("sim")) {
+      const tv = S.tweenValues || {};
+      if (pid && tv[pid] !== undefined) return tv[pid];
+    }
+    const b = S.simSprings;
+    if (!b || !b.active) return raw;
+    return b.peek(pid, raw);
+  }
+  window.needleValue = needleValue;
+
+  /**
+   * **盘面缓存**：按**签名**存，量程 / 单位 / 红区 / 半径变了签名就变 → 自动重建。
+   *
+   * 为什么要缓存：盘面（刻度 + 数字 + 红区）是"算出来的"，
+   * 每帧重算 30~50 根刻度纯属浪费；但它又**必须**跟着量程变。
+   * 签名就是这个矛盾的解：算一次、存起来、输入一变就换一份新的。
+   *
+   * 为什么要**限量**：拖属性面板的数字输入框时，每敲一个键就是一个新签名
+   * （`8000` → `8` / `80` / `800` / `8000` 四个签名），不设上限会一直涨。
+   * 超了就丢最早的那条（Map 的迭代顺序 = 插入顺序）。
+   */
+  const dialCache = new Map();
+  const DIAL_CACHE_MAX = 32;
+
+  function dialFaceFor(opts) {
+    const sig = window.dialSig(opts);
+    const hit = dialCache.get(sig);
+    if (hit) return hit;
+    const face = window.buildDial(opts);
+    if (dialCache.size >= DIAL_CACHE_MAX) {
+      dialCache.delete(dialCache.keys().next().value);
+    }
+    dialCache.set(sig, face);
+    return face;
+  }
+  window.dialFaceFor = dialFaceFor;
+  /** 缓存里现在有几块盘面（测试用） */
+  window.dialCacheSize = function () { return dialCache.size; };
+  window.dialCacheClear = function () { dialCache.clear(); };
+
+  /**
+   * 仪表节点的**程序化盘面**参数（style 0 / 7）。
+   *
+   * 全部来自节点字段 —— 没有一个是写死的：
+   *   `min` / `max` → 刻度与数字；`warnLow` / `warnHigh` → 红区；PID → 单位
+   *
+   * 红区**两段**都支持：水温表 `warnLow = 60`（低于 60 也不正常 ——
+   * 冷机或节温器卡开），`warnHigh = 105`。参考实现只有一个 `redlineFrom`，
+   * 对"越高越危险"的表够用，对温度/电压这种**两端都不正常**的量不够。
+   */
+  function gaugeDialOpts(n, r, unit) {
+    const redlines = [];
+    if (n.warnLow !== null && n.warnLow !== undefined) redlines.push({ from: n.min, to: n.warnLow });
+    if (n.warnHigh !== null && n.warnHigh !== undefined) redlines.push({ from: n.warnHigh, to: n.max });
+    return {
+      cx: n.w / 2, cy: n.h / 2, r: r,
+      start: 135, sweep: 270,
+      min: n.min, max: n.max,
+      minor: 4,
+      redlines: redlines,
+      unit: unit || "",
+    };
+  }
+  window.gaugeDialOpts = gaugeDialOpts;
+
   function drawGaugeParts(n) {
     const values = S.previewValues || {};
     n.parts.forEach(function (p) {
@@ -950,9 +1055,16 @@ function uniformMatrix(m, w, h) {
     // 指针的角度由值驱动；其余部件用静态 rotation
     // 扫描范围可能"跟随仪表"（v2.27.0）—— 先解析出来再算角度
     const sw = window.partSweep(part, n.parts);
+    // ⚠️ 指针用**弹簧位置**，其余部件用静态 rotation（v2.81.0）。
+    // `vr.value` 是真值 —— 读数（kind === "value"）必须用它，指针不能。
+    // 弹簧按 **PID** 分（同一物理量的两根针当然一起动），与 partValueRange 同口径：
+    // 部件自己绑了 PID 就用它，否则跟随仪表节点。
+    const needleV = part.kind === "needle"
+      ? needleValue(part.pid || n.pid, vr.value)
+      : vr.value;
     const ang = part.kind === "needle"
       ? window.partAngle(Object.assign({}, part, { sweepFrom: sw[0], sweepTo: sw[1] }),
-          vr.value, vr.min, vr.max)
+          needleV, vr.min, vr.max)
       : part.rotation;
     // 旋转中心 = 部件自身的 pivot（相对自身 0..1）——
     // 指针素材的轴心通常不在图片中心，所以必须能单独设
@@ -987,6 +1099,68 @@ function uniformMatrix(m, w, h) {
   }
   // 导出：panels.js 定新节点尺寸时要拿原始宽高（按比例缩放）
   window.assetBitmap = assetBitmap;
+
+  /**
+   * 数字仪表显示**几位**：按量程上限的位数定（`0~8000` → 4 位，`0~260` → 3 位）。
+   *
+   * 为什么要由量程定而不是由当前值定：位数一变，每个数字的**宽度**就变，
+   * 整个读数会左右跳 —— 那是"表在抖"，不是"数字在滚"。
+   */
+  function digitCountFor(n) {
+    const m = Math.abs(Math.round(n.max));
+    return Math.max(2, Math.min(6, String(m).length));
+  }
+
+  /**
+   * **数字鼓**（v2.81.0）：每一位一条竖排条带，最低位跟着小数滚。
+   *
+   * 三个坑（`spring.js` 的 `drumSlot` 里有完整推导，这里只留结论）：
+   *
+   *   1. **步长按行数算**：10 行时一行 = 10%，20 行时一行 = 5%（`yPercent` 口径）。
+   *      本实现直接用像素（`rowH`），并把百分比口径也一并算出来，
+   *      避免"改了行数忘了改步长"——参考实现就是这么把数字显示成 2 倍的。
+   *   2. **位置每帧现算**，不缓存：缓存值在动画被打断时失真
+   *      （参考实现症状："重播后锁死 888"）。
+   *   3. **只向前滚**：9 → 0 继续往前，不依赖 `onComplete` 回位。
+   *      位置只由值决定，所以中途改值/打断都不会留下错位的条带。
+   *
+   * 前导零不画（`12` 不显示成 `012`），但**格子位置固定**（按量程位数排布），
+   * 这样数字变长变短时整块读数不会左右跳。
+   */
+  function drawDigitDrum(n, value, cx, cy, fontPx) {
+    const neg = value < 0;
+    const rowH = fontPx * 1.16;
+    const digits = digitCountFor(n);
+    const d = window.drumDigits(Math.abs(value), { rowH: rowH, digits: digits });
+    const dw = Math.max(1, ctx.measureText("0").width);
+    const cells = d.digits + (neg ? 1 : 0);
+    const total = dw * cells;
+    const x0 = cx - total / 2 + dw / 2 + (neg ? dw : 0);
+    const prevAlign = ctx.textAlign, prevBase = ctx.textBaseline;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    if (neg) ctx.fillText("-", x0 - dw, cy);
+    // 前导零不画：只画"当前值真正用到的"那几位（格子位置不动）
+    const shown = String(Math.floor(Math.abs(value))).length;
+    const from = Math.max(0, d.digits - shown);
+    for (let i = from; i < d.digits; i++) {
+      const s = d.slots[i];
+      const x = x0 + dw * i;
+      ctx.save();
+      // 每位一个裁剪格：条带上下滚时不能溢出到邻位（否则会看到"重影"）
+      ctx.beginPath();
+      ctx.rect(x - dw * 0.62, cy - fontPx * 0.78, dw * 1.24, fontPx * 1.56);
+      ctx.clip();
+      // ⚠️ 位置 = 基准线 + **这一位自己的**偏移（digitDy / nextDigitDy），
+      //    不是条带位移 offsetPx —— 那还要加上 row·rowH（见 drumSlot.rowDy）
+      ctx.fillText(String(s.digit), x, cy + s.digitDy);
+      ctx.fillText(String(s.nextDigit), x, cy + s.nextDigitDy);
+      ctx.restore();
+    }
+    ctx.textAlign = prevAlign; ctx.textBaseline = prevBase;
+    return d;
+  }
+  window.drawDigitDrum = drawDigitDrum;
+  window.digitCountFor = digitCountFor;
 
   function drawGaugeNode(n) {
     // ⚠️ 主题色必须**在这里取一次**（v2.49.0）。
@@ -1035,16 +1209,88 @@ function uniformMatrix(m, w, h) {
       ? S.previewValues[n.pid] : null;
     const ratio = pv !== null && n.max > n.min
       ? clamp((pv - n.min) / (n.max - n.min), 0, 1) : 0.62;
+    /**
+     * **机械值**（v2.81.0）：会动的东西（指针 / 盘面进度弧 / 数字鼓）用它。
+     *
+     * 与 `pv` 的差别就是"弹簧"：`pv` 是真值（每 16ms 硬跳一次），
+     * `mech` 是弹簧当前的位置。⚠️ `pv` 为 null（模拟关着）时 `mech` 也可能有值 ——
+     * 那是**补间**（自检扫表）在写，正是它该生效的时候。
+     */
+    const mech = needleValue(n.pid, pv);
+    const ratioMech = (mech !== null && mech !== undefined && n.max > n.min)
+      ? clamp((mech - n.min) / (n.max - n.min), 0, 1) : ratio;
 
     if (n.style === 0 || n.style === 7) {
       const r = Math.min(n.w, n.h) * 0.36;
+      // ---- 0) **盘面**：刻度 / 数字 / 红区全部由节点字段算出来。
+      //      量程、单位、红区一变签名就变 → `dialFaceFor` 自动重建一块新的。
+      const face = dialFaceFor(gaugeDialOpts(n, r, unit));
+      const a0 = face.arc.angFrom * Math.PI / 180;
+      const a1 = face.arc.angTo * Math.PI / 180;
+
+      // ---- 1) 底弧（轨道）
       ctx.strokeStyle = T.track;
       ctx.lineWidth = Math.max(1.5, r * 0.12);
-      ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI * 0.75, Math.PI * 2.25); ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx, cy, r, a0, a1); ctx.stroke();
+
+      // ---- 2) 刻度：大格长、小格短，一律**朝内**画
+      //      （朝外会和 `ringStyle === 1` 的外圈段环撞在一起）
+      //      颜色用主题的 `tick`（主题里专门有一档给刻度，比 dim 更亮一点）；
+      //      老主题万一没这个字段就回落到 dim
+      const tickColor = T.tick || T.dim;
+      ctx.lineWidth = Math.max(1, r * 0.035);
+      face.ticks.forEach(function (t) {
+        const aa = t.ang * Math.PI / 180;
+        const rr0 = r * 0.92;
+        const rr1 = t.major ? r * 0.78 : r * 0.85;
+        ctx.strokeStyle = t.major ? tickColor : T.track;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(aa) * rr0, cy + Math.sin(aa) * rr0);
+        ctx.lineTo(cx + Math.cos(aa) * rr1, cy + Math.sin(aa) * rr1);
+        ctx.stroke();
+      });
+
+      // ---- 3) 刻度数字。挤了就**隔一个画一个** —— 自动选步长会给出 13~14 个大格，
+      //      全画会在 270° 的弧上糊成一片（真表遇到这种情况也是隔一个标一个）
+      const fsTick = Math.max(5, r * 0.17);
+      const labelR = r * 0.62;
+      const stride = window.dialLabelStride(face, fsTick, labelR);
+      ctx.fillStyle = tickColor;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.font = fsTick + "px " + window.fontCss("mono");
+      face.labels.forEach(function (l, i) {
+        if (i % stride !== 0) return;
+        const aa = l.ang * Math.PI / 180;
+        ctx.fillText(l.text, cx + Math.cos(aa) * labelR, cy + Math.sin(aa) * labelR);
+      });
+
+      // ---- 4) 红区：画在**填充之上** —— 报警区任何时刻都该看得见
+      //      （画在下面会被进度弧盖住，值一进红区就"看不见红"了）
+      face.redlines.forEach(function (z) {
+        ctx.strokeStyle = "#FF4D4F";
+        ctx.lineWidth = Math.max(1.5, r * 0.12);
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, z.angFrom * Math.PI / 180, z.angTo * Math.PI / 180);
+        ctx.stroke();
+      });
+
+      // ---- 5) 进度弧：**路径恒定，进度只改一个标量**（stroke-dashoffset）
+      //
+      // 参考实现（SVG）用 `strokeDasharray = len; strokeDashoffset = len × (1 - 进度)`。
+      // canvas 的对应物是 `setLineDash([len])` + `lineDashOffset`，语义完全一致。
+      //
+      // ⚠️ 为什么不"按比例重画一段短弧"（原来的做法）：
+      //   ① 每帧都要重新构造一遍路径；
+      //   ② 弧的两端（抗锯齿）每帧都在动，数值抖动时看着像在"呼吸"；
+      //   ③ 进度不再是一个**可插值的标量** —— 想给它做弹簧/补间都无从下手。
       ctx.strokeStyle = T.accent;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, Math.PI * 0.75, Math.PI * 0.75 + Math.PI * 1.5 * ratio); ctx.stroke();
-      const a = Math.PI * 0.75 + Math.PI * 1.5 * ratio;
+      ctx.lineWidth = Math.max(1.5, r * 0.12);
+      window.applyArcProgress(ctx, face.arc.len, ratioMech);
+      ctx.beginPath(); ctx.arc(cx, cy, r, a0, a1); ctx.stroke();
+      window.clearArcProgress(ctx);
+
+      // ---- 6) 指针（红细线）
+      const a = a0 + (a1 - a0) * ratioMech;
       ctx.strokeStyle = "#FF4D4F";
       ctx.lineWidth = Math.max(1, r * 0.05);
       ctx.beginPath(); ctx.moveTo(cx, cy);
@@ -1063,12 +1309,22 @@ function uniformMatrix(m, w, h) {
     } else if (n.style === 1) {
       ctx.fillStyle = T.value;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.font = "bold " + Math.max(8, Math.min(n.h * 0.44, n.w * 0.30)) + "px Consolas, monospace";
+      const fsNum = Math.max(8, Math.min(n.h * 0.44, n.w * 0.30));
+      ctx.font = "bold " + fsNum + "px Consolas, monospace";
       // 有映射表就显示名字（挡位 P/R/N/1..6），否则显示数字。
       // ⚠️ 判定走 window.valueLabelFor —— 与 Kotlin 侧 ValueLabels 同一套语义，
       // 工具里看到的就是设备上会看到的（不要在这里另写一遍取整逻辑）
       const lbl = window.valueLabelFor(n.valueLabels, pv);
-      ctx.fillText(lbl !== null ? lbl : (pv !== null ? String(Math.round(pv)) : "123"), cx, cy);
+      if (lbl !== null) {
+        // 映射表里的每个状态是一个**词**（P / R / N / 1…6），数字鼓对它没有意义
+        ctx.fillText(lbl, cx, cy);
+      } else if (mech === null || mech === undefined) {
+        ctx.fillText("123", cx, cy);
+      } else {
+        // **数字鼓**（v2.81.0）：每位一条竖排条带，最低位跟着小数滚。
+        // 三个坑（行数变了步长就变 / 位置必须现算 / 只向前滚）见 spring.js 的 drumSlot
+        drawDigitDrum(n, mech, cx, cy, fsNum);
+      }
     } else if (n.style === 2) {
       const bh = Math.max(3, n.h * 0.20);
       const bx = n.w * 0.06, bw = n.w * 0.88, by = n.h * 0.62;
@@ -1105,7 +1361,13 @@ function uniformMatrix(m, w, h) {
     }
 
     // 标签 / PID / 量程 —— 抽成独立函数，因为**部件路径也要画它**
-    drawGaugeLabel(n, label, unit, style, card);
+    //
+    // ⚠️ 传的是 `card.style`（**粗档位数字**），不是 `card` 对象本身（v2.81.0 修）。
+    // `resolveCard()` 返回的是 `{show, alpha, radius, style}` 对象，而
+    // `drawGaugeLabel` 里要拿它去查 `CARD_NAMES[card]` —— 传对象查不到，
+    // 于是右下角那行标签一直印着 **"数字 · undefined"**（存量 bug，实测截图确认）。
+    // 部件路径（上面第 1179 行）本来就是传数字，所以两条路径的标签不一致。
+    drawGaugeLabel(n, label, unit, style, card.style);
   }
 
   /**

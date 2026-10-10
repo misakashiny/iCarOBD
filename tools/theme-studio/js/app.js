@@ -363,7 +363,18 @@
   const SET_KEY = "icar-studio-ui";
 
   /** 界面设置的默认值。**只放"工具本身"的偏好，不放设计数据。** */
-  const SET_DEFAULTS = { zoom: 1 };
+  const SET_DEFAULTS = {
+    zoom: 1,
+    /**
+     * 指针弹簧参数（v2.81.0）。默认取 `SPRING_DEFAULTS`（k=150 / c=19）——
+     * 阻尼比 ζ≈0.78 轻微欠阻尼，到位时过冲约 2% 再回正，这是"像真针"的来源。
+     *
+     * ⚠️ 放在**界面设置**而不是设计文件里：它是**预览的手感**，
+     * 与"主题长什么样"无关。写进设计文件会让同一份设计在不同人的机器上手感不同。
+     */
+    springK: window.SPRING_DEFAULTS.k,
+    springC: window.SPRING_DEFAULTS.c,
+  };
 
   /**
    * 界面缩放的预设。
@@ -383,7 +394,15 @@
       if (!raw) return Object.assign({}, SET_DEFAULTS);
       const o = JSON.parse(raw);
       const z = Number(o && o.zoom);
-      return { zoom: (z >= 0.5 && z <= 2) ? z : SET_DEFAULTS.zoom };
+      const k = Number(o && o.springK);
+      const c = Number(o && o.springC);
+      return {
+        zoom: (z >= 0.5 && z <= 2) ? z : SET_DEFAULTS.zoom,
+        // k / c 的合法区间：k 太小指针软得看不出在动，太大就退化成"硬跳"（等于没弹簧）；
+        // c 太大变成过阻尼 —— "黏糊糊地滑过去"，一眼假
+        springK: (k >= 10 && k <= 2000) ? k : SET_DEFAULTS.springK,
+        springC: (c >= 0 && c <= 200) ? c : SET_DEFAULTS.springC,
+      };
     } catch (e) { return Object.assign({}, SET_DEFAULTS); }
   }
 
@@ -402,6 +421,48 @@
 
   window.SETTINGS = loadSettings();
   applySettings(window.SETTINGS);
+  applySpringParams();
+
+  /**
+   * 把界面设置里的弹簧参数灌进弹簧池。
+   *
+   * ⚠️ 弹簧池在 `canvas.js` 里就建好了（渲染层要读它），所以这里只是**改参数**。
+   * 改完立刻对新旧弹簧都生效（`SpringBank.params` 会遍历已有的那些）。
+   */
+  function applySpringParams() {
+    const b = window.CanvasState && window.CanvasState.simSprings;
+    if (b && b.params) b.params(window.SETTINGS.springK, window.SETTINGS.springC);
+  }
+
+  /**
+   * 改弹簧参数（设置面板用）。`k` / `c` 任一为空就只改另一个。
+   *
+   * 参数**非法时不改**（不夹取）：输入框里打了一半的 "1" 不该被悄悄改成 10，
+   * 那会让人以为"我输入的数字被吞了"。
+   */
+  window.setSpringParams = function (k, c) {
+    const kk = (k === undefined || k === null || k === "") ? null : Number(k);
+    const cc = (c === undefined || c === null || c === "") ? null : Number(c);
+    if (kk !== null && Number.isFinite(kk) && kk >= 10 && kk <= 2000) window.SETTINGS.springK = kk;
+    if (cc !== null && Number.isFinite(cc) && cc >= 0 && cc <= 200) window.SETTINGS.springC = cc;
+    saveSettings(window.SETTINGS);
+    applySpringParams();
+    // ⚠️ **不要在这里调 `openSettings()`**：它重写整个 `settingsBox` 的 innerHTML，
+    //    而用户正在这个框里打字 —— 输入元素被销毁重建，**每敲一个数字就丢焦点**
+    //    （实测：敲第二下就没反应了）。只更新那一行体检文案。
+    const hint = document.getElementById("springHintBox");
+    if (hint) hint.innerHTML = springHintText();
+  };
+
+  /** 弹簧体检文案（对话框里那一行 + 调参时实时更新） */
+  function springHintText() {
+    const chk = window.springCheck(window.SETTINGS.springK, window.SETTINGS.springC, 1 / 60);
+    return 'k·dt² = <b>' + chk.hooke.toFixed(3) + '</b>（&lt; 4 稳定）· ' +
+      'c·dt = <b>' + chk.damp.toFixed(3) + '</b>（&lt; 2 稳定）· ' +
+      '阻尼比 ζ = <b>' + chk.zeta.toFixed(3) + '</b> → ' +
+      (chk.zeta < 0.9 ? '欠阻尼（会过冲，像真针）'
+        : (chk.zeta <= 1.1 ? '接近临界（过冲很小）' : '过阻尼（黏，不像真针）'));
+  }
 
   window.setUiZoom = function (v) {
     const z = Number(v);
@@ -416,6 +477,7 @@
     window.SETTINGS = Object.assign({}, SET_DEFAULTS);
     try { localStorage.removeItem(SET_KEY); } catch (e) {}
     applySettings(window.SETTINGS);
+    applySpringParams();          // 弹簧参数也要跟着回默认（k=150 / c=19）
     window.openSettings();
     if (window.toast) window.toast("界面设置已恢复默认");
   };
@@ -429,6 +491,9 @@
       return '<button class="' + (on ? "primary" : "") + '" title="' + window.esc(p.note) + '"' +
         ' onclick="setUiZoom(' + p.v + ')">' + window.esc(p.n) + (on ? " ✓" : "") + '</button>';
     }).join("");
+    // 弹簧体检：把当前 k / c 的稳定性与阻尼比**明说**出来 ——
+    // 用户调参时最需要知道的就是"这组参数会不会发散 / 是不是过阻尼"
+    const springHint = springHintText();
     box.innerHTML =
       '<div class="setRow"><label>界面缩放</label><div class="setPresets">' + btn + '</div></div>' +
       '<div class="setHint">' +
@@ -436,6 +501,21 @@
       '这是<b>工具本身</b>的偏好（本机生效），<b>不会写进设计文件</b> —— ' +
       '否则同一份设计在不同人的机器上会长得不一样。' +
       '</div>' +
+      '<div class="setRow"><label>指针弹簧 k</label>' +
+      '<input type="number" step="10" min="10" max="2000" value="' + window.SETTINGS.springK + '"' +
+      ' oninput="setSpringParams(this.value,null)" title="劲度系数：越大越硬、到位越快">' +
+      '<label style="flex:0 0 66px">阻尼 c</label>' +
+      '<input type="number" step="1" min="0" max="200" value="' + window.SETTINGS.springC + '"' +
+      ' oninput="setSpringParams(null,this.value)" title="阻尼系数：越小越晃">' +
+      '</div>' +
+      '<div class="setHint" id="springHintBox">' + springHint + '</div>' +
+      '<div class="setHint">' +
+      '指针在<b>实时模拟</b>下走真弹簧（不是"值 → 角度"直接映射）—— ' +
+      '实时数据每 16ms 变一次，补间永远追不上，弹簧是<b>状态</b>不是动画。' +
+      '</div>' +
+      '<div class="setRow"><label>自检扫表</label><div class="setPresets">' +
+      '<button onclick="playBootSweep()" title="所有指针 0 → 满 → 回位。它同时验证了让位仲裁：扫表期间实时数据不写指针角度">▶ 试一次（1.6 秒）</button>' +
+      '</div></div>' +
       '<div class="setFoot"><button onclick="resetSettings()">恢复默认</button></div>';
     const dlg = document.getElementById("settingsDlg");
     if (dlg && !dlg.open) { if (dlg.showModal) dlg.showModal(); else dlg.setAttribute("open", ""); }
@@ -1446,7 +1526,7 @@
     inp.click();
   };
 
-  // ================================================================ 实时数据模拟
+  // ================================================================ 实时数据模拟（+ 弹簧）
 
   /**
    * 实时数据模拟：给所有用到的 PID 生成正弦波形，驱动预览动起来。
@@ -1456,10 +1536,27 @@
    *
    * 波形与 `DashboardBenchmark` 同思路：正弦（处处连续，不会突然跳变），
    * 每条错开相位，避免所有表同时到峰值。
+   *
+   * ## 全工具**唯一**的实时数据 rAF 主循环（v2.81.0）
+   *
+   * ⚠️ 只有这一个循环负责**实时数据**；补间（自检扫表）走另一条路
+   * （`playBootSweep`）。两者写同一个属性（指针角度）时靠 `S.anim` 让位 ——
+   * 见下面 `allows("sim")` 那一句。
+   *
+   * 参考实现踩过的坑：主循环每帧覆写 `rotation`，把开机自检的扫表**完全压掉**
+   * （动画在跑，但一帧都看不见）。所以顺序必须是
+   * **先问让位标志、再决定这一帧推不推弹簧**，而不是"先推再被覆盖"。
+   *
+   * ## 为什么指针走弹簧而不是直接映射真值
+   *
+   * 真值每 16ms 换一次，直接映射就是**硬跳**（而且正弦采样不匀时还会抖）。
+   * 弹簧是**状态**不是动画：目标怎么跳，它都只是"被拉了一下"。
+   * 补间做不到这件事 —— 目标一直在变，补间永远追不上，还会互相 overwrite。
    */
   let simRunning = false;
   let simStart = 0;
   let simRaf = null;
+  let simLast = 0;
 
   function collectPids() {
     const set = new Set();
@@ -1470,9 +1567,8 @@
     return Array.from(set);
   }
 
-  function simStep() {
-    if (!simRunning) return;
-    const t = (performance.now() - simStart) / 1000;
+  /** 第 t 秒时的**真值**表 `{pid: value}`（正弦） */
+  function simTargets(t) {
     const pids = collectPids();
     const vals = {};
     pids.forEach((pid, i) => {
@@ -1484,7 +1580,24 @@
       const n = (Math.sin(phase * 2 * Math.PI) + 1) / 2; // 0..1
       vals[pid] = min + (max - min) * n;
     });
-    S.previewValues = vals;
+    return vals;
+  }
+
+  function simStep() {
+    if (!simRunning) return;
+    const now = performance.now();
+    const t = (now - simStart) / 1000;
+    // ⚠️ dt 用**真实帧间隔**（弹簧是物理积分，不是按帧数走），
+    //    并且**在 `spring.step` 里夹上限**：切走标签页再切回来时 dt 可能是好几秒，
+    //    不夹的话 `k·dt²` 直接发散（指针飞到屏幕外）。
+    const dt = simLast ? (now - simLast) / 1000 : 1 / 60;
+    simLast = now;
+    const vals = simTargets(t);
+    S.previewValues = vals;                       // 真值：读数 / 条形 / 状态灯 / 阈值
+    // **让位**：被补间（自检扫表）占着就**不推弹簧** —— 不写"指针角度"这个属性
+    if (!S.anim || S.anim.allows("sim")) {
+      S.simSprings.step(vals, dt);                // 弹簧位置：指针 / 进度弧 / 数字鼓
+    }
     S.simPhase = t;
     window.draw();
     simRaf = requestAnimationFrame(simStep);
@@ -1495,14 +1608,24 @@
     const b = el("btnSim");
     if (simRunning) {
       simStart = performance.now();
-      S.previewValues = {};
+      simLast = 0;
+      const vals = simTargets(0);
+      S.previewValues = vals;
+      S.simSprings.active = true;
+      // 弹簧**从当前真值起步**，不是从 0 起步 ——
+      // 否则一开模拟所有指针都从零扫过去，看着像"开机自检"，
+      // 而那恰好会掩盖我们真正想看的观感（正弦追针）
+      S.simSprings.clear();
+      Object.keys(vals).forEach(k => S.simSprings.snap(k, vals[k]));
       simStep();
       if (b) { b.textContent = "⏸ 停止模拟"; b.classList.add("on"); }
-      toast("实时模拟已开始：数值会按正弦变化，状态灯也会跟着切换");
+      toast("实时模拟已开始：数值按正弦变化，指针走**弹簧**（不是直接映射）");
     } else {
       if (simRaf) cancelAnimationFrame(simRaf);
       S.previewValues = null;
       S.simPhase = 0;
+      S.simSprings.active = false;
+      S.simSprings.clear();
       window.draw();
       if (b) { b.textContent = "▶ 实时模拟"; b.classList.remove("on"); }
     }
@@ -1510,6 +1633,66 @@
 
   /** 模拟的速度：让波形跑快一点，便于快速看到状态切换 */
   window.setSimSpeed = function () { /* 预留 */ };
+
+  // ================================================================ 补间（作者编排的动画）
+
+  /**
+   * **把指针交给补间**（v2.81.0）。
+   *
+   * 这是"让位标志"的写入口：`holdMs` 内实时数据不写指针角度，
+   * 指针读 `vals`（`{pid: value}`）。不传 `vals` 就是**交还**。
+   *
+   * 为什么要有超时：调 `claim` 的一方要是崩了（忘了 release），
+   * 标志会自己过期，不会把实时数据**永久**锁死 —— 那种 bug 的表现是
+   * "实时模拟开着但指针不动"，极难定位。
+   */
+  window.setTweenValues = function (vals, holdMs) {
+    S.tweenValues = vals || null;
+    if (S.tweenValues) S.anim.claim("tween", holdMs === undefined ? 400 : holdMs, "setTweenValues");
+    else S.anim.release("tween");
+    window.draw();
+  };
+
+  let sweepRaf = null;
+
+  /**
+   * **开机自检扫表**：所有指针 0 → 满 → 回位。
+   *
+   * 它同时是"让位仲裁"的**活例子**：扫表期间实时数据让位，
+   * 扫完交还。参考实现正是这里出的问题 —— 主循环每帧覆写角度，
+   * 扫表在跑却一帧都看不见。
+   */
+  window.playBootSweep = function (ms) {
+    const dur = Math.max(300, Number(ms) || 1600);
+    if (sweepRaf) cancelAnimationFrame(sweepRaf);
+    const pids = collectPids();
+    if (!pids.length) { toast("画布上没有绑 PID 的仪表，扫表无从谈起"); return; }
+    const t0 = performance.now();
+    S.anim.claim("tween", dur + 400, "boot-sweep");
+    const step = function () {
+      const p = Math.min(1, (performance.now() - t0) / dur);
+      // 0 → 1 → 0 的三角波：前 60% 扫满，后 40% 回位
+      const k = p < 0.6 ? (p / 0.6) : (1 - (p - 0.6) / 0.4);
+      const vals = {};
+      pids.forEach(function (pid) {
+        const info = window.BUILTIN_PIDS[pid];
+        const min = info ? info.min : 0;
+        const max = info ? info.max : 100;
+        vals[pid] = min + (max - min) * k;
+      });
+      S.tweenValues = vals;
+      window.draw();
+      if (p < 1) {
+        sweepRaf = requestAnimationFrame(step);
+      } else {
+        sweepRaf = null;
+        S.tweenValues = null;
+        S.anim.release("tween");     // **交还**给实时数据
+        window.draw();
+      }
+    };
+    step();
+  };
 
   // ================================================================ 文件读写
 

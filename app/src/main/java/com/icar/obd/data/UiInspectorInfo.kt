@@ -44,6 +44,46 @@ object UiInspectorInfo {
     /** 操作提示（面板底部常驻） */
     const val HINT_OPS = "长按复制 · 拖动移动 · 右上角 × 关闭"
 
+    // ------------------------------------------------------------ 检视开关（v1.20.15）
+
+    /**
+     * 面板上那个开关的文案：**开**（正在接管触摸）。
+     *
+     * 用户原话：「悬浮窗上面加个检视器的开关」。
+     * 开关与右上角的 `×` **不是一回事**，别合并：
+     * - **暂停** → 面板留着、触摸放行（能正常用 App，随时能恢复）；
+     * - **`×`** → 彻底关闭 + 摘掉浮层（要恢复得去设置页）。
+     */
+    const val TOGGLE_ON = "检视 开"
+
+    /** 面板上那个开关的文案：**暂停**（面板还在，但触摸已放行） */
+    const val TOGGLE_PAUSED = "检视 暂停"
+
+    /** 开关此刻该显示什么字。纯函数，单测覆盖 */
+    fun toggleLabel(paused: Boolean): String = if (paused) TOGGLE_PAUSED else TOGGLE_ON
+
+    /**
+     * **此刻检视是否真的在接管触摸** = 开着 且 没暂停。
+     *
+     * 抽成纯函数而不是在两个类里各写一遍 `enabled && !paused`：
+     * 这三处（宿主消费触摸 / 强制导航栏可见 / 面板要不要抢触摸）**必须同一个判据**，
+     * 否则会出现"触摸已经放行了，但导航栏还被强行按住"这类半吊子状态。
+     */
+    fun inspecting(enabled: Boolean, paused: Boolean): Boolean = enabled && !paused
+
+    /**
+     * 面板**本体**要不要抢触摸。
+     *
+     * - 检视中（没暂停）→ `true`：面板要能拖动、长按复制（此时整屏触摸本来就被消费）；
+     * - **暂停 → `false`**：面板只剩开关与 `×` 两小块可点，
+     *   **其余部分一律不抢触摸** —— 否则会挡住画布横滑与编辑态拖拽
+     *   （用户明确点名的约束）。
+     */
+    fun panelStealsTouch(paused: Boolean): Boolean = !paused
+
+    /** 暂停时面板底部的提示（说明"现在能正常用 App，怎么恢复"） */
+    const val HINT_PAUSED = "已暂停：触摸已放行，App 可以正常用；点左上角「检视 暂停」恢复接管"
+
     // ------------------------------------------------------------ 数值换算
 
     /**
@@ -213,24 +253,63 @@ object UiInspectorInfo {
      * 为什么都保尾部：尾部 = **最近的父容器**，那才是"这个控件挂在哪"的答案。
      * 实测踩过：第一版从尾巴砍，结果最有用的一段显示成 `… > M…`
      * （`MaterialTextView` 被砍成 `M…`），等于什么都没说。
+     *
+     * ## 🔴 v1.20.15 修：这里曾经是**死循环**（v1.20.14 的 ANR 根因）
+     *
+     * 旧写法是一个 `while (parts.size > 2 && body.length > CHAIN_MAX)` 循环，
+     * 每轮做 `rest = parts.drop(1)` → 去掉开头的省略号 → `parts = [省略号] + rest`。
+     * **第一轮之后 `parts` 的头部就是省略号**，于是 `drop(1)` 恰好只丢掉那个**标记**，
+     * 紧接着 `listOf(ELLIPSIS) + rest` 又把它原样加回来 —— `parts` 与 `body`
+     * 成为**不动点**：只要第一轮之后长度仍 > [CHAIN_MAX]，`while` 就**永不退出**。
+     *
+     * 触发窗口很窄但真实存在：链折叠成 5 段后
+     * `|c1| + |c_{n-2}| + |c_{n-1}| > 42`（即长度 59 > 56）就进得去。
+     * 实测在「连接」页点中一个 `MaterialButton`（父链里有
+     * `ContentFrameLayout / LinearLayout / AppCompatImageView / MaterialButton`）就命中，
+     * 主线程 100% CPU 卡在 `dispatchTouchEvent` 里 → InputDispatcher 等 5 秒 →
+     * `am_anr: ... Waited 5000ms for MotionEvent(action=DOWN)`。
+     * （栈：`chainLine → render → renderBody → inspect → consumeForInspector → dispatchTouchEvent`）
+     *
+     * **修法**：收敛条件从"字符串长度"改成 **`dropCount` 单调递增**的 `for` 循环 ——
+     * 轮数上界 `clean.size + 1`，**结构上不可能不终止**，不再依赖"每轮真的变短"。
+     * 回归测试见 `UiInspectorInfoTest.父链超长时不会死循环`（带 `timeout`）。
      */
     fun chainLine(names: List<String>): String {
         val clean = names.filter { it.isNotBlank() }
             .map { if (it.length > NAME_MAX) it.take(NAME_MAX - 1) + ELLIPSIS else it }
         if (clean.isEmpty()) return "层级 $NONE"
-        var parts: List<String> =
-            if (clean.size > 4) clean.take(2) + ELLIPSIS + clean.takeLast(2) else clean
-        var body = parts.joinToString(SEP)
-        while (parts.size > 2 && body.length > CHAIN_MAX) {
-            // 丢掉头部一段；已经省略过的就多丢一段，免得出现 "… > …"
-            var rest = parts.drop(1)
-            while (rest.isNotEmpty() && rest.first() == ELLIPSIS) rest = rest.drop(1)
-            parts = listOf(ELLIPSIS) + rest
-            body = parts.joinToString(SEP)
+        // ⚠️ 这里的 for 是**有界**的：轮数 = clean.size + 1。
+        // 千万别再改回"按字符串长度 while 收敛"—— 那正是死循环的来源。
+        var body = chainBody(clean, 0)
+        for (dropCount in 1..clean.size) {
+            if (body.length <= CHAIN_MAX) break
+            body = chainBody(clean, dropCount)
         }
         // 兜底：只剩一两段还是超长（类名本身很长）—— 只能截字符串
         if (body.length > CHAIN_MAX) body = body.take(CHAIN_MAX - 1) + ELLIPSIS
         return "层级 $body"
+    }
+
+    /**
+     * 从头部丢掉 [dropCount] 段之后的父链文本（**不含** `层级 ` 前缀）。
+     *
+     * - `dropCount == 0` 且层数 > 4 → `A > B > … > Y > Z`（中间省略）；
+     * - `dropCount > 0` → `… > Y > Z`（头部省略，**最近两层永远完整**）。
+     *
+     * 纯函数、无循环 —— 这是 [chainLine] 能"结构上有界"的关键。
+     */
+    private fun chainBody(clean: List<String>, dropCount: Int): String {
+        val n = clean.size
+        val head = clean.subList(dropCount.coerceIn(0, n), n)
+        if (head.isEmpty()) return ELLIPSIS
+        val parts: List<String> = when {
+            dropCount == 0 && n > 4 ->
+                listOf(clean[0], clean[1], ELLIPSIS, clean[n - 2], clean[n - 1])
+            dropCount == 0 -> head
+            head.size <= 2 -> listOf(ELLIPSIS) + head
+            else -> listOf(ELLIPSIS, head[head.size - 2], head[head.size - 1])
+        }
+        return parts.joinToString(SEP)
     }
 
     /** 可选行：值为 `null`/空 → **整行不出现**（不写"（无）"，因为它是加分项不是必填项） */
