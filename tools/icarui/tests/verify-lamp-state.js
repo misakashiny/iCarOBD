@@ -20,7 +20,7 @@
    而不是只查报告点名的 16 个 —— 否则下次新增控件漏了 `statePid`，
    这个套件照样绿。
 
-   跑法：node tools/theme-studio/tests/verify-lamp-state.js
+   跑法：node tools/icarui/tests/verify-lamp-state.js
    ========================================================================== */
 "use strict";
 const { spawn } = require('child_process');
@@ -308,6 +308,125 @@ const eq = (a, b, m) => ok(a === b, m + (a === b ? '' : `（实际 ${JSON.string
     const studioJs = ['js/validate.js', 'js/app.js', 'js/editor.js', 'js/panels.js']
       .map(f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8')).join('\n');
     ok(!/Math\.max\(60,/.test(studioJs), '工具侧没有 Math.max(60, ...) 残留（那是 16.7Hz）');
+
+    // ---------- 9) 闪烁周期必须走常量，不许裸写字面量（v2.83.0，Round 3）----------
+    //
+    // ⚠️ 为什么值得一条断言：
+    // `MIN_BLINK_MS` 是**跨语言**常量（第 8 节刚比过）。但控件库 `presets.js` 里
+    // 原来有 8 处**裸写 `blinkMs: 400`**，其余 6 处用的是 `window.MIN_BLINK_MS`。
+    // 今天两者相等所以看不出问题；**哪天把下限抬到 500**，裸写的那 8 处不会跟，
+    // 于是内置灯以 2.5Hz 出厂 —— 正是 v2.82.0 花大力气修掉的那条 WCAG 红线，
+    // 而且**不会有任何报错**。
+    console.log('\n=== 9. 闪烁周期不许裸写字面量 ===');
+    const presetSrc = fs.readFileSync(path.join(__dirname, '..', 'js', 'presets.js'), 'utf8');
+    const allToolJs = studioJs + '\n' + presetSrc;
+    const blinkLits = [...allToolJs.matchAll(/blinkMs:\s*(\d+)/g)].map(x => Number(x[1]));
+    console.log('    · 工具里裸写的 blinkMs 字面量：' + JSON.stringify(blinkLits));
+    ok(blinkLits.every(v => v >= BL.min),
+      `裸写的 blinkMs 都不低于下限 ${BL.min}（实测 ${JSON.stringify(blinkLits)}）`);
+    ok(blinkLits.indexOf(BL.min) < 0,
+      `**下限本身不许写成字面量**（该用 window.MIN_BLINK_MS）—— 实测 ${JSON.stringify(blinkLits)}`);
+    ok(/blinkMs:\s*window\.MIN_BLINK_MS/.test(presetSrc),
+      'presets.js 里确实用上了 window.MIN_BLINK_MS（不是把字面量删了了事）');
+
+    // ---------- 10) 三态默认值的单一真源（v2.83.0，Round 3）----------
+    //
+    // `STATE_NAMES` 说"有哪几个状态"，`STATE_DEFAULTS` 说"各自默认什么"。
+    // 两处分开写是有意的（默认值不一样，不能靠循环推），所以必须**钉住完整性**：
+    // 加了第四个状态却忘了加默认值，症状是"这个状态永远不亮"，且不报错。
+    console.log('\n=== 10. STATE_NAMES 与 STATE_DEFAULTS 必须一一对应 ===');
+    const sd = JSON.parse(await cdp.eval(`JSON.stringify({
+      names: (window.STATE_NAMES || []).map(s => s.v),
+      defs: Object.keys(window.STATE_DEFAULTS || {}),
+      d: window.defaultStates('as_x'),
+      min: window.MIN_BLINK_MS,
+    })`));
+    console.log('    · ' + JSON.stringify(sd));
+    ok(sd.names.length > 0, `STATE_NAMES 有 ${sd.names.length} 个状态`);
+    const missingDef = sd.names.filter(v => sd.defs.indexOf(v) < 0);
+    const extraDef = sd.defs.filter(v => sd.names.indexOf(v) < 0);
+    ok(missingDef.length === 0, `每个状态都有默认值（缺：${JSON.stringify(missingDef)}）`);
+    ok(extraDef.length === 0, `STATE_DEFAULTS 里没有多余的状态（多：${JSON.stringify(extraDef)}）`);
+    eq(Object.keys(sd.d).join(','), sd.names.join(','), 'defaultStates() 的键顺序与 STATE_NAMES 一致');
+    ok(sd.d.normal.assetId === 'as_x' && sd.d.warn.assetId === '' && sd.d.critical.assetId === '',
+      'defaultStates(assetId) 只给 normal 带上素材，其余两态留空');
+    ok(sd.d.critical.blink === true && sd.d.normal.blink === false && sd.d.warn.blink === false,
+      'critical 默认闪烁、normal/warn 默认不闪');
+    ok(sd.names.every(v => sd.d[v].blinkMs === sd.min),
+      `三个状态的 blinkMs 都等于下限 ${sd.min}（不是裸写的 400）`);
+
+    // 「懒创建」也必须拿到**同一个**默认值（原来 critical 会拿到 blink:false）
+    const lazy = JSON.parse(await cdp.eval(`(() => {
+      const S = window.CanvasState;
+      const n = window.createNode(window.NODE_IMAGE, { name: '懒', x:0, y:0, w:20, h:20 });
+      n.states = { normal: { assetId:'', alpha:255, blink:false, blinkMs: window.MIN_BLINK_MS } };  // 老文件：只有 normal
+      S.design.nodes = [n]; S.selection = [n.id];
+      window.setState('critical', 'blink', true);      // 触发懒创建
+      return JSON.stringify({ critical: n.states.critical, fromDefault: window.defaultStates('')[ 'critical'] });
+    })()`));
+    console.log('    · ' + JSON.stringify(lazy));
+    eq(lazy.critical.blink, true, '**懒创建的 critical 也默认闪烁**（原来这里是 false，与"启用状态系统"那条路径不一致）');
+    eq(lazy.critical.alpha, lazy.fromDefault.alpha, '懒创建的默认值与单一真源一致');
+    eq(lazy.critical.blinkMs, lazy.fromDefault.blinkMs, '懒创建的 blinkMs 也走常量');
+
+    // ---------- 11) 状态素材的**回退链**必须与 App 一致（v2.83.0，Round 6）----------
+    //
+    // ⚠️ 这一条是实测抓到的真分歧：
+    // App 的 `NodeTreeRenderer.resolveState` 写的是 `critical ?: warn ?: normal`，
+    // 而工具原来是 `n.states[name] || n.states.normal` —— **少了中间那一级**。
+    // 于是一份只填了 normal/warn、没有 `critical` 键的设计，数值超过危险线时
+    // **工具预览显示 normal 的图，真机显示 warn 的图**。
+    // 用户会以为"危险态没接上"（预览里灯根本没变），而车上却是黄灯。
+    console.log('\n=== 11. 状态素材的回退链：critical → warn → normal ===');
+    const fallback = JSON.parse(await cdp.eval(`(() => {
+      const mk = (states) => {
+        const n = window.createNode(window.NODE_IMAGE, { name:'灯', assetId:'A_NORMAL', x:0,y:0,w:40,h:40 });
+        n.statePid = 'obd.coolant';
+        n.stateWarn = 50;          // 显式阈值，不依赖 PID 库
+        n.stateCritical = null;    // 不设 → 走"中点"推断
+        n.states = states;
+        return n;
+      };
+      const S = window.CanvasState;
+      const out = {};
+      const info = window.BUILTIN_PIDS['obd.coolant'];
+      const max = info ? info.max : 100;
+      const critAt = 50 + (max - 50) * 0.5;
+      S.previewValues = { 'obd.coolant': critAt + 1 };   // 明确超过危险线
+      out.阈值 = { warnAt: 50, critAt: critAt };
+
+      let n = mk({
+        normal:   { assetId:'A_NORMAL', alpha:255, blink:false, blinkMs:400 },
+        warn:     { assetId:'A_WARN',   alpha:255, blink:false, blinkMs:400 },
+        critical: { assetId:'A_CRIT',   alpha:255, blink:true,  blinkMs:400 },
+      });
+      out.三态齐全 = window.resolveState(n).assetId;
+
+      n = mk({
+        normal: { assetId:'A_NORMAL', alpha:255, blink:false, blinkMs:400 },
+        warn:   { assetId:'A_WARN',   alpha:255, blink:false, blinkMs:400 },
+      });
+      out.缺critical_状态名 = window.resolveStateName(n);
+      out.缺critical_素材 = window.resolveState(n).assetId;
+
+      n = mk({ normal: { assetId:'A_NORMAL', alpha:255, blink:false, blinkMs:400 } });
+      out.只有normal_素材 = window.resolveState(n).assetId;
+
+      // 只有 warn（连 normal 都没有）—— App 的 warn ?: normal 会退到 null
+      n = mk({ warn: { assetId:'A_WARN', alpha:255, blink:false, blinkMs:400 } });
+      S.previewValues = { 'obd.coolant': 60 };           // 只过警告线
+      out.只有warn_素材 = (window.resolveState(n) || {}).assetId || null;
+
+      S.previewValues = null;
+      return JSON.stringify(out);
+    })()`));
+    console.log('    · ' + JSON.stringify(fallback));
+    eq(fallback.三态齐全, 'A_CRIT', '三态齐全时用 critical 的素材');
+    eq(fallback.缺critical_状态名, 'critical', '缺 critical 键时状态名仍是 critical');
+    eq(fallback.缺critical_素材, 'A_WARN',
+      '**缺 critical 键时退到 warn 的素材**（不是直接退到 normal —— 那是与 App 的真分歧）');
+    eq(fallback.只有normal_素材, 'A_NORMAL', '只有 normal 时退到 normal');
+    eq(fallback.只有warn_素材, 'A_WARN', '只有 warn 时（过警告线）用 warn');
 
     await cdp.ws.close();
   } catch (e) {

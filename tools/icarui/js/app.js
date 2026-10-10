@@ -152,12 +152,40 @@
   window.loadUndoStack = loadUndoStack;
   window.saveUndoStack = saveUndoStack;
 
+  /**
+   * 上一次**落盘**用的合并键。见 `commit` 里的说明。
+   *
+   * `null` = 下一步无论如何都要落盘。
+   */
+  let lastPersistKey = null;
+
+  /** 强制落盘并允许下一步重新落盘（拖动/滚轮手势结束时调） */
+  function flushUndoStack() {
+    lastPersistKey = null;
+    saveUndoStack();
+  }
+  window.flushUndoStack = flushUndoStack;
+
   window.commit = function (fn, label, coalesceKey) {
     fn();
-    undo.push(snapshot(), label, batch ? batch.label : coalesceKey);
-    // 每步都持久化。拖动时 commit 很频繁，但 saveUndoStack 只写**最近 20 步**
-    // 且用 try/catch 兜住配额，所以不需要额外节流。
-    saveUndoStack();
+    const key = batch ? batch.label : coalesceKey;
+    undo.push(snapshot(), label, key);
+    // ⚠️ **合并序列里只落盘第一步**（v2.83.0，Round 4）。
+    //
+    // 原来每次 commit 都调 `saveUndoStack()`。而它是**同步**的：
+    // 实测（60 个控件、栈里 32 步）—— **13.2 ms / 次**，写 **1.18 MB** 到 localStorage。
+    // 滚轮缩放、拖动滑块这类"一类连续操作"每帧都会 commit，
+    // 于是每一次滚轮事件要花 13ms 干一件**中间态根本没价值**的事
+    // （下一步会把栈顶覆盖掉，写下去的立刻作废）。
+    //
+    // 判据用 `coalesceKey`：键**变了**说明上一类操作已经结束，那时才落盘。
+    // 手势收尾（`onDragEnd` / `endBatch`）会调 `flushUndoStack()` 补最后一次。
+    // 所以"每一步逻辑操作都持久化"这条保证**没有被削弱** ——
+    // 只是不再为同一步里的每一帧重复写盘。
+    if (!key || key !== lastPersistKey) {
+      lastPersistKey = key || null;
+      saveUndoStack();
+    }
     if (!batch) {
       syncJson();
       refreshAll();
@@ -178,7 +206,7 @@
     batch.depth--;
     if (batch.depth <= 0) {
       batch = null;
-        saveUndoStack();
+      flushUndoStack();          // 批量的最终状态必须落盘
       syncJson();
       refreshAll();
       updateUndoButtons();
@@ -279,10 +307,22 @@
     const name = prompt("新页面的名字", "页面 " + ((S.design.pages || []).length + 1));
     if (name === null) return;
     let idx = -1;
-    window.commit(() => {
-      idx = window.addPage(S.design, (name || "").trim() || undefined);
-    }, "新建页面：" + name);
-    if (idx >= 0) window.switchToPage(idx);
+    // ⚠️ 「新建页面」是**一个**用户动作，但底下有两次 commit（加页 + 切页）。
+    //
+    // 不合成一步的后果（v2.83.0 实测）：按一次撤销，**新页面还在** ——
+    // 只是把当前页切回了原来那页。用户看到的是"撤销没反应"，得按两次才退干净。
+    //
+    // `beginBatch` 给这一段一个统一的 coalesceKey，`UndoStack.push` 遇到
+    // 相同的 key 会**替换栈顶**而不是再压一条 → 两次 commit 合成一步。
+    window.beginBatch("新建页面：" + name);
+    try {
+      window.commit(() => {
+        idx = window.addPage(S.design, (name || "").trim() || undefined);
+      }, "新建页面：" + name);
+      if (idx >= 0) window.switchToPage(idx);
+    } finally {
+      window.endBatch();
+    }
     window.toast("已新建「" + (S.design.pages[idx] || {}).name + "」");
   };
 
@@ -314,7 +354,11 @@
     // 画布绘制前同步素材位图 —— 内置素材只有 path，不挂上去画布会画大 X
     if (window.syncAssetImages) window.syncAssetImages();
     renderPageTabs();
-    if (window.renderPanels) window.renderPanels();
+    // ⚠️ `S.suppressPanelRender` 是**滚轮缩放**期间的开关（v2.83.0，Round 4）：
+    // 滚轮一次事件只有 w/h 变，而 `renderPanels()` 要重建整个素材库 + 控件树 +
+    // 控制库（实测 60 个控件时 8.8ms，占一次滚轮事件 17.8ms 的一半）。
+    // 缩放期间跳过，收尾时 canvas.js 的 wheelEndTimer 会补一次完整刷新。
+    if (!S.suppressPanelRender && window.renderPanels) window.renderPanels();
     if (window.draw) window.draw();
   }
   window.refreshAll = refreshAll;
@@ -330,6 +374,9 @@
   window.onDragEnd = function () {
     // 拖动结束：结束合并，并把最终状态压成一步
     undo.endCoalesce();
+    // ⚠️ 合并序列里只在第一步落过盘，中间态是被覆盖掉的 ——
+    // 手势结束时必须把**最终**状态补写一次（v2.83.0，Round 4）
+    flushUndoStack();
     syncJson();
     if (window.renderProps) window.renderProps();
     updateUndoButtons();
@@ -1057,11 +1104,11 @@
     const n = sel(); if (!n) return;
     window.commit(() => {
       if (on) {
-        n.states = {
-          normal: { assetId: n.assetId || "", alpha: 255, blink: false, blinkMs: window.MIN_BLINK_MS },
-          warn: { assetId: "", alpha: 255, blink: false, blinkMs: window.MIN_BLINK_MS },
-          critical: { assetId: "", alpha: 255, blink: true, blinkMs: window.MIN_BLINK_MS },
-        };
+        // ⚠️ 默认值走**单一真源** `window.defaultStates()`（schema.js）。
+        // 原来这里把 normal/warn/critical 三条字面量写了一遍，`editor.js` 里
+        // 又写了一遍，`setState` 的兜底还写了第三遍（那一遍 critical 的 blink 是错的）。
+        // 加第四个状态时只改一处就会漏 —— 漏掉的那侧"永远不亮"且不报错。
+        n.states = window.defaultStates(n.assetId);
         if (!n.statePid) n.statePid = "obd.rpm";
       } else {
         n.states = null;
@@ -1072,7 +1119,9 @@
   window.setState = function (state, key, v) {
     const n = sel(); if (!n || !n.states) return;
     window.commit(() => {
-      if (!n.states[state]) n.states[state] = { assetId: "", alpha: 255, blink: false, blinkMs: window.MIN_BLINK_MS };
+      // 懒创建也走单一真源 —— 否则 critical 会拿到 `blink:false`
+      // （与"启用状态系统"那条路径创建出来的不一样：同一个状态两种默认值）
+      if (!n.states[state]) n.states[state] = window.defaultStates(n.assetId)[state];
       const st = n.states[state];
       if (key === "blink") st.blink = !!v;
       else if (key === "assetId") st.assetId = String(v);
@@ -1254,6 +1303,25 @@
    *   有位置时，第一条错误会变成**可点击的"跳到第 N 行"** ——
    *   用户不用自己数行号。
    */
+  /**
+   * 校验结果**一次最多渲染几条**（v2.83.0，Round 2）。
+   *
+   * ## 为什么要设上限
+   *
+   * `parts` 没有条数上限（`nodes` 有 200 的上限），而**每个没选素材的部件**
+   * 都会产生一条警告。实测：一份 820 KB 的 JSON 带 20000 个部件 →
+   * `validateText` 返回 **20000 条警告** → 这里 append 20000 个 DOM 行。
+   * 再大一个数量级（20 万部件）就是几秒的白屏 + 几十 MB 的 DOM。
+   * 而这发生在**每次敲键盘**之后（`jsonEdited` 350ms 防抖）。
+   *
+   * ## 为什么不静默截断
+   *
+   * 截断必须**说出来** —— 否则用户会以为"警告就这几条"，
+   * 把面板上没显示的问题当成不存在。所以超额时补一行"…还有 N 条（共 M 条）"。
+   * 这也是本仓库的一贯规矩：宁可啰嗦，不可静默。
+   */
+  const MSG_RENDER_MAX = 200;
+
   function renderMessages(errors, warnings, errPos) {
     const box = el("msgs");
     if (!box) return;
@@ -1262,12 +1330,24 @@
       box.innerHTML = '<div class="msg ok">校验通过：没有硬错误，也没有警告。</div>';
       return;
     }
-    errors.forEach((e, i) => {
-      // 只在**第一条**错误上加跳转（语法错误就一条，其余是结构校验）
-      const jump = (i === 0 && errPos) ? errPos : null;
-      box.appendChild(msg("err", e, jump));
-    });
-    warnings.forEach(w => box.appendChild(msg("warn", w)));
+    /** 渲染一类消息，超额时补一行说明。`jumpFirst` 只给第一条错误加"跳到出错行" */
+    function render(list, kind, jumpFirst) {
+      const n = Math.min(list.length, MSG_RENDER_MAX);
+      for (let i = 0; i < n; i++) {
+        // 只在**第一条**错误上加跳转（语法错误就一条，其余是结构校验）
+        const jump = (jumpFirst && i === 0 && errPos) ? errPos : null;
+        box.appendChild(msg(kind, list[i], jump));
+      }
+      if (list.length > n) {
+        const d = document.createElement("div");
+        d.className = "msgMore";
+        d.textContent = "…还有 " + (list.length - n) + " 条" +
+          (kind === "err" ? "错误" : "警告") + "（共 " + list.length + " 条）—— 先修前面的，后面多半会跟着消失";
+        box.appendChild(d);
+      }
+    }
+    render(errors, "err", true);
+    render(warnings, "warn", false);
   }
 
   /**
@@ -1394,7 +1474,7 @@
     bar.innerHTML = "";
     const msg = document.createElement("span");
     msg.textContent = "⚠️ JSON 有 " + (errors ? errors.length : 0) +
-      " 个错误，画布仍是**上一次成功解析**的状态。修好错误才会生效 —— 在此之前画布上的改动不会写回这段文本。";
+      " 个错误，画布仍是上一次成功解析的状态。修好错误才会生效 —— 在此之前画布上的改动不会写回这段文本。";
     const btn = document.createElement("button");
     btn.textContent = "放弃 JSON 改动，回到画布状态";
     btn.onclick = function () {
@@ -1446,11 +1526,22 @@
         return;
       }
       setJsonDirty(false);
-      S.design = r.design;
-      if (S.selection.some(id => !window.findNode(S.design.nodes, id))) S.selection = [];
-      window.restoreThumbs();
-      window.applyCanvasSize();
-      refreshAll();
+      // ⚠️ **替换设计必须压一步撤销**（v2.83.0，Round 5）。
+      //
+      // 原来这里是裸赋值 `S.design = r.design` —— 于是"文本域 → 画布"这条路
+      // **整个不进撤销栈**。两处后果都实测过：
+      //  1. 「打开」一份设计文件后按撤销，回到的**不是打开前**，而是撤销栈里的
+      //     **上一步**（实测：打开前是 A{x:33}，打开 B，撤销后变成一个无关的旧状态，
+      //     用户辛苦做的 A **直接丢了**）。
+      //  2. 在 JSON 文本域里改了一大段、画布同步了，撤销也退不回来。
+      //
+      // 合并键用 `json`：连续敲键盘/连续同步只算**一步**，撤销一次就回到编辑之前。
+      window.commit(() => {
+        S.design = r.design;
+        if (S.selection.some(id => !window.findNode(S.design.nodes, id))) S.selection = [];
+        window.restoreThumbs();
+        window.applyCanvasSize();
+      }, "同步 JSON 文本到画布", "json");
       validateNow();
       updateUndoButtons();
     }, 350);
@@ -1620,7 +1711,7 @@
       Object.keys(vals).forEach(k => S.simSprings.snap(k, vals[k]));
       simStep();
       if (b) { b.textContent = "⏸ 停止模拟"; b.classList.add("on"); }
-      toast("实时模拟已开始：数值按正弦变化，指针走**弹簧**（不是直接映射）");
+      toast("实时模拟已开始：数值按正弦变化，指针走弹簧（不是直接映射）");
     } else {
       if (simRaf) cancelAnimationFrame(simRaf);
       S.previewValues = null;
@@ -1706,6 +1797,12 @@
       if (!f) return;
       const r = new FileReader();
       r.onload = () => {
+        // ⚠️ 「打开」是**危险操作**：它会把当前设计整个换掉（v2.83.0，Round 5）。
+        // 原来这里一声不吭就替换了 —— 用户选错文件时**没有任何提示**。
+        // 现在先问一句，并说明"可以用撤销找回来"（下面 `jsonEdited` 会压一步）。
+        const cur = window.flatten(S.design.nodes).length;
+        if (cur > 0 && !confirm("打开文件会替换当前设计（" + cur + " 个控件）。\n" +
+          "未保存的改动会丢 —— 但可以用撤销（Ctrl+Z）找回来。\n\n继续？")) return;
         setJsonDirty(false);
         setVal("jsonArea", String(r.result));
         jsonTimer = null;
@@ -1732,7 +1829,7 @@
       if (!confirm("还有 " + r.errors.length + " 个硬错误，App 会拒绝加载。仍然保存？")) return;
     }
     const assetNote = (S.design.assets || []).length
-      ? "\n\n⚠️ 别忘了把素材图片放到设计文件**同目录**的 assets/ 下：\n" +
+      ? "\n\n⚠️ 别忘了把素材图片放到设计文件同目录的 assets/ 下：\n" +
       (S.design.assets || []).slice(0, 8).map(a => "  " + a.path).join("\n") +
       ((S.design.assets || []).length > 8 ? "\n  …" : "")
       : "";
@@ -1768,7 +1865,7 @@
       toast("已导出 PNG 预览（" + cv.width + "×" + cv.height + "）");
       } catch (err) {
         if (err && err.name === "SecurityError") {
-          toast("导出失败：画布被本地图片「污染」了。请把素材**导入**（用分类上的 ＋），不要引用本地路径");
+          toast("导出失败：画布被本地图片「污染」了。请把素材导入（用分类上的 ＋），不要引用本地路径");
         } else {
           toast("导出失败：" + (err && err.message ? err.message : err));
         }
@@ -1964,7 +2061,7 @@
 
     if (!check.ok) {
       // 自检不过**照样把包给用户**（他可能想自己看看），但必须**明说它有问题**
-      alert("设计包已导出，但**自检没通过**（请把这个截图发出来）：\n\n" +
+      alert("设计包已导出，但自检没通过（请把这个截图发出来）：\n\n" +
         check.problems.slice(0, 8).join("\n"));
       return;
     }
@@ -1975,7 +2072,7 @@
       (miss.length ? " · ⚠️ " + miss.length + " 个素材没进包" : "") +
       "（App 侧导入待做）");
     if (miss.length) {
-      alert("有 " + miss.length + " 个被引用的素材**没能进包**：\n\n" +
+      alert("有 " + miss.length + " 个被引用的素材没能进包：\n\n" +
         miss.slice(0, 6).map(m => "· " + m.path + "\n  " + m.reason).join("\n") +
         (miss.length > 6 ? "\n…" : ""));
     }
@@ -1999,7 +2096,7 @@
       ? "\n\n⚠️ v1 表达不了以下内容，会被丢掉：\n  " + lostList.join("\n  ")
       : "";
     if (!confirm("导出 v1（" + out.count + " 个仪表）。\n\n" +
-      "v1 是 App **当前版本**能直接读的格式，但没有图片/状态/分组/变换。" + warn +
+      "v1 是 App 当前版本能直接读的格式，但没有图片/状态/分组/变换。" + warn +
       "\n\n继续？")) return;
     download((S.design.name || "design") + "-v1.json", out.json);
     toast("已导出 v1（" + out.count + " 个仪表）");

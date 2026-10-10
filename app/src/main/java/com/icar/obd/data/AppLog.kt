@@ -55,6 +55,18 @@ object AppLog {
     const val M_SYS = "SYS"
     const val M_DATA = "DATA"
 
+    /**
+     * **模块列的定长宽度**（v1.20.18）。
+     *
+     * 时间戳 `HH:mm:ss.SSS` 恒为 12 位、级别恒为 1 位，**只有模块列在跳**
+     * （`UI` 2 位 vs `AUDIO` 5 位）—— 于是模块补到 5 位后，
+     * 每一行的「级别」和「正文」起始列就都一样了，肉眼扫一列日志时不再锯齿。
+     *
+     * 5 位是**内置模块里最长的那个**（[M_AUDIO]）—— 比 5 位更长的模块**不截断**
+     * （宁可那一行不对齐，也不把模块名改掉：日志是拿来排查问题的，信息不能被格式吃掉）。
+     */
+    const val MODULE_WIDTH = 5
+
     data class Entry(
         val ts: Long,
         val module: String,
@@ -62,9 +74,22 @@ object AppLog {
         val msg: String,
         val extra: String = ""
     ) {
+        /**
+         * 定长模块列（左对齐补到 [MODULE_WIDTH]），**构造时算一次**。
+         *
+         * ⚠️ 刻意不写在 [format] 里：`format()` 是 `LogAdapter.bind` 的**每行**路径，
+         * 而日志页有硬性能红线 —— **不加任何 per-bind 的分配**
+         * （突发时 UI 派发队列只有 500 格，多一次分配就多丢一行显示）。
+         * 放这儿 = 每条日志只补一次，绑定路径上只是拼字符串。
+         *
+         * 放在 `data class` 的**体**里（不是主构造参数）也是刻意的：它不进
+         * `equals` / `hashCode` / `copy` / `toString`，不影响任何既有语义。
+         */
+        private val moduleCol: String = module.padEnd(MODULE_WIDTH)
+
         fun format(): String {
             val d = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date(ts))
-            return "[$d][$module][${level.tag}] $msg" + if (extra.isBlank()) "" else " | $extra"
+            return "[$d][$moduleCol][${level.tag}] $msg" + if (extra.isBlank()) "" else " | $extra"
         }
     }
 

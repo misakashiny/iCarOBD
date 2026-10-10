@@ -9,7 +9,7 @@
      sample.json     —— **v1**，App 当前版本能直接读（Kotlin 测试要求 0 错误 0 警告）
      sample-v2.json  —— **v2**，展示图片 / 状态系统 / 分组 / 变换（阶段 2 后 App 才能读）
 
-   跑法：node tools/theme-studio/gen-sample.js
+   跑法：node tools/icarui/gen-sample.js
    ========================================================================== */
 "use strict";
 

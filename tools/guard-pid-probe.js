@@ -47,7 +47,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const js = path.join(__dirname, '..', 'tools', 'theme-studio', 'js');
+const js = path.join(__dirname, '..', 'tools', 'icarui', 'js');
 
 global.window = global;
 try {

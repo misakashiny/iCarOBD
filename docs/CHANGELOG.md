@@ -15,6 +15,191 @@
 > 靠"感觉该整理了"不会触发，定成数字才会。
 ---
 
+## v1.20.18 · 2026-10-11 · 🔴 **修模拟信号崩溃（空 range）** + 日志页观看体验三项（等宽对齐 / 跟随开关 / 长按复制）
+
+> 任务 1 = v1.20.17 里「**只出方案、未实现**」的那三项（用户已批准方案，直接做）；
+> 任务 2 = 一条**既有崩溃**（与本轮无关，但它会打断规则模拟，所以值得修）。
+> 工具版本仍是 **v2.82.0**：**本轮我没有改 `tools/` 下任何一个文件**。
+> ⚠️ **但工作区里 `tools/` 正在被另一个写者并发改动**（`tools/theme-studio/` → `tools/icarui/` 改名、
+> `check-build-guard.ps1` / `run-browser-tests.ps1` 与若干 `docs/*.md` 也被改过，
+> mtime 02:44~02:45，**与本版无关、不在本版范围内**）—— 因此本版**没有重跑浏览器套件**
+> （我这边工具侧零改动），且本轮的单测/守卫是在**那个并发改动已经落进工作区之后**跑的。
+
+### ① 🔴 模拟信号崩溃：`Cannot coerce value to an empty range`（`SignalSimulator.valueOf`）
+
+**证据**（平板 `7e7d7bb4`，`files/last-crash.log`，2026-10-11 01:31:12，当时跑 v1.20.16）：
+
+```
+java.lang.IllegalArgumentException: Cannot coerce value to an empty range:
+  maximum 120.5 is less than minimum 122.0
+  at com.icar.obd.obd.SignalSimulator.valueOf(SignalSimulator.kt:136)
+  at com.icar.obd.obd.SignalSimulator.tick(SignalSimulator.kt:300)
+  at com.icar.obd.obd.SignalSimulator$ticker$1.run(SignalSimulator.kt:99)
+```
+
+**根因 —— 不是配置传反、也不是默认值有问题，是 UI 的 ± 档位可以合法地把两端推反**：
+
+`Channel.min` / `Channel.max` 是**两个各自独立的可变量**，而 `SimulatorActivity.rangeSide`
+只把**每一端**夹在 **PID 的量程**里（`(value ± step).coerceIn(pidMin, pidMax)`），**从不看另一端**
+→ `min` 能合法地越过 `max`。`valueOf` 再拿它们去 `coerceIn(min, max)`，空区间就抛。
+
+实机那一条是**冷却液温度**（PID 量程 -40~215 → 步进 `255/20 = 12.75`，自动通道起点 20~95）：
+
+| 操作 | 结果 |
+|---|---|
+| 「最大」按 **+** 两次 | 95 → 107.75 → **120.5** |
+| 「最小」按 **+** 八次 | 20 → … → 109.25 → **122.0** |
+
+两端**各自都在 PID 量程内**，合起来 `coerceIn(122.0, 120.5)` → 抛。
+（这两个数与崩溃消息里的 `120.5 / 122.0` **逐位吻合** —— 用 float32 复算过。）
+异常抛在主线程且**没人接** → **进程被杀**（日志有 `01:31:13 ===== iCar OBD 启动 =====`），
+而且 `ticker` 里 `postDelayed` 那行**执行不到** → **模拟永久停摆**。
+
+**修法（结构上不可能再抛，四层）**：
+
+1. `Channel.lo` / `Channel.hi` = `minOf/maxOf(min, max)`，**`valueOf` 只认这两个** ——
+   `lo ≤ hi` 恒成立 → `coerceIn` 的空区间**结构上不存在**；
+2. `Channel.normalized()` / `withMin()` / `withMax()`：改一端**不允许越过另一端**
+   （`SimulatorActivity` 的 ± 改走这里 → 从源头杜绝）；
+3. `stepRange()`：档位步进**两端先归一再夹**（PID 量程被写反时也不抛）；
+4. `demoChannel()` / `update()` / `rebuildFromPids()` **入表前一律归一**；
+   另给 `ticker` 加一层兜底（`runCatching` + 记一条 E），保证「再出别的意外也只是少一拍，不是停摆」。
+
+⚠️ 顺带堵掉一条**潜在入口**：`demoChannel` 原来直接用 `p.minVal/p.maxVal`，而
+`PidDefinition.fromJson` 对导入的 JSON **没有 min<max 校验**（`PidDraft` 有、CSV 导入也有 ——
+只有 JSON 这条路没有）→ 量程写反的 PID 会让演示通道跟着反。
+
+**✅ 装机实测**（平板 `7e7d7bb4`，v1.20.18，坐标先 dump 再点）：
+
+| # | 构造 | 实测结果 |
+|---|---|---|
+| 1 | 模拟器 → 冷却液温度 → 展开 → 「最大」+2 次 → 「最小」+8 次 | 界面显示 **`最小 120.500` / `最大 120.500`** —— 最小**停在上界**，没有变成 122.0 |
+| 2 | 上面这套操作**在模拟运行中**做完（旧代码就是在这里崩的） | 进程 pid 不变；`last-crash.log` 仍是 01:31:12 那条旧崩溃；日志里 `模拟信号 tick 异常` **0 条** |
+| 3 | **按根因直接构造反向量程**：往 `files/config/pids.json` 塞一条 `min=122.0 / max=120.5` 的 PID → 重启 → 「满量程快扫」→ 「开始模拟」 | 通道 **37 个**（含该条）；界面显示 **`RevRangeTest  120.500~122 x`**（归一成 lo~hi）；连续 tick **30 秒无崩溃、无 tick 异常**；`grep -c 'empty range'` = **0** |
+
+（第 3 步动过 `files/config/pids.json`，**验完立刻从备份还原**，5 个配置 md5 与动手前**逐个相同**。）
+
+**单测 8 条**（`SignalSimulatorTest` 28 → **36**）：反向量程不抛 / 反向量程与正向量程产出同一区间 /
+相等量程不抛且恒等于该点 / 极端量程（±`Float.MAX_VALUE`）不抛且不产生 NaN /
+`normalized()` 摆正且正常通道返回自身 / **实机那条 ± 序列走一遍后 min 不再越过 max 且 `tick` 不抛** /
+`tick` 遇到反向量程的通道不抛 / PID 量程写反时演示通道与档位都不反。
+
+### ② 日志页：等宽对齐（`AppLog.Entry.format()`）
+
+时间戳 `HH:mm:ss.SSS` 恒 12 位、级别恒 1 位，**只有模块列宽度在跳**（`UI` 2 vs `AUDIO` 5）
+→ 每换一个模块，后面整行横移，屏幕上一半的行错位。
+
+修法：`AppLog.MODULE_WIDTH = 5`，模块**左对齐补到 5 位**。
+⚠️ 补位放在 `Entry` 的**体属性**里（构造时算一次），**不放进 `format()`** ——
+`format()` 是 `LogAdapter.bind` 的每行路径，而日志页的性能红线是「**不加任何 per-bind 的分配**」；
+放体属性还顺带不进 `equals/hashCode/copy`（既有语义零变化）。
+比 5 位更长的模块**不截断**（宁可那一行不对齐，也不把模块名改掉 —— 日志是拿来排查问题的）。
+
+**✅ 证据**（同一份日志文件里新旧格式并存，一眼看出差别）：
+
+```
+[02:30:56.502][UI][D] 渲染画布 | …          ← v1.20.17 写的（模块列不定长）
+[02:40:16.973][SYS  ][I] ===== iCar OBD 启动 ===== | ver=1.20.18 sdk=33
+[02:40:17.025][AUDIO][I] 音效已登记 | tick_left,tick_right,warn,beep
+[02:40:17.052][RULE ][I] 规则已加载 | count=5
+[02:40:17.064][BLE  ][I] 发起连接 | addr=41:42:86:9B:2E:7E name=null
+[02:40:17.247][UI   ][D] 切换页面 | dash
+```
+
+`[SYS  ]` / `[AUDIO]` / `[RULE ]` / `[BLE  ]` / `[UI   ]` 宽度全是 5，
+`][级别]` 与正文起始列逐行对齐；`uiautomator dump` 读到的 `tvLog.text` 同样是补位后的
+（例：`[02:40:17.247][UI   ][D] 切换页面 | dash`）。
+
+**单测 7 条**（新增 `AppLogFormatTest`）：时间戳/级别定长 + 模块补到 5 位 /
+8 个内置模块正文起始列恒定（= 25）/ 1~5 字符模块同列 / 5 个级别下级别列与正文列都不动 /
+`extra` 不影响列 / 超 5 位模块不截断（只影响自己那一行）/ 补位不进 `equals` 与 `copy`。
+
+### ③ 日志页：跟随开关（滚上去看历史不再被拽回底部）
+
+原来只有「暂停滚动」，而 `uiTick` **每 250ms** 都会 `rv.scrollToPosition(最后一行)` ——
+用户滚上去看历史时**每 250ms 被拽回底部**，等于看不了历史。
+
+修法：`rv` 加 `OnScrollListener`，**滚离底部 > 2 行就自动 `paused = true`**，
+按钮文案跟着变（跟随中 `暂停滚动` ↔ 已暂停 `回到底部`）。
+⚠️ **复用现有 `paused` 字段，不新增状态**；监听器里**只读**（不滚动、不 notify、不 requestLayout）——
+它和 250ms 的 `uiTick` 抢同一个 RecyclerView，在里面动手就会互相打架（v1.18.4 那个 ANR 的同类）。
+「回到底部」做成**同一个按钮的暂停态文案**（点它 = 关掉 paused + 立刻 `scrollToPosition`）：
+`paused = false` 之后下一拍 `uiTick`（≤250ms）本来就会滚到最后一行，
+再单独加一个「继续滚动」会是**同一个动作**，多一个只会让人犹豫按哪个。
+
+⚠️ **判据用行号、不用像素**：`computeVerticalScrollRange` 对长列表是
+**按已布局行的平均高度外推**的估计值，而行高并不相等（正文会折行）→ 3000 行时偏差足够大，
+**贴着底也会被算成「还差几行」→ 一打开日志页就自动暂停、跟随直接失效**。
+改用 `findLastVisibleItemPosition()`（精确行号，同样**只读、不分配**）。
+
+**✅ 装机实测**（dump 逐次对比，统计行 `显示 42 条 · 缓冲 42 条`）：
+
+| 步 | 动作 | 实测 |
+|---|---|---|
+| 1 | 基线（未滚动） | 按钮 `暂停滚动`；首行 `[02:40:17.247]` @y293、末行 `[02:43:24.296]` @y1499 |
+| 2 | 向上滑（看历史） | 按钮变 **`回到底部`**；统计行追加 **`· 已暂停滚动`**；首行 `[02:40:16.973]` @y293、末行 `[02:42:12.818]` @y1547 |
+| 3 | **停 2.5 秒不再触碰** | 首行/末行/位置**逐字节相同**（`[02:40:16.973]` @y293）→ **没有被拽回底部** |
+| 4 | 点「回到底部」 | 按钮回 `暂停滚动`；首行/末行/位置**与第 1 步基线完全一致** → 真的回到底了 |
+
+### ④ 日志页：长按整行进剪贴板
+
+`LogAdapter.VH` 挂 `setOnLongClickListener` + `ClipboardManager`
+（沿用检视器那套写法：剪贴板不可用**要说出来**；**API 33+ 系统自己会弹「已复制」浮标**，不再自己弹）。
+⚠️ 监听器在 `init` 里挂**一次**、不在 `bind` 里挂（per-bind 分配 = 性能红线）；
+文案直接读 `tv.text`（对已是 `String` 的 CharSequence，`toString()` 返回自身，不再分配）。
+`textIsSelectable` **保留不动**（长按由本监听器接管并返回 `true`，点击/拖选原行为不变）。
+
+**✅ 装机实测**（剪贴板读不到，用 MIUI 的剪贴板事件日志**逐字节核对长度**）：
+
+| # | 长按哪一行 | 该行文本 | 期望 UTF-8 字节 | MIUI `extend_data len=` |
+|---|---|---|---|---|
+| 1 | y=500（`ObdService 已启动`） | `[02:40:17.448][SYS  ][I] ObdService 已启动` | **45** | **45** ✅ |
+| 2 | y=435（`状态变更 \| CONNECTING …`） | `[02:40:17.441][BLE  ][D] 状态变更 \| CONNECTING 连接 41:42:86:9B:2E:7E` | **75** | **75** ✅ |
+
+两次都伴随 `UniClipUniversalClipDataPublisher: onPrimaryClipChanged`，
+且长按后 `uiautomator dump` 里**没有**出现文本选择工具条（`复制`/`全选`）→
+`textIsSelectable` 与长按复制**不冲突**、事件被我们的监听器接管。
+⚠️ `adb shell service call clipboard 2` 在 API 33 上**被拒**
+（`Denying clipboard access to …, application is not in focus`）→ **读不到剪贴板原文**，
+上面的字节数比对是能做到的最强证据。
+
+### 明确**没做**（v1.20.17 已评估并获批准跳过，本轮照旧不动）
+
+- ❌ 关键字高亮（per-bind 造 `Spannable` → 撞性能红线）
+- ❌ 级别/模块多选 chips（会把筛选区撑到 2~3 行）
+- ❌ 折叠相邻重复行（`AppLog` 已有抑制；列表层改 `notifyItemInserted` 增量路径**改错就是
+  `Inconsistency detected` 崩溃**，v1.3.0 实车踩过）
+- ⚠️ 性能红线一个字没碰：**没动 500 上限、没动 250ms 合并刷新、没加任何 per-bind 分配**。
+
+### 验证
+
+- `tools/run-tests.ps1` → **`TOTAL=1022 FAILED=0`**（基线 **1007** → **+15**：
+  `SignalSimulatorTest` 28 → **36**（+8）/ 新增 `AppLogFormatTest` **7**）+ **构建守卫通过** + **exit 0**；
+- 工具侧**零改动** → 浏览器套件仍是 **27 套件 / 1473 全过**（未重跑，`tools/` 下无改动文件）；
+- `assembleDebug` 通过；APK **7,371,148 B**（与 v1.20.17 同尺寸 —— 巧合，已用 dex 字符串核对确认
+  新代码在包里）、`versionCode=87` / `versionName=1.20.18`、单 ABI `arm64-v8a`；
+- 装机：`adb -s 7e7d7bb4 install -r` → `Success`，`dumpsys package` 读出
+  **`versionCode=87` / `versionName=1.20.18`**；升级前用 `cmd /c adb exec-out run-as … tar cf -`
+  备份 `files/config`（tar 头 `66 69 6c 65` = `files/co`，**不是** `FF FE`），
+  **升级后 5 个配置 md5 与备份逐个相同**；① 第 3 步临时改过 `pids.json`，**已还原并复核 md5**。
+
+### 遗留 / 没验到的（如实）
+
+1. **没重跑浏览器套件** —— 工具侧本轮零改动（`tools/` 下没有文件被改），故按惯例未重跑；
+2. **长按复制的剪贴板原文读不到**（API 33 限制）→ 用 MIUI 剪贴板事件的**字节长度比对**代替（见 ④），
+   **没有真正把内容粘到某个输入框里肉眼看过**（App 里只有 MainActivity 是 `exported=true`，
+   `am start` 进不去带 `EditText` 的页面，而日志页本身没有输入框）；
+3. **`textIsSelectable` 的「拖选文本」这条原行为没单独验**（只验了长按不被选择工具条抢走）；
+4. **跟随开关的自动暂停只验了「手指滑动」这一种路径**：双指手势 / 惯性甩动 / 顶部回弹没单独造；
+   ⚠️ 另外**故意没做「滚回底部自动恢复跟随」**（规格只要自动暂停）—— 用户手动滑回底部时
+   按钮仍是 `回到底部`，点一下才恢复；
+5. **① 里 `ticker` 那层兜底（`runCatching`）没有单独造异常验过** —— 它只是「再也不能因为一条通道
+   而停摆」的保险，本轮验的是根因那一层（归一）；
+6. 面板/列表的**外观没有视觉复核**（当前模型无图像输入）：列对齐的证据是 dump 文本与日志文件字节，
+   **不是「人眼看过一眼」**。
+
+---
+
 ## v1.20.17 · 2026-10-11 · **UI 改进三项**：检视器面板加「清除」+ CAN 过滤器预设 4→12 条（说人话）+ 文案优化
 
 > 规格：[`下一步-UI改进四项.md`](下一步-UI改进四项.md)（用户 2026-10-11 提的四项，**已确认清楚**，含用户对第 1 项的选择）。

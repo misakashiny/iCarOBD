@@ -1435,12 +1435,39 @@ function uniformMatrix(m, w, h) {
   }
   window.resolveStateName = resolveStateName;
 
+  /**
+   * 取当前状态对应的那一条 `states` 记录。
+   *
+   * ## ⚠️ 回退链必须与 App 的 `NodeTreeRenderer.resolveState` **逐级一致**
+   *
+   * App 的写法是：
+   * ```kotlin
+   * critAt != null && v >= critAt -> c.states[CRITICAL] ?: c.states[WARN] ?: c.states[NORMAL]
+   * v >= warnAt                   -> c.states[WARN]     ?: c.states[NORMAL]
+   * else                          -> c.states[NORMAL]
+   * ```
+   *
+   * 原来这里只有 `n.states[name] || n.states[normal]` —— **少了中间那一级 warn**。
+   * 后果（v2.83.0 实测，Round 6）：一份只填了 `normal`/`warn`、没有 `critical` 键的
+   * 设计（老文件、或手改过 JSON），数值超过危险线时
+   * **工具预览显示 `normal` 的图，真机显示 `warn` 的图**。
+   * 用户会以为"危险态没接上"（预览里灯根本没变），而车上却是黄灯。
+   *
+   * 这正是本仓库最贵的那类 bug 的形态（状态灯 + 两边不一致），所以这里**照抄** App。
+   */
   function resolveState(n) {
     if (!n.states) return null;
-    const pv = S.previewValues && n.statePid ? S.previewValues[n.statePid] : null;
     // 阈值判定统一走 resolveStateName —— 两处各写一遍迟早分叉
     const name = resolveStateName(n) || window.STATE_NORMAL;
-    return n.states[name] || n.states[window.STATE_NORMAL] || null;
+    const order = name === window.STATE_CRITICAL
+      ? [window.STATE_CRITICAL, window.STATE_WARN, window.STATE_NORMAL]
+      : (name === window.STATE_WARN
+        ? [window.STATE_WARN, window.STATE_NORMAL]
+        : [window.STATE_NORMAL]);
+    for (let i = 0; i < order.length; i++) {
+      if (n.states[order[i]]) return n.states[order[i]];
+    }
+    return null;
   }
   window.resolveState = resolveState;
 
@@ -2085,29 +2112,48 @@ function uniformMatrix(m, w, h) {
     ev.preventDefault();
     const dir = ev.deltaY > 0 ? -1 : 1;            // 上滚放大
 
-    window.commit(() => {
-      S.selection.forEach(id => {
-        const n = window.findNode(S.design.nodes, id);
-        if (!n || n.locked) return;
-        const ar = n.h > 0 ? n.w / n.h : 1;
-        const base = Math.min(Math.abs(n.w), Math.abs(n.h));
-        // 吸附开着：一格一个网格（能真的移动）；关掉：5% 平滑
-        const inc = S.snap
-          ? (ev.shiftKey ? window.STEP * 2 : window.STEP)
-          : Math.max(1, base * (ev.shiftKey ? 0.10 : 0.05));
-        let nw = n.w + inc * dir;
-        let nh = nw / ar;
-        nw = clamp(S.snap ? snapIf(nw) : nw, window.MIN_SIZE, CANVAS * 2);
-        nh = clamp(S.snap ? snapIf(nh) : nh, window.MIN_SIZE, CANVAS * 2);
-        n.w = Math.round(nw * 100) / 100;
-        n.h = Math.round(nh * 100) / 100;
-      });
-    }, "滚轮缩放", "wheel");
+    // ⚠️ **缩放期间跳过整块面板重建**（v2.83.0，Round 4）。
+    //
+    // `commit()` 会调 `refreshAll()`，而里面的 `renderPanels()` 要重建
+    // 整个素材库 + 控件树 + 控制库。实测（60 个控件的设计）：
+    //
+    //   renderPanels  8.78 ms   ← 滚轮缩放时**一个字都不会变**
+    //   draw          1.06 ms
+    //   toV2Json      0.23 ms
+    //   一次滚轮事件  17.8 ms   → 一次 30 事件的手势 **601 ms**（实测）
+    //
+    // 滚轮只改选中控件的 w/h，面板里会跟着变的只有属性面板的宽高数字 ——
+    // 那个由下面的 `renderProps()` 单独负责。收尾时（停手 350ms）再补一次完整刷新。
+    S.suppressPanelRender = true;
+    try {
+      window.commit(() => {
+        S.selection.forEach(id => {
+          const n = window.findNode(S.design.nodes, id);
+          if (!n || n.locked) return;
+          const ar = n.h > 0 ? n.w / n.h : 1;
+          const base = Math.min(Math.abs(n.w), Math.abs(n.h));
+          // 吸附开着：一格一个网格（能真的移动）；关掉：5% 平滑
+          const inc = S.snap
+            ? (ev.shiftKey ? window.STEP * 2 : window.STEP)
+            : Math.max(1, base * (ev.shiftKey ? 0.10 : 0.05));
+          let nw = n.w + inc * dir;
+          let nh = nw / ar;
+          nw = clamp(S.snap ? snapIf(nw) : nw, window.MIN_SIZE, CANVAS * 2);
+          nh = clamp(S.snap ? snapIf(nh) : nh, window.MIN_SIZE, CANVAS * 2);
+          n.w = Math.round(nw * 100) / 100;
+          n.h = Math.round(nh * 100) / 100;
+        });
+      }, "滚轮缩放", "wheel");
+    } finally {
+      S.suppressPanelRender = false;
+    }
 
     // 手势收尾：停手 350ms 后结束合并，下次滚动是新的一步
     clearTimeout(wheelEndTimer);
     wheelEndTimer = setTimeout(() => {
       if (window.onDragEnd) window.onDragEnd();
+      // 缩放期间被跳过的整块面板重建，在收尾时**补一次**（v2.83.0，Round 4）
+      if (window.refreshAll) window.refreshAll();
     }, 350);
 
     draw();

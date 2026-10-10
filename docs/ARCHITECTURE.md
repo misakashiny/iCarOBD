@@ -115,7 +115,7 @@ BLE → BleTransport → ElmSession → ObdEngine → ObdProtocol
    现在颜色统一走 `alertColor()` / `valueTextColor()`，**不要再引入第二个报警布尔**。
 6. 改动 `PidDefinition`、`Rule`、`GaugeItem` 字段时，必须同步 JSON 的
    `toJson` / `fromJson`，并考虑旧配置迁移；**同时同步
-   `tools/theme-studio/index.html`**（否则 PC 端编辑器与 App 的校验会分叉）。
+   `tools/icarui/index.html`**（否则 PC 端编辑器与 App 的校验会分叉）。
 7. `GaugeTheme` 必须留在 `ui/view/`；放到 `ui/dash/` 会让底层绘制层反向依赖上层编排层。
 
 ### 4.2 UI 与自适应
@@ -171,7 +171,7 @@ BLE → BleTransport → ElmSession → ObdEngine → ObdProtocol
     真正的光栅化在**渲染线程**上做 —— `DrawStats` 量的是"记录耗时"，不是绘制成本。
     拿它下结论会得出过于乐观的答案（v1.10.1 差点这么干）。
     基准入口：连接页 →「运行选项」→「性能基准」，报告在 `files/bench-dashboard.txt`。
-23. **设计文件（`icar.ui/1`）的校验规则必须与 `tools/theme-studio/index.html` 保持同源。**
+23. **设计文件（`icar.ui/1`）的校验规则必须与 `tools/icarui/index.html` 保持同源。**
     两边分叉的后果是「编辑器说没问题、App 加载报错」，而用户直到推上设备才发现。
     改任何一边都要改另一边，`ThemeStudioSampleTest` 会守住这条。
 

@@ -433,7 +433,7 @@
     if (bad.length) {
       return {
         ok: false,
-        reason: "有 " + bad.length + " 个控件在**旋转或缩放过的分组**里（" +
+        reason: "有 " + bad.length + " 个控件在旋转或缩放过的分组里（" +
           bad.map(n => n.name).slice(0, 3).join("、") +
           "）。请先对那个分组「取消组合」，再重新打组。",
       };

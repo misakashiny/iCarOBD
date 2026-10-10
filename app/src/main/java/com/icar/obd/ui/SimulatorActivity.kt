@@ -373,29 +373,41 @@ class SimulatorActivity : AppCompatActivity() {
     /** min/max 用可点的 ± 档位而不是 EditText —— 不用弹键盘，也不会输错 */
     private fun rangeRow(ch: SignalSimulator.Channel): View {
         val pid = Store.findPid(ch.pidId)
+        val pidMin = pid?.minVal ?: 0f
+        val pidMax = pid?.maxVal ?: 100f
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        row.addView(rangeSide("最小", ch.min, pid?.minVal ?: 0f, pid?.maxVal ?: 100f, ch) { v ->
-            ch.min = v; buildRows()
+        // ⚠️ v1.20.18：**只把每一端夹在 PID 量程里是不够的** ——
+        // 「最小」能一路加到 PID 上界、「最大」能一路减到下界，
+        // 两端各自都合法，合起来却是空区间 → `valueOf` 的 `coerceIn(min,max)` 抛
+        // `IllegalArgumentException: Cannot coerce value to an empty range`。
+        // 2026-10-11 01:31:12 实机崩溃就是这么来的（冷却液温度：最小 122.0 > 最大 120.5）。
+        // 现在走 `withMin` / `withMax`：**不允许越过另一端**。
+        row.addView(rangeSide("最小", ch.min, pidMin, pidMax) { v ->
+            SignalSimulator.update(ch.withMin(v)); buildRows()
         })
         row.addView(TextView(this).apply {
             text = "  ~  "
             textSize = 12f
             setTextColor(color(R.color.text_dim))
         })
-        row.addView(rangeSide("最大", ch.max, pid?.minVal ?: 0f, pid?.maxVal ?: 100f, ch) { v ->
-            ch.max = v; buildRows()
+        row.addView(rangeSide("最大", ch.max, pidMin, pidMax) { v ->
+            SignalSimulator.update(ch.withMax(v)); buildRows()
         })
         return row
     }
 
     private fun rangeSide(
         title: String, value: Float, pidMin: Float, pidMax: Float,
-        ch: SignalSimulator.Channel, set: (Float) -> Unit
+        set: (Float) -> Unit
     ): View {
-        val span = (pidMax - pidMin).let { if (it <= 0f) 1f else it }
+        // 步进走 `SignalSimulator.stepRange`：**两端先归一再夹** ——
+        // PID 量程被写反时（导入的 JSON 没有 PidDraft 那层校验）也不会在这里抛空 range。
+        val lo = minOf(pidMin, pidMax)
+        val hi = maxOf(pidMin, pidMax)
+        val span = (hi - lo).let { if (it <= 0f) 1f else it }
         val step = span / 20f
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -415,7 +427,7 @@ class SimulatorActivity : AppCompatActivity() {
             setOnClickListener { onTap() }
         }
         box.addView(small("−") {
-            set((value - step).coerceIn(pidMin, pidMax))
+            set(SignalSimulator.stepRange(value, -step, pidMin, pidMax))
         })
         box.addView(TextView(this).apply {
             text = "$title ${fmt(value)}"
@@ -425,7 +437,7 @@ class SimulatorActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         })
         box.addView(small("+") {
-            set((value + step).coerceIn(pidMin, pidMax))
+            set(SignalSimulator.stepRange(value, step, pidMin, pidMax))
         })
         return box
     }

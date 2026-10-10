@@ -513,7 +513,7 @@
     return [
       row("素材", '<select onchange="setNodeStr(\'assetId\',this.value)">' +
         '<option value="">（未选）</option>' + opts + '</select>'),
-      '<div class="hint">素材从左侧**素材库**拖到画布即可添加新图片控件。</div>',
+      '<div class="hint">素材从左侧<b>素材库</b>拖到画布即可添加新图片控件。</div>',
     ].join("");
   }
 
@@ -584,7 +584,7 @@
         esc(a.name) + '</option>').join("");
 
     let h = '<div class="hint">把仪表拆成可替换的部件。<b>列表顺序 = 绘制顺序</b>（先画的在下）。' +
-      '有部件时**不再用样式画法**，完全按这里拼。</div>';
+      '有部件时<b>不再用样式画法</b>，完全按这里拼。</div>';
 
     if (!parts.length) {
       h += '<div class="akempty">（空 —— 点下面的「＋ 加部件」开始拼；' +
@@ -923,7 +923,7 @@
    * 内置素材只有 `path`（`assets/warning/lamp-warn.png`），查不到 →
    * 画布以为"没素材"，画了个紫框大 X。
    *
-   * 修法：**path 本身就能当 URL 用** —— 工具就跑在 `tools/theme-studio/` 下，
+   * 修法：**path 本身就能当 URL 用** —— 工具就跑在 `tools/icarui/` 下，
    * 相对路径 `assets/…` 正好指向工具自己的素材目录。所以对没有 URL 的素材
    * 直接用 path 加载。
    *
@@ -1097,7 +1097,7 @@
   };
 
   window.resetAssetKinds = function () {
-    if (!window.confirm("恢复出厂？（顺序与**显示名**都恢复，自定义分类保留并排到最后）")) return;
+    if (!window.confirm("恢复出厂？（顺序与显示名都恢复，自定义分类保留并排到最后）")) return;
     window.assetKindNames = {};   // 显示名也一起恢复（v2.29.0）
     window.assetKindOrder = window.DEFAULT_ASSET_KINDS.map(function (k) { return k.v; })
       .concat(window.customAssetKinds.map(function (k) { return k.v; }));
@@ -1332,7 +1332,7 @@ const hit = s => !q
     });
     if (q && !anyKind) h += '<div class="akempty">没有匹配的素材</div>';
 
-    h += '<div class="hint">内置示例是**几何图形**（不含任何车标），可直接用。' +
+    h += '<div class="hint">内置示例是<b>几何图形</b>（不含任何车标），可直接用。' +
       '导入自己的图请点分类上的 ＋。整个 <code>assets/</code> 要和设计文件一起拷贝。</div>';
 
     h += '</div>';   // 关掉 panelScroll

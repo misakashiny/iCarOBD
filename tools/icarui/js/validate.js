@@ -338,7 +338,18 @@ themeColors: (root.themeColors && typeof root.themeColors === "object" && !Array
    *
    * @param path 报错用的字段路径（如 `nodes[0].children[2]`）
    */
-  function parseNode(o, path, errors, warnings, assetIds, bumpCount, forceGauge) {
+  function parseNode(o, path, errors, warnings, assetIds, bumpCount, forceGauge, depth) {
+    // ⚠️ **深度闸门必须在递归之前**（v2.83.0，Round 2）。
+    //
+    // `parseNode` 是递归的。没有这道闸门时，2 万层嵌套的 `group` 会把调用栈打爆
+    // （实测 `RangeError: Maximum call stack size exceeded`），而这个异常会冒到
+    // `jsonEdited` 的 setTimeout 里 —— 那里没有 try/catch，用户看到的是
+    // "粘了一份文件，什么都没发生"。宁可报一条**看得懂**的硬错误。
+    if ((depth || 0) > window.MAX_NODE_DEPTH) {
+      errors.push(path + " 的嵌套深度超过 " + window.MAX_NODE_DEPTH +
+        " 层 —— 多半是文件损坏（正常设计不会超过 4 层：页面 → 分组 → 卡片 → 文字）");
+      return null;
+    }
     const type = forceGauge ? window.NODE_GAUGE
       : (typeof o.type === "string" && o.type ? o.type : window.NODE_GAUGE);
 
@@ -411,6 +422,15 @@ themeColors: (root.themeColors && typeof root.themeColors === "object" && !Array
         errors.push(path + "（" + pid + "）量程非法：min=" + trimNum(node.min) + " ≥ max=" + trimNum(node.max));
       }
       node.parts = parseParts(o.parts, path + ".parts", warnings, assetIds);
+      // ⚠️ **数值映射表必须读回来**（v2.83.0 修，Round 1）。
+      //
+      // 原来这里**只写不读**：`model.js` 的 `nodeToJson` 会写出 `valueLabels`，
+      // 但解析侧从不还原 → 「保存 → 重新打开」之后映射表**静默消失**，
+      // 再保存一次就把文件里的映射表**彻底抹掉**。
+      // 症状：拖出来的「挡位」本来读 P/R/N/1..6，往返一次变成 0..8 的原始数字，
+      // 而**任何一步都不报错**。与 v1.20.16 那个 `statePid` 的坑是同一形态。
+      // 判据与 `model.js` 的 `createNode` 同源（都走 `normalizeValueLabels`）。
+      node.valueLabels = window.normalizeValueLabels(o.valueLabels);
       node.card = parseCard(o.card, path + ".card", warnings);
       node.labelFont = parseFont(o.labelFont, path + ".labelFont", warnings);
       node.showLabel = o.showLabel === undefined ? true : !!o.showLabel;
@@ -444,7 +464,7 @@ themeColors: (root.themeColors && typeof root.themeColors === "object" && !Array
           errors.push(path + ".children[" + i + "] 不是一个对象");
           return;
         }
-        const cn = parseNode(c, path + ".children[" + i + "]", errors, warnings, assetIds, bumpCount);
+        const cn = parseNode(c, path + ".children[" + i + "]", errors, warnings, assetIds, bumpCount, false, (depth || 0) + 1);
         if (cn) node.children.push(cn);
       });
     }
@@ -669,9 +689,9 @@ themeColors: (root.themeColors && typeof root.themeColors === "object" && !Array
 
       const name = (typeof t.name === "string" && t.name.trim()) ? t.name.trim() : id;
       if (name.charAt(0) === "$") {
-        warnings.push(path + " 的名字以 `$` 开头 —— 引用语法里 `$` 是前缀，这个名字**引用不到**");
+        warnings.push(path + " 的名字以 `$` 开头 —— 引用语法里 `$` 是前缀，这个名字引用不到");
       } else if (names[name]) {
-        warnings.push(path + " 的名字 `" + name + "` 与前面的变量重名 —— 按名字引用时以**先出现的**为准");
+        warnings.push(path + " 的名字 `" + name + "` 与前面的变量重名 —— 按名字引用时以先出现的为准");
       } else {
         names[name] = true;
       }
@@ -701,7 +721,7 @@ themeColors: (root.themeColors && typeof root.themeColors === "object" && !Array
         } else {
           if (!window.isHexColor(tok.value)) {
             warnings.push(path + " 是内置变量（" + t.builtin + "）但值不是 `#RRGGBB` —— "
-              + "解析时会**回落内置主题的同名色**，不会写坏 themeColors");
+              + "解析时会回落内置主题的同名色，不会写坏 themeColors");
           }
           tok.builtin = t.builtin;
         }
@@ -741,7 +761,7 @@ themeColors: (root.themeColors && typeof root.themeColors === "object" && !Array
           if (k.charAt(0) === window.MODE_RAW_PREFIX) {
             const f = k.slice(1);
             if (["glow", "title", "description"].indexOf(f) < 0) {
-              warnings.push(path + ".values." + k + " 会**原样写进 themeColors**，但 `" + f
+              warnings.push(path + ".values." + k + " 会原样写进 themeColors，但 `" + f
                 + "` 不是已知的主题字段（已知：glow / title / description）");
             } else if (f === "glow" && typeof v !== "boolean") {
               warnings.push(path + ".values." + k + " 应当是 true / false —— 当前是 " + trimNum(v));
@@ -876,8 +896,8 @@ themeColors: (root.themeColors && typeof root.themeColors === "object" && !Array
             // ⚠️ 文案要给出**出路**，而且**不许**再提 `$$`：
             // `text` 是字面值，用户什么都不用做就能显示 `$`；只有"想绑定"才需要动作。
             warnings.push(npath + ".text 是 `" + v + "`，看起来像变量引用，但 bindings 里没有这条 —— "
-              + "如果这是要**显示的字面内容**，不用管这条（文件照常打开，就按 `" + v + "` 显示）；"
-              + "如果是要**绑定变量**，请给这个节点加 bindings 条目（`\"text\": \"" + v + "\"`）。");
+              + "如果这是要显示的字面内容，不用管这条（文件照常打开，就按 `" + v + "` 显示）；"
+              + "如果是要绑定变量，请给这个节点加 bindings 条目（`\"text\": \"" + v + "\"`）。");
             return;
           }
           errors.push(npath + "." + p + " 是 `" + v + "`，但 bindings 里没有这条 —— "

@@ -265,6 +265,49 @@ const eq = (a, b, m) => ok(a === b, m + (a === b ? '' : `（实际 ${JSON.string
     ok(C.kb <= 1200, `占用 ${C.kb} KB ≤ 1.2 MB 预算`);
     ok(C.steps >= 10, `字节预算下能存下 ${C.steps} 步（不是一压就爆）`);
 
+    // ---------- 4b) 合并序列里不重复写盘，但**最终状态一定落盘**（v2.83.0，Round 4）----------
+    //
+    // `saveUndoStack()` 是**同步**的：实测（60 个控件、栈里 32 步）**13.2 ms / 次**，
+    // 每次往 localStorage 写 **1.18 MB**。原来每次 commit 都调它 ——
+    // 而滚轮缩放 / 拖滑块这类"一类连续操作"**每帧**都 commit，
+    // 于是每一帧都在写一份**下一步立刻会覆盖掉**的中间态。
+    //
+    // 改法：用 `coalesceKey` 判断"还是不是同一步"，同一步只在第一步落盘；
+    // 手势收尾（`onDragEnd` / `endBatch` / `flushUndoStack`）补写最终状态。
+    //
+    // ⚠️ 这条断言的**要害是最后两句**：不能为了省时间把"最终状态"也省掉。
+    // 只测"写盘次数变少了"是**反向的**——把 saveUndoStack 整个删掉也能通过。
+    console.log('\n=== 4b. 合并序列：中间帧不写盘，最终状态必须写 ===');
+    const persist = await cdp.eval(`(() => {
+      const S = window.CanvasState;
+      const KEY = 'icar-studio-undo';
+      let writes = 0;
+      const orig = localStorage.setItem.bind(localStorage);
+      localStorage.setItem = function (k, v) { if (k === KEY) writes++; return orig(k, v); };
+      try {
+        const n = window.flatten(S.design.nodes)[0];
+        for (let i = 0; i < 30; i++) {
+          window.commit(() => { n.x = 20 + i; }, '连续拖动', 'gesture');
+        }
+        const midWrites = writes;
+        window.flushUndoStack();                    // 手势收尾
+        const afterFlush = writes;
+        const raw = JSON.parse(localStorage.getItem(KEY));
+        const top = JSON.parse(raw.stack[raw.index].state);
+        const saved = window.findNode(top.d.nodes, n.id);
+        const w0 = writes;
+        window.commit(() => { n.y = 7; }, '单独一步');   // 不带合并键
+        const soloWrites = writes - w0;
+        return JSON.stringify({ midWrites, afterFlush, soloWrites, 落盘的x: saved ? saved.x : null, 当前x: n.x });
+      } finally { delete localStorage.setItem; }
+    })()`);
+    const PS = JSON.parse(persist);
+    console.log('    · ' + persist);
+    eq(PS.midWrites, 1, '同一合并序列里 30 次 commit **只写盘 1 次**（原来 30 次 × 13ms）');
+    eq(PS.afterFlush, 2, '手势收尾 flushUndoStack() 补写一次');
+    eq(PS.soloWrites, 1, '不带合并键的单步操作照旧每次都写（"每一步逻辑操作都持久化"没被削弱）');
+    eq(PS.落盘的x, 49, '**落盘的是最终状态**（x=49），不是被覆盖掉的中间态');
+
     // 刷新后还能撤销（真持久化）
     const before = await cdp.eval(`JSON.stringify({ nodes: window.flatten(window.CanvasState.design.nodes).length, name: window.CanvasState.design.name })`);
     await cdp.send('Page.navigate', { url: URL_PAGE });

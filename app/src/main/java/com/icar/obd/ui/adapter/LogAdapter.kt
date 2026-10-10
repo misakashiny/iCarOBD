@@ -1,5 +1,9 @@
 package com.icar.obd.ui.adapter
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.os.Build
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -7,6 +11,7 @@ import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.icar.obd.R
 import com.icar.obd.data.AppLog
+import com.icar.obd.obd.ObdController
 
 /**
  * 日志适配器。
@@ -92,6 +97,27 @@ class LogAdapter : RecyclerView.Adapter<LogAdapter.VH>() {
     class VH(v: View) : RecyclerView.ViewHolder(v) {
         private val tv: TextView = v.findViewById(R.id.tvLog)
 
+        init {
+            // 长按 → **整行进剪贴板**（v1.20.18）。
+            //
+            // 为什么是「整行」而不是"让用户拖选"：日志行的价值在于
+            // `时间戳 + 模块 + 级别 + 正文` **整条** —— 手动拖选在 10sp 的
+            // 等宽小字上很难选全，选漏了时间戳这条日志就没法定位了。
+            //
+            // ⚠️ 监听器在 `init` 里挂**一次**，不在 [bind] 里挂：
+            // 日志页的性能红线是「**不加任何 per-bind 的分配**」，
+            // 每次绑定都 new 一个 lambda 正是这条红线要挡的东西。
+            // 文案直接读 `tv.text`（对已经是 String 的 CharSequence，
+            // `toString()` 返回自身，不再分配）。
+            //
+            // `textIsSelectable=true` 保留不动：长按由本监听器接管（返回 true），
+            // 点击/拖选文本的原行为不受影响。
+            tv.setOnLongClickListener {
+                copyLine(it.context, tv.text.toString())
+                true
+            }
+        }
+
         fun bind(e: AppLog.Entry) {
             tv.text = e.format()
             tv.setTextColor(
@@ -103,6 +129,26 @@ class LogAdapter : RecyclerView.Adapter<LogAdapter.VH>() {
                     else -> 0xFF5F6E85.toInt()
                 }
             )
+        }
+
+        /**
+         * 复制一行。沿用检视器那套写法（`UiInspectorOverlay.copyToClipboard`）：
+         *
+         *  - 剪贴板不可用时**说出来**，不静默失败（否则用户以为复制成功了）；
+         *  - **API 33+ 系统自己会弹「已复制」浮标**，我们再弹一条就是两条 ——
+         *    只在这以下自己弹。
+         *
+         * 只在长按时跑，不在绑定路径上。
+         */
+        private fun copyLine(ctx: Context, text: String) {
+            val ok = runCatching {
+                val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("日志", text))
+            }.isSuccess
+            when {
+                !ok -> ObdController.toast("复制失败（剪贴板不可用）")
+                Build.VERSION.SDK_INT < 33 -> ObdController.toast("整行已复制")
+            }
         }
     }
 

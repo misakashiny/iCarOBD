@@ -359,6 +359,197 @@ const eq = (a, b, m) => ok(a === b, m + (a === b ? '' : `（实际 ${JSON.string
     ok(UL.只剩好的, "剩下的确实是那条好的（不是随机留下一条）");
   }
 
+  // ================================================================ 深嵌套不能爆栈（v2.83.0 Round 2）
+  //
+  // `parseNode` 是递归的。修复前：2 万层嵌套的 group 直接把调用栈打爆
+  // （RangeError），异常冒到 jsonEdited 的 setTimeout 里没人接 ——
+  // 用户粘了一份文件，画布不动、校验框不动、什么都没有。
+  console.log('\n=== 深嵌套必须报**看得懂的错**，不能爆栈 ===');
+  const deep = await cdp.eval(`(() => {
+    const mk = (depth) => {
+      let inner = { id:'leaf', type:'text', text:'x', x:0, y:0, w:10, h:10 };
+      for (let i = 0; i < depth; i++) inner = { id:'g'+i, type:'group', x:0, y:0, w:10, h:10, children:[inner] };
+      return JSON.stringify({ schema:'icar.ui/2', canvas:{unit:360}, meta:{name:'深'}, nodes:[inner] });
+    };
+    const out = {};
+    // (a) 20000 层：必须**返回**错误，不能抛
+    try {
+      const r = window.parseDesign(mk(20000));
+      out.爆栈 = false;
+      out.design为null = r.design === null;
+      out.有深度错误 = r.errors.some(e => e.indexOf('嵌套深度') >= 0);
+      out.首条错误 = r.errors[0] || null;
+    } catch (e) {
+      out.爆栈 = true;
+      out.异常 = String(e && e.message || e);
+    }
+    // (b) 合法深度（3 层）不能被误伤
+    const okR = window.parseDesign(mk(3));
+    out.合法深度通过 = okR.errors.length === 0 && !!okR.design;
+    // (c) 上限本身是个正数且够宽松
+    out.上限 = window.MAX_NODE_DEPTH;
+    // (d) 走真实入口 jsonEdited 也不能抛
+    try {
+      document.getElementById('jsonArea').value = mk(20000);
+      window.jsonEdited();
+      out.入口不抛 = true;
+    } catch (e) { out.入口不抛 = false; out.入口异常 = String(e && e.message || e); }
+    return JSON.stringify(out);
+  })()`);
+  const DP = JSON.parse(deep);
+  console.log('    · ' + deep);
+  ok(!DP.爆栈, '2 万层嵌套**不抛异常**' + (DP.异常 ? '（实际抛了 ' + DP.异常 + '）' : ''));
+  ok(DP.design为null, '被拒绝（design = null），不是悄悄接受一个坏设计');
+  ok(DP.有深度错误, '错误文案里有「嵌套深度」—— 用户看得懂' + (DP.首条错误 ? '：' + DP.首条错误 : ''));
+  ok(DP.合法深度通过, '3 层嵌套照常通过（上限不误伤真实设计）');
+  ok(typeof DP.上限 === 'number' && DP.上限 >= 16, 'MAX_NODE_DEPTH = ' + DP.上限 + '（够宽松）');
+  ok(DP.入口不抛, 'jsonEdited 这条真实入口也不抛（否则就是"粘了文件什么都没发生"）');
+  await sleep(500);   // 让 jsonEdited 的防抖跑完
+
+  // ================================================================ 校验消息有上限且**说出来**
+  console.log('\n=== 海量警告不能把面板撑爆（且必须说明截断了）===');
+  const cap = await cdp.eval(`(() => {
+    const parts = [];
+    for (let i = 0; i < 5000; i++) parts.push({ kind:'dial', x:0, y:0, w:10, h:10 });
+    const txt = JSON.stringify({ schema:'icar.ui/2', canvas:{unit:360}, meta:{name:'x'},
+      nodes:[{ id:'n1', type:'gauge', pid:'obd.rpm', x:0,y:0,w:100,h:100, parts: parts }] });
+    document.getElementById('jsonArea').value = txt;
+    const t0 = performance.now();
+    const v = window.validateNow();
+    const ms = performance.now() - t0;
+    const box = document.getElementById('msgs');
+    return JSON.stringify({
+      警告数: v.warnings.length,
+      渲染的msg行: box.querySelectorAll('.msg').length,
+      截断提示: (box.querySelector('.msgMore') || {}).textContent || '',
+      耗时ms: Math.round(ms),
+    });
+  })()`);
+  const CP = JSON.parse(cap);
+  console.log('    · ' + cap);
+  ok(CP.警告数 > 1000, `确实产生了海量警告（${CP.警告数} 条）`);
+  ok(CP.渲染的msg行 <= 200, `面板只渲染 ${CP.渲染的msg行} 行（≤200），不会撑爆`);
+  ok(CP.截断提示.indexOf('还有') >= 0 && CP.截断提示.indexOf(String(CP.警告数)) >= 0,
+    '**明说了还有多少条**（不是静默截断）：' + CP.截断提示);
+
+  // ================================================================ JSON 文本 → 画布 必须可撤销（v2.83.0 Round 5）
+  //
+  // 原来 `jsonEdited` 是裸赋值 `S.design = r.design` —— **不进撤销栈**。
+  // 后果：「打开」一份设计文件后按撤销，回到的**不是打开前**，而是撤销栈里的
+  // **上一步**（实测：打开前 A{x:33}，打开 B，撤销后变成一个无关的旧状态，
+  // 用户做的 A 直接丢）。这条钉住"文本 → 画布"是一个可撤销的步骤。
+  console.log('\n=== JSON 文本同步到画布：必须能撤销回去 ===');
+  const jsonUndo = await cdp.eval(`(() => {
+    const S = window.CanvasState;
+    const A = window.createDesign({ name: 'A-我的工作' });
+    A.nodes = [window.createNode(window.NODE_GAUGE, { name:'A1', pid:'obd.rpm', x:33, y:0, w:100, h:100 })];
+    S.design = A; S.selection = [];
+    window.refreshAll();
+    window.commit(() => { A.nodes[0].x = 33; }, '在 A 上做的一步');
+    const before = JSON.stringify({ name: S.design.name, x: S.design.nodes[0].x });
+    // 「打开」内部走的就是这条路：把文本塞进文本域 → jsonEdited
+    const B = window.createDesign({ name: 'B-别人给的' });
+    B.nodes = [window.createNode(window.NODE_GAUGE, { name:'B1', pid:'obd.speed', x:5, y:5, w:50, h:50 })];
+    document.getElementById('jsonArea').value = window.toV2Json(B);
+    window.jsonEdited();
+    return before;
+  })()`);
+  await sleep(700);   // 等 jsonEdited 的 350ms 防抖
+  const afterOpen = await cdp.eval(`JSON.stringify({ name: window.CanvasState.design.name, x: window.CanvasState.design.nodes[0] ? window.CanvasState.design.nodes[0].x : null })`);
+  await cdp.eval(`window.doUndo()`);
+  const afterUndo = await cdp.eval(`JSON.stringify({ name: window.CanvasState.design.name, x: window.CanvasState.design.nodes[0] ? window.CanvasState.design.nodes[0].x : null })`);
+  console.log('    · 打开前 ' + jsonUndo + ' → 打开后 ' + afterOpen + ' → 撤销后 ' + afterUndo);
+  ok(JSON.parse(afterOpen).name === 'B-别人给的', '文本域里的设计真的生效了（画布换成了 B）');
+  eq(afterUndo, jsonUndo, '**按一次撤销回到的是"打开前"**（不是撤销栈里的上一步）');
+
+  // ================================================================ 界面文案里不许有 Markdown 星号（v2.83.0 Round 5）
+  //
+  // `DIFF_NOTES` 的文案按 Markdown 写（`**加粗**`），但落点是 `textContent` ——
+  // 于是界面上**原样显示星号**。同类问题在 toast / alert / confirm / .hint 里
+  // 一共有 25 处（实测）。这条按**落点类型**分别钉住：
+  //   · innerHTML 的落点（.hint / DIFF_NOTES）→ 必须渲染成 <b>，不许留 `**`
+  //   · textContent / 原生对话框的落点 → 直接不许出现 `**`
+  console.log('\n=== 界面文案里不许残留会原样显示的 Markdown 星号 ===');
+  {
+    const fsx = require('fs');
+    const pathx = require('path');
+    const base = pathx.join(__dirname, '..');
+    /**
+     * 逐行剔掉注释。
+     *
+     * ⚠️ 试过写一个"正经的词法扫描器"（按 `//`、`/*`、引号三种状态走），
+     * **失败了**：`/[\\/:*?"<>|]/g` 这种**正则字面量里的引号**会让扫描器
+     * 误以为进了字符串，之后整份文件全乱 —— 于是把 JSDoc 里的 `**` 全报成缺陷
+     * （实测 94 处假阳性）。注释里的 `**` 是**给读代码的人看的**，不是缺陷。
+     *
+     * 现在用**行级**判定：整行是注释就跳过，块注释按开/闭行跟踪。
+     * 这个仓库的 JSDoc 每行都以 ` * ` 开头，所以够用。
+     */
+    function scanLines(rel, src) {
+      const out = [];
+      let inBlock = false;
+      src.split(/\r?\n/).forEach((L, i) => {
+        const t = L.trim();
+        if (inBlock) { if (t.indexOf('*/') >= 0) inBlock = false; return; }
+        if (t.indexOf('//') === 0) return;
+        const open = t.indexOf('/*');
+        if (open === 0) {
+          if (t.indexOf('*/', 2) < 0) inBlock = true;
+          return;
+        }
+        if (t.charAt(0) === '*') return;                 // JSDoc 正文行
+        // 行尾注释也要剔掉（`foo();  // **说明**`）—— 那同样是给人看的。
+        // 用 ` //`（前面带空格）而不是裸 `//`：URL 里的 `://` 前面是冒号，不会误伤。
+        const cut = L.lastIndexOf(' //');
+        const code = cut >= 0 ? L.slice(0, cut) : L;
+        if (/\*\*[^*\n]{1,40}\*\*/.test(code)) out.push(rel + ':' + (i + 1) + '  ' + t.slice(0, 90));
+      });
+      return out;
+    }
+    const jsFiles = ['app.js', 'panels.js', 'editor.js', 'canvas.js', 'presets.js', 'schema.js', 'model.js', 'validate.js'];
+    let offenders = [];
+    jsFiles.forEach(f => {
+      let src = fsx.readFileSync(pathx.join(base, 'js', f), 'utf8');
+      // ⚠️ **唯一一处允许保留 `**` 的源**：`presets.js` 的 `DIFF_NOTES`。
+      // 它是一张"文案表"，`**加粗**` 是**作者意图**，由 `renderDiff` 的
+      // `boldify()` 渲染成 `<b>`（下面那条行为断言钉着它真的渲染了）。
+      // 把这一段挖掉（保留行号），其余地方一律不许有。
+      if (f === 'presets.js') {
+        const a = src.indexOf('window.DIFF_NOTES = [');
+        const b = src.indexOf('\n  ];', a);
+        if (a >= 0 && b > a) {
+          const head = src.slice(0, a), mid = src.slice(a, b), tail = src.slice(b);
+          src = head + mid.replace(/[^\n]/g, '') + tail;
+        }
+      }
+      offenders = offenders.concat(scanLines('js/' + f, src));
+    });
+    // index.html：先整段去掉 <!-- --> 注释，再按同一套行级规则看
+    const htmlNoComment = fsx.readFileSync(pathx.join(base, 'index.html'), 'utf8').replace(/<!--[\s\S]*?-->/g, '');
+    offenders = offenders.concat(scanLines('index.html(去注释后)', htmlNoComment));
+    offenders.slice(0, 12).forEach(s => console.log('       ↳ ' + s));
+    ok(offenders.length === 0, `代码（去注释后）里没有会原样显示的 \`**加粗**\`（剩 ${offenders.length} 处）`);
+  }
+  // 行为面：差异页签真的渲染成了 <b>，而不是把星号写进文本
+  {
+    const diff = await cdp.eval(`(() => {
+      window.renderDiff();
+      const box = document.getElementById('diffBox');
+      const first = box.querySelector('.msg');
+      return JSON.stringify({
+        条数: box.children.length,
+        有粗体标签: box.querySelectorAll('b').length,
+        文本里有星号: box.textContent.indexOf('**') >= 0,
+        首条: first ? first.textContent.slice(0, 60) : null,
+      });
+    })()`);
+    const D = JSON.parse(diff);
+    console.log('    · ' + diff);
+    ok(D.条数 > 10, `差异清单渲染了 ${D.条数} 条`);
+    ok(D.有粗体标签 > 0, `\`**加粗**\` 渲染成了 <b>（共 ${D.有粗体标签} 处）`);
+    ok(!D.文本里有星号, '差异页签的可见文本里**没有星号**');
+  }
+
   await cdp.ws.close();
   } catch (e) {
     console.log('  ❌ 执行失败: ' + e.message);

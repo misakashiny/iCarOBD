@@ -9,7 +9,7 @@
   ## 与 run-tests.ps1 的分工
 
     run-tests.ps1          Kotlin 单测 + 构建守卫（不需要浏览器）
-    run-browser-tests.ps1  工具（theme-studio）的浏览器套件（需要 Edge）
+    run-browser-tests.ps1  工具（icarui）的浏览器套件（需要 Edge）
 
   两者独立：改 Kotlin 只需前者，改工具只需后者。改了两边就都跑。
 
@@ -25,7 +25,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
-$dir = Join-Path $root "tools\theme-studio\tests"
+$dir = Join-Path $root "tools\icarui\tests"
 
 if (-not (Test-Path $dir)) {
     Write-Host "找不到测试目录：$dir" -ForegroundColor Red

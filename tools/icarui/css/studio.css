@@ -86,6 +86,9 @@ header {
   flex: 0 0 auto; flex-wrap: nowrap; overflow-x: auto;
 }
 header h1 { font-size: 14px; margin: 0 10px 0 0; font-weight: 600; white-space: nowrap; }
+/* 品牌名右侧的一行说明（v2.83.0 改名 ICarUI）。字号小一档、降饱和 ——
+   让「ICarUI」是视觉主体、「车机仪表主题制作工具」是注解。 */
+header h1 .brandSub { font-size: 11px; font-weight: 400; color: var(--dim); margin-left: 6px; }
 header .ver {
   /* 同款问题：靠内容推高度会得到 17/18 两种（v2.45.0） */
   display: inline-flex; align-items: center; height: 17px; line-height: 1; color: var(--dim); font-size: 11px; white-space: nowrap; }
@@ -326,6 +329,13 @@ canvas { display: block; cursor: default; border-radius: var(--r-sm); background
 .msg.err { background: #2A1214; border-color: var(--danger); color: #FFB3B5; }
 .msg.warn { background: #2A2210; border-color: var(--warn); color: #FFDCA0; }
 .msg.ok { background: #0F2A1C; border-color: var(--ok); color: #A8F0C8; }
+/* 校验消息被截断时的那一行「…还有 N 条」（v2.83.0，Round 2）。
+   ⚠️ **刻意不叫 `.msg`** —— 现有套件用 `#msgs .msg` 数条数，
+   把它算成一条会让"到底有几条"这个数字失真。 */
+.msgMore {
+  padding: 6px 8px; margin-top: 4px; font-size: 11px;
+  border-left: 3px dashed var(--dim); color: var(--text2);
+}
 
 /* ---------------------------------------------------------------- 标签页 */
 .tabs { display: flex; gap: 4px; margin-bottom: 6px; }

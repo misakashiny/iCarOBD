@@ -1,4 +1,4 @@
-# theme-studio —— 主题制作工具
+# ICarUI —— 车机仪表主题制作工具
 
 > **双击 `index.html` 就能用。** 不用装 Node、不用装 Python、不用联网。
 
@@ -426,7 +426,7 @@ canvas: { designW: 2560, designH: 1600, scaleMode: 0 }
 
 工具右侧有个标签页专门列这个。**显式列出，不假装一致**，分三类：
 
-- **一致** —— 由 `tools/theme-studio/tests/verify-crosslang.js`（跨语言，78 项）与
+- **一致** —— 由 `tools/icarui/tests/verify-crosslang.js`（跨语言，78 项）与
   `ThemeStudioSampleTest` 守着
 - **差异** —— 例如"越界警告只查根节点""状态判定不带迟滞""JSON 报错文案不同"
 - **未做** —— 例如"App 还不认 v2""撤销栈刷新会丢"
@@ -446,7 +446,7 @@ canvas: { designW: 2560, designH: 1600, scaleMode: 0 }
 两份都由 `gen-sample.js` **用工具自己的代码生成**，不手写：
 
 ```bash
-node tools/theme-studio/gen-sample.js
+node tools/icarui/gen-sample.js
 ```
 
 > ⚠️ 改 `sample.json` 前**先看** `ThemeStudioSampleTest.kt` ——
@@ -500,10 +500,10 @@ Kotlin 侧是另一条线（不需要浏览器）：
 
 ```bash
 # 跨语言一致性（从 Kotlin 源码解析常量，与工具逐条比对）
-node tools/theme-studio/tests/verify-crosslang.js
+node tools/icarui/tests/verify-crosslang.js
 
 # 重新生成示例
-node tools/theme-studio/gen-sample.js
+node tools/icarui/gen-sample.js
 ```
 
 改过 `js/schema.js`、`js/validate.js`、别名表、量程、样式之后**必跑**第一个。

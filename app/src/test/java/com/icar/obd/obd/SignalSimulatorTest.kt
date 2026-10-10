@@ -3,6 +3,7 @@ package com.icar.obd.obd
 import com.icar.obd.data.PidDefinition
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.sqrt
@@ -262,5 +263,120 @@ class SignalSimulatorTest {
             seen.add((VehicleBus.value("std_0C")!! / 500f).toInt())
         }
         assertTrue("3 秒内应扫过多个区段，实际 ${seen.size} 段", seen.size >= 5)
+    }
+
+    // ==================================================== 量程归一（v1.20.18 修崩溃）
+    //
+    // 实机证据 `files/last-crash.log`（2026-10-11 01:31:12，平板 7e7d7bb4，v1.20.16）：
+    //   java.lang.IllegalArgumentException: Cannot coerce value to an empty range:
+    //     maximum 120.5 is less than minimum 122.0
+    //     at com.icar.obd.obd.SignalSimulator.valueOf(SignalSimulator.kt:136)
+    //     at com.icar.obd.obd.SignalSimulator.tick(SignalSimulator.kt:300)
+    //     at com.icar.obd.obd.SignalSimulator$ticker$1.run(SignalSimulator.kt:99)
+    //
+    // 根因：`min` / `max` 是两个各自独立的可变量，UI 的 ± 只把每一端夹在 **PID 量程**里
+    // → 两端各自合法、合起来是空区间 → `coerceIn(min, max)` 抛 → 模拟停摆 + 进程重启。
+
+    /** 崩溃里那一对数字本身：`coerceIn(122.0, 120.5)` 在旧代码里必抛 */
+    private fun reversedPair() =
+        SignalSimulator.Channel("rev", wave = sim.WAVE_SINE, min = 122f, max = 120.5f, noise = 0.02f)
+
+    @Test
+    fun `量程写反时不再抛空 range`() {
+        val ch = reversedPair()
+        // 旧实现：这里第一下就 IllegalArgumentException
+        repeat(50) { i -> sim.valueOf(ch, i / 50f) }
+    }
+
+    @Test
+    fun `量程写反与写正产出同一个区间`() {
+        val good = SignalSimulator.Channel("x", wave = sim.WAVE_SAW, min = 0f, max = 100f, noise = 0f)
+        val bad = SignalSimulator.Channel("x", wave = sim.WAVE_SAW, min = 100f, max = 0f, noise = 0f)
+        listOf(0f, 0.25f, 0.5f, 0.75f, 0.99f).forEach { p ->
+            val v = sim.valueOf(bad, p)
+            assertTrue("相位 $p：v=$v 越界", v in 0f..100f)
+            assertEquals("相位 $p：写反的量程应产出同一个区间", sim.valueOf(good, p), v, 1e-4f)
+        }
+    }
+
+    @Test
+    fun `相等量程不抛 且恒等于该点`() {
+        val ch = SignalSimulator.Channel("x", wave = sim.WAVE_SINE, min = 7f, max = 7f, noise = 0.5f)
+        repeat(20) { i -> assertEquals(7f, sim.valueOf(ch, i / 20f), 1e-5f) }
+    }
+
+    @Test
+    fun `极端量程不抛 也不产生 NaN`() {
+        val cases = listOf(
+            -Float.MAX_VALUE to Float.MAX_VALUE,
+            Float.MAX_VALUE to -Float.MAX_VALUE,
+            Float.MAX_VALUE to Float.MAX_VALUE,
+            -1e30f to 1e30f,
+            0f to -0f,
+        )
+        cases.forEach { (mn, mx) ->
+            val ch = SignalSimulator.Channel("x", wave = sim.WAVE_SINE, min = mn, max = mx, noise = 0.02f)
+            val v = sim.valueOf(ch, 0.3f)
+            assertFalse("min=$mn max=$mx 算出 NaN", v.isNaN())
+        }
+    }
+
+    @Test
+    fun `归一化把写反的量程摆正 已经正的返回自身`() {
+        val bad = SignalSimulator.Channel("x", min = 5f, max = 1f)
+        assertEquals(1f, bad.normalized().min, 1e-6f)
+        assertEquals(5f, bad.normalized().max, 1e-6f)
+        val good = SignalSimulator.Channel("x", min = 1f, max = 5f)
+        assertSame("正常通道不该被复制（高频路径，避免垃圾）", good, good.normalized())
+    }
+
+    @Test
+    fun `UI 档位不可能把最小推过最大`() {
+        // 复现实机那条路径：冷却液温度 PID 量程 -40~215（步进 = 255/20 = 12.75），
+        // 自动通道起点 20~95。旧实现：「最大」按 + 两次 = 120.5，
+        // 「最小」按 + 八次 = 122.0 —— 两端都在 PID 量程内，于是双双放行。
+        val p = PidDefinition(id = "std_05", minVal = -40f, maxVal = 215f)
+        var ch = sim.autoChannel(p)
+        assertEquals("自动通道起点", 20f, ch.min, 1e-4f)
+        assertEquals("自动通道起点", 95f, ch.max, 1e-4f)
+
+        val step = (p.maxVal - p.minVal) / 20f
+        assertEquals(12.75f, step, 1e-4f)
+        // 反证：122.0 本身**在 PID 量程内** —— 旧实现只查这个，所以它拦不住
+        assertTrue("122.0 在 -40~215 里", 122f in p.minVal..p.maxVal)
+
+        repeat(2) { ch = ch.withMax(sim.stepRange(ch.max, step, p.minVal, p.maxVal)) }
+        assertEquals("实机崩溃时最大就是 120.5", 120.5f, ch.max, 1e-4f)
+
+        repeat(8) { ch = ch.withMin(sim.stepRange(ch.min, step, p.minVal, p.maxVal)) }
+        assertTrue("min=${ch.min} 不能越过 max=${ch.max}", ch.min <= ch.max)
+
+        // 端到端：这一拍不能再抛（旧代码在这里必抛，且会打断 ticker）
+        sim.update(ch)
+        sim.setStartForTest(0L)
+        sim.tick(1000L)
+        val v = VehicleBus.value("std_05")!!
+        assertTrue("模拟值 $v 应落在 ${ch.min}~${ch.max}", v in ch.min..ch.max)
+    }
+
+    @Test
+    fun `tick 遇到反向量程的通道也不抛`() {
+        VehicleBus.clear()
+        sim.update(reversedPair())
+        sim.setStartForTest(0L)
+        repeat(5) { i -> sim.tick(1000L + i * 300L) }
+        val v = VehicleBus.value("rev")!!
+        assertTrue("v=$v 应落在 120.5~122", v in 120.5f..122f)
+    }
+
+    @Test
+    fun `PID 量程写反时 演示通道与档位都不反`() {
+        // 从 JSON 导入的配置没有 PidDraft 那层校验，min/max 可能是反的
+        val p = PidDefinition(id = "mon_rev", minVal = 122f, maxVal = 120.5f)
+        val ch = sim.demoChannel(p)
+        assertTrue("演示通道 min=${ch.min} max=${ch.max}", ch.min < ch.max)
+        // 档位：PID 量程反了也不能抛空 range
+        val v = sim.stepRange(1000f, 10f, p.minVal, p.maxVal)
+        assertTrue("v=$v 应在 120.5~122", v in 120.5f..122f)
     }
 }

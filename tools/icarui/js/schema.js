@@ -27,6 +27,30 @@ window.MAX_NODES = 200;
 /** v1 的仪表上限，导出 v1 时用 */
 window.MAX_GAUGES = 32;
 
+/**
+ * **分组嵌套的深度上限**（v2.83.0 加，Round 2）。
+ *
+ * ## 为什么需要一个"看着多余"的上限
+ *
+ * `parseNode` 是**递归**的。没有深度上限时，一份手工构造（或损坏）的
+ * 设计文件可以靠 2 万层嵌套的 `group` 把调用栈打爆：
+ *
+ * ```
+ * 实测：group 嵌套 20000 层 → RangeError: Maximum call stack size exceeded
+ * ```
+ *
+ * 而 `parseNode` 抛出的异常会一路冒到 `jsonEdited` 的 `setTimeout` 里 ——
+ * 那里**没有 try/catch**，所以结果是"粘贴了一份文件，画布不动、校验框不动、
+ * 什么都没有"，只有 console 里一行红字。这正是本仓库最讨厌的**静默失灵**。
+ *
+ * 32 层远超任何真实设计（正常最多 4 层：页面 → 分组 → 卡片 → 文字），
+ * 所以这个上限只会拦住损坏/恶意文件，不会误伤。
+ *
+ * ⚠️ **App 侧的 `DesignFile.parseNode` 是同样的递归结构，也需要同样的上限。**
+ * 那属于 `app/`，本次范围外 —— 已记在 CHANGELOG 的「下次优化建议」里。
+ */
+window.MAX_NODE_DEPTH = 32;
+
 /** 与 DashLayout.Drag 一致：GRID=24 → STEP=15，MIN_SIZE=30 */
 window.GRID = 24;
 window.STEP = window.CANVAS / window.GRID;   // 15
@@ -1041,6 +1065,70 @@ window.STATE_NAMES = [
   { v: window.STATE_WARN, n: "警告" },
   { v: window.STATE_CRITICAL, n: "严重" },
 ];
+
+/**
+ * **每个状态的默认值**（v2.83.0 加，Round 3）。
+ *
+ * ## 为什么要有这张表
+ *
+ * `STATE_NAMES` 回答"有哪几个状态"，但"**每个状态默认什么**"
+ * （透明度 / 是否闪烁）原来在**三处**各写了一遍，而且**互不一致**：
+ *
+ * | 位置 | 写的是什么 |
+ * |---|---|
+ * | `js/app.js` `toggleStates` | normal/warn/critical 各一条字面量 |
+ * | `js/editor.js` `ceToggleStates` | 同样三条，一字不差地又写了一遍 |
+ * | `js/app.js` `setState` / `js/editor.js` `ceSetState` 的**兜底** | `{alpha:255, blink:false}` —— **critical 拿到的是 false** |
+ *
+ * 第三处就是真实的漂移：一份只有 `normal`/`warn` 的老文件，
+ * 用户去编辑 `critical` 时它才被懒创建 —— 拿到的 `blink` 是 `false`，
+ * 而"启用状态系统"路径创建的 `critical` 是 `true`。**同一个状态，两种默认值。**
+ *
+ * 更贵的是下一层：将来加第四个状态时，只改一处就会漏 ——
+ * 漏掉的那一侧铺不出那个状态，控件拖出来"永远不亮"，而且**不报错**
+ * （v2.82.0 那个最贵的 bug 就是这个形态）。
+ *
+ * ## 单一真源
+ *
+ * · `STATE_NAMES` 说"有哪几个"
+ * · `STATE_DEFAULTS` 说"各自默认什么"
+ * · `defaultStates()` 把两者合起来
+ *
+ * `verify-tokens2.js` 钉着「`STATE_NAMES` 里每一个都必须在这张表里有默认值」——
+ * 加状态时漏了这里，套件当场红。
+ */
+window.STATE_DEFAULTS = {
+  normal: { alpha: 255, blink: false },
+  warn: { alpha: 255, blink: false },
+  critical: { alpha: 255, blink: true },
+};
+
+/**
+ * 铺一份**三态默认值**对象（键顺序跟 `STATE_NAMES` 走）。
+ *
+ * @param {string} normalAssetId 常态用的素材 id（其余两态默认空，等用户挑）
+ *
+ * ⚠️ 表里查不到时**回落到 normal 的默认值并 `console.warn`**，
+ * 而不是抛异常 —— 这个函数跑在 `commit(fn)` 里，而 `commit` 没有 try/catch，
+ * 抛出去会变成"点了按钮什么都没发生"（本仓库最讨厌的静默失灵）。
+ * 真正的强制在套件那一侧：漏一个状态，`verify-tokens2.js` 会红。
+ */
+window.defaultStates = function (normalAssetId) {
+  const out = {};
+  window.STATE_NAMES.forEach(function (s) {
+    const d = window.STATE_DEFAULTS[s.v] || window.STATE_DEFAULTS[window.STATE_NORMAL];
+    if (!window.STATE_DEFAULTS[s.v]) {
+      console.warn("STATE_DEFAULTS 缺少状态 `" + s.v + "` 的默认值 —— 已回落到 normal（见 schema.js）");
+    }
+    out[s.v] = {
+      assetId: s.v === window.STATE_NORMAL ? (normalAssetId || "") : "",
+      alpha: d.alpha,
+      blink: d.blink,
+      blinkMs: window.MIN_BLINK_MS,
+    };
+  });
+  return out;
+};
 
 /**
  * 素材分类。**只是标签**，不预置任何图片 —— 车标等素材版权不属于本项目，

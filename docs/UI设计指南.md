@@ -248,7 +248,7 @@ y_设计 = y_像素 / 屏高 × 360
 ./gradlew testDebugUnitTest --tests '*DesignFileTest*'
 ```
 
-> 更好的做法是用 `tools/theme-studio/index.html` 的「校验」按钮 ——
+> 更好的做法是用 `tools/icarui/index.html` 的「校验」按钮 ——
 > 它的规则与 `DesignFile.kt` 同源（有跨语言比对守着），改完立刻看到结果。
 
 ### 3. 导入到设备（**v1.10.3 起有 App 内入口**）
@@ -276,7 +276,7 @@ adb shell "run-as com.icar.obd cp /data/local/tmp/design.json files/design.json"
 
 > **仪表盘 → 风格 → 导出当前布局为设计文件…**
 
-走系统分享面板，把 `design.json` 发给电脑，再在 `tools/theme-studio/index.html`
+走系统分享面板，把 `design.json` 发给电脑，再在 `tools/icarui/index.html`
 里打开继续改 —— **闭环**。
 
 导出的主题写的是**别名**（`neon`/`ice`/`amber`）而不是数字 id，因为 id 会随自建主题
@@ -292,7 +292,7 @@ adb shell "run-as com.icar.obd cp /data/local/tmp/design.json files/design.json"
 | ~~**App 内的导入入口**~~ | ✅ **v1.10.3 完成**（仪表盘 → 风格 → 导入/导出设计文件） |
 | **命令行校验器** | 让 PC 上能直接 `java -jar validate.jar design.json`。现在用主题工具的「校验」按钮代替 |
 | ~~**导出**~~ | ✅ **v1.10.3 完成**（「导出当前布局为设计文件…」） |
-| ~~**PC 端预览**~~ | ✅ **v1.10.1 完成**（`tools/theme-studio/index.html`） |
+| ~~**PC 端预览**~~ | ✅ **v1.10.1 完成**（`tools/icarui/index.html`） |
 | **`theme` 内联** | 现在只能引用主题别名，不能在设计文件里直接写颜色。自建主题的配色无法随文件传递 |
 
 ### 关于"PC 端预览"

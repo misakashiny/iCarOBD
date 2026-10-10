@@ -81,6 +81,22 @@ class LogFragment : Fragment() {
         rv.layoutManager = LinearLayoutManager(requireContext())
         rv.adapter = adapter
 
+        // ---- 跟随开关（v1.20.18）----
+        //
+        // 原来只有「暂停滚动」：用户滚上去看历史时，**每 250ms 被 [uiTick] 拽回底部**
+        // （`rv.scrollToPosition(最后一行)`），根本看不了历史。
+        // 现在滚离底部超过 [AUTO_PAUSE_ROWS] 行就自动暂停跟随，按钮文案跟着变。
+        //
+        // ⚠️ 监听器里**只读、不做任何事**：不滚动、不 notify、不 requestLayout。
+        // 它和 250ms 的 [uiTick] 抢同一个 RecyclerView —— 一旦在这里动手就会互相打架
+        // （v1.18.4 那个 ANR 就是"隐藏时还在往 RecyclerView 上堆 op"引起的）。
+        rv.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
+                if (dy == 0 || paused) return          // 没有纵向位移 / 已经暂停 → 不做判断
+                if (rowsBelowBottom() > AUTO_PAUSE_ROWS) setPaused(true)
+            }
+        })
+
         val spLevel = view.findViewById<Spinner>(R.id.spLevel)
         val spModule = view.findViewById<Spinner>(R.id.spModule)
         spLevel.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, levels)
@@ -103,9 +119,20 @@ class LogFragment : Fragment() {
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
 
+        // 一个按钮，两种语义（v1.20.18）：
+        //   跟随中 →「暂停滚动」= 停住不动，方便逐行看
+        //   已暂停 →「回到底部」= 关掉 paused **并立刻**滚到最后一行
+        // 为什么不另加一个「继续滚动」+ 一个「回到底部」：`paused = false` 之后
+        // 下一拍 [uiTick]（≤250ms）本来就会 `scrollToPosition(最后一行)` ——
+        // 两个按钮会是**同一个动作**，多一个只会让人犹豫按哪个。
         btnPause.setOnClickListener {
-            paused = !paused
-            btnPause.text = if (paused) "继续滚动" else "暂停滚动"
+            if (paused) {
+                setPaused(false)
+                // 立刻回底，不等下一拍（点了就该有反馈）
+                if (adapter.itemCount > 0) rv.scrollToPosition(adapter.itemCount - 1)
+            } else {
+                setPaused(true)
+            }
         }
 
         view.findViewById<MaterialButton>(R.id.btnLogClear).setOnClickListener {
@@ -122,6 +149,9 @@ class LogFragment : Fragment() {
         }
 
         view.findViewById<MaterialButton>(R.id.btnLogExport).setOnClickListener { exportLog() }
+
+        // 让按钮文案与 [paused] 对齐（视图被重建时 XML 里的默认文案可能已经过期）
+        btnPause.text = if (paused) BTN_BACK_TO_BOTTOM else BTN_PAUSE
 
         // v1.20.3：知识库入口从这一页**撤掉了** —— 用户要求做成导航栏的独立 tab
         // （见 MainActivity.createFragment 的 "knowledge"）。同一个功能不留两个入口。
@@ -192,6 +222,37 @@ class LogFragment : Fragment() {
         main.postDelayed(uiTick, UI_REFRESH_MS)
     }
 
+    /**
+     * 跟随开关的**唯一状态就是 [paused]**（v1.20.18：不新增字段）。
+     * 这里只负责「状态变了之后，把按钮文案和统计行跟上」。
+     */
+    private fun setPaused(v: Boolean) {
+        if (paused == v) return
+        paused = v
+        btnPause.text = if (paused) BTN_BACK_TO_BOTTOM else BTN_PAUSE
+        updateStats()
+    }
+
+    /**
+     * 末尾那一行**下面还压着几行** —— 也就是「离底部有多远」，单位是**行**。
+     * `0` = 最后一行可见（贴底）。
+     *
+     * ⚠️ 为什么不用 `computeVerticalScrollRange - Extent - Offset` 换算像素距离：
+     * `LinearLayoutManager` 对**长列表**的 range 是**按已布局行的平均高度外推**出来的
+     * 估计值，而日志行的行高并不相等（正文会折行）—— 3000 行时偏差足够大，
+     * **贴着底也会被算成「还差几行」→ 一打开日志页就自动暂停，跟随功能直接失效**。
+     * `findLastVisibleItemPosition()` 给的是精确行号，而且同样是**只读**
+     * （不触发布局、不重排、不分配）。
+     */
+    private fun rowsBelowBottom(): Int {
+        val lm = rv.layoutManager as? LinearLayoutManager ?: return 0
+        val total = adapter.itemCount
+        if (total == 0) return 0
+        val last = lm.findLastVisibleItemPosition()
+        if (last == RecyclerView.NO_POSITION) return 0
+        return total - 1 - last
+    }
+
     private fun updateStats() {
         // 用 AppLog.size() 而不是 snapshot().size —— 后者每次都要拷贝整个缓冲，
         // 早期版本在每条日志到达时都调用一次，洪泛时是致命的
@@ -237,5 +298,19 @@ class LogFragment : Fragment() {
     private companion object {
         /** 日志页 UI 合并刷新间隔：洪泛时最多每 250ms 重排一次 */
         const val UI_REFRESH_MS = 250L
+
+        /**
+         * 滚离底部**超过这么多行** → 自动暂停跟随（v1.20.18）。
+         *
+         * 2 行是「明显是在往回看，而不是手指抖了一下」的最小值：
+         * 1 行的话，轻微滑一下就暂停，跟随会显得很神经质。
+         */
+        const val AUTO_PAUSE_ROWS = 2
+
+        /** 跟随中按钮的文案：点它 = 停住不动 */
+        const val BTN_PAUSE = "暂停滚动"
+
+        /** 已暂停时按钮的文案：点它 = 关掉 paused + 滚到最后一行 */
+        const val BTN_BACK_TO_BOTTOM = "回到底部"
     }
 }

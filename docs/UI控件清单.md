@@ -136,7 +136,7 @@ View
 | `TextView` | `tvCanvasCount` | `共 N 套 · 上限 8 套` |
 | `LinearLayout` | `llCanvasList` | 画布行容器（**代码生成**，每行 `item_canvas.xml`） |
 | `MaterialButton` | `btnAddCanvas` | 新增画布 |
-| `MaterialButton` | `btnImportCanvas` / `btnExportCanvas` | **导入 / 导出画布**（v1.20.2，一行两个；对接 `tools/theme-studio`） |
+| `MaterialButton` | `btnImportCanvas` / `btnExportCanvas` | **导入 / 导出画布**（v1.20.2，一行两个；对接 `tools/icarui`） |
 | `TextView` | `tvCurrentCanvas` | `当前：名字 · 类型 · N 个仪表` |
 | `MaterialButton` | `btnCanvasTheme` | 画布主题（**只作用于当前这一套**） |
 | `MaterialButton` | `btnCanvasLook` | 背景 / 设计文件 / 参考线 / 卡片样式菜单 |

@@ -7,7 +7,7 @@
    为什么必须存在：编辑器和 App 是两套实现，一旦分叉，症状是
    「编辑器说没问题、App 加载报错」—— 那是这个项目最该避免的一类 bug。
 
-   跑法：node tools/theme-studio/tests/verify-crosslang.js
+   跑法：node tools/icarui/tests/verify-crosslang.js
    （⚠️ 它在 `tests/` 下，不是 `tools/` 根目录 —— 这个文件原来叫 verify-studio.js，
      搬进 tests/ 之后文件头这两行一直没改，实测让接手的人找不到它）
    ========================================================================== */
@@ -17,10 +17,10 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 
-// ⚠️ 本文件在 tools/theme-studio/tests/ 下，要**上跳三级**才到仓库根。
+// ⚠️ 本文件在 tools/icarui/tests/ 下，要**上跳三级**才到仓库根。
 // 第一版放在 tools/ 下时是 ".."，搬进 tests/ 后必须同步改 —— 否则读不到 Kotlin 源码。
 const ROOT = path.resolve(__dirname, "..", "..", "..");
-const STUDIO = path.join(ROOT, "tools", "theme-studio");
+const STUDIO = path.join(ROOT, "tools", "icarui");
 const KOTLIN = path.join(ROOT, "app", "src", "main", "java", "com", "icar", "obd");
 
 let pass = 0, fail = 0;
@@ -68,8 +68,12 @@ function loadTool() {
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
-  // 顺序与 index.html 一致（schema → model → validate）
-  ["schema.js", "model.js", "validate.js"].forEach(f => {
+  // 顺序与 index.html 一致（schema → model → validate → presets）
+  //
+  // ⚠️ `presets.js` 是 v2.83.0（Round 6）加的：`DIFF_NOTES`（工具里那个
+  // 「与 App 规则的差异」页签）住在那儿，而下面有一节要拿它跟 App 源码对质。
+  // 它只做顶层常量与模板定义（模板体是懒执行的），不需要 DOM。
+  ["schema.js", "model.js", "validate.js", "presets.js"].forEach(f => {
     vm.runInContext(read(path.join(STUDIO, "js", f)), sandbox, { filename: f });
   });
   return sandbox;
@@ -733,6 +737,123 @@ console.log("\n=== 8. 内置主题配色（P8-5 内嵌配色的跨语言契约�
 
   const aliasKt = (themeKt.match(/-> "(neon|ice|amber)"/g) || []).map(s => s.replace(/-> |"/g, ""));
   eq(JSON.stringify(tool.THEME_ALIASES), JSON.stringify(aliasKt), "主题别名列表一致");
+}
+
+// ================================================================ 状态灯：工具预览 vs App 渲染
+//
+// v2.83.0（Round 6）新加。为什么单独一节：
+//
+// 这套「指示灯状态系统」是**仓库里最贵的一条 bug** 的所在地（v2.82.0：19 个灯里
+// 16 个写错了字段，拖出来永远是暗的，**用户会以为车没问题**）。
+// 而工具预览与 App 渲染是**两套实现**，一旦分叉，症状同样是"看着没问题"。
+//
+// 下面这几条原来**没有任何守卫**（`verify-crosslang` 与 `verify-lamp-state` 都不提），
+// 但它们决定了"同一个数值，工具显示哪张图、车上显示哪张图"。
+
+console.log("\n=== 状态灯：阈值推断与回退链必须与 App 逐条一致 ===");
+{
+  const nodeKt = read(path.join(KOTLIN, "ui", "dash", "NodeTreeRenderer.kt"));
+  const canvasJs = read(path.join(STUDIO, "js", "canvas.js"));
+
+  // ---- 1) 「危险线 = 警告线与量程上限的中点」的那个系数
+  const ktMid = /warnAt\s*\+\s*\(max\s*-\s*warnAt\)\s*\*\s*([\d.]+)f/.exec(nodeKt);
+  const jsMid = /warnAt\s*\+\s*\(max\s*-\s*warnAt\)\s*\*\s*([\d.]+)/.exec(canvasJs);
+  ok(ktMid !== null, "App 里能找到「中点」推断（`warnAt + (max - warnAt) * X`）");
+  ok(jsMid !== null, "工具里能找到「中点」推断");
+  if (ktMid && jsMid) eq(jsMid[1], ktMid[1], "「危险线」的中点系数一致（改一边不改另一边 → 同一个灯两边状态不同）");
+
+  // ---- 2) 中点推断的前置条件（`max > warnAt`，否则没有危险档）
+  ok(/if\s*\(max\s*>\s*warnAt\)/.test(nodeKt), "App 的中点推断带 `max > warnAt` 前置条件");
+  ok(/max\s*>\s*warnAt\s*\?/.test(canvasJs), "工具的中点推断带 `max > warnAt` 前置条件");
+
+  // ---- 3) 比较方向（>= 还是 >）—— 差一个等号就是"刚好压在阈值上"两边不同
+  ok(/v\s*>=\s*critAt/.test(nodeKt) && /v\s*>=\s*warnAt/.test(nodeKt), "App 用 `>=` 判危险线与警告线");
+  ok(/pv\s*>=\s*critAt/.test(canvasJs) && /pv\s*>=\s*warnAt/.test(canvasJs), "工具用 `>=` 判危险线与警告线");
+
+  // ---- 4) 阈值来源优先级：显式 stateWarn 优先，否则 PID 库的 warnHigh
+  ok(/c\.node\.stateWarn\s*\?:\s*def\?\.warnHigh/.test(nodeKt),
+    "App 的阈值优先级：`node.stateWarn ?: pid.warnHigh`");
+  ok(/n\.stateWarn\s*!==\s*null[\s\S]{0,80}?n\.stateWarn[\s\S]{0,120}?info\.warnHigh/.test(canvasJs),
+    "工具的阈值优先级与 App 同源（显式 stateWarn 优先）");
+
+  // ---- 5) **回退链**：危险档缺 `critical` 键时要退到 warn，而不是直接退到 normal
+  //
+  // 这一条是 Round 6 实测抓到的真分歧：工具原来写 `n.states[name] || n.states.normal`，
+  // 缺 `critical` 键时显示 normal 的图，而 App 显示 warn 的图
+  // （`critical ?: warn ?: normal`）—— 用户会以为"危险态没接上"。
+  ok(/STATE_CRITICAL\]\s*\?:\s*c\.states\[NodeState\.STATE_WARN\]\s*\?:\s*c\.states\[NodeState\.STATE_NORMAL\]/.test(nodeKt),
+    "App 的回退链是 `critical ?: warn ?: normal`");
+  ok(/\[window\.STATE_CRITICAL,\s*window\.STATE_WARN,\s*window\.STATE_NORMAL\]/.test(canvasJs),
+    "工具的回退链同样是 `critical → warn → normal`（少了 warn 那一级就是真分歧）");
+  ok(/\[window\.STATE_WARN,\s*window\.STATE_NORMAL\]/.test(canvasJs),
+    "工具的 warn 档回退链是 `warn → normal`");
+
+  // ---- 6) 状态素材为空时的兜底：都用**节点自己的素材**
+  ok(/stateAsset\?\.takeIf\s*\{\s*it\.isNotBlank\(\)\s*\}\s*\?:\s*node\.assetId/.test(nodeKt),
+    "App：状态素材为空 → 回落到 `node.assetId`");
+  ok(/st\s*&&\s*st\.assetId\s*\?\s*st\.assetId\s*:\s*n\.assetId/.test(canvasJs),
+    "工具：状态素材为空 → 同样回落到节点自己的素材");
+
+  // ---- 7) 闪烁下限（本轮之外的既有约定，顺带再钉一次状态侧）
+  ok(/coerceAtLeast\(NodeState\.MIN_BLINK_MS\)/.test(nodeKt),
+    "App：状态灯的闪烁周期 `coerceAtLeast(MIN_BLINK_MS)`");
+}
+
+// ================================================================ DIFF_NOTES 不许与 App 源码打架
+//
+// `DIFF_NOTES` 就是工具里那个「与 App 规则的差异」页签 —— 用户想知道
+// "工具预览和真机一不一样"时**唯一会去看的地方**。
+// 它一旦说过期的话，比没有还糟：用户会以为某个功能 App 不支持，于是不敢用。
+//
+// v2.83.0（Round 6）实测它当时有 6 条过期，其中 3 条把"App 已经做完的事"说成"还没做"。
+// 这一节把每条**可证的**说法与 App 源码绑起来：源码变了、说法没跟上，就红。
+
+console.log("\n=== 「与 App 的差异」页签的文案不许与 App 源码打架 ===");
+{
+  const notesText = (tool.DIFF_NOTES || []).map(x => x[0] + "|" + x[1]).join("\n");
+  const dashRenderer = read(path.join(KOTLIN, "ui", "dash", "DashRenderer.kt"));
+  const canvasPage = read(path.join(KOTLIN, "ui", "dash", "DashCanvasPageFragment.kt"));
+  const designFileKt = read(path.join(KOTLIN, "data", "DesignFile.kt"));
+  const appJs = read(path.join(STUDIO, "js", "app.js"));
+  const nodeTreeKt = read(path.join(KOTLIN, "ui", "dash", "NodeTreeRenderer.kt"));
+
+  // (a) App 的 v2 渲染
+  const appRendersV2 = /NodeTreeRenderer/.test(dashRenderer) && /nodeRenderer\.build\(/.test(dashRenderer);
+  ok(appRendersV2, "App 的 `DashRenderer` 真的走节点树渲染器（`nodeRenderer.build(...)`）");
+  ok(notesText.indexOf("v2 渲染还没做") < 0,
+    "差异页签里**没有**「App 侧的 v2 渲染还没做」（App 从 v1.11.0/v1.12.0 起就会画）");
+  ok(notesText.indexOf("App 侧的 v2 渲染已完成") >= 0,
+    "差异页签里写的是「App 侧的 v2 渲染已完成」（并指向 DashRenderer/NodeTreeRenderer）");
+
+  // (b) 背景图的 w/h
+  const appReadsBgWH = /bgW/.test(canvasPage) && /bgH/.test(canvasPage);
+  ok(appReadsBgWH, "App 的背景绘制真的用了 `bgW`/`bgH`");
+  ok(notesText.indexOf("只有工具在用") < 0,
+    "差异页签里**没有**「背景图的 w/h 只有工具在用」（`DashCanvasPageFragment.kt:335` 会读）");
+
+  // (c) 撤销栈持久化
+  const toolPersistsUndo = /icar-studio-undo/.test(appJs);
+  ok(toolPersistsUndo, "工具确实把撤销栈持久化到 localStorage（键 `icar-studio-undo`）");
+  ok(notesText.indexOf("刷新页面会丢") < 0,
+    "差异页签里**没有**「撤销栈刷新页面会丢」（v2.7.0 起就持久化了）");
+
+  // (d) 迟滞的归属：App 的**指示灯状态判定**走的是简单比较，不是 AlertPulse
+  const stateUsesAlertPulse = /AlertPulse/.test(
+    nodeTreeKt.slice(nodeTreeKt.indexOf("fun resolveState"), nodeTreeKt.indexOf("fun resolveState") + 900));
+  ok(!stateUsesAlertPulse, "App 的 `resolveState`（指示灯状态判定）里没有 AlertPulse —— 它没有迟滞");
+  ok(!/状态判定[^。]{0,40}App 用 AlertPulse/.test(notesText),
+    "差异页签没有把「迟滞」错误地安在状态判定上（迟滞属于**仪表报警的爆闪**）");
+
+  // (e) App 导出格式：说法要与 DesignFile.SCHEMA 一致
+  const schemaIsV1 = /const val SCHEMA\s*=\s*"icar\.ui\/1"/.test(designFileKt);
+  ok(schemaIsV1, "`DesignFile.SCHEMA` 确实是 `icar.ui/1`");
+  ok(/App 导出仍写 v1/.test(notesText), "差异页签仍然写着「App 导出仍写 v1」（这条是对的，别顺手删）");
+
+  // (f) 旋转/分组变换：说法要与 NodeTreeRenderer 的实现一致
+  ok(/v\.rotation\s*=\s*node\.rotation/.test(nodeTreeKt) && /v\.scaleX\s*=\s*node\.scale/.test(nodeTreeKt),
+    "App 真的应用了节点的 rotation / scale");
+  ok(notesText.indexOf("App 侧要等阶段 2 支持") < 0,
+    "差异页签里**没有**「App 侧要等阶段 2 支持 ViewGroup 变换」（已经支持了）");
 }
 
 // ================================================================ 汇总

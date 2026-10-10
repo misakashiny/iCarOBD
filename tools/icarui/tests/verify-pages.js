@@ -333,6 +333,48 @@ const eq = (a, b, m) => ok(a === b, m + (a === b ? '' : `（实际 ${JSON.string
     eq(TB.单页删除按钮, 0, '**单页时不显示删除按钮**（删不了，显示只会误导）');
     ok(TB.单页有加号, '单页时仍显示「＋」（否则用户发现不了能加页）');
 
+    // ================================================================ 新建页面 = 一步撤销
+    //
+    // ⚠️ 这条是 v2.83.0（Round 1）加的回归。
+    //
+    // `addNewPage` 底下有**两次** commit（加页 + 切页）。不合批的话撤销栈里
+    // 会多出一条中间态：用户按一次撤销，**新页面还在**（只把当前页切了回去），
+    // 看起来就是"撤销没反应"，得按两次才退干净。
+    //
+    // 判据不是"撤销栈长度"（那是实现细节），而是**用户看到的东西**：
+    // 按一次撤销，设计必须回到按之前的样子。
+    console.log('\n=== 新建页面只占一步撤销 ===');
+    const undoPage = await cdp.eval(`(() => {
+      const S = window.CanvasState;
+      const snap = () => JSON.stringify({ d: S.design, sel: S.selection });
+      const before = snap();
+      const beforePages = (S.design.pages || []).length;
+      window.addNewPage();                       // prompt 已被 stub 成返回 "P"
+      const afterPages = (S.design.pages || []).length;
+      const after = snap();
+      const changed = after !== before;
+      window.doUndo();
+      const u = snap();
+      const pagesAfterUndo = (S.design.pages || []).length;
+      window.doRedo();
+      const r = snap();
+      return JSON.stringify({
+        beforePages: beforePages, afterPages: afterPages,
+        changed: changed,
+        undoRestored: u === before,
+        pagesAfterUndo: pagesAfterUndo,
+        redoRestored: r === after,
+        indexAfterUndo: S.design.pageIndex,
+      });
+    })()`);
+    console.log('    · ' + undoPage);
+    const UP = JSON.parse(undoPage);
+    ok(UP.changed, `新建页面确实改了设计（页数 ${UP.beforePages} → ${UP.afterPages}）`);
+    eq(UP.afterPages, UP.beforePages + 1, '新建后页数 +1');
+    ok(UP.undoRestored, '**按一次撤销就回到新建之前**（不是"页面还在、只切回了当前页"）');
+    eq(UP.pagesAfterUndo, UP.beforePages, '撤销后页数也回去了');
+    ok(UP.redoRestored, '重做能再回到新建之后');
+
     await cdp.ws.close();
   } catch (e) {
     console.log('  ❌ 执行失败: ' + e.message);

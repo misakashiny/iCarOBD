@@ -200,7 +200,7 @@ Write-Host "`n=== 4. 素材引用完整性 ===" -ForegroundColor Cyan
 #
 # 为什么值得检查：path 打错字不会报错 —— 拖出来只是一个紫框大 X，
 # 而用户根本不会想到是"文件名拼错了"。这类问题靠人眼审不出来。
-$studio = Join-Path $root "tools\theme-studio"
+$studio = Join-Path $root "tools\icarui"
 if (-not (Test-Path $studio)) {
     Warn "找不到 $studio —— 跳过素材检查"
 } else {
@@ -318,7 +318,7 @@ if (-not (Test-Path $studio)) {
 # 但其中一个永远点不出来（实测抓到过 img_plate 被"方形底盘"和"空白铭牌"共用）。
 $ctrlDup = @()
 try {
-  $presetText = [System.IO.File]::ReadAllText((Join-Path $root "tools/theme-studio/js/presets.js"), [System.Text.UTF8Encoding]::new($false))
+  $presetText = [System.IO.File]::ReadAllText((Join-Path $root "tools/icarui/js/presets.js"), [System.Text.UTF8Encoding]::new($false))
   $keys = [regex]::Matches($presetText, 'key:\s*"([a-z0-9_]+)"') | ForEach-Object { $_.Groups[1].Value }
   $ctrlDup = $keys | Group-Object | Where-Object { $_.Count -gt 1 } | ForEach-Object { "$($_.Name) x$($_.Count)" }
 } catch { }
@@ -381,7 +381,7 @@ try {
   # require("./x") 是相对**探针所在目录**解析的，不是 CWD。
   $rootJs = $root.Replace("\", "/")
   $probe = "global.window = global;" +
-    "var R = '" + $rootJs + "/tools/theme-studio/';" +
+    "var R = '" + $rootJs + "/tools/icarui/';" +
     "require(R + 'js/schema.js');" +
     "require(R + 'js/presets.js');" +
     "require(R + 'assets/builtin-index.js');" +

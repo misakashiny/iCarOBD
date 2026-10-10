@@ -13,7 +13,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const file = path.join(__dirname, 'theme-studio', 'js', 'canvas.js');
+const file = path.join(__dirname, 'icarui', 'js', 'canvas.js');
 
 // **白名单 = 工具 UI 层**。每一条都写清"为什么它不该跟设计主题"。
 // ⚠️ drawGaugeNode / drawGaugeLabel / drawPartTree **不在**里面 ——

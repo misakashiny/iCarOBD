@@ -2,7 +2,7 @@
 <html lang="zh-CN" data-theme="dark">
 <head>
 <meta charset="utf-8">
-<title>iCar OBD · 主题制作工具</title>
+<title>ICarUI</title>
 <!--
   "双击即用"靠这个保证：全部是**经典脚本**，没有 ES module、没有 fetch、没有 XHR
   —— 那些在 file:// 下会被 CORS 挡住（已实测）。见 docs/主题设计大纲.md §6.1 与 §3.3。
@@ -14,7 +14,7 @@
 <body>
 
 <header>
-  <h1>iCar OBD · 主题制作</h1>
+  <h1>ICarUI<span class="brandSub">车机仪表主题制作工具</span></h1>
   <span class="ver">格式 <code id="schemaLabel">icar.ui/2</code></span>
 
   <span class="sep"></span>
@@ -96,10 +96,12 @@
           <button onclick="applyPreset('blank')">空盘面</button>
         </div>
         <div class="hint">
-          拖动移动 · 四角手柄缩放 · 上方圆柄或**右下角图标**旋转（<kbd>Shift</kbd> 15° 步进）·
-          空白拖动框选 · <kbd>Shift</kbd> 点选加选 · <kbd>方向键</kbd> 微调 ·
-          <kbd>滚轮</kbd> 缩放选中控件 · <kbd>右键</kbd> 出菜单 ·
-          <kbd>Ctrl+Z/Y</kbd> 撤销返回 · <kbd>Ctrl+D</kbd> 复制 · <kbd>Delete</kbd> 删除
+          拖动移动 · 四角手柄缩放 · 上方圆柄或<b>右下角图标</b>旋转（<kbd>Shift</kbd> 15° 步进）·
+          空白拖动框选 · <kbd>Shift</kbd> 点选加选 · <kbd>方向键</kbd> 走一格
+          （<kbd>Shift</kbd>+<kbd>方向键</kbd> 只走 1 单位，用来对到非网格的位置）·
+          <kbd>滚轮</kbd> 缩放选中控件 · <kbd>右键</kbd> 出菜单 · <kbd>F2</kbd> 打开控件编辑器 ·
+          <kbd>Ctrl+Z/Y</kbd> 撤销返回 · <kbd>Ctrl+D</kbd> 复制 ·
+          <kbd>Ctrl+G</kbd> / <kbd>Ctrl+Shift+G</kbd> 打组 / 解组 · <kbd>Delete</kbd> 删除
         </div>
       </div>
     </div>
@@ -128,7 +130,7 @@
           <select id="scaleMode" onchange="canvasChanged()"></select>
         </div>
         <div class="hint">
-          设计分辨率决定**画布形状**（画布宽高比 = 设计宽高比），设计时就能看出会不会留黑边。
+          设计分辨率决定<b>画布形状</b>（画布宽高比 = 设计宽高比），设计时就能看出会不会留黑边。
           <br>⚠️ 默认「拉伸」是 v1 的行为 —— 改成等比会让存量设计留黑边。
         </div>
       </div>

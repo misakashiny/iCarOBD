@@ -100,9 +100,9 @@
     });
     n.states = {
       // WCAG 2.3.1：闪烁每秒不超过三次 → 周期下限 400ms（见 window.MIN_BLINK_MS）
-      normal: { assetId: "", alpha: 77, blink: false, blinkMs: 400 },
-      warn: { assetId: "", alpha: 255, blink: false, blinkMs: 400 },
-      critical: { assetId: "", alpha: 255, blink: true, blinkMs: 400 },
+      normal: { assetId: "", alpha: 77, blink: false, blinkMs: window.MIN_BLINK_MS },
+      warn: { assetId: "", alpha: 255, blink: false, blinkMs: window.MIN_BLINK_MS },
+      critical: { assetId: "", alpha: 255, blink: true, blinkMs: window.MIN_BLINK_MS },
     };
     return n;
   }
@@ -245,10 +245,10 @@
               assetId: E(d.normal),
               statePid: d.pid,
               states: {
-                normal:   { assetId: E(d.normal), alpha: 120, blink: false, blinkMs: 400 },
-                warn:     { assetId: E(d.warn),   alpha: 255, blink: false, blinkMs: 400 },
+                normal:   { assetId: E(d.normal), alpha: 120, blink: false, blinkMs: window.MIN_BLINK_MS },
+                warn:     { assetId: E(d.warn),   alpha: 255, blink: false, blinkMs: window.MIN_BLINK_MS },
                 // WCAG 2.3.1：闪烁**每秒不超过三次**。400ms = 2.5Hz（见 AlertPulse.MIN_BLINK_MS）
-                critical: { assetId: E(d.crit),   alpha: 255, blink: true,  blinkMs: 400 },
+                critical: { assetId: E(d.crit),   alpha: 255, blink: true,  blinkMs: window.MIN_BLINK_MS },
               },
             });
           },
@@ -515,11 +515,11 @@
         n.rawStatePid = d.pid;
         n.statePid = window.resolvePid(d.pid);
         n.states = {
-          normal: { assetId: off, alpha: 255, blink: false, blinkMs: 400 },
+          normal: { assetId: off, alpha: 255, blink: false, blinkMs: window.MIN_BLINK_MS },
           // WCAG 2.3.1：闪烁**每秒不超过三次**。600ms = 1.7Hz（本来就合规，保持观感差别）
           warn: { assetId: warn, alpha: 255, blink: true, blinkMs: 600 },
           // 原来是 260ms = 3.8Hz，**超红线**。400ms = 2.5Hz
-          critical: { assetId: crit, alpha: 255, blink: true, blinkMs: 400 },
+          critical: { assetId: crit, alpha: 255, blink: true, blinkMs: window.MIN_BLINK_MS },
         };
         return n;
       },
@@ -715,22 +715,47 @@
     ["一致", "吸附步长 15、最小尺寸 30、移动与缩放的夹取公式，抄自 DashLayout.Drag"],
     ["一致", "v1 设计文件自动升级成 v2 节点树（一对一，不改坐标、不改绘制顺序）"],
     ["差异", "**越界警告只查根节点** —— v2 子节点的 x/y 相对父节点，溢出父级是正常设计（指针伸出表盘）。v1 没有层级，所以那时查所有"],
-    ["差异", "**状态判定不带迟滞** —— App 用 AlertPulse 的迟滞（避免阈值附近乱闪），工具里只做简单比较（预览不需要迟滞，而且迟滞会让「改阈值立刻看到效果」变难）"],
+    ["差异", "**状态判定不带迟滞** —— 指示灯的状态判定**两边都没有迟滞**（App 的 `NodeTreeRenderer.resolveState` 与工具的 `resolveStateName` 逐条同源：阈值来源、危险线的「中点」推断、比较方向都一致）。带迟滞的是**仪表报警的爆闪**（App 走 `AlertPulse`，`HYSTERESIS = 0.03`），工具里是简单比较 —— 所以阈值附近抖动时，预览的爆闪会比真机更「跳」。"],
     ["差异", "JSON 语法错误的**文案**不同：App 用 org.json，本工具用浏览器 JSON.parse。位置信息本工具更精确，但两边不可能逐字相同"],
     ["差异", "**「素材路径不存在」这条警告只有 App 能给** —— 浏览器读不到设备路径（沙箱限制），所以工具只校验 assetId 是否在清单里"],
     ["差异", "背景图与素材**只在工具里预览**，写进 JSON 的只有路径。图片本身要放到设计文件同目录的 assets/ 下"],
-    ["差异", "**背景图的 `w`/`h`（尺寸）只有工具在用** —— App 的 `DesignFile.Background` 目前只读 `path` 与 `fit`，会忽略这两个字段。要等「阶段 2」"],
-    ["差异", "**旋转是在「设备空间」施加的**（先排好版、再旋转），与 App 的 `view.rotation` 同一语义。阶段 2 实现 App 侧渲染时**必须照做**，否则 `stretch` 模式下会得到平行四边形（实测 45° 时对角线差 209px、内容放大 1.82 倍）"],
-    ["差异", "**分组的旋转会带着子控件一起转**（逐层在设备空间旋转）。App 侧要等阶段 2 支持 `ViewGroup` 变换"],
+    ["一致", "**背景图的 `w`/`h`（尺寸）App 也读** —— `DashCanvasPageFragment.kt:335` 按 `bgW`/`bgH` 换算成像素矩形画（`PositionedBackgroundDrawable`），与工具的「这张底图只占中间一块」一致"],
+    ["一致", "**旋转是在「设备空间」施加的**（先排好版、再旋转）—— App 用 `View.setRotation`（`NodeTreeRenderer.kt:206`），语义正好相同；`stretch` 模式下不会得到平行四边形"],
+    ["一致", "**分组的旋转/缩放会带着子控件一起转** —— App 把节点放进 `ViewGroup` 并设 `rotation` / `scaleX/Y`（`NodeTreeRenderer.kt:201-208`），变换逐层叠加，与工具的 `withDeviceRotation` 同一套"],
     ["差异", "工具里**吸附可开关**（App 侧也有 dashSnapEnabled，但那是给拖拽编辑器用的）"],
     ["一致", "**App 已能解析 `icar.ui/2`**（节点树 / 字体 / 状态 / 缩放模式），v1 文件自动升级成节点树"],
-    ["未做", "**App 侧的 v2 渲染还没做** —— 图片 / 分组 / 文字 / 旋转 / 图层顺序 / 状态系统目前**解析了但不绘制**，画布上只画仪表。见 docs/主题设计大纲.md §七"],
-    ["差异", "**App 导出仍写 v1** —— 因为 v2 渲染没做完，导出 v2 会产出「App 自己读得进但画不出来」的文件"],
+    ["一致", "**App 侧的 v2 渲染已完成**（v1.11.0 / v1.12.0）：节点树 / 图片 / 分组 / 文字 / 旋转 / 图层顺序 / 缩放模式 / 状态系统 / 子部件 / 多页面都会画（`DashRenderer.kt` 的 `nodeRenderer` + `NodeTreeRenderer.kt`）。见 docs/主题设计大纲.md §七"],
+    ["差异", "**App 导出仍写 v1** —— `DesignFile.toJson()` 写的是 `SCHEMA = \"icar.ui/1\"`（`DesignFile.kt:182`）。v2 目前是**只读**格式：App 读得进、画得出，但导出仍走 v1"],
     ["未做", "素材库不预置图片（车标等版权不属于本项目），分类只是标签"],
     ["未做", "控件树的拖拽只能改父子关系，**不能改同层顺序**（顺序请用「上移/下移/置顶/置底」）"],
-    ["未做", "撤销栈存在内存里，**刷新页面会丢**"],
+    ["未做", "撤销栈**会持久化到 localStorage**（v2.7.0 起，刷新页面后还能退），但只保留**最近约 40 步 / 1.2 MB** —— 更早的步骤刷新后会丢"],
     ["未做", "右键菜单是**自绘**的（浏览器原生菜单没法按选中项变内容），所以外观与系统菜单不同"],
   ];
+
+  /**
+   * `**加粗**` → `<b>加粗</b>`（v2.83.0，Round 5）。
+   *
+   * ## 为什么需要它
+   *
+   * `DIFF_NOTES` 的文案是**按 Markdown 写的**（`**加粗**` 强调关键短语），
+   * 但 `renderDiff` 原来用 `textContent` 写入 —— 于是界面上**原样显示星号**：
+   *
+   * ```
+   * 【差异】**越界警告只查根节点** —— v2 子节点的 x/y 相对父节点…
+   * ```
+   *
+   * 用户看到的是排版噪音，不是强调。改成渲染成 `<b>`。
+   *
+   * ⚠️ **先转义再替换**：这个函数只喂静态文案，但转义不能省 ——
+   * 文案里有 `<` `>` 的可能，不转义会被当成标签吃掉。
+   */
+  function boldify(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+  }
 
   window.renderDiff = function () {
     const box = document.getElementById("diffBox");
@@ -739,7 +764,7 @@
     window.DIFF_NOTES.forEach(function (pair) {
       const d = document.createElement("div");
       d.className = "msg " + (pair[0] === "一致" ? "ok" : (pair[0] === "差异" ? "warn" : "err"));
-      d.textContent = "【" + pair[0] + "】" + pair[1];
+      d.innerHTML = "【" + pair[0] + "】" + boldify(pair[1]);
       box.appendChild(d);
     });
   };

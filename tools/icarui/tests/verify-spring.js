@@ -264,8 +264,8 @@ function runSpring(k, c, steps, dt, target) {
     ok(!/fetch\s*\(/.test(src), 'spring.js 里没有 fetch（file:// 下会被 CORS 挡住）');
     ok(!/XMLHttpRequest/.test(src), 'spring.js 里没有 XHR');
     ok(!/export\s+(default|const|function)/.test(src), 'spring.js 不是 ES module（经典 script 才能双击即用）');
-    ok(!fs.existsSync(path.join(dir, 'package.json')), 'theme-studio 目录下**没有 package.json**（零安装）');
-    ok(!fs.existsSync(path.join(dir, 'node_modules')), 'theme-studio 目录下**没有 node_modules**');
+    ok(!fs.existsSync(path.join(dir, 'package.json')), 'icarui 目录下**没有 package.json**（零安装）');
+    ok(!fs.existsSync(path.join(dir, 'node_modules')), 'icarui 目录下**没有 node_modules**');
     const html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8');
     // ⚠️ 只认 **script 标签里的 src**，不要在整份 HTML 里 indexOf ——
     //    注释里也会提到 `js/app.js`（"数据由 js/app.js 陆续注入"），

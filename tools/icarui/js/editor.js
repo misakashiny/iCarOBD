@@ -364,11 +364,10 @@
   };
   window.ceToggleStates = function (on) {
     if (!draft) return;
-    draft.states = on ? {
-      normal: { assetId: draft.assetId || "", alpha: 255, blink: false, blinkMs: window.MIN_BLINK_MS },
-      warn: { assetId: "", alpha: 255, blink: false, blinkMs: window.MIN_BLINK_MS },
-      critical: { assetId: "", alpha: 255, blink: true, blinkMs: window.MIN_BLINK_MS },
-    } : null;
+    // ⚠️ 与 `app.js` 的 `toggleStates` 共用**同一个**默认值真源（schema.js）。
+    // 原来两边各写了一份一模一样的 normal/warn/critical 字面量 ——
+    // 加第四个状态时只改一处就会漏。
+    draft.states = on ? window.defaultStates(draft.assetId) : null;
     if (on && !draft.statePid) window.ceSetStatePid("obd.rpm");
     after();
   };
@@ -380,7 +379,7 @@
   };
   window.ceSetState = function (state, key, v) {
     if (!draft || !draft.states) return;
-    if (!draft.states[state]) draft.states[state] = { assetId: "", alpha: 255, blink: false, blinkMs: window.MIN_BLINK_MS };
+    if (!draft.states[state]) draft.states[state] = window.defaultStates(draft.assetId)[state];
     const st = draft.states[state];
     if (key === "blink") st.blink = !!v;
     else if (key === "assetId") st.assetId = String(v);
