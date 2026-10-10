@@ -457,7 +457,8 @@ class CanvasSettingsFragment : Fragment() {
             swInspector.isChecked = UiInspectorOverlay.enabled
         }
         tvInspectorSummary.text = if (UiInspectorOverlay.enabled) {
-            "已开启：点任意控件看它的类型 / ID / 样式；右上角 × 或本开关可关闭"
+            "已开启：点任意控件看它的类型 / ID / 样式；" +
+                "面板上的「清除」只清面板内容（不影响开关），右上角 × 或本开关可关闭"
         } else {
             "已关闭。开启后 App 的触摸会被接管（横滑翻页暂停），关掉即恢复"
         }

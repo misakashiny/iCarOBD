@@ -87,13 +87,41 @@
         android:textColor="@color/text_dim"
         android:textSize="11sp" />
 
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/rvLogs"
+    <!--
+      列表区（v1.20.17 改成 FrameLayout 叠放）：
+      空态与列表**叠在同一块**里，不是上下平分 —— 两个都写 `weight=1` 的话，
+      空的时候列表那半屏会留一块空白，看起来像"列表坏了"。
+    -->
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:clipToPadding="false"
-        android:paddingBottom="12dp" />
+        android:layout_weight="1">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rvLogs"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingBottom="12dp" />
+
+        <!--
+          空态（v1.20.17，规格 §3）：**为什么空 + 下一步做什么**。
+          三种原因（还没产生 / 级别筛掉了 / 模块筛掉了）文案完全不同 ——
+          只写"暂无数据"的话用户只能猜，而猜错的代价是"以为日志丢了"。
+          可见性只在每 250ms 的合并刷新里翻一次（性能红线，见 LogViewText）。
+        -->
+        <TextView
+            android:id="@+id/tvLogEmpty"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="14dp"
+            android:paddingTop="18dp"
+            android:paddingEnd="14dp"
+            android:textColor="@color/text_dim"
+            android:textSize="12sp"
+            android:lineSpacingExtra="3dp"
+            android:visibility="gone" />
+    </FrameLayout>
     <!--
       v1.20.3：原来这里有个「知识库」按钮（点了开 Activity）。
       用户要求"知识库不是在日志里进入、而是直接增加个 tab 标签" —— 已改成导航栏的一个 tab，

@@ -16,6 +16,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 import com.icar.obd.R
 import com.icar.obd.data.AppLog
+import com.icar.obd.data.LogViewText
 import com.icar.obd.obd.ObdController
 import com.icar.obd.ui.adapter.LogAdapter
 import java.io.File
@@ -36,7 +37,14 @@ class LogFragment : Fragment() {
     private lateinit var adapter: LogAdapter
     private lateinit var rv: RecyclerView
     private lateinit var tvStats: TextView
+    private lateinit var tvEmpty: TextView
     private lateinit var btnPause: MaterialButton
+
+    /** 当前**级别过滤的字母**（`V`/`D`/`I`/`W`/`E`）—— 统计行与空态都要用它说话 */
+    private var levelTag: String = "V"
+
+    /** 当前模块过滤（[LogAdapter.ALL] = 不筛） */
+    private var moduleFilter: String = LogAdapter.ALL
 
     private var paused = false
     private var unsubscribe: (() -> Unit)? = null
@@ -65,6 +73,7 @@ class LogFragment : Fragment() {
         adapter = LogAdapter()
         rv = view.findViewById(R.id.rvLogs)
         tvStats = view.findViewById(R.id.tvLogStats)
+        tvEmpty = view.findViewById(R.id.tvLogEmpty)
         btnPause = view.findViewById(R.id.btnLogPause)
 
         // 不用 stackFromEnd：条目少时贴底会显得像空白 bug；
@@ -79,14 +88,16 @@ class LogFragment : Fragment() {
 
         spLevel.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                adapter.setLevel(if (pos == 0) AppLog.Level.V else AppLog.Level.fromTag(levels[pos]))
+                levelTag = levels.getOrElse(pos) { "V" }
+                adapter.setLevel(if (pos == 0) AppLog.Level.V else AppLog.Level.fromTag(levelTag))
                 updateStats()
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
         spModule.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                adapter.setModule(modules[pos])
+                moduleFilter = modules.getOrElse(pos) { LogAdapter.ALL }
+                adapter.setModule(moduleFilter)
                 updateStats()
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
@@ -184,8 +195,20 @@ class LogFragment : Fragment() {
     private fun updateStats() {
         // 用 AppLog.size() 而不是 snapshot().size —— 后者每次都要拷贝整个缓冲，
         // 早期版本在每条日志到达时都调用一次，洪泛时是致命的
-        tvStats.text = "${adapter.count()} 条（缓冲 ${AppLog.size()}）" +
-            if (paused) "  · 已暂停滚动" else ""
+        tvStats.text = LogViewText.statsLine(
+            shown = adapter.count(),
+            buffered = AppLog.size(),
+            levelText = LogViewText.levelFilterText(levelTag),
+            module = moduleFilter
+        ) + if (paused) "  · 已暂停滚动" else ""
+        // 空态：**为什么空 + 下一步做什么**（规格 §3）。
+        // ⚠️ 只在这里做可见性翻转 —— 这一段挂在每 250ms 的合并刷新路径上，
+        // 不是每条日志都跑（性能红线，见 LogViewText 的说明）。
+        val empty = adapter.count() == 0
+        tvEmpty.visibility = if (empty) View.VISIBLE else View.GONE
+        if (empty) {
+            tvEmpty.text = LogViewText.emptyHint(AppLog.size(), levelTag, moduleFilter)
+        }
     }
 
     private fun exportLog() {

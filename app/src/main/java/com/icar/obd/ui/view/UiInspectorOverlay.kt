@@ -85,6 +85,27 @@ import com.icar.obd.data.UiInspectorInfo.InspectorSnapshot
  * - **开关自己的点击不能被"检视消费"吃掉** —— 命中判定（[isOnPanel]）**先排除浮层自己**，
  *   宿主据此把这一次触摸交回 `super`，开关才收得到点击。
  *
+ * ## v1.20.17：面板上又加了「清除」按钮（用户点名要的）
+ *
+ * 用户原话：「检视器悬浮窗的按钮旁边加个按钮、按钮功能为 清除记录、按下后清除选中的记录」，
+ * 并在 A/B/C 三个候选里**明确选了 B**：
+ *
+ * > **B：面板只显示当前检视结果，按钮 = 清空面板内容（回到"点屏幕上任意控件查看信息"的占位）**
+ *
+ * 所以它和「检视 开/暂停」是**两件事**，别合并：
+ *
+ * | 按钮 | 点了之后 |
+ * |---|---|
+ * | **清除** | 面板回占位 + 描边清掉；**开关一个字不动** |
+ * | **检视 开/暂停** | 只换"抢不抢触摸"，面板内容原样留着 |
+ *
+ * ⚠️ 两条硬约束（与开关同一套）：
+ * - **它自己的点击不能被检视消费掉** —— 命中判定 [isOnPanel] **先排除浮层自己**，
+ *   宿主据此把这一次触摸交回 `super`，按钮才收得到点击；
+ * - **它不改任何布局**：面板宽度是常量、高度是 `WRAP_CONTENT`，
+ *   [clearPanel] 只改文本，一次 `requestLayout` 都不会多触发
+ *   （"面板变矮不会把画布顶开"这条判据就是这么保住的）。
+ *
  * ## v1.20.15：触摸路径上的加固（ANR 之后补的）
  *
  * 那一轮 ANR 的真根因在 [UiInspectorInfo.chainLine]（纯函数死循环），**不在这里**；
@@ -124,6 +145,9 @@ class UiInspectorOverlay(
 
     /** 面板上那个「检视 开 / 暂停」开关（v1.20.15） */
     private var toggle: TextView? = null
+
+    /** 面板上那个「清除」按钮（v1.20.17） */
+    private var clear: TextView? = null
 
     /**
      * 坐标查询的**复用**数组。
@@ -198,7 +222,10 @@ class UiInspectorOverlay(
         // 那是 v1.20.12 的坑：layout 期间 addView 的子 View 永远不会被 measure）
         p.post { placeDefault() }
 
-        render("控件检视", "", listOf("点屏幕上任意控件查看它的信息"))
+        render(
+            UiInspectorInfo.PLACEHOLDER_TITLE, "",
+            UiInspectorInfo.placeholderLines()
+        )
         applyPausedToPanel()
     }
 
@@ -214,6 +241,7 @@ class UiInspectorOverlay(
         tvBody = null
         tvHint = null
         toggle = null
+        clear = null
         appliedPaused = null
         lastLines = emptyList()
     }
@@ -229,6 +257,7 @@ class UiInspectorOverlay(
         tvBody = null
         tvHint = null
         toggle = null
+        clear = null
         appliedPaused = null
         lastLines = emptyList()
     }
@@ -268,6 +297,34 @@ class UiInspectorOverlay(
         } else {
             UiInspectorInfo.HINT_DOC + "\n" + UiInspectorInfo.HINT_OPS
         }
+    }
+
+    // ------------------------------------------------------------ 清除（v1.20.17）
+
+    /**
+     * 面板上那个「清除」按钮 —— **只清面板内容，回到占位态**。
+     *
+     * ## 它做什么 / 不做什么（规格 §1，用户已选 B）
+     *
+     * - ✅ 面板回到 [UiInspectorInfo.placeholderLines] 那个占位（与刚打开时**同一份**文案）；
+     * - ✅ 顺手把描边高亮清掉 —— 高亮是"面板正在讲这个控件"的视觉指代，
+     *   面板回了占位而高亮还框着，用户会以为面板坏了（与 `inspect` 没命中时的处理一致）；
+     * - ❌ **不动检视开关**：[UiInspectorOverlay.enabled] 与 [UiInspectorOverlay.paused]
+     *   一个都不写。该接管还接管、该暂停还暂停（判据："检视状态不变"）；
+     * - ❌ 不清 `AppLog` / 不清 `CanSniffer` —— 按钮名是「清除」而不是「清空记录」，
+     *   就是怕被读成"清日志/清数据"。
+     *
+     * ## 为什么再调一次 [applyPausedToPanel]
+     *
+     * 面板从"有内容"变回"占位"会**变矮**（正文少了几行），而面板本体
+     * 抢不抢触摸是 `paused` 决定的。这里不碰布局参数（宽度是常量、
+     * 高度是 `WRAP_CONTENT`），只是把暂停态**重新对齐一次** ——
+     * `applyPausedToPanel` 内部对"状态没变"有幂等短路，所以正常情况下它什么都不做。
+     */
+    fun clearPanel() {
+        highlight?.setTarget(null)
+        render("控件检视", "", UiInspectorInfo.placeholderLines())
+        applyPausedToPanel()
     }
 
     // ------------------------------------------------------------ 给宿主用
@@ -614,6 +671,40 @@ class UiInspectorOverlay(
         }
         toggle = sw
         head.addView(sw)
+
+        // ---- 「清除」（v1.20.17，用户点名要的）----
+        //
+        // 用户原话：「检视器悬浮窗的按钮旁边加个按钮、按钮功能为 清除记录、按下后清除选中的记录」，
+        // 并在 A/B/C 里**明确选了 B** —— 面板只显示当前检视结果，
+        // 按钮 = 清空面板内容（回到"点屏幕上任意控件查看信息"的占位）。
+        //
+        // 三条与开关同一套处理（照抄它的理由）：
+        // ① 只是**一个小药丸 TextView**，不是 `Button` —— 320dp 面板塞不下，
+        //    而且它的触摸热区越小越好（面板在暂停时"其余部分一律不抢触摸"）；
+        // ② **它自己的点击不能被检视消费掉** —— 宿主 `consumeForInspector` 先问
+        //    [isOnPanel]，落在面板上的一律交回 `super`，所以它收得到点击；
+        // ③ 它**不动检视开关**：回调只调 [clearPanel]，一个字都不写
+        //    `enabled` / `paused`（判据："清除后检视状态不变"）。
+        val clr = TextView(ctx).apply {
+            text = UiInspectorInfo.CLEAR_LABEL
+            textSize = 11f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(3), dp(8), dp(3))
+            isClickable = true
+            isFocusable = false
+            setTextColor(0xFF9AA8BC.toInt())
+            background = pillBackground(0x669AA8BC.toInt())
+            contentDescription = UiInspectorInfo.CLEAR_DESC
+            setOnClickListener { clearPanel() }
+        }
+        clear = clr
+        // 与开关之间留一点缝：两个小药丸挨在一起会看起来像一个双段按钮
+        val clrLp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+        clrLp.marginStart = dp(6)
+        head.addView(clr, clrLp)
 
         val close = TextView(ctx).apply {
             text = "×"

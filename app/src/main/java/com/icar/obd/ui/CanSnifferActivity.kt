@@ -15,6 +15,7 @@ import androidx.core.content.FileProvider
 import com.google.android.material.button.MaterialButton
 import com.icar.obd.R
 import com.icar.obd.data.AppLog
+import com.icar.obd.data.CanFilterPresets
 import com.icar.obd.data.ProbeLog
 import com.icar.obd.data.PidDefinition
 import com.icar.obd.data.SignalDecode
@@ -72,6 +73,12 @@ class CanSnifferActivity : AppCompatActivity() {
     private lateinit var btnDiff: MaterialButton
     private lateinit var diffContainer: android.view.ViewGroup
 
+    /** 过滤器框下面那行说明（v1.20.17）：这条预设能看到什么 + 实际下发的 AT 命令 */
+    private lateinit var tvFilterStatus: TextView
+
+    /** 全总线那条小字（v1.20.17）：`ATCF000` 不是"第 0 段" */
+    private lateinit var tvFilterNote: TextView
+
     /**
      * 「监听型 PID 按 CAN ID 索引」—— S4 解码的查表入口。
      *
@@ -97,9 +104,22 @@ class CanSnifferActivity : AppCompatActivity() {
         btnMonitor = findViewById(R.id.btnMonitorToggle)
         btnDiff = findViewById(R.id.btnSniffDiff)
         diffContainer = findViewById(R.id.sniffDiffs)
+        tvFilterStatus = findViewById(R.id.tvSniffFilterStatus)
+        tvFilterNote = findViewById(R.id.tvSniffFilterNote)
+        // 全总线那条小字是**常量**（不是每次刷新算的）：它只在"可能被误读"时露出来，
+        // 内容与 `CanFilterPresets` 里那条说明同一份 —— 两处各写一份迟早会不一致。
+        tvFilterNote.text = CanFilterPresets.FULL_BUS_NOTE
         btnDiff.setOnClickListener { showDiff() }
         btnMonitor.setOnClickListener { toggleMonitor() }
         setupFilterPresets()
+        // v1.20.17：手打过滤器时那一行说明要跟着变（"实际下发的 AT 命令"是这一页的判据之一）。
+        // 加在 `setupFilterPresets()` 之后 —— 预设的点击回调自己会刷一次，两边不会打架。
+        etFilter.addTextChangedListener(object : android.text.TextWatcher {
+            override fun afterTextChanged(s: android.text.Editable?) = refreshFilterStatus()
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        })
+        refreshFilterStatus()
         // 分段轮换（v1.20.10）：勾上之后「采集」下拉框与「过滤器」输入框都不起作用 ——
         // 时长与过滤都由轮换自己决定。**置灰而不是隐藏**：隐藏会让人以为
         // 那两个控件消失了；置灰能看出"它还在，只是现在不归你管"。
@@ -308,8 +328,9 @@ class CanSnifferActivity : AppCompatActivity() {
                     "汇总成「整车 ID 清单」。\n" +
                     "⚠️ 29 位 ID 不在掩码覆盖范围内，本模式看不到。"
             } else {
-                "未开始。探测期间会暂停轮询引擎，并临时打开 ATH1（带 CAN 头）。\n" +
-                    "只记录**变化了的**数据，重复帧只计数 —— 防止总线流量把内存和存储撑爆。"
+                "未开始。探测期间会暂停轮询（转速/水温这些会冻结），并临时打开 ATH1（带 CAN 头）。\n" +
+                    "只记录**变化了的**数据，重复帧只计数 —— 防止总线流量把内存和存储撑爆。\n" +
+                    "点上面的「开始探测」开始；先点一行预设缩范围，采样率会高得多。"
             }
         CanSniffer.Phase.PREPARING -> s.message
         CanSniffer.Phase.CAPTURING ->
@@ -323,7 +344,8 @@ class CanSnifferActivity : AppCompatActivity() {
             }
         CanSniffer.Phase.FINISHING -> s.message
         CanSniffer.Phase.DONE -> s.message +
-            "\n按出现次数排序。次数高但「变化次数」低的 ID 通常是周期性心跳。"
+            "\n按出现次数排序。次数高但「变化次数」低的 ID 通常是周期性心跳。" +
+            "要对上实物（如拨一下转向灯），用下面的「对比基准（找位）」：连跑两次再点它。"
         CanSniffer.Phase.FAILED -> s.message
     }
     /**
@@ -432,7 +454,7 @@ class CanSnifferActivity : AppCompatActivity() {
     }
 
     /**
-     * 过滤预设（v1.19.22）：点一下把输入框填好。
+     * 过滤预设（v1.19.22；**v1.20.17 补成一整组**）。
      *
      * ## 为什么需要
      *
@@ -441,36 +463,64 @@ class CanSnifferActivity : AppCompatActivity() {
      * 但它的写法（`ATCRA228` / `ATCM700+ATCF400`）**没人记得住**，
      * 于是这个关键能力实际上没人用。让人翻文档记语法，不如点一下。
      *
-     * 预设选的是**实际会用到的场景**，不是穷举语法。
+     * ## v1.20.17 改了什么（规格 `docs/下一步-UI改进四项.md` §2）
+     *
+     * - 预设 **4 → 12 个**：8 个段各一条 + 转向灯 + 全总线 + OBD 应答 + 不过滤；
+     * - **名字说人话**：标签是"能看见什么"（`0x400~0x4FF` / `转向灯 0x09A（本车实测）`），
+     *   AT 命令退到下面那行说明里（用户要的是"选哪个能看见什么"，不是 AT 语法）；
+     * - **⚠️ 不编"哪个灯在哪个段"**：本项目**从没实测过**各灯在哪个段，
+     *   常用段只写"常见车身域（未在本车实测）"（见 [CanFilterPresets]）；
+     * - **⚠️ `ATCF000` 是全总线、不是"第 0 段"**：单独一行小字写清（[CanFilterPresets.FULL_BUS_NOTE]）；
+     * - **选中后状态行显示实际下发的 AT 命令**（[refreshFilterStatus]）。
+     *
+     * 预设表与"过滤串 → 实际命令"的解析全在 [CanFilterPresets]（纯函数，JVM 单测覆盖）——
+     * 写在 Activity 里就一条都测不到。
      */
     private fun setupFilterPresets() {
         val group = findViewById<com.google.android.material.chip.ChipGroup>(R.id.cgFilterPresets)
-        val presets = listOf(
-            "228" to "左转向灯",
-            "ATCM700+ATCF400" to "0x400~0x4FF",
-            "ATCM700+ATCF000" to "全部 11 位 ID",
-            "7E8" to "OBD 应答",
-            "" to "不过滤"
-        )
         val current = etFilter.text.toString().trim()
-        presets.forEach { (value, label) ->
+        CanFilterPresets.ALL.forEach { p ->
             val chip = com.google.android.material.chip.Chip(this).apply {
-                text = label
+                text = p.label
                 isCheckable = true
                 // 当前值正好是某个预设 → 高亮它，让人一眼看到"现在用的是哪个"
-                isChecked = current == value
+                isChecked = current == p.value
+                contentDescription = p.label + "：" + p.desc.replace('\n', ' ')
                 setOnClickListener {
-                    etFilter.setText(value)
-                    etFilter.setSelection(value.length)
+                    etFilter.setText(p.value)
+                    etFilter.setSelection(p.value.length)
                     // 单选语义：点了新的就取消其他（ChipGroup 的 checkable 默认允许多选）
                     for (i in 0 until group.childCount) {
                         val c = group.getChildAt(i) as? com.google.android.material.chip.Chip
                         if (c !== this) c?.isChecked = false
                     }
+                    refreshFilterStatus()
                 }
             }
             group.addView(chip)
         }
+    }
+
+    /**
+     * 过滤器框下面那行说明的**唯一**刷新入口（v1.20.17）。
+     *
+     * 两种情形：
+     * - **预设选中的** → 显示"这条能看到什么" + **实际下发的 AT 命令**（规格 §2 判据）；
+     * - **手打的** → 只显示实际命令（**不编**说明：不知道用户想干什么）。
+     *
+     * ⚠️ 命令文本由 [CanFilterPresets.resolveCommands] 算出来，而它与
+     * `CanSniffer.start()` 里真正下发的那段**同一套规则** —— 两处各写一份的话，
+     * 界面会自信地显示一条根本没发出去的命令，比不显示还糟。
+     */
+    private fun refreshFilterStatus() {
+        val text = etFilter.text.toString()
+        tvFilterStatus.text = CanFilterPresets.describe(text)
+        // ⚠️ `ATCF000` 是全总线、不是"第 0 段"（规格 §2 点名要写清）——
+        // 在**可能被误读的那两种状态下**把它顶出来：不过滤、或选了全总线预设。
+        // 其余状态这一行是 GONE（不占高度，也不留一行空白）。
+        val f = text.trim().uppercase()
+        val showNote = f.isEmpty() || f == "${SegmentRotation.MASK_CMD}+ATCF000"
+        tvFilterNote.visibility = if (showNote) android.view.View.VISIBLE else android.view.View.GONE
     }
 
     private fun toggle() {
@@ -500,6 +550,23 @@ class CanSnifferActivity : AppCompatActivity() {
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
+    /**
+     * 结果区。
+     *
+     * ## 空态为什么不是一句"暂无数据"（v1.20.17，规格 §3）
+     *
+     * 原来空的时候只有一行"暂无数据。" —— 而"空"有**四种完全不同的原因**，
+     * 用户的下一步动作也完全不同：
+     *
+     * | 现在是什么状态 | 为什么空 | 下一步 |
+     * |---|---|---|
+     * | 还没开始 | 没探测过 | 点「开始探测」 |
+     * | 正在探测 | 还没收到帧 | 等一会儿 / 检查连接 |
+     * | 探测结束 | 过滤器太窄 或 车没在说话 | 换「不过滤」再探一次 |
+     * | 常驻监听在跑 | 单次探测要等它停 | 先停掉常驻监听 |
+     *
+     * 只写"暂无数据"的话，用户只能猜 —— 而猜错的代价是"以为模块坏了"。
+     */
     private fun buildRows() {
         container.removeAllViews()
         refreshDecodeIndex()
@@ -507,14 +574,42 @@ class CanSnifferActivity : AppCompatActivity() {
         if (list.isEmpty()) {
             container.addView(
                 TextView(this).apply {
-                    text = "暂无数据。"
+                    text = emptyHint()
                     setPadding(0, dp(16), 0, 0)
                     setTextColor(resources.getColor(R.color.text_dim, theme))
+                    textSize = 12f
+                    setLineSpacing(dp(3).toFloat(), 1.15f)
                 }
             )
             return
         }
         list.forEach { container.addView(row(it)) }
+    }
+
+    /** 空态那一行：**为什么空 + 下一步做什么**（规格 §3 的文案原则） */
+    private fun emptyHint(): String {
+        val s = CanSniffer.status
+        return when {
+            CanSniffer.running -> "探测进行中，还没有收到帧。\n" +
+                "车没在总线上说话（或这个过滤器把话都挡掉了）时会一直是这样。" +
+                "等本趟跑完，如果仍是空的，换成「不过滤（整条总线）」再探一次。"
+
+            s.phase == CanSniffer.Phase.FAILED ->
+                "这一趟探测失败了，所以没有结果。\n" +
+                    "原因见上面状态行；确认适配器还连着之后，点「开始探测」重来一次。"
+
+            FrameMonitor.running ->
+                "常驻监听正在跑，单次探测要等它停掉之后才能开始。\n" +
+                    "点上面的「停止常驻监听」，再点「开始探测」。"
+
+            s.phase == CanSniffer.Phase.DONE ->
+                "这一趟一个帧都没收到。\n" +
+                    "最可能的原因：过滤器太窄（这个 ID 本车根本没人发）。" +
+                    "换成「不过滤（整条总线）」再探一次，能看到全部在说话的 ID。"
+
+            else -> "还没探测过。\n" +
+                "点上面的「开始探测」；想先缩范围就点一行预设（每条都写着能看到什么）。"
+        }
     }
 
     /**

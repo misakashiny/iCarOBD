@@ -464,6 +464,47 @@ class UiInspectorInfoTest {
         assertFalse(UiInspectorInfo.panelStealsTouch(paused = true))
     }
 
+    // ------------------------------------------------------------ 清除（v1.20.17）
+
+    @Test
+    fun `清除按钮的文案是人话，且不是清日志`() {
+        assertEquals("清除", UiInspectorInfo.CLEAR_LABEL)
+        // 无障碍文本里要说清"只清面板内容"—— uiautomator 与读屏都靠它
+        assertTrue(UiInspectorInfo.CLEAR_DESC.contains("清除面板内容"))
+        // 刻意不叫"清空记录"：那个名字会被读成"清日志/清数据"
+        assertFalse(UiInspectorInfo.CLEAR_LABEL.contains("记录"))
+    }
+
+    @Test
+    fun `占位态的内容与标题是唯一的，供 show 与清除共用`() {
+        // 判据（规格 §1）：清除后要**回到占位** —— 那"占位"必须是同一份，
+        // 所以抽成 placeholderLines() 而不是在两处各写一遍字面量
+        assertEquals(listOf("点屏幕上任意控件查看它的信息"), UiInspectorInfo.placeholderLines())
+        assertEquals("控件检视", UiInspectorInfo.PLACEHOLDER_TITLE)
+    }
+
+    @Test
+    fun `占位提示里带着下一步做什么`() {
+        // 规格 §3：空态要说清"为什么空 + 下一步做什么"——
+        // 这里"空"= 还没点过控件，下一步 = 点屏幕上任意控件
+        val line = UiInspectorInfo.placeholderLines().joinToString(" ")
+        assertTrue(line.contains("点屏幕上任意控件"))
+    }
+
+    @Test
+    fun `操作提示里提到了清除按钮`() {
+        // 面板上多了一个小药丸，提示里不提它，用户只会看见一个不知道干什么的按钮
+        assertTrue(UiInspectorInfo.HINT_OPS.contains("清除"))
+        assertTrue(UiInspectorInfo.HINT_OPS.contains("只清面板内容"))
+    }
+
+    @Test
+    fun `暂停提示不再编方位（药丸不在左上角）`() {
+        // v1.20.17 修文案：那个药丸在标题行**右侧**，原来写"左上角"会让人找错地方
+        assertTrue(UiInspectorInfo.HINT_PAUSED.contains("检视 暂停"))
+        assertFalse(UiInspectorInfo.HINT_PAUSED.contains("左上角"))
+    }
+
     // ------------------------------------------------------------ 落盘纪律
 
     @Test

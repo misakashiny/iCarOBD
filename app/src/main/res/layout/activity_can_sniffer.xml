@@ -174,13 +174,44 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:hint="如 228，或 ATCM700+ATCF400 扫一段；留空=不过滤"
+            android:hint="留空=全收；也可只填一个 ID（如 09A）"
             android:importantForAutofill="no"
             android:inputType="textCapCharacters|textNoSuggestions"
             android:maxLength="40"
             android:paddingStart="4dp"
             android:textSize="11sp" />
     </LinearLayout>
+
+    <!--
+      过滤器说明（v1.20.17）：这条预设**能看到什么** + **实际会下发的 AT 命令**。
+      规格 §2 的判据之一就是"选中后状态行显示实际下发的 AT 命令" ——
+      没有这一行，用户选完只知道输入框里多了一串看不懂的字母。
+      文本由 CanFilterPresets.describe() 算出来（纯函数，与真正下发的那段同一套规则）。
+    -->
+    <TextView
+        android:id="@+id/tvSniffFilterStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="12dp"
+        android:paddingTop="2dp"
+        android:paddingEnd="12dp"
+        android:textColor="@color/text_secondary"
+        android:textSize="11sp" />
+
+    <!--
+      ⚠️ ATCF000 是全总线、不是"第 0 段"（v1.20.17，规格 §2 点名要写清）。
+      只在**可能被误读的两种状态**下出现（不过滤 / 选了全总线那条），其余状态 GONE。
+    -->
+    <TextView
+        android:id="@+id/tvSniffFilterNote"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="12dp"
+        android:paddingTop="2dp"
+        android:paddingEnd="12dp"
+        android:textColor="@color/text_dim"
+        android:textSize="10sp"
+        android:visibility="gone" />
 
     <!--
       过滤预设（v1.19.22）：点一下就把上面的输入框填好。
