@@ -78,6 +78,11 @@ const QUOTES_OLD_PATH = new Map([
   [path.join(ROOT, "docs", "下一步-全量文档迭代.md"),
     "收尾任务计划书，正文说的是「改名后 tools/theme-studio/ 的引用要全部更新」——" +
     "旧路径在这里是被**清理的对象**，不是过期引用（app/ 那 8 处就是它要清的）"],
+  [path.join(ROOT, "tools", "doc-link-allowlist.json"),
+    "v2.85.0 死链守卫的豁免清单。它的 `link` 字段必须**逐字写出旧路径**才能匹配到" +
+    "历史文档里那条失效链接 —— 那是**匹配用的键**，不是过期引用；" +
+    "每条的 `reason` 里都写明了旧目录 v2.83.0 起改名 tools/icarui/。" +
+    "（这份清单本身由 tools/check-doc-links.js 校验：条目缺 reason 即失败。）"],
 ]);
 
 // ⚠️ 原来这里有一张 `APP_LEDGER`（app/ 侧 8 个文件的旧引用台账，"台账内放行"）。

@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "what": "浏览器套件的**最少断言数**基线（每个套件名 → 实际执行的断言条数下限，即 PASS+FAIL）。由 tools/run-browser-tests.ps1 在每轮全量跑完后逐个核对。",
+  "why": [
+    "这些套件里的断言可以**静默消失**：断言被 `if (某个常量) eq(...)` 包住，常量一改名整条断言就不执行了，而套件照样打印 PASS=<n> FAIL=0 —— 绿得看不出来。",
+    "v2.84.0 人工体检 29 个套件时扫出 6 处这种形态（已修）。人工扫只能做一次；这份基线把它变成每轮机器核对。",
+    "TOTAL 也拦不住：断言少几条不影响 FAIL=0，TOTAL 只是跟着变小。",
+    "⚠️ 数的是 PASS+FAIL（= 执行了几条），不是 PASS：用 PASS 的话，一条断言**失败**会被报成\"断言少了一条\" —— 同一个问题说两遍，而且第二遍是错的。"
+  ],
+  "howToUpdate": [
+    "**合法地删/改断言**（某个功能下线了、某条断言被合并了）→ 用下面这条命令重建，它会打印每个套件的增减：",
+    "  powershell -ExecutionPolicy Bypass -File tools\\run-browser-tests.ps1 -UpdateBaseline",
+    "⚠️ 不许手改本文件来绕过守卫 —— 手改没有 diff 输出，下一个人查不到是谁、为什么放低了基线。",
+    "⚠️ 有套件 FAIL 时 -UpdateBaseline 拒绝写入；它也不接受 -Filter（过滤跑会误删其他套件的基线）。",
+    "**新增套件**：必须同时更新基线（不自动加入）。理由：自动加入等于让新套件的下限 = 它第一次跑出来的数，而那个数本身可能就是“断言被包住了”的结果 —— 强制人工看一眼“这个套件怎么只有 3 条断言”，正是这道守卫想让人做的事。",
+    "**删除/改名套件**：同样必须更新基线。基线里有、本轮没跑的名字 = 红（否则套件被悄悄改名 = 覆盖静默蒸发）。"
+  ],
+  "minAssertions": {
+    "verify-asset-audit": 35,
+    "verify-assets": 50,
+    "verify-bugfix": 37,
+    "verify-cats": 20,
+    "verify-cats2": 21,
+    "verify-crosslang": 157,
+    "verify-feat2": 39,
+    "verify-features": 62,
+    "verify-fields": 18,
+    "verify-fix": 21,
+    "verify-font": 45,
+    "verify-geo": 27,
+    "verify-group": 34,
+    "verify-lamp-state": 54,
+    "verify-layout": 55,
+    "verify-more": 15,
+    "verify-pack": 111,
+    "verify-pages": 48,
+    "verify-parts": 79,
+    "verify-pid": 24,
+    "verify-props": 11,
+    "verify-rename": 32,
+    "verify-spring": 182,
+    "verify-studio2": 46,
+    "verify-theme": 23,
+    "verify-tokens": 251,
+    "verify-tokens2": 38,
+    "verify-v27": 48,
+    "verify-v28": 28
+  }
+}

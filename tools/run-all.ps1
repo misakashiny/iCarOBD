@@ -3,20 +3,32 @@
 
   ## 为什么要它
 
-  验证分两条线，依赖不同：
+  验证分三条线，依赖不同：
 
     run-tests.ps1          Kotlin 单测 + 构建守卫（**不需要浏览器**）
     run-browser-tests.ps1  工具的浏览器套件（**需要 Edge**）
+    check-doc-links.js     docs/ 死链守卫（**不需要浏览器、不需要 Gradle**，最快）
 
   分开是对的 —— 改 Kotlin 不用等浏览器，改工具不用编 APK。
-  但**发版前要跑全部**，记两条命令容易漏一条。这个脚本就是那个"全部"。
+  但**发版前要跑全部**，记三条命令容易漏一条。这个脚本就是那个"全部"。
 
   ## 用法
 
-    .\tools\run-all.ps1              # 两条线都跑
-    .\tools\run-all.ps1 -SkipBrowser # 只跑 Kotlin（CI 上没有浏览器时）
-    .\tools\run-all.ps1 -SkipKotlin  # 只跑浏览器（改了工具、不想等编译时）
+    .\tools\run-all.ps1              # 三条线都跑
+    .\tools\run-all.ps1 -SkipBrowser # 只跑 Kotlin + 文档死链（CI 上没有浏览器时）
+    .\tools\run-all.ps1 -SkipKotlin  # 只跑浏览器 + 文档死链（改了工具、不想等编译时）
+    .\tools\run-all.ps1 -SkipDocs    # 只跑 Kotlin + 浏览器
     .\tools\run-all.ps1 -KotlinTimeout 900   # 单独放宽某一步的超时
+
+  ## ③ 文档死链守卫（v2.85.0 接进来的）
+
+  `tools/check-doc-links.js` 扫 `docs/**/*.md` 的相对链接（Markdown 链接按所在目录解析，
+  反引号路径按 {所在目录, 仓库根, docs/} 多基准兜底），失效即红。
+  历史归档等刻意保留的死链逐条豁免在 `tools/doc-link-allowlist.json`（每条必须写理由）。
+
+  它**很快**（< 1 秒），单独跑：
+
+    node tools\check-doc-links.js --verbose
 
   ## 为什么每步都有超时（v2.42.0）
 
@@ -58,12 +70,16 @@
 param(
     [switch]$SkipBrowser,
     [switch]$SkipKotlin,
+    # v2.85.0：③ 文档死链守卫（tools\check-doc-links.js）。默认**开**。
+    [switch]$SkipDocs,
     # v2.73.0 修好 Gradle 卡死（`--no-daemon`）之后实测：
     #   Kotlin ~16 秒（冷启 37 秒）、浏览器 ~60 秒。
     # 原来的 420/600 是"Gradle 会卡死"那个时代的产物 —— 真卡住时白等 10 分钟。
     # 240 仍有 4~6 倍余量，真卡死照样报得出来。
     [int]$KotlinTimeout = 240,
-    [int]$BrowserTimeout = 240
+    [int]$BrowserTimeout = 240,
+    # 死链守卫实测 < 1 秒；120 秒是给"磁盘巨慢 / node 冷启"留的余量。
+    [int]$DocsTimeout = 120
 )
 
 $ErrorActionPreference = 'Stop'
@@ -74,7 +90,7 @@ $fail = New-Object System.Collections.ArrayList
   跑一步，带超时。返回 $true / $false。**不依赖 $p.ExitCode** —— 见文件头的坑 2。
 #>
 function Invoke-Step {
-    param([string]$Script, [string]$Name, [int]$TimeoutSec)
+    param([string]$Script, [string]$Name, [int]$TimeoutSec, [switch]$Node)
 
     $path = Join-Path $PSScriptRoot $Script
     if (-not (Test-Path -LiteralPath $path)) {
@@ -89,7 +105,11 @@ function Invoke-Step {
     # 包装脚本内容用**字符串拼接**写，不用 here-string ——
     # here-string 的结束符必须顶格，在缩进代码里很容易写坏。
     $nl   = [Environment]::NewLine
-    $body = "& '" + $path + "'" + $nl +
+    # v2.85.0：-Node 用来跑 tools\check-doc-links.js（Node 脚本，不是 .ps1）。
+    # 仍然走"包装脚本 + 状态文件"这条路 —— 理由见文件头的坑 1 / 坑 2：
+    # Start-Process 的参数按空格拆、以及 ExitCode 读不出来。
+    $call = if ($Node) { "& node '" + $path + "'" } else { "& '" + $path + "'" }
+    $body = $call + $nl +
             "Set-Content -LiteralPath '" + $status + "' -Value `$LASTEXITCODE -Encoding ASCII" + $nl
     [System.IO.File]::WriteAllText($wrapper, $body, (New-Object System.Text.UTF8Encoding($true)))
 
@@ -161,6 +181,21 @@ if (-not $SkipBrowser) {
     }
 } else {
     Write-Host "（跳过浏览器）" -ForegroundColor DarkGray
+}
+
+# ③ 文档死链守卫（v2.85.0）
+#
+# 放在最后是因为它最快（< 1 秒）而两条线更贵 —— 顺序不影响总时长，
+# 但**默认是开的**：文档死链以前只有"记得手动跑临时脚本"才会被发现，
+# 结果就是没人跑。机器检查必须自动跑才有意义（同 check-build-guard.ps1 的教训）。
+if (-not $SkipDocs) {
+    Write-Host ""
+    Write-Host "──── ③ docs/ 死链守卫（超时 ${DocsTimeout}s）────" -ForegroundColor Cyan
+    if (-not (Invoke-Step -Script 'check-doc-links.js' -Name '文档死链' -TimeoutSec $DocsTimeout -Node)) {
+        [void]$fail.Add('文档死链')
+    }
+} else {
+    Write-Host "（跳过文档死链）" -ForegroundColor DarkGray
 }
 
 $sw.Stop()

@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "note": "tools/check-doc-links.js 的豁免清单。按 (file, link) 精确匹配；每条必须有 reason。新增豁免 = 承认这条死链是刻意保留的，必须在报告里说清为什么。",
+  "minMarkdownLinks": 300,
+  "minBacktickPaths": 150,
+  "allow": [
+    {
+      "file": "docs/archive/CHANGELOG-v1.0~v1.8.md",
+      "link": "主题格式参考.md",
+      "reason": "历史归档。这条链接写于 v1.0~v1.8 时期，当时 docs/ 还是平铺结构；v1.8 之后拆出 docs/archive/，归档文件里的相对链接没有跟着改。改它 = 改历史（docs/README.md 附录 B 维护约定 §4）。新路径是 docs/主题格式参考.md。"
+    },
+    {
+      "file": "docs/archive/CHANGELOG-v1.0~v1.8.md",
+      "link": "LVGL-放弃记录.md",
+      "reason": "历史归档，同上：写于 docs/ 平铺时期，现位于 docs/LVGL-放弃记录.md。归档正文不改（维护约定 §4）。"
+    },
+    {
+      "file": "docs/CHANGELOG.md",
+      "link": "../tools/theme-studio/CHANGELOG.md",
+      "reason": "v2.60.0 条目里指向工具日志的**当时路径**。该行下方（第 4893~4894 行）已就地追加说明指向新路径 tools/icarui/CHANGELOG.md，并注明\"上面那个链接是当时的路径，保留原样以保持历史可追溯\"。这是项目自己定下的处理方式，守卫尊重它。"
+    },
+    {
+      "file": "docs/CHANGELOG.md",
+      "link": "tools/theme-studio/CHANGELOG.md",
+      "reason": "同上（同一行的反引号写法）：v2.60.0 历史条目引述当时的工具日志路径。目录 v2.83.0 起改名 tools/icarui/。CHANGELOG 历史条目不许改（维护约定 §4）。"
+    },
+    {
+      "file": "docs/CHANGELOG.md",
+      "link": "tools/theme-studio/sample.json",
+      "reason": "v2.60.x 历史条目引述当时的样例文件路径；目录已改名 tools/icarui/。历史条目不许改（维护约定 §4）。"
+    },
+    {
+      "file": "docs/CHANGELOG.md",
+      "link": "tools/theme-studio/js/schema.js",
+      "reason": "历史条目引述改名前的工具源码路径（现为 tools/icarui/js/schema.js）。历史条目不许改（维护约定 §4）。"
+    },
+    {
+      "file": "docs/CHANGELOG.md",
+      "link": "tools/theme-studio/js/presets.js",
+      "reason": "历史条目引述改名前的工具源码路径（现为 tools/icarui/js/presets.js）。历史条目不许改（维护约定 §4）。"
+    },
+    {
+      "file": "docs/CHANGELOG.md",
+      "link": "tools/theme-studio/js/model.js",
+      "reason": "历史条目引述改名前的工具源码路径（现为 tools/icarui/js/model.js）。历史条目不许改（维护约定 §4）。"
+    },
+    {
+      "file": "docs/CHANGELOG.md",
+      "link": "tools/theme-studio/tests/verify-lamp-state.js",
+      "reason": "历史条目引述改名前的套件路径（现为 tools/icarui/tests/verify-lamp-state.js）。历史条目不许改（维护约定 §4）。"
+    },
+    {
+      "file": "docs/README.md",
+      "link": "../tools/theme-studio/CHANGELOG.md",
+      "reason": "**这条豁免是自指的**：该行（附录 A.3）正文就是在说明\"有一条历史叙述指向已改名的目录，原文保留\"。它必须继续引用旧路径，否则那句话就没有了例子。"
+    },
+    {
+      "file": "docs/迭代清单.md",
+      "link": "tools/theme-studio/index.html",
+      "reason": "位于 §P7「主题工具与仪表盘重构（v1.10.1）」的**已完成验收记录**里 —— 是 v1.10.1 当时的事实，改它等于伪造该版本的验收内容（维护约定 §5：带版本号的历史叙述不许改）。新路径是 tools/icarui/index.html。"
+    },
+    {
+      "file": "docs/迭代清单.md",
+      "link": "tools/theme-studio/js/schema.js",
+      "reason": "位于 §P9「非数值 PID 模型」的已完成条目里，记录当时动过哪个文件。历史叙述不改（维护约定 §5）。新路径是 tools/icarui/js/schema.js。"
+    },
+    {
+      "file": "docs/迭代清单.md",
+      "link": "tools/theme-studio/js/presets.js",
+      "reason": "同 §P9 条目，历史叙述不改（维护约定 §5）。新路径是 tools/icarui/js/presets.js。"
+    },
+    {
+      "file": "docs/下一步-全量文档迭代.md",
+      "link": "docs/文档体检.md",
+      "reason": "这不是一条真链接，而是一份**提案里的候选文件名**：\"体检报告可以就是 docs/README.md 的附录，或单独一份 docs/文档体检.md\"。最终选了前者（报告落在 docs/README.md 附录 A），所以 docs/文档体检.md 从来没被创建过。保持原样。"
+    }
+  ]
+}
