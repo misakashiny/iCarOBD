@@ -257,7 +257,7 @@ object DesignPack {
         }
         if (manifest.format != PACK_FORMAT) {
             problems += "包格式是「${manifest.format.ifBlank { "(空)" }}」，本版只认 $PACK_FORMAT" +
-                " —— 请升级 App 或用当前版本的 tools/theme-studio 重新导出"
+                " —— 请升级 App 或用当前版本的 tools/icarui 重新导出"
             return reject(destDir, problems)
         }
 

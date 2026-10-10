@@ -245,7 +245,7 @@ data class DesignFile(
          * ⚠️ 转向灯**不再是** `tpl_*`：2026-10-06 实车确认后改成了监听型
          * `mon_turn_left` / `mon_turn_right`，所以**必须有**别名。
          *
-         * ⚠️ **改这张表必须同时改 `tools/theme-studio/js/schema.js` 的
+         * ⚠️ **改这张表必须同时改 `tools/icarui/js/schema.js` 的
          * `PID_ALIASES` 与 `BUILTIN_PIDS`**，否则 PC 端编辑器会给出误导性的警告。
          */
         val PID_ALIASES: Map<String, String> = mapOf(
@@ -290,7 +290,7 @@ data class DesignFile(
             "calc.range" to "calc_range",
             // ---- 控件-facing 的别名（v2.62.0）
             //
-            // ⚠️ 必须与 tools/theme-studio/js/schema.js 的 PID_ALIASES **逐条一致** ——
+            // ⚠️ 必须与 tools/icarui/js/schema.js 的 PID_ALIASES **逐条一致** ——
             // verify-crosslang.js 会比对，漏改一边就红。
             //
             // 背景：控件模板用的是这套名字（obd.gforce），规范名是另一套（calc.gforce）。

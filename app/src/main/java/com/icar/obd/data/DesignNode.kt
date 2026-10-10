@@ -288,6 +288,29 @@ data class DesignNode(
         /** 一屏最多几个节点（与工具侧 `MAX_NODES` 一致） */
         const val MAX_NODES = 200
 
+        /**
+         * **分组嵌套的深度上限**（v1.20.19 加，与工具侧成对）。
+         *
+         * ## 为什么需要一个"看着多余"的上限
+         *
+         * [parse] 是**递归**的。没有上限时，一份手工构造（或损坏）的设计文件可以靠
+         * 2 万层嵌套的 `group` 把调用栈打爆 —— 工具侧实测
+         * `RangeError: Maximum call stack size exceeded`，而那个异常冒到
+         * `jsonEdited` 的 setTimeout 里没人接，用户看到的是"粘了一份文件，什么都没发生"。
+         *
+         * App 侧原来是同一个递归结构、**没有闸门** —— 于是同一份文件
+         * 「工具里报友好错误、App 上爆栈」。这就是这个常量存在的理由。
+         *
+         * 32 层远超任何真实设计（正常最多 4 层：页面 → 分组 → 卡片 → 文字），
+         * 所以它只会拦住损坏/恶意文件，不会误伤。
+         *
+         * ⚠️⚠️ **必须与 `tools/icarui/js/schema.js` 的 `window.MAX_NODE_DEPTH`
+         * 成对改** —— 单边改会造成新的跨语言分叉：同一份文件一边友好报错、一边爆栈。
+         * `tools/icarui/tests/verify-crosslang.js` 里有一条断言把这两个常量钉在一起，
+         * 漏改一边就跑不过。
+         */
+        const val MAX_NODE_DEPTH = 32
+
         fun typeName(t: String): String =
             TYPE_NAMES.getOrElse(TYPES.indexOf(t)) { t }
 
@@ -296,6 +319,8 @@ data class DesignNode(
          *
          * @param forceGauge v1 升级路径用：v1 的 `gauges[]` 里没有 `type` 字段，
          *   但每一项都必然是仪表
+         * @param depth 当前嵌套层级（根 = 0）。**调用方不用传**，
+         *   只有 `children` 的递归会传 `depth + 1` —— 见 [MAX_NODE_DEPTH]
          */
         fun parse(
             o: JSONObject,
@@ -303,8 +328,26 @@ data class DesignNode(
             errors: MutableList<String>,
             warnings: MutableList<String>,
             assetIds: Set<String>,
-            forceGauge: Boolean = false
+            forceGauge: Boolean = false,
+            depth: Int = 0
         ): DesignNode? {
+            // ⚠️ **深度闸门必须在递归之前**（v1.20.19，与工具侧 `parseNode` 同一处判定）。
+            //
+            // 没有它时，2 万层嵌套的 `group` 会把调用栈打爆
+            // （`StackOverflowError`）—— 而这个异常会一路冒到导入的调用方，
+            // 那里没有 try/catch，用户看到的是"点了导入，App 直接闪退"。
+            // 宁可报一条**看得懂**的硬错误。
+            //
+            // 判定写法与文案与 `tools/icarui/js/validate.js` 的
+            // `if ((depth || 0) > window.MAX_NODE_DEPTH)` **逐条对齐**。
+            if (depth > MAX_NODE_DEPTH) {
+                errors.add(
+                    "$path 的嵌套深度超过 $MAX_NODE_DEPTH 层 —— " +
+                        "多半是文件损坏（正常设计不会超过 4 层：页面 → 分组 → 卡片 → 文字）"
+                )
+                return null
+            }
+
             val type = if (forceGauge) TYPE_GAUGE else o.optString("type", TYPE_GAUGE)
             if (type !in TYPES) {
                 errors.add("$path 的 type `$type` 不认识（本版本认：${TYPES.joinToString(" / ")}）")
@@ -402,7 +445,8 @@ data class DesignNode(
                         errors.add("$path.children[$i] 不是一个对象")
                         continue
                     }
-                    parse(c, "$path.children[$i]", errors, warnings, assetIds)?.let { kids.add(it) }
+                    parse(c, "$path.children[$i]", errors, warnings, assetIds, false, depth + 1)
+                        ?.let { kids.add(it) }
                 }
             }
 
@@ -674,7 +718,7 @@ data class NodeState(
 
         /**
          * **闪烁周期的下限**（毫秒）。与工具侧 `window.MIN_BLINK_MS` 同源，
-         * 由 `tools/theme-studio/tests/verify-crosslang.js` 逐条比对守着。
+         * 由 `tools/icarui/tests/verify-crosslang.js` 逐条比对守着。
          *
          * ## 依据：WCAG 2.3.1 Three Flashes or Below Threshold（Level A）
          *

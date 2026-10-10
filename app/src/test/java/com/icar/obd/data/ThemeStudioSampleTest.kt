@@ -4,14 +4,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import java.io.File
 
 /**
  * **主题制作工具的产出必须能被 App 解析**（验收标准 4）。
  *
- * `tools/theme-studio/index.html` 里的校验规则是**手抄** `DesignFile.kt` 的 ——
+ * `tools/icarui/index.html` 里的校验规则是**手抄** `DesignFile.kt` 的 ——
  * 抄错是本工具最危险的失效方式：编辑器说没问题、App 加载报错，
  * 而用户直到推上设备才发现。
  *
@@ -27,21 +26,38 @@ import java.io.File
 class ThemeStudioSampleTest {
 
     /**
-     * 定位 `tools/theme-studio/sample.json`。
+     * 定位 `tools/icarui/sample.json`（工具目录在 v1.20.19 由旧名改名而来，
+     * 改名经过记在 `docs/CHANGELOG.md` —— 源码里不写旧目录名，免得又被复制回去）。
      *
      * 单测的工作目录在不同调用方式下不一样（Gradle 从 app/ 跑，IDE 可能从工程根跑），
-     * 而且本项目是用 ASCII 联接 `D:\icarobd` 跑的 —— 所以多试几个候选路径，
-     * 都找不到就 `Assume` 跳过，**不假装通过**。
+     * 而且本项目是用 ASCII 联接 `D:\icarobd` 跑的 —— 所以多试几个候选路径。
+     *
+     * ⚠️ **找不到就失败，不是跳过**（v1.20.19 修，这一条比路径本身重要）。
+     *
+     * 这里原来写的是「假设文件存在，不存在就跳过（`org.junit.Assume`）」。
+     * 意图是好的，后果是灾难性的：工具目录改名之后五个候选路径**全部落空**，
+     * 于是本类 14 个用例被静默跳过 —— `TOTAL=1022 FAILED=0` 照样绿，
+     * 而"工具产出的文件 App 到底能不能读"这条跨语言保证**一个都没在跑**，
+     * 且没人看得出来。
+     *
+     * 所以现在路径不对就**红**。跳过只能用来表达"这个环境缺少某个可选依赖"，
+     * 不能用来兜住"我们自己的文件被改名/搬走了"。
      */
     private fun sampleFile(): File {
         val candidates = listOf(
-            File("tools/theme-studio/sample.json"),                    // 从工程根跑
-            File("../tools/theme-studio/sample.json"),                 // 从 app/ 跑
-            File("app/../tools/theme-studio/sample.json"),
-            File(System.getProperty("user.dir"), "tools/theme-studio/sample.json"),
-            File(System.getProperty("user.dir"), "../tools/theme-studio/sample.json"),
+            File("tools/icarui/sample.json"),                    // 从工程根跑
+            File("../tools/icarui/sample.json"),                 // 从 app/ 跑
+            File("app/../tools/icarui/sample.json"),
+            File(System.getProperty("user.dir"), "tools/icarui/sample.json"),
+            File(System.getProperty("user.dir"), "../tools/icarui/sample.json"),
         )
-        return candidates.firstOrNull { it.isFile } ?: candidates[0]
+        return candidates.firstOrNull { it.isFile } ?: throw AssertionError(
+            "找不到工具自带的样例文件 sample.json —— 试过这些路径：\n" +
+                candidates.joinToString("\n") { "  " + it.absolutePath } +
+                "\n当前工作目录：${System.getProperty("user.dir")}\n" +
+                "请在工程目录下运行 tools/run-tests.ps1。\n" +
+                "⚠️ 这里刻意**不**跳过：跳过会让本类 14 个跨语言用例静默不跑。"
+        )
     }
 
     /** 上一次 [loadSample] 的警告。用来断言「只该有背景路径那一条」 */
@@ -49,11 +65,6 @@ class ThemeStudioSampleTest {
 
     private fun loadSample(): DesignFile {
         val f = sampleFile()
-        assumeTrue(
-            "找不到 ${f.absolutePath} —— 跳过（不假装通过）。" +
-                "请从工程目录运行 tools/run-tests.ps1",
-            f.isFile
-        )
         val r = DesignFile.parse(f.readText())
         assertTrue("sample.json 必须 0 错误，实际：${r.errors}", r.errors.isEmpty())
         assertNotNull("解析成功就必须有 design", r.design)
@@ -92,7 +103,7 @@ class ThemeStudioSampleTest {
         val missing = DesignFile.missingAliases()
         assertTrue(
             "这些默认启用的内置 PID 还没有语义别名：$missing —— " +
-                "请在 DesignFile.PID_ALIASES 里补上，并同步 tools/theme-studio/index.html",
+                "请在 DesignFile.PID_ALIASES 里补上，并同步 tools/icarui/index.html",
             missing.isEmpty()
         )
     }

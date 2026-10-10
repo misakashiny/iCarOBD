@@ -30,7 +30,7 @@ import java.util.zip.ZipOutputStream
  *
  * ## 为什么要自己造 store-only zip
  *
- * 工具侧导出的就是**不压缩**的 zip（`tools/theme-studio/js/zip.js`）。
+ * 工具侧导出的就是**不压缩**的 zip（`tools/icarui/js/zip.js`）。
  * 用 `ZipOutputStream` 的 `STORED` 形态造出来，与它同一种结构 ——
  * 用默认的 deflate 造的话，"store 条目读得对不对"这一条就永远验不到。
  */

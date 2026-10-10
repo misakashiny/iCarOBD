@@ -463,8 +463,23 @@ console.log("\n=== 4b. 字体枚举（v2 新增，跨语言契约）===");
   }
 
   // 节点上限
-  const kMax = /const val MAX_NODES = (\d+)/.exec(nodeKt);
-  if (kMax) eq(tool.MAX_NODES, Number(kMax[1]), "节点上限一致");
+  //
+  // ⚠️ 原来这里是 `if (kMax) eq(...)` —— 常量被改名/删掉时 `kMax` 是 null，
+  // 整条断言就**静默消失**了（套件照样绿）。那正是本项目最恨的失效形态，
+  // 所以改成"解析不到就是失败"（v1.20.19）。
+  const kMax = kotlinConstAny(nodeKt, "MAX_NODES");
+  ok(kMax !== null, `从 DesignNode.kt 解析到 MAX_NODES（${kMax}）`);
+  eq(tool.MAX_NODES, kMax, "节点上限一致");
+
+  // 嵌套深度上限（v1.20.19）—— 必须与 App 的 `DesignNode.MAX_NODE_DEPTH` 同一个数
+  //
+  // ⚠️ 这条断言的理由：`DesignNode.parse` 与工具 `parseNode` 是**同一个递归结构**。
+  // 工具侧 v2.83.0 加了 32 层的闸门，App 侧当时没有 → 同一份 2 万层嵌套的
+  // `group` 文件：工具里报一条看得懂的错误，App 上**爆栈闪退**。
+  // 单边改这个数字就会造出新的跨语言分叉，所以把它钉住。
+  const kMaxDepth = kotlinConstAny(nodeKt, "MAX_NODE_DEPTH");
+  ok(kMaxDepth !== null, `从 DesignNode.kt 解析到 MAX_NODE_DEPTH（${kMaxDepth}）`);
+  eq(tool.MAX_NODE_DEPTH, kMaxDepth, "嵌套深度上限一致（MAX_NODE_DEPTH）");
 
   // 缩放模式
   const dfKt = read(path.join(KOTLIN, "data", "DesignFile.kt"));

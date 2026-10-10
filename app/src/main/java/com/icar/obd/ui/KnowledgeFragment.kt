@@ -1163,7 +1163,7 @@ class KnowledgeFragment : Fragment() {
                 "手册 10 · 设计包怎么用（电脑做 → 平板导入）",
                 """
                 【前置】
-                · 电脑上打开 tools/theme-studio（网页版主题制作工具）。
+                · 电脑上打开 tools/icarui（网页版主题制作工具）。
                 · 平板和电脑之间能传文件（数据线 / 网盘 / 微信文件传输都行）。
                 · 不需要连车。
 

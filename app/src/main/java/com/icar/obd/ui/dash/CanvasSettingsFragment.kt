@@ -116,7 +116,7 @@ class CanvasSettingsFragment : Fragment() {
 
     /**
      * 导入**设计文件**（`icar.ui/1` / `2`）或**设计包**（`.icarzip`），
-     * 都由 `tools/theme-studio/` 产出。
+     * 都由 `tools/icarui/` 产出。
      *
      * 走 SAF（`OpenDocument`），**不需要任何存储权限** —— 与「从文件恢复备份」同一套。
      *
@@ -304,7 +304,7 @@ class CanvasSettingsFragment : Fragment() {
         tvLastImport = view.findViewById(R.id.tvLastImport)
 
         btnAdd.setOnClickListener { showAddDialog() }
-        // 导入 / 导出画布（v1.20.2）：与电脑上的 tools/theme-studio 对接的入口。
+        // 导入 / 导出画布（v1.20.2）：与电脑上的 tools/icarui 对接的入口。
         // 从"画布外观"菜单里搬出来做成常驻一行 —— 用户明确要求"做成一行、好配合网页版工具"。
         btnImportCanvas.setOnClickListener {
             // ⚠️ 必须带上 `*/*`：`.icarzip` 没有公认的 MIME（多半被报成

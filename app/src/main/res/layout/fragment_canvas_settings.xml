@@ -80,7 +80,7 @@
                 android:textSize="13sp" />
 
             <!--
-                导入 / 导出画布：与 `tools/theme-studio/`（网页版主题制作工具）对接的入口。
+                导入 / 导出画布：与 `tools/icarui/`（网页版主题制作工具）对接的入口。
                 刻意做成**紧挨「新增画布」的一行** —— 三件事是同一类操作
                 （"再来一套 / 从文件来一套 / 把这一套带走"），放一起才找得到。
             -->
@@ -314,7 +314,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
             android:padding="4dp"
-            android:text="提示：编辑在每套画布的「操作」菜单里（编辑这一套…）；编辑时横滑会被禁用（拖表盘与翻页会打架）。\n「导入画布 / 导出画布」对接电脑上的 tools/theme-studio 主题制作工具。"
+            android:text="提示：编辑在每套画布的「操作」菜单里（编辑这一套…）；编辑时横滑会被禁用（拖表盘与翻页会打架）。\n「导入画布 / 导出画布」对接电脑上的 tools/icarui 主题制作工具。"
             android:textColor="@color/text_dim"
             android:textSize="11sp" />
     </LinearLayout>

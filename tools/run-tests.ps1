@@ -23,6 +23,11 @@
     并修掉了「用**绝对路径**调用本脚本时 `$PSScriptRoot` 为空 → `Split-Path` 报错
     → 一个用例都没跑就退出」的坑。
 
+    v1.20.19 补充：汇总行加了 `SKIPPED=`，并且**只要有跳过就非 0 退出（3）**。
+    理由见下面那段注释 —— 一句话：`ThemeStudioSampleTest` 那 14 个跨语言用例
+    曾经因为路径改名而静默跳过，而汇总行照样 `TOTAL=1022 FAILED=0` 全绿。
+    "跳过也算过"的绿是会骗人的。
+
 .PARAMETER Link
     ASCII 联接路径，默认 `D:\icarobd`。
 
@@ -117,20 +122,42 @@ if ($code -ne 0) {
 }
 
 Write-Host ''
-$total = 0; $fail = 0
+$total = 0; $fail = 0; $skip = 0
 $resDir = Join-Path $Link 'app\build\test-results\testDebugUnitTest'
 if (Test-Path $resDir) {
     Get-ChildItem "$resDir\*.xml" | ForEach-Object {
         $raw = Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8
         if ($raw -match '<testsuite\s+name="([^"]+)"\s+tests="(\d+)"\s+skipped="(\d+)"\s+failures="(\d+)"\s+errors="(\d+)"') {
             $total += [int]$Matches[2]
+            $skip += [int]$Matches[3]
             $fail += [int]$Matches[4] + [int]$Matches[5]
-            Write-Host ("  {0,-44} tests={1,-3} failures={2,-3} errors={3}" -f $Matches[1], $Matches[2], $Matches[4], $Matches[5])
+            Write-Host ("  {0,-44} tests={1,-3} skipped={2,-3} failures={3,-3} errors={4}" -f $Matches[1], $Matches[2], $Matches[3], $Matches[4], $Matches[5])
         }
     }
 }
 Write-Host '-----'
-Write-Host ("TOTAL={0}  FAILED={1}" -f $total, $fail)
+Write-Host ("TOTAL={0}  FAILED={1}  SKIPPED={2}" -f $total, $fail, $skip)
+
+# ⚠️⚠️ **跳过 = 没验证**（v1.20.19 加）⚠️⚠️
+#
+# 为什么把"跳过"当成失败，而不是只在汇总里显示一下：
+#
+# `ThemeStudioSampleTest` 里 14 个跨语言用例曾经靠 `assumeTrue` 静默跳过 ——
+# 工具目录改名之后 5 个候选路径全部落空，于是汇总行是
+# `TOTAL=1022 FAILED=0`，**照样全绿**，而那 14 条
+# "工具产出的文件 App 到底能不能读"**一个都没在跑**。等发现时已经过了两个版本。
+#
+# 一个"跳过也算过"的汇总行是**会骗人的绿**，比没有验证更危险：
+# 它让人以为验过了。所以这里把它变成红的、并且让退出码非 0。
+#
+# 真的需要跳过时（例如缺某个可选的外部依赖），请把理由写进报告 ——
+# 但不要让它悄悄溜过去。
+if ($skip -gt 0) {
+    Write-Host ''
+    Write-Host "⚠️⚠️  有 $skip 个用例被**跳过**（skipped）—— 跳过不等于通过  ⚠️⚠️" -ForegroundColor Red
+    Write-Host '  跳过 = 这条断言这一轮**没有跑**。先在上面各行的 skipped= 里找到它，' -ForegroundColor Yellow
+    Write-Host '  再判断这个跳过条件是不是真的合理（多数情况是路径或依赖写错了）。' -ForegroundColor Yellow
+}
 
 # ---- 构建守卫
 #
@@ -153,5 +180,9 @@ if ($guardCode -ne 0) {
     Write-Host '构建守卫失败 —— 单测结果不作数，先修构建配置' -ForegroundColor Red
     exit 1
 }
+
+# 跳过的用例同样让脚本**非 0 退出**（见上面那段注释）。
+# 退出码 3 与 gradle 的失败（1）区分开：1 = 编译/测试失败，3 = 有断言没跑。
+if ($skip -gt 0) { exit 3 }
 
 exit $code

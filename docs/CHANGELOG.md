@@ -15,6 +15,195 @@
 > 靠"感觉该整理了"不会触发，定成数字才会。
 ---
 
+## v1.20.19 · 2026-10-11 · 🔴 **14 个跨语言用例静默不跑**（改名后路径没同步）+ App 侧补嵌套深度上限（与工具同一个数）+ `app/` 旧路径引用清零
+
+> 两条任务，一条比一条更像"本仓库最恨的失效形态"：
+> **任务 1 = 测试静默不跑**（工具改名成 `tools/icarui/` 之后，`ThemeStudioSampleTest`
+> 的 5 个候选路径全部落空，而它用的是 `assumeTrue` → **14 个用例被跳过、汇总行照样绿**）；
+> **任务 2 = App 会崩**（工具侧 v2.83.0 给 `parseNode` 加了 `MAX_NODE_DEPTH = 32` 的闸门，
+> App 侧**同一个递归结构没有** → 同一份 2 万层嵌套的文件：工具里报友好错误、App 上爆栈）。
+> 工具版本仍是 **v2.83.0**：本轮只动了工具侧的**两个测试文件**（`verify-crosslang.js` /
+> `verify-rename.js`，都是为了把上面两件事钉住），**没有动工具的任何产品代码**。
+
+### ① 🔴 `ThemeStudioSampleTest` 的 14 个用例在"安静地不跑"
+
+**证据（改前 / 改后都是同一台机器、同一条命令 `tools/run-tests.ps1`）**：
+
+| | `TOTAL=` | `ThemeStudioSampleTest tests=` | `skipped=` | 实际在跑 |
+|---|---|---|---|---|
+| 改前 | 1022 | 25 | **14** | **11** |
+| 改后 | 1028 | 25 | **0** | **25** |
+
+⚠️ **`TOTAL` 从 1022 只涨到 1028（+6 = 本轮新增的 `DesignNodeDepthTest`），不是 +14** ——
+Gradle 的 `<testsuite tests="…">` **把被跳过的用例也算进去了**，所以"看总数"这件事
+**从一开始就发现不了这个故障**。这也是为什么这一版把 `SKIPPED=` 加进汇总行
+并且**只要有跳过就让脚本非 0 退出（3）**（见下）。
+
+**根因**：`sampleFile()` 里 5 个候选路径写的是 `tools/theme-studio/sample.json`，
+工具改名成 `tools/icarui/` 之后**一个都命中不了**，而 `loadSample()` 用的是
+`assumeTrue(f.isFile)` —— "找不到就 Assume 跳过，不假装通过"。
+意图是好的，后果是：**"工具产出的文件 App 到底能不能读"这条跨语言保证一个都没在跑**，
+而汇总行是 `TOTAL=1022 FAILED=0` 全绿。
+
+⚠️ 顺带纠正一个**记账错误**：工具侧 `verify-rename.js` 与它的 CHANGELOG 都把这个数字
+记成 **12**，实测是 **14**（`skipped=14`，逐个列出用例名核对过）。"记账"本身也会错，
+只有真跑一次才知道。
+
+**修法（两件事，第二件比第一件重要）**：
+1. 候选路径换成 `tools/icarui/sample.json`；`app/` 里其余 **10 处**旧路径引用
+   （7 个文件）一并同步 —— 现在 `grep -rn "theme-studio" app/` = **0**。
+2. **`assumeTrue` 换成硬失败**：找不到样例文件就 `throw AssertionError`，
+   错误里列出**试过的每一个绝对路径** + 当前工作目录。
+   跳过只能用来表达"这个环境缺少某个可选依赖"，**不能用来兜住"我们自己的文件被改名/搬走了"**。
+   ⚠️ 源码注释里也**不再写旧目录名**（只写"由旧名改名而来，经过记在 CHANGELOG"）——
+   写进去就会被后来的人复制回去。
+
+**顺手堵掉同类雷（全库排查）**：
+
+- `grep -rn "assumeTrue\|Assume\.\|@Ignore\|@Disabled" app/` → **只有那 1 处**（已修）。
+  修完再 grep，`app/` 里剩下的命中**全是注释**（本版新增的那段历史说明），**没有第二处静默跳过**。
+- `tools/run-tests.ps1`：汇总行加 `SKIPPED=`；**`$skip -gt 0` → 打印红字警告 + `exit 3`**
+  （退出码 3 与 gradle 的 1 区分开：1 = 编译/测试失败，3 = **有断言没跑**）。
+  一个"跳过也算过"的汇总行是**会骗人的绿**，比没有验证更危险 —— 它让人以为验过了。
+- `tools/icarui/tests/verify-crosslang.js`：原来 `MAX_NODES` 那条是
+  `if (kMax) eq(...)` —— 常量被改名/删掉时**整条断言静默消失**（套件照样绿）。
+  同一种形态，已改成"解析不到就是失败"。**这类 `if (常量) 断言` 是 JS 侧的 `assumeTrue`**，
+  本版只修了眼前这一条，其余套件**没有逐个体检**（见遗留）。
+
+### ② App 侧 `DesignNode.parse` 补上嵌套深度上限（与工具同一个数）
+
+**先证明它是真的会崩（不是理论风险）**：临时停用闸门后跑新增的回归用例，
+`DesignNodeDepthTest > 20000 层嵌套 —— 不爆栈` **FAILED，异常就是
+`java.lang.StackOverflowError`**（`at StringConcatHelper…`，即递归里拼 `$path.children[$i]` 那一步）。
+恢复闸门后同一批用例全绿。
+
+- `data/DesignNode.kt` 加 `const val MAX_NODE_DEPTH = 32`（注释写明
+  **"必须与 `tools/icarui/js/schema.js` 的 `window.MAX_NODE_DEPTH` 成对改"**）。
+- 闸门放在 `parse()` **第一句**（必须在递归之前），判定与文案与工具侧
+  `if ((depth || 0) > window.MAX_NODE_DEPTH)` **逐条对齐**：
+  `$path 的嵌套深度超过 32 层 —— 多半是文件损坏（正常设计不会超过 4 层：页面 → 分组 → 卡片 → 文字）`。
+  根节点 depth=0、`children` 传 `depth + 1`，**与工具侧同一个语义**（第 33 层，0 起算）。
+- 新增 `data/DesignNodeDepthTest.kt`（**6 条**）：上限常量就是 32 / **33 层以内不误伤** /
+  **34 层报友好错误** / **20000 层不爆栈且只报一条** / 20000 层的**文本**不崩 /
+  正常 4 层设计照常通过（防"把闸门写成永远报错"也能全绿）。
+  ⚠️ 用例**必须用"手工迭代搭 `JSONObject` 树"走 `parse(root)`**：`parse(text)` 里
+  `JSONObject(text)` 被 `runCatching` 包着，太深的文本会先在 JSON 解析器那层爆栈、
+  被吞成一条"JSON 语法错误" —— **光喂字符串的话，没有闸门这条用例也照样绿**
+  （实测确认：20000 层文本用例在停用闸门时仍然通过）。所以两条路都测，各守一件事。
+- **跨语言钉住**：`verify-crosslang.js` 加
+  `ok(从 DesignNode.kt 解析到 MAX_NODE_DEPTH)` + `eq(tool.MAX_NODE_DEPTH, kMaxDepth)`。
+  ⚠️ **反向验证过**：把 App 侧常量临时改成 33 → 套件精确报
+  `嵌套深度上限一致（MAX_NODE_DEPTH）（工具 32 vs App 33）`，`FAIL=1`。
+
+### ③ 装机实测（平板 `7e7d7bb4`，v1.20.18 → v1.20.19）
+
+动手前备份 `files/config`（`cmd /c` + `adb exec-out run-as … tar cf -`，tar 头 `66 69 6C 65`）。
+
+- **升级安装**：`versionCode=88` / `versionName=1.20.19`；**5 个配置 md5 与备份逐个相同**
+  （`dash.json 4700da540512` / `settings.json 2a917a587169` / `rules.json 439303dffc52` /
+  `pids.json d75171398898` / `enabled.json 99914b932bd3`）。
+- **导入一个"工具导出的设计包"仍然正常**（这一版的真正判据：改路径最容易把导入弄坏）：
+  用**工具自己的模块**造包（`stage/v12019-import/make-pack.js`，加载
+  `tools/icarui/js/{schema,model,presets,zip,pack}.js` 走同一条 `buildPackage`，
+  自检 `verifyZip` 通过，6962 B / 5 个条目）→ 推 `/sdcard/Download/` → 从界面
+  「仪表盘 → 设置 → 导入画布」走 SAF 选它 → 确认框：
+  `已解开设计包：3 个素材（解出 5 个文件）` → 点「导入」。日志：
+  `已解开设计包 | 文件=import-test.icarzip … 素材=3 解出=5 警告=0 设计=导入回归 v1.20.19`、
+  `已导入设计文件 | canvas=画布 2 file=import-test.icarzip name=导入回归 v1.20.19 gauges=2 …`；
+  设置页 `最近导入：import-test.icarzip · 2 块表 · 10-11 03:49`、该套画布从 `gauges=6` 变成
+  `自定义仪表（设计文件） · 2 个仪表`。**解压出的 3 个 PNG md5 与
+  `tools/icarui/assets/warning/` 里的源文件逐个相同**
+  （`056c22c1343da7c76a4eb7891cc1d87d` / `0a31056ff0b16ae9f00d5f7da6a4d3fe` / `fd43745fc833264213fe4f6a3c7acd6a`）。
+- **画出来了**（screencap 像素统计，`stage/v12019-import/analyze.js`，零依赖解 PNG）：
+  全屏非背景像素 **23.08%**；按设计里 0..360 画布坐标折算的三个节点区域分别是
+  转速表 **64.25%** / 水温表 **32.04%** / 水温灯 **7.46%**，而右下角**空白对照区 0.33%**。
+  证据图 `stage/v12019-import/after-import.png`。
+- **验完把设备还原**：`am force-stop` → 把备份的 5 个配置拷回 → **md5 与备份再次逐个相同**，
+  并删掉这次导入产生的 `files/design/1791661745889`。
+
+### ④ 🟡 装机时**顺带发现**的一个既有缺陷（**本版没改**，见遗留）
+
+导入确认框里出现了两条**假警报**：
+
+```
+· gauges[0]（std_0C）超出画布右下角：右=75600 下=86400（上限 360）
+· gauges[1]（std_05）超出画布右下角：右=115200 下=64800（上限 360）
+```
+
+`75600 = 210 × 360`、`115200 = 320 × 360` —— **坐标被乘了 360**，正是 v1.9.0 那个坑
+（`DesignFile.parseGauge` 的注释里写着"必须注入 unit 标记再交给 fromJson，这个坑是单测抓出来的"）。
+
+**v1 那条路修了，v2 节点树那条路没修**：`DesignNode.parse` 只注入了 `pid`：
+
+```kotlin
+val patched = JSONObject(o.toString())
+patched.put("pid", pid)                       // ← 没有 put("unit", 360)
+val g = GaugeItem.fromJson(patched)           // 元素里没有 unit → k = 360
+```
+
+**实测确认**（临时探针，跑完即删）：v2 里节点写 `x=30 y=60 w=180 h=180`，
+`DesignFile.gauges[0]` 拿到的是 `x=10800 y=21600 w=64800 h=64800`（**×360**）
+并附带那条"超出画布"假警报；同一份数据走 **v1** 的 `gauges[]` 则是 `x=30 w=180`、**无警报**。
+
+影响面：① 每一份**带 gauge 节点的 v2 设计**导入时都会多出"超出画布"的假警报
+（用户会学会无视整个警告列表）；② `CanvasSettingsFragment.applyDesign` 会把这份
+×360 的值塞进 `Store.customGauges`（渲染走的是 `designJson` 节点树，所以**画面是对的**，
+本轮像素证据也证明了），但它是 `DashCanvas.gaugeCount` /「改用我存着的 N 块表」那条路上的地雷。
+⚠️ **属于既有缺陷（与本版两处改动无关）**，**本版刻意没动** —— 它是行为变更、
+影响所有 v2 设计，要单独一轮回归（见遗留）。
+
+### ⑤ 任务 3（只核实 + 建议，未动手）
+
+**两侧真的完全一致** —— 用工具真实代码与 App 真实代码各跑了一遍（不是读注释）：
+
+| 行为 | 工具（`js/validate.js`） | App（`DesignNode.parse` → org.json `opt*`） |
+|---|---|---|
+| `x="abc"` | `0` | `0.0` |
+| `w="abc"` | `120`（默认值） | `120.0`（默认值） |
+| `rotation="abc"` / `scale="abc"` | `0` / `1` | `0.0` / `1.0` |
+| 上面的情况有没有报错/警告 | **0 错误 0 警告** | **0 错误 0 警告** |
+| `parts` 条数 100 / 5000 / 50000 | 全部接受 | 全部接受 |
+| 机制 | `num(v,d)`：`Number("abc")`=NaN → 返回 d | `JSONObject.optDouble("x", d)`：非数字 → 返回 d（`OptJsonBehaviorTest` 已实测钉住） |
+
+**建议（请拍板，本轮一个字没改）**：
+- **`parts` 无条数上限** —— 建议**两侧一起加**一个上限（比如 64），并且**在工具侧加**
+  （编辑器是入口，早拦早好）+ 在 `verify-crosslang` 里把常量钉住；
+  只改一侧会造成新的分叉（一边拒收、一边照收）。
+- **非数字静默回落** —— 建议**只加警告、不改数值**：`x="abc"` 已经静默变成 0，
+  改语义（报错/拒收）会**拒绝掉存量文件**；而"给一条警告"能保住兼容性又能让用户看见。
+  代价：`DesignNode.parse` 现在对 x/y/w/h 只调 `optDouble`、**拿不到"是不是非数字"**，
+  要判断得改读法（`o.has(key) && !o.isNull(key)` + `optString` 后试解析），
+  这是**解析层的行为变更**，同样值得单独一轮。
+
+### 验证
+
+| 项 | 结果 |
+|---|---|
+| `tools/run-tests.ps1` | **`TOTAL=1028 FAILED=0 SKIPPED=0`** + 构建守卫通过 + **exit 0**（基线 `TOTAL=1022`，但其中 **14 条是跳过的**；本版 **+6** 条新用例） |
+| `ThemeStudioSampleTest` | `tests=25 skipped=0`（改前 `tests=25 skipped=14`） |
+| `tools/run-browser-tests.ps1` | **29 套件 / `PASS=1596` / `FAIL=0`**（基线 1590；`verify-crosslang` 139→**142**、`verify-rename` 29→**32**） |
+| `assembleDebug` | 通过；APK **7,371,140 B** / 单 ABI `arm64-v8a` / `versionCode=88` / `1.20.19` → `dist/iCarOBD-debug-v1.20.19-android.apk`（`aapt dump badging` 核对过） |
+| 装机 | 见 ③（升级 + 导入工具导出的设计包 + 像素证据 + 配置还原） |
+
+### 遗留 / 没验证到的（如实）
+
+1. 🔴 **v2 那条 ×360 没修**（见 ④）—— 一行就能修（`patched.put("unit", GaugeItem.CANVAS.toInt())`），
+   但它改的是**所有 v2 设计**的 `DesignFile.gauges`，要配一轮回归（v2 坐标 + 假警报消失 +
+   `customGauges` 不再被污染）**并且先让用户拍板**。
+2. 🟡 **`if (常量) 断言` 这种 JS 侧"静默跳过"只修了 `MAX_NODES` 一条** ——
+   其余 28 个套件**没有逐个体检**（本次 grep 只覆盖了 Kotlin 的 `assumeTrue`/`@Ignore`）。
+3. 🟡 **任务 3 的两条只给了建议、没改**（用户明确要求先报告）。
+4. ⚠️ **没有视觉复核**（当前模型无图像输入）：画布"画出来了"是**像素统计**（非背景占比）
+   得出的，不是人眼看过；灯是暗是亮、两个表盘好不好看**没看**。
+5. ⚠️ **`DesignNodeDepthTest` 的 20000 层只验到 JVM**：真机上 Android 的 `org.json`
+   与测试用的 `org.json:json:20231013` **递归行为可能不同**（JVM 侧实测：2 万层文本会先在
+   `JSONObject(text)` 那层爆栈、被 `runCatching` 吞成"JSON 语法错误"）—— 也就是说
+   **"设备上到底会不会崩"没有真机复现过**，闸门是按"两条路都必须安全"来加的。
+6. ⚠️ **`DesignNode.parse` 的 `depth` 只从 `nodes`/`pages[].nodes` 入口传 0**；
+   `GaugePart.parseAll` 的 depth 上限 5 是**另一套**（没动）。
+7. ⚠️ 设备是**竖屏 1600×2560**（`wm size`），与历史记录里的横屏不一致；本版像素判据
+   按竖屏折算，**横屏没验**。
+
 ## v1.20.18 · 2026-10-11 · 🔴 **修模拟信号崩溃（空 range）** + 日志页观看体验三项（等宽对齐 / 跟随开关 / 长按复制）
 
 > 任务 1 = v1.20.17 里「**只出方案、未实现**」的那三项（用户已批准方案，直接做）；

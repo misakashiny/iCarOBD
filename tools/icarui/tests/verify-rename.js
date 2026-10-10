@@ -11,18 +11,20 @@
    2. **它会被慢慢改回去** —— 后来的人复制粘贴老文档里的路径，
       新文件就又把旧名字带回来了。**没有守卫的话没人会知道。**
 
-   ## 它同时把「app/ 还没同步」这件事变成可见的
+   ## 它同时把「app/ 还没同步」这件事变成可见的（v1.20.19 起已同步完）
 
-   改名的范围被限定在 `tools/**` + 相关文档，`app/` 明确不动。
-   但 `app/` 里有 8 个文件引用了旧路径 —— 其中
+   改名的范围原本被限定在 `tools/**` + 相关文档，`app/` 明确不动。
+   当时 `app/` 里有 8 个文件引用了旧路径 —— 其中
    `app/src/test/.../ThemeStudioSampleTest.kt` 是**功能性的**：
-   它按 `tools/theme-studio/sample.json` 找样例，找不到就 `assumeTrue` **跳过**
-   （不报错）。也就是说改名之后那 12 个用例会**安静地不跑**。
+   它按旧目录名找 `sample.json`，找不到就 `assumeTrue` **跳过**（不报错）。
+   也就是说改名之后那些用例会**安静地不跑**。
 
-   本套件不掩盖这件事，而是把它钉成一张**台账**：
-   · `app/` 里出现**新的**旧路径引用 → 失败（那是新缺陷）
-   · `app/` 里的旧引用被清理掉 → 通过，并打印还剩几条
-   这样 app/ 那边同步完之后，台账会自己缩到 0，而不是靠人记得。
+   ⚠️ 当时这份台账把数字记成 **12**，实测是 **14**（`skipped=14`）——
+   "记账"这件事本身也会错，只有真跑一次才知道。
+
+   v1.20.19 把 app/ 那 8 个文件全部同步了，并且把 `assumeTrue` 换成**硬失败**：
+   找不到样例文件就红。本套件因此从"台账"升级成**零容忍守卫** ——
+   `app/` 里再出现任何一处旧路径即失败，不需要谁记得。
 
    跑法：node tools/icarui/tests/verify-rename.js
    ========================================================================== */
@@ -78,18 +80,9 @@ const QUOTES_OLD_PATH = new Map([
     "旧路径在这里是被**清理的对象**，不是过期引用（app/ 那 8 处就是它要清的）"],
 ]);
 
-/** app/ 侧已知的旧路径引用台账（范围限制：本次不改 app/）。
-    ⚠️ 只允许**缩小**，出现新条目就是新缺陷。 */
-const APP_LEDGER = [
-  "app/src/main/java/com/icar/obd/data/DesignFile.kt",
-  "app/src/main/java/com/icar/obd/data/DesignNode.kt",
-  "app/src/main/java/com/icar/obd/data/DesignPack.kt",
-  "app/src/main/java/com/icar/obd/ui/KnowledgeFragment.kt",
-  "app/src/main/java/com/icar/obd/ui/dash/CanvasSettingsFragment.kt",
-  "app/src/main/res/layout/fragment_canvas_settings.xml",
-  "app/src/test/java/com/icar/obd/data/DesignPackTest.kt",
-  "app/src/test/java/com/icar/obd/data/ThemeStudioSampleTest.kt",
-];
+// ⚠️ 原来这里有一张 `APP_LEDGER`（app/ 侧 8 个文件的旧引用台账，"台账内放行"）。
+// v1.20.19 app/ 全部同步完之后**删掉了** —— 留一张空表就是留一个"以后可以往里塞"的收容所，
+// 而第 8 节现在是零容忍：app/ 里出现任何一处旧路径即失败。
 
 console.log("=== 1. 目录改名到位 ===");
 ok(fs.existsSync(STUDIO), "tools/icarui/ 存在");
@@ -204,21 +197,24 @@ console.log("\n=== 8. app/ 侧旧路径台账（本次范围外，只记账不�
       if (read(f).indexOf("theme-studio") >= 0) found.push(path.relative(ROOT, f).replace(/\\/g, "/"));
     });
   }
-  const known = new Set(APP_LEDGER);
-  const fresh = found.filter(f => !known.has(f));
-  if (found.length) {
-    console.log(`       ↳ app/ 仍有 ${found.length} 个文件引用旧路径（台账内 ${APP_LEDGER.length} 个）：`);
-    found.forEach(f => console.log("         · " + f + (known.has(f) ? "" : "   ← **不在台账里**")));
-    const gone = APP_LEDGER.filter(f => found.indexOf(f) < 0);
-    if (gone.length) console.log(`       ↳ 已清理（请从 APP_LEDGER 删掉）：${gone.join(", ")}`);
-  }
-  ok(fresh.length === 0,
-    `app/ 里没有**新出现**的旧路径引用（台账外 ${fresh.length} 个）` +
-    (fresh.length ? "：" + fresh.join(", ") : ""));
-  if (found.indexOf("app/src/test/java/com/icar/obd/data/ThemeStudioSampleTest.kt") >= 0) {
-    console.log("       ⚠️ ThemeStudioSampleTest.kt 仍按 tools/theme-studio/sample.json 找样例 ——");
-    console.log("          它找不到会 assumeTrue **跳过**（不报错），所以那 12 个用例现在是不跑的。");
-    console.log("          修法：把候选路径里的 tools/theme-studio 换成 tools/icarui（**需 app/ 授权**）。");
+  // ⚠️ 这里原来是「台账内放行、只拦新出现的」。台账（8 个文件）在 v1.20.19 清零，
+  //    所以现在**一处都不许有** —— 改名这件事从此不需要人记着。
+  if (found.length) found.forEach(f => console.log("       ↳ " + f));
+  ok(found.length === 0, `app/ 里没有旧路径引用（剩 ${found.length} 个）`);
+
+  // 顺手守住"那个静默跳过的坑"已经补上：找不到样例必须**失败**，不能再 Assume 跳过。
+  // 这条不是多余的 —— 路径被改回去时，Assume 版本的失效形态是"套件全绿、用例不跑"。
+  const sampleTest = path.join(appDir, "src/test/java/com/icar/obd/data/ThemeStudioSampleTest.kt");
+  ok(fs.existsSync(sampleTest), "ThemeStudioSampleTest.kt 还在（这个类守的是跨语言契约）");
+  if (fs.existsSync(sampleTest)) {
+    const t = read(sampleTest);
+    ok(t.indexOf("tools/icarui/sample.json") >= 0, "ThemeStudioSampleTest 按 tools/icarui/sample.json 找样例");
+    // ⚠️ 判的是**代码**，不是整份文件：这个类的注释里**故意**写着
+    //    「原来用 Assume 跳过、后来改成硬失败」—— 那是历史记录，不是用法。
+    //    直接对全文 indexOf 会把注释也算成用法（第一版就这么误报了一次）。
+    const codeOnly = t.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    ok(codeOnly.indexOf("assumeTrue") < 0 && codeOnly.indexOf("org.junit.Assume") < 0,
+      "ThemeStudioSampleTest 的**代码**里没有 Assume 静默跳过（找不到样例文件必须失败）");
   }
 }
 
