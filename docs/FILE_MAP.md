@@ -258,7 +258,8 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `data/SignalTableCsvTest.kt` | 41 | **25 列信号表（v1.20.7，S1）**：模板（BOM / 25 列中文表头 / 每个 ID 一行 / 预填 ID·DLC·取值集合 / 其余留空）；往返（公式生成 / `minDlc` / `ttlMs` / `invalidRaw` / 可信度→`enabled` / `note` 固定格式）；**硬错误逐条**（ID 非法 / 信号名空 / 起始位非数或负 / 长度越界 / 字节序·符号不认识 / 因子 0 / 最小>最大 / **解到帧外**）；**软警告逐条**（dec 不一致 / 字节不符 / 无效原始值越界 / **位重叠** / 多路复用 / 单位·证据空 / DLC 空）；**Motorola 真实位集不误报越界**（规格 §7 陷阱 1 的两个实测案例）；重复导入覆盖；表头缺失 / 列序打乱 / CRLF / 空行；CSV 引号与转义 |
 | `data/DashCanvasTest.kt` | 25 | **多画布（v1.20.0/1.20.1）**：`DashCanvas` JSON 往返 / 坏条目跳过 / 名字兜底；**旧配置迁移**（取值完全不变、只迁一次、有画布时 `dash.json` 不再覆盖）；增/删/切/排序（内容互不串台、最后一套删不掉、删当前落到邻居、上限、悬空 id 自愈）；**画布名浮标**（名字表契约 / 越界回落 / 设置往返 / 读取时夹取 / **全局性**）；**备份往返保留全部画布与当前画布**；**最近一次导入（v1.20.6）**（设置往返 / 旧配置缺字段是空记录而不是假时间 / 摘要格式 / 缺文件名兜底） |
 | `obd/ObdProtocolTest.kt` | 42 | `extractData` 各种响应格式（ATH0 / ATH1 / SEARCHING / 多帧 / NO DATA / 15 种错误码 / 兜底分支）、`parse` 端到端、初始化序列、**危险模式拦截**、`scanCandidates`、**ISO-TP 多帧重组**、多 ECU 选序 |
-| `ui/view/AlertPulseTest.kt` | 37 | 等级判定与**迟滞**（含反证用例）、**下限 `levelWithLow`**（方向 / 优先级 / 阈值 0 与 null / `WARN_LOW` 不爆闪）、爆闪时间相位、颜色混合 |
+| `ui/view/AlertPulseTest.kt` | 41 | 等级判定与**迟滞**（含反证用例）、**下限 `levelWithLow`**（方向 / 优先级 / 阈值 0 与 null / `WARN_LOW` 不爆闪）、爆闪时间相位、颜色混合；**闪烁频率红线（v1.20.16）**：危险档 / 警告档**直接数 10 秒的上升沿**换算 Hz 必须 ≤3（WCAG 2.3.1「每秒不超过三次」）、`tintMix` 与 `intensity` **相位必须一致**（只改一处会让"闪的时候没变色"）、下限常量与 `NodeState.MIN_BLINK_MS` 同源且真的被用上 |
+| `data/NodeStateTest.kt` | 11 | **状态系统的数据层契约（v1.20.16）** —— 这一环错了，症状是"灯永远不亮"：`MIN_BLINK_MS` 换算 ≤3 Hz；**文件里写 100ms / 60ms 都必须被抬到 400ms**（60 是修复前的老下限，16.7Hz）；合规值（900ms）**原样保留**（只抬下限、不改上限）；缺省 `blinkMs` 落在下限上；**三个状态都受约束**；三态读入 / `alpha` 夹取 / 空对象返回 `null`（不是空 map）/ 素材缺失只警告 / **素材清单为空时不乱报** |
 | `ui/view/EasingTest.kt` | 37 | **缓动纯数学**（v1.10.4）：4 种曲线的单调 / 不过冲 / **帧率无关** / dt 夹取 / 未知模式回落、输入滤波（压尖刺 / 帧率无关 / 收敛）、收敛判据（**数据还在变时不许停** / 稳定后才停 / 吸附与继续是两件事）、5Hz 推送回归 |
 | `data/PidModelsTest.kt` | 37 | `CompareOp` 七种比较（含 CHANGED 边沿语义）、`RuleAction.describe`、`requestString` / `modeInt` / `pidBytes`、优先级倍率与未知取值兜底；**运行时三语义的字段（v1.20.7，S2）**：三个新字段默认值 = 旧行为 / JSON 往返 / **旧 JSON 缺字段取默认值** / `invalidRaw` 的 `null` 与 `0` 必须区分；`dlcTooShort()` 与 `hitsInvalidRaw()`（优先比位段原始值、非 `bitsAt` 形态退回物理值） |
 | `data/PidDedupTest.kt` | 28 | **PID 重复判定（v1.20.12）**：位段指纹（`bit(C,2)`≡`bitsAt(18,1,0,0)` / `bits(C,3)`≡`bitsAt(19,…)` / `bits(A,6,4)`≡`bitsAt(6,4,0,0)` / `signed(A)`≡`bitsAt(0,8,0,1)` / 系数偏移算进指纹 / **认不出返回 null**）、同请求同公式算重复 / 公式只差空白仍算重复 / 同请求不同公式不算、监听型同报文同一位算重复 / 不同位不同报文不算 / **监听型与请求型不互判** / 派生通道不参与、**内置之间不判重复**（含"真的同请求同公式也不判"）/ 自定义撞内置保留内置 / 两条自定义保留先出现的 / **设备上那条真重复（`TestMonitor09A` vs 左转向灯）能被完整判出来** / 认不出公式的监听型不误判、被仪表或规则引用的不清理 / 没被引用的可清理 / 汇总逐条带理由 / **确认框正文不许出现 Markdown 标记** |
@@ -343,12 +344,13 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `tools/gen_sounds.py` | 纯标准库生成 4 个 wav 音效，改音色后重跑 |
 | `tools/crop_png.py` | 纯标准库最小 PNG 解码 + 裁剪放大，用于放大截图排查像素级问题（本机无 PIL） |
 | `tools/oncar-check.ps1` | **实车取证脚本**（P0-1~P0-4）：一条命令收齐设备/版本、崩溃与 ANR、GATT 表、AT 命令 TX/RX 与超时、初始化结果、轮询与规则、扫描器日志，并按 GATT 表直接给出判定 |
-| `tools/theme-studio/tests/verify-crosslang.js` | **跨语言一致性检查**（**103 项**）：从 Kotlin 源码解析常量，与工具逐条比对。改别名/量程/样式/校验文案后必跑 |
+| `tools/theme-studio/tests/verify-crosslang.js` | **跨语言一致性检查**（**111 项**）：从 Kotlin 源码解析常量，与工具逐条比对。改别名/量程/样式/校验文案后必跑。**§3b 闪烁频率红线（v1.20.16）**：两侧 `MIN_BLINK_MS` 逐字一致、`AlertPulse` 直接引用 `NodeState.MIN_BLINK_MS`（不是另写一个数）、没有 200ms 方波残留、没有 `Math.max(60, …)` 残留 |
+| `tools/theme-studio/tests/verify-lamp-state.js` | **指示灯状态接线（v1.20.16，36 项）** —— 这个套件是为**仓库里最贵的一条 bug** 立的守卫：19 个灯里 16 个写的是 `pid` 而不是 `statePid`，而 App 只读 `statePid`、`model.js` 只序列化 `statePid` → 拖出来**永远是暗的**，**用户会以为车没问题**。断言的是「**所有** `states` 非空的控件 `statePid` 必须非空」（**跑全库 122 个**，不是只查那 16 个）+ 胎压灯接线 + 序列化 + 往返 + 闪烁下限三路（全库 / 输入夹取 / 解析夹取）+ 跨语言下限一致性 |
 | `tools/run-tests.ps1` | **单测入口**：先建 ASCII 目录联接再跑 `testDebugUnitTest`（**不要**在原路径直接跑，见 §6） |
 | `tools/run-all.ps1` | **一条命令跑完全部验证**（Kotlin + 构建守卫 + 浏览器套件）。`-SkipBrowser` / `-SkipKotlin` 可按需跳过 |
 | `docs/archive/` | **归档的历史文档**。目前是 `CHANGELOG-v1.0~v1.8.md`（含 LVGL 迁移的完整调试日志，8712 行） |
-| `tools/run-browser-tests.ps1` | **跑工具的全部浏览器测试套件**（**21 个 / 792 条断言**）。每个套件独立进程；跑前后各清一次测试浏览器残留。`-Filter` 只跑匹配的，`-List` 只列出 |
-| `tools/theme-studio/tests/` | 浏览器测试套件（`verify-*.js`，**21 个**）+ `_common.js`（公共前置）。**原来散在 %TEMP% 里**，v2.14.0 搬进仓库；路径从 `__dirname` 推导（v2.15.0） |
+| `tools/run-browser-tests.ps1` | **跑工具的全部浏览器测试套件**（**27 个 / 1473 条断言**）。每个套件独立进程；跑前后各清一次测试浏览器残留。`-Filter` 只跑匹配的，`-List` 只列出 |
+| `tools/theme-studio/tests/` | 浏览器测试套件（`verify-*.js`，**27 个**）+ `_common.js`（公共前置）。**原来散在 %TEMP% 里**，v2.14.0 搬进仓库；路径从 `__dirname` 推导（v2.15.0） |
 | `tools/theme-studio/tests/_common.js` | **测试套件的公共前置**（v2.35.0）：`stubDialogs(cdp)` 把 `alert`/`confirm`/`prompt` 换成空实现。**headless Chrome 里 `alert()` 会阻塞渲染进程**，漏一个就会重现 v2.34.0 那种"求值超时"（报错位置离原因很远，极难查）。文件名以 `_` 开头，不会被 `verify-*.js` 的匹配当套件跑 |
 
 > ⚠️ **上表这些数字会随迭代漂**（套件数、断言数、素材数、用例数）。
@@ -367,7 +369,8 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 
 | 改了 | 必须同时改 | 否则 |
 |---|---|---|
-| `data/DesignFile.kt` 的校验规则 / 错误文案 / `PID_ALIASES` | `tools/theme-studio/js/validate.js` + `js/schema.js` 里对应的 `parseDesign` / `PID_ALIASES` / `BUILTIN_PIDS` | 编辑器说没问题、App 加载报错。**`tools/theme-studio/tests/verify-crosslang.js`（跨语言 **103 项**）与 `ThemeStudioSampleTest` 都会失败**（这是有意的） |
+| `data/DesignFile.kt` 的校验规则 / 错误文案 / `PID_ALIASES` | `tools/theme-studio/js/validate.js` + `js/schema.js` 里对应的 `parseDesign` / `PID_ALIASES` / `BUILTIN_PIDS` | 编辑器说没问题、App 加载报错。**`tools/theme-studio/tests/verify-crosslang.js`（跨语言 **111 项**）与 `ThemeStudioSampleTest` 都会失败**（这是有意的） |
+| `data/DesignNode.kt` 的 `NodeState.MIN_BLINK_MS`（闪烁周期下限） | `tools/theme-studio/js/schema.js` 的 `window.MIN_BLINK_MS` | **WCAG 2.3.1「每秒不超过三次」**。只改一侧是**静默失效**：只改 App → 工具里还能调到 60ms（用户以为设好了，装到车上被抬回去）；只改工具 → 老设计文件在 App 上照闪 16.7Hz。`verify-crosslang.js` §3b 逐字比对守着 |
 | `data/PidModels.kt` 的 `GaugeItem` 字段 | `toJson` + `fromJson` + `tools/theme-studio/js/validate.js`（节点解析）/ `js/model.js`（序列化）/ `js/panels.js`（属性面板） | 存量配置丢字段；工具的预览与 App 不一致 |
 | `ui/view/NeonStyle.kt` 的档位名 | 存量 `dash.json` / `design.json` 的迁移 | 用户的「夸张」霓虹**静默回落**到「标准」。`NeonStyleTest` 冻结了名字 |
 | 渲染层 / 动画（`BaseGaugeView`、`NeonPainter`、`GaugeTicker`、各 View） | 重跑**性能基准**（连接页 →「运行选项」→「性能基准」） | 不知道有没有把 120fps 做掉到 60fps 以下 |

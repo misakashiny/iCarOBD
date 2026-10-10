@@ -15,6 +15,140 @@
 > 靠"感觉该整理了"不会触发，定成数字才会。
 ---
 
+## v1.20.16 · 2026-10-11 · 🔴 **19 个指示灯里 16 个永远不会亮**（拖出来永远是暗的）+ 告警闪烁降到 ≤3 Hz（WCAG 2.3.1）
+
+> 两条都来自 [`控件库优化建议.md`](控件库优化建议.md) 的 P0。
+> 工具侧同批发 **v2.82.0**（`tools/theme-studio/CHANGELOG.md`）。
+
+### 🔴 修复 1：16 个指示灯的状态系统是**死的**（**用户会以为车没问题**）
+
+**症状**：从控件库拖一个「胎压灯」出来，它**永远显示暗的 `lamp-off.png`**。
+能拖、能摆、能存、能导出、构建守卫不报 —— 所以**用户会以为车没问题**，
+而不是"这个灯没接上"。这是这个库里**最贵的一条**。
+
+**根因链（三处代码，缺一条都看不出来）**：
+
+| # | 位置 | 做了什么 |
+|---|---|---|
+| 1 | `tools/theme-studio/js/presets.js` 第二批 16 个灯 | 写的是 `n.pid` / `n.rawPid`，**不是 `statePid`**（第一批 3 个灯写对了） |
+| 2 | `ui/dash/NodeTreeRenderer.kt` `resolveState()` | **只读 `node.statePid`**，`isBlank()` 就 `return STATE_NORMAL`，根本不看 `pid` |
+| 3 | `tools/theme-studio/js/model.js` 的 `nodeToJson`（`NODE_IMAGE` 分支） | **只序列化 `statePid`/`states`**，`pid`/`rawPid` 被丢掉 → 连设计文件都进不去 |
+
+**净结果**：设计文件里既没有 `statePid` 也没有 `pid`，灯永远是 `normal`。
+
+**实测计数**（实例化全部 122 个控件后读回）：
+
+| | 修复前 | 修复后 |
+|---|---:|---:|
+| `states` 非空 | 19 | 19 |
+| `statePid` **有值** | **3** | **19** |
+| `statePid` 为空 | 16 | 0 |
+
+> ⚠️ **语义变了，不是"修好了 12 个不存在的 PID"**：这 16 个灯绑的 PID 大部分
+> **还不存在**（等 P9 上车逆向），改完之后 `guard-pid-probe.js` 照旧报它们 12 条待办
+> —— **那是对的**。区别是：以前"压根没接线"，现在"线接好了、等数据"。
+
+### 🔴 修复 2：告警闪烁全部超 WCAG 2.3.1 的「每秒不超过三次」
+
+标准原文：*"Web pages do not contain anything that flashes more than
+three times in any one second period..."*（Level A）
+
+| 位置 | 修复前 | 换算 | 修复后 |
+|---|---|---:|---|
+| `ui/view/AlertPulse.kt` 危险档 | `square(nowMs, 200, 0.5f)` | **5.0 Hz** | 400ms = **2.5 Hz** |
+| 控件库第一批灯 `critical.blinkMs` | `220` | **4.5 Hz** | 400ms |
+| 控件库第二批灯 `critical.blinkMs` | `260` | **3.8 Hz** | 400ms |
+| 工具侧下限 `Math.max(60, …)` | `60` | **16.7 Hz** | 400ms |
+
+**周期的唯一真源**：`data/DesignNode.kt` 的 `NodeState.MIN_BLINK_MS = 400`。
+`AlertPulse.CRITICAL_PERIOD_MS` 直接引用它（不是另写一个数）；
+工具侧 `window.MIN_BLINK_MS` 与它同源，由 `tests/verify-crosslang.js` 逐条比对守着
+（**只改一侧是静默失效**：只改 App → 工具里还能调到 60ms；只改工具 → 老设计文件照闪 16.7Hz）。
+
+**三处落地 + 两道守卫**：
+
+| 落地 | 位置 |
+|---|---|
+| 渲染路径 | `NodeTreeRenderer.applyStates` 的 `coerceAtLeast(NodeState.MIN_BLINK_MS)` |
+| 解析路径 | `NodeState.parseAll` 的 `coerceAtLeast(MIN_BLINK_MS)`（**文件里写 100ms 也不许照闪**） |
+| 工具侧 | `validate.js` / `app.js` / `editor.js` / `panels.js` |
+
+| 守卫 | 断言 |
+|---|---|
+| Kotlin（`AlertPulseTest`） | **直接数 10 秒的上升沿**换算 Hz ≤ 3.0 —— 而不是断言"常量等于 400"（后者在有人把 duty 改成 0.25、一轮亮两次时照样绿） |
+| Kotlin（`NodeStateTest`） | `MIN_BLINK_MS` 换算 ≤3 Hz、文件里写 60ms 也被抬到 400ms、合规值不被改 |
+| 工具（`verify-crosslang.js` §3b + `verify-lamp-state.js`） | 两侧下限逐字一致、全库无低于下限的闪烁周期、`Math.max(60, …)` 不得残留 |
+
+> ⚠️ **危险档的 `square` 没有一起降成 `pulse`**：`DashRenderer` 只以 **5 Hz 的 tick**
+> 采样状态相位（"不引入第二个动画驱动"）。400ms 周期下每周期恰好 **2 个采样点**，
+> 闪烁照旧可见 —— 反而比原来更稳：修复前的 200ms **正好等于一个 tick**，
+> `(nowMs / 200) % 2` 与 tick 同频，采样点可能**恒落在同相位**。
+
+### 新增测试
+
+- **`app/src/test/.../data/NodeStateTest.kt`（11 条）** —— 状态系统的数据层契约。
+- **`AlertPulseTest` +4 条** —— 危险/警告档的闪烁频率红线、`tintMix` 与 `intensity` 相位一致、
+  下限常量与数据层同源。
+- **`tools/theme-studio/tests/verify-lamp-state.js`（新套件，36 条）** —— 全库
+  「`states` 非空 ⇒ `statePid` 非空」断言（**跑全库，不是只查那 16 个**）、
+  胎压灯接线、序列化、往返、闪烁下限三路（全库 + 输入夹取 + 解析夹取）、跨语言一致性。
+- **`verify-crosslang.js` +7 条**（见上表）。另把一条老断言
+  「blinkMs 原样读入 150」改成「150 被抬到 400」—— 原来那条钉的正是要修掉的行为。
+
+### 顺带修掉的两个问题
+
+1. **`validate.js` 与 `model.js` 的 `statePid` 不同源**（工具侧）：
+   `validate.js` 直接抄 `o.statePid`、而且**不设 `rawStatePid`**。后果是
+   **导出再导入之后**编辑器里状态 PID 输入框变成空的（`std_05` 认不出别名），
+   **再保存一次就把 `std_05` 写回文件**（丢掉可读的语义别名）。由新套件的往返用例抓到。
+2. **`docs/主题设计大纲.md` 的过期数字**：§2.40 写「116 / 319 / 容器·基础 3」、
+   §2.44 素材合计写 328 且**少列一类**、§2.45 又提素材 344 —— 同一份文件多个数字互不相同。
+   按实测统一为 **122 控件 / 355 素材 / 40 PID**，并新增 §2.113 / §2.114 记录本轮两条修复。
+
+### 验证
+
+- `tools/run-tests.ps1`：**973 全过**（958 → 973）+ 构建守卫通过
+- `tools/run-browser-tests.ps1`：**27 套件 / PASS=1473**（26/1430 → 27/1473）全过
+- `assembleDebug` 通过，APK **7.03 MB** / 单 ABI `arm64-v8a`
+- ✅ **装机实测**（小米平板 5 `7e7d7bb4` / 2560×1600 横屏 / Android 13）：
+  见下面的「装机验证表」
+
+### 装机验证表（任务 1 的真正判据）
+
+| 步骤 | 结果 |
+|---|---|
+| 备份 `files/config/*.json` | `stage/tablet-backup-20261011-011226/config.tar`（tar 头 `66 69 6C 65` = "file"，**不是 `FF FE`**） |
+| 升级安装 v1.20.16 | `versionCode=85 versionName=1.20.16`；**升级后 6 个配置的 md5 与备份逐个相同** |
+| 用**工具自己**造 `.icarzip` | `stage/v12016-lamp/make-lamp-pack.js` —— 加载 `schema/model/presets/zip/pack` 五个**工具模块**，`buildPackage` + `verifyZip` 自检通过；条目 = design.json + 3 素材 + manifest.json |
+| 导入 | 日志 `已解开设计包 \| 素材=3 解出=5 警告=0` → `已导入设计文件 \| name=指示灯状态验证 素材=3` |
+| 驱动 PID | 「连接 → 模拟信号」36 通道 @10Hz 驱动 `obd.coolant`（`std_05`）；设计里显式阈值 `stateWarn=55 / stateCritical=75` |
+| **灯真的会亮** | 同一位置连拍到三种帧：**灭** `rgb(7,16,24)`（纯背景）/ **琥珀** `rgb(255,176,32)`（= `lamp-warn.png` 主色）/ **红** `rgb(255,77,79)`（= `coolant-warn.png` 主色）。三个颜色与素材文件**逐个对上** |
+| **对照区** | 紧挨着灯、没有灯的区域（`[426,620,398,120]`）**全程 warm=0%** —— 排除"那里本来就有暖色背景" |
+| 对照组控件 | `lamp_coolant`（第一批，本来就对）与 `lamp_temp` **同步**切换 —— 证明两条路径现在一致 |
+
+证据图（从 2560×1600 截图裁出，零依赖 PNG 编解码见 `stage/v12016-lamp/px.js` + `crop.js`）：
+`stage/v12016-lamp/evidence-lamp-LIT.png` / `-OFF.png` / `-RED.png`。
+
+### 遗留 / 没能验证的
+
+- ⚠️ **闪烁周期在真机上量不准**：`adb exec-out screencap` 一次要 **536ms**，
+  对 400ms 的周期是**欠采样**（实测量出 1106 / 1607ms 的**混叠值**，不是真周期）。
+  要量准得换路子（`screenrecord` 拆帧，或让 App 自己把相位写进日志）。
+  **本次的 400ms 由单测直接数上升沿钉住**；装机只验到"会亮 / 会变色 / 会闪"。
+- ⚠️ 平板横竖屏在验证过程中被系统切过一次（`user_rotation` 被清成 0），
+  已重新固定成横屏（`accelerometer_rotation=0 / user_rotation=1`）。
+  期间**重装过一次**（同一个 APK，不是重新构建），导入操作重做了一遍。
+- 报告里另外几条 P0/P1（多段色带 `bands`、`marker` 阈值标记控件、告警条控件、
+  把 12 类闲置素材接进控件库）**本次没做** —— 见 `控件库优化建议.md` 表 3。
+- `lamp_coolant` 与 `lamp_temp` 是**真重复**（同 PID、同 crit 图，只差闪烁策略），
+  报告建议 7 提过合并，**本次没动**（删 key 会让老设计文件里的 `controls` 悬空）。
+- ⚠️ **观感**：危险档从 5Hz 硬方波降到 2.5Hz。本次**只用像素证明了它会亮/会变色**，
+  **没有**用主观标准判断"冲击力够不够"。若后续觉得不够，
+  报告里给的替代方案是"只换颜色、不做明暗交替"（纯色相变化理论上不构成 flash），
+  但那要重写 `AlertPulse.tintMix` 那一层，**本次没做**。
+
+---
+
 ## v1.20.15 · 2026-10-11 · **修 v1.20.14 的卡死级 ANR**（纯函数死循环）+ 浮窗加「检视 开 / 暂停」开关
 
 > 用户原话：「悬浮窗上面加个检视器的开关」+「开着检视器切页后卡死」。

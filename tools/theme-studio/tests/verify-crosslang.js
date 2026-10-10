@@ -360,6 +360,39 @@ console.log("\n=== 4. 样式 / 卡片 / 铺法 / 霓虹档位 ===");
     "霓虹档位名与顺序逐字一致（这是跨层冻结契约）");
 }
 
+console.log("\n=== 3b. 闪烁频率红线（WCAG 2.3.1「每秒不超过三次」）===");
+{
+  // ## 为什么这条必须跨语言比对
+  //
+  // 下限在两侧**各写一遍**（工具 `window.MIN_BLINK_MS`、App `NodeState.MIN_BLINK_MS`）。
+  // 只改一侧的症状是**静默的**：
+  //   · 只改 App 侧 → 工具里还能调到 60ms，用户以为设好了，装到车上却被 App 抬回去；
+  //   · 只改工具侧 → 老设计文件在 App 上照闪 16.7Hz。
+  // 两边都"看起来改了"，所以只有机器比对能发现。
+  const nodeKtForBlink = read(path.join(KOTLIN, "data", "DesignNode.kt"));
+  const kMinBlink = kotlinConstAny(nodeKtForBlink, "MIN_BLINK_MS");
+  ok(kMinBlink !== null, `从 DesignNode.kt 解析到 MIN_BLINK_MS（${kMinBlink}）`);
+  eq(tool.MIN_BLINK_MS, kMinBlink, "闪烁周期下限 工具 vs App 逐字一致");
+  if (kMinBlink !== null) {
+    ok(kMinBlink >= 400,
+      `App 侧下限 ≥ 400ms（实际 ${kMinBlink}ms = ${(1000 / kMinBlink).toFixed(2)} Hz）`);
+  }
+  ok(1000 / tool.MIN_BLINK_MS <= 3,
+    `工具侧下限换算 ≤ 3 Hz（${tool.MIN_BLINK_MS}ms → ${(1000 / tool.MIN_BLINK_MS).toFixed(2)} Hz）`);
+
+  // AlertPulse 的危险档必须**真的用上**这个下限（而不是各写各的数字）
+  const alertKt = read(path.join(KOTLIN, "ui", "view", "AlertPulse.kt"));
+  ok(/CRITICAL_PERIOD_MS\s*=\s*NodeState\.MIN_BLINK_MS/.test(alertKt),
+    "AlertPulse 危险档周期直接引用 NodeState.MIN_BLINK_MS（不是另写一个数）");
+  ok(!/square\(\s*nowMs\s*,\s*(?:200|periodMs\s*=\s*200)\s*,/.test(alertKt),
+    "AlertPulse 里没有 200ms（5Hz）的方波残留");
+
+  // 工具侧不该再有 60ms 的老下限
+  const toolJs = ["js/validate.js", "js/app.js", "js/editor.js", "js/panels.js"]
+    .map(f => read(path.join(STUDIO, f))).join("\n");
+  ok(!/Math\.max\(60,/.test(toolJs), "工具侧没有 Math.max(60, ...) 残留（那是 16.7 Hz）");
+}
+
 // ================================================================ 4) 行为比对（v1）
 
 console.log("\n=== 4b. 字体枚举（v2 新增，跨语言契约）===");
@@ -534,7 +567,10 @@ console.log("\n=== 6. v2 节点树 ===");
   }));
   eq(r6.errors.length, 0, "带状态系统的节点 0 错误");
   ok(r6.design && r6.design.nodes[0].states.critical.blink === true, "状态的 blink 正确读入");
-  ok(r6.design && r6.design.nodes[0].states.critical.blinkMs === 150, "状态的 blinkMs 正确读入");
+  // ⚠️ 输入写的是 150ms（6.7Hz），**超 WCAG 2.3.1 红线** → 必须被抬到下限。
+  //    （修复前这里断言的是"原样读入 150" —— 那正是要修掉的行为）
+  eq(r6.design && r6.design.nodes[0].states.critical.blinkMs, tool.MIN_BLINK_MS,
+    `超标的 blinkMs(150) 被抬到下限 ${tool.MIN_BLINK_MS}ms（WCAG 2.3.1）`);
   ok(r6.design && r6.design.nodes[0].states.normal.alpha === 77, "状态的 alpha 正确读入");
 
   // 引用不存在的素材 → 只警告

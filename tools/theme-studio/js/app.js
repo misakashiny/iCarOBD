@@ -1058,9 +1058,9 @@
     window.commit(() => {
       if (on) {
         n.states = {
-          normal: { assetId: n.assetId || "", alpha: 255, blink: false, blinkMs: 200 },
-          warn: { assetId: "", alpha: 255, blink: false, blinkMs: 200 },
-          critical: { assetId: "", alpha: 255, blink: true, blinkMs: 200 },
+          normal: { assetId: n.assetId || "", alpha: 255, blink: false, blinkMs: window.MIN_BLINK_MS },
+          warn: { assetId: "", alpha: 255, blink: false, blinkMs: window.MIN_BLINK_MS },
+          critical: { assetId: "", alpha: 255, blink: true, blinkMs: window.MIN_BLINK_MS },
         };
         if (!n.statePid) n.statePid = "obd.rpm";
       } else {
@@ -1072,12 +1072,13 @@
   window.setState = function (state, key, v) {
     const n = sel(); if (!n || !n.states) return;
     window.commit(() => {
-      if (!n.states[state]) n.states[state] = { assetId: "", alpha: 255, blink: false, blinkMs: 200 };
+      if (!n.states[state]) n.states[state] = { assetId: "", alpha: 255, blink: false, blinkMs: window.MIN_BLINK_MS };
       const st = n.states[state];
       if (key === "blink") st.blink = !!v;
       else if (key === "assetId") st.assetId = String(v);
       else if (key === "alpha") st.alpha = Math.max(0, Math.min(255, Math.round(Number(v) || 0)));
-      else if (key === "blinkMs") st.blinkMs = Math.max(60, Math.round(Number(v) || 200));
+      // WCAG 2.3.1：闪烁每秒不超过三次 → 周期下限 400ms（见 window.MIN_BLINK_MS）
+      else if (key === "blinkMs") st.blinkMs = Math.max(window.MIN_BLINK_MS, Math.round(Number(v) || window.MIN_BLINK_MS));
     }, "改状态 " + state, "state:" + state + ":" + key);
   };
 

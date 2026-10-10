@@ -541,7 +541,7 @@
         (n.stateCritical === null || n.stateCritical === undefined ? "" : window.r2(n.stateCritical)) +
         '" oninput="setStateThreshold(\'stateCritical\',this.value)">');
     window.STATE_NAMES.forEach(s => {
-      const v = st[s.v] || { assetId: "", alpha: 255, blink: false, blinkMs: 200 };
+      const v = st[s.v] || { assetId: "", alpha: 255, blink: false, blinkMs: window.MIN_BLINK_MS };
       h += '<div class="stateBox"><div class="stateName">' + esc(s.n) + '</div>' +
         row("图片", '<select onchange="setState(\'' + s.v + '\',\'assetId\',this.value)">' +
           assetOpts(v.assetId) + '</select>') +
@@ -549,8 +549,9 @@
           '" oninput="setState(\'' + s.v + '\',\'alpha\',this.value)">') +
         row("闪烁", '<label class="chk"><input type="checkbox"' + (v.blink ? " checked" : "") +
           ' onchange="setState(\'' + s.v + '\',\'blink\',this.checked)"> 闪烁</label>' +
-          '<input type="number" min="60" step="20" value="' + v.blinkMs +
-          '" oninput="setState(\'' + s.v + '\',\'blinkMs\',this.value)" title="闪烁周期 ms">' +
+          '<input type="number" min="' + window.MIN_BLINK_MS + '" step="20" value="' + v.blinkMs +
+          '" oninput="setState(\'' + s.v + '\',\'blinkMs\',this.value)" title="闪烁周期 ms（下限 ' +
+          window.MIN_BLINK_MS + 'ms —— WCAG 2.3.1 闪烁每秒不超过三次）">' +
           '</row>') +
         '</div>';
     });

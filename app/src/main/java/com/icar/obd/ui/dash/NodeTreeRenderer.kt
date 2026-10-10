@@ -471,7 +471,12 @@ class NodeTreeRenderer(private val context: Context) {
                 c.view.tag = bmp
             }
             val blinkOn = if (st.blink) {
-                val period = st.blinkMs.coerceAtLeast(60).toLong()
+                // ⚠️ 下限是 **NodeState.MIN_BLINK_MS = 400ms（2.5Hz）**，不是 60ms。
+                //
+                // WCAG 2.3.1 Three Flashes or Below Threshold："not ... more than
+                // three times in any one second period" —— 60ms 一轮是 **16.7Hz**，
+                // 比红线高 5 倍多。设计文件里写了更小的值也**不能照闪**。
+                val period = st.blinkMs.coerceAtLeast(NodeState.MIN_BLINK_MS).toLong()
                 (nowMs / period) % 2L == 0L
             } else true
             c.view.alpha = if (blinkOn) (st.alpha / 255f).coerceIn(0f, 1f) else 0f

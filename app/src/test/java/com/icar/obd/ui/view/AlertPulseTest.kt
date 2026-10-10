@@ -1,5 +1,6 @@
 package com.icar.obd.ui.view
 
+import com.icar.obd.data.NodeState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -168,9 +169,85 @@ class AlertPulseTest {
         val crit = risesPerSec(AlertPulse.CRITICAL, 3000)
         val warn = risesPerSec(AlertPulse.WARN, 3000)
         assertTrue("危险档每秒闪 $crit 次，警告档 $warn 次 —— 危险档必须更快", crit > warn)
-        // 大致量级：危险档 200ms 周期 → 3 秒约 15 次；警告档 600ms → 约 5 次
-        assertTrue("危险档闪频应在 10~20 次/3秒，实际 $crit", crit in 10..20)
-        assertTrue("警告档闪频应在 3~8 次/3秒，实际 $warn", warn in 3..8)
+        // 大致量级：危险档 400ms 周期 → 3 秒约 7~8 次；警告档 600ms → 约 5 次
+        assertTrue("危险档闪频应在 6~9 次/3秒，实际 $crit", crit in 6..9)
+        assertTrue("警告档闪频应在 4~6 次/3秒，实际 $warn", warn in 4..6)
+    }
+
+    // ================================================================ 闪烁频率红线（WCAG 2.3.1）
+    //
+    // ## 为什么这是**守卫**而不是普通用例
+    //
+    // WCAG 2.3.1 Three Flashes or Below Threshold（Level A）原文：
+    //   *"Web pages do not contain anything that flashes more than
+    //     three times in any one second period..."*
+    //
+    // 修复前实测：危险档是 `square(nowMs, 200, 0.5f)` = **5 Hz 硬方波**，超红线 67%。
+    // 这个用例**直接数上升沿**来断言，而不是断言"周期常量等于 400" ——
+    // 后者在有人把 duty 改成 0.25（一轮亮两次）时照样会绿。
+
+    @Test
+    fun `危险档闪烁频率不得超过每秒三次 —— WCAG 2_3_1 红线`() {
+        var rises = 0
+        var prevAbove = false
+        // 数 10 秒的上升沿，换算成 Hz —— 比数 1 秒稳（不受取整影响）
+        for (t in 0L..10_000L step 1) {
+            val above = AlertPulse.intensity(AlertPulse.CRITICAL, t) >= 0.5f
+            if (above && !prevAbove) rises++
+            prevAbove = above
+        }
+        val hz = rises / 10.0
+        assertTrue(
+            "WCAG 2.3.1 要求每秒不超过三次，实测危险档 ${"%.2f".format(hz)} Hz（$rises 次/10秒）",
+            hz <= 3.0
+        )
+    }
+
+    @Test
+    fun `警告档闪烁频率也不得超过每秒三次`() {
+        var rises = 0
+        var prevAbove = false
+        for (t in 0L..10_000L step 1) {
+            val above = AlertPulse.intensity(AlertPulse.WARN, t) >= 0.5f
+            if (above && !prevAbove) rises++
+            prevAbove = above
+        }
+        val hz = rises / 10.0
+        assertTrue("警告档实测 ${"%.2f".format(hz)} Hz，也必须 ≤3 Hz", hz <= 3.0)
+    }
+
+    @Test
+    fun `染色与爆闪的相位必须一致`() {
+        // tintMix 与 intensity 各自写了一遍周期。若有人只改一处，
+        // "变色"和"闪"就会错开相位 —— 症状是"闪的时候没变色"，很难手测出来。
+        for (t in 0L..2400L step 7) {
+            val bright = AlertPulse.intensity(AlertPulse.CRITICAL, t) >= 0.5f
+            val tinted = AlertPulse.tintMix(AlertPulse.CRITICAL, t) > 0.5f
+            assertEquals("t=$t 时 intensity=$bright 与 tintMix=$tinted 的相位不一致", bright, tinted)
+        }
+    }
+
+    @Test
+    fun `闪烁周期下限常量与数据层同源且合规`() {
+        // 下限的**唯一真源**在数据层（那是设计文件的契约），
+        // 工具侧 `window.MIN_BLINK_MS` 由 verify-crosslang.js 比对。
+        assertEquals("数据层下限变了但这里没跟着改", 400, NodeState.MIN_BLINK_MS)
+        assertTrue(
+            "NodeState.MIN_BLINK_MS=${NodeState.MIN_BLINK_MS}ms → ${1000 / NodeState.MIN_BLINK_MS} Hz，超 WCAG 2.3.1 的 3 Hz",
+            1000.0 / NodeState.MIN_BLINK_MS <= 3.0
+        )
+        // 危险档必须真的用上了这个下限（而不是各写各的）
+        var rises = 0
+        var prevAbove = false
+        // ⚠️ 用 `until` 而不是 `..` —— 闭区间会把 t = 4 个周期那一刻**也算进来**，
+        //    多出一个上升沿（首周期 t=0 已经算了一个）。这个 off-by-one 实测抓到过。
+        for (t in 0L until (NodeState.MIN_BLINK_MS * 4L) step 1) {
+            val above = AlertPulse.intensity(AlertPulse.CRITICAL, t) >= 0.5f
+            if (above && !prevAbove) rises++
+            prevAbove = above
+        }
+        // 4 个周期应当有 4 个上升沿（t=0 / 400 / 800 / 1200）
+        assertEquals("危险档在 ${NodeState.MIN_BLINK_MS * 4}ms 内应有 4 个上升沿（= 用上了下限）", 4, rises)
     }
 
     @Test

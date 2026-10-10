@@ -1,5 +1,7 @@
 package com.icar.obd.ui.view
 
+import com.icar.obd.data.NodeState
+
 /**
  * 阈值报警与「爆闪」动画的纯逻辑。
  *
@@ -152,16 +154,37 @@ object AlertPulse {
     }
 
     /**
+     * 危险档的闪烁周期。**必须 ≥ [NodeState.MIN_BLINK_MS]**（2.5 Hz ≤ 3 Hz）。
+     *
+     * 原来是 200ms（5 Hz，超 WCAG 2.3.1「每秒不超过三次」红线）。
+     * 周期的**唯一真源**在数据层的 [NodeState.MIN_BLINK_MS] ——
+     * 那是设计文件的契约，工具侧 `window.MIN_BLINK_MS` 与它同源。
+     */
+    private const val CRITICAL_PERIOD_MS = NodeState.MIN_BLINK_MS
+
+    /**
+     * 警告档的闪烁周期（1.7 Hz，本来就合规）。
+     *
+     * 与危险档保持**肉眼可分辨的快慢差** —— 这是 `docs/动画实现.md` 记的
+     * 有意设计（"一眼能看出严重程度"），2.5Hz vs 1.7Hz 仍然分得出。
+     */
+    private const val WARN_PERIOD_MS = 600
+
+    /**
      * 按等级给出爆闪强度 0..1。
      *
      * 两档用**不同节奏**，这样一眼能看出严重程度：
      *  - [WARN]     ≈1.7Hz 平滑脉冲，柔和
-     *  - [CRITICAL] ≈5Hz 硬方波，刺眼
+     *  - [CRITICAL] ≈2.5Hz 硬方波，干脆
      *  - [WARN_LOW] 恒为 0 —— 下限只染色不爆闪（见 `BaseGaugeView.alertIntensity`）
+     *
+     * ⚠️ **两档都必须 ≤3 Hz**（WCAG 2.3.1）。危险档原来是 5 Hz，已降到 2.5 Hz。
+     * 因为 `DashRenderer` 只以 5 Hz 的 tick 采样（见那里的说明），
+     * 400ms 周期下每周期恰好 2 个采样点，闪烁照旧可见 —— **没有丢掉"爆闪"的观感**。
      */
     fun intensity(level: Int, nowMs: Long): Float = when (level) {
-        CRITICAL -> square(nowMs, periodMs = 200, duty = 0.5f)
-        WARN -> pulse(nowMs, periodMs = 600)
+        CRITICAL -> square(nowMs, periodMs = CRITICAL_PERIOD_MS, duty = 0.5f)
+        WARN -> pulse(nowMs, periodMs = WARN_PERIOD_MS)
         else -> 0f
     }
 
@@ -172,8 +195,9 @@ object AlertPulse {
      * 只把**辉光和外圈**推向报警色，读数始终可辨。
      */
     fun tintMix(level: Int, nowMs: Long): Float = when (level) {
-        CRITICAL -> 0.35f + 0.65f * square(nowMs, 200, 0.5f)
-        WARN -> 0.25f + 0.45f * pulse(nowMs, 600)
+        // ⚠️ 周期必须与 [intensity] **逐字一致** —— 否则"变色"和"闪"会错开相位
+        CRITICAL -> 0.35f + 0.65f * square(nowMs, CRITICAL_PERIOD_MS, 0.5f)
+        WARN -> 0.25f + 0.45f * pulse(nowMs, WARN_PERIOD_MS)
         else -> 0f
     }
 

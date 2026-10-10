@@ -421,8 +421,9 @@ class DashRenderer(
         }
 
         // ---- 状态系统：按 PID 值换图 / 闪灯
-        // 用 5Hz 这个 tick 算闪烁相位就够了（默认 blinkMs=200 正好一个 tick），
-        // **不引入第二个动画驱动**
+        // 用 5Hz 这个 tick 算闪烁相位就够了 —— **闪烁周期下限 400ms（2.5Hz，
+        // WCAG 2.3.1「每秒不超过三次」，见 NodeState.MIN_BLINK_MS）**，
+        // 5Hz 采样下每周期 2 个点，闪得出来；**不引入第二个动画驱动**
         if (nodeRenderer.stateCells.isNotEmpty()) {
             nodeRenderer.applyStates(
                 { id -> VehicleBus.get(id)?.takeIf { it.ok }?.value },

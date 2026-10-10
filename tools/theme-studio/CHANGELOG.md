@@ -16,6 +16,102 @@
 
 ---
 
+## v2.82.0 · 2026-10-11 · 🔴 16 个指示灯的状态系统是**死的**（拖出来永远是暗的）+ 告警闪烁降到 ≤3 Hz（WCAG 2.3.1）
+
+> 两条都来自 [`docs/控件库优化建议.md`](../../docs/控件库优化建议.md) 的 P0。
+> 与 App 侧 **v1.20.16 同批**（`AlertPulse` / `NodeState` 一起改）。
+
+### 🔴 修复 1：19 个指示灯里 16 个**永远不会亮**（用户会以为车没问题）
+
+**症状**：从控件库拖一个「胎压灯」出来，它**永远显示暗的 `lamp-off.png`**。
+能拖、能摆、能存、能导出、构建守卫不报 —— **用户会以为车没问题**，
+而不是"这个灯没接上"。这是这个库里**最贵的一条**。
+
+**根因链（三处代码，缺一条都看不出来）**：
+
+| # | 位置 | 做了什么 |
+|---|---|---|
+| 1 | `js/presets.js` 第二批 16 个灯 | 写的是 `n.pid` / `n.rawPid`，**不是 `statePid`**（第一批 3 个灯写对了） |
+| 2 | `ui/dash/NodeTreeRenderer.kt` `resolveState()` | **只读 `statePid`**，空就直接 `return STATE_NORMAL`，根本不看 `pid` |
+| 3 | `js/model.js` 的 `nodeToJson`（`NODE_IMAGE` 分支） | **只序列化 `statePid`/`states`**，`pid`/`rawPid` 被丢掉 → 连文件都进不去 |
+
+净结果：设计文件里**既没有 `statePid` 也没有 `pid`**，灯永远是 `normal`。
+
+**修法**：与第一批对齐 —— `n.rawStatePid = d.pid; n.statePid = window.resolvePid(d.pid);`
+
+**实测计数**（实例化全部 122 个控件后读回，不是眼睛数）：
+
+| | 修复前 | 修复后 |
+|---|---:|---:|
+| `states` 非空 | 19 | 19 |
+| `statePid` **有值** | **3** | **19** |
+| `statePid` 为空 | 16 | 0 |
+
+> ⚠️ **全库扫过，没有别的控件漏 `statePid`** —— 新增的 `tests/verify-lamp-state.js`
+> 断言的是「**所有** `states` 非空的控件 `statePid` 必须非空」（跑全库），
+> 所以下次新增控件漏字段，这个套件会红。
+
+**顺带修掉一个更隐蔽的分叉**：`js/validate.js` 解析 `NODE_IMAGE` 时
+**直接抄 `o.statePid`、而且不设 `rawStatePid`** —— 与 `model.js` 的 `createNode` 不同源。
+后果：**导出再导入之后**编辑器里状态 PID 输入框变成空的（`std_05` 认不出别名），
+**再保存一次就把 `std_05` 写回文件**（丢掉可读的语义别名）。
+由新套件的「往返」用例抓到，已对齐。
+
+### 🔴 修复 2：告警闪烁全部超 WCAG 2.3.1 的「每秒不超过三次」
+
+标准原文：*"Web pages do not contain anything that flashes more than
+three times in any one second period..."*（Level A）
+
+| 位置 | 修复前 | 换算 | 修复后 |
+|---|---|---:|---|
+| `AlertPulse.intensity()` 危险档 | `square(nowMs, 200, 0.5f)` | **5.0 Hz** | 400ms = **2.5 Hz** |
+| 第一批灯 `critical.blinkMs` | `220` | **4.5 Hz** | 400ms |
+| 第二批灯 `critical.blinkMs` | `260` | **3.8 Hz** | 400ms |
+| 工具侧下限 `Math.max(60, …)` | `60` | **16.7 Hz** | 400ms |
+
+**周期的唯一真源**是 App 数据层的 `NodeState.MIN_BLINK_MS = 400`；
+工具侧 `window.MIN_BLINK_MS`（`js/schema.js`）与它同源，
+由 `tests/verify-crosslang.js` 逐条比对守着（**只改一侧是静默失效**）。
+
+工具侧落地四处：`js/validate.js`（解析下限）、`js/app.js` + `js/editor.js`
+（属性面板 / 控件编辑器的输入）、`js/panels.js`（输入框 `min` 属性）。
+
+### 新增测试
+
+- **`tests/verify-lamp-state.js`（新套件，36 条）** ——
+  全库 `states`↔`statePid` 断言、胎压灯接线、序列化、往返、
+  闪烁下限（全库 + 输入夹取 + 解析夹取）、跨语言下限一致性。
+- **`tests/verify-crosslang.js` +7 条** —— 新增 §3b「闪烁频率红线」：
+  工具与 App 的下限逐字一致、`AlertPulse` 直接引用 `NodeState.MIN_BLINK_MS`
+  （不是另写一个数）、没有 200ms 方波残留、没有 `Math.max(60, …)` 残留。
+  另把一条老断言「blinkMs 原样读入 150」改成「150 被抬到 400」——
+  原来那条钉的正是要修掉的行为。
+
+### 验证
+
+- `tools/run-tests.ps1`：**973 全过**（958 → 973）+ 构建守卫通过
+- `tools/run-browser-tests.ps1`：**27 套件 / PASS=1473**（26/1430 → 27/1473）全过
+- ✅ **装机实测**（小米平板 5 `7e7d7bb4` / 2560×1600 横屏）：
+  用**工具自己**造的 `.icarzip`（`lamp_temp` + `lamp_coolant`，后者当对照）
+  → 导入 → 「连接 → 模拟信号」驱动 `obd.coolant`（`std_05`）→
+  **灯真的会亮**：同一位置拍到 灭(`rgb(7,16,24)` 纯背景) /
+  琥珀(`rgb(255,176,32)` = `lamp-warn.png` 主色) /
+  红(`rgb(255,77,79)` = `coolant-warn.png` 主色) 三种帧；
+  **对照组**（紧挨着灯、没有灯的区域）全程 warm=0%。
+
+### 下次优化建议
+
+- ⚠️ **闪烁周期在真机上量不准**：`adb exec-out screencap` 一次要 **536ms**，
+  对 400ms 的周期是**欠采样**（实测量出 1106/1607ms 的混叠值）。
+  要量准得换路子（`screenrecord` 拆帧，或让 App 自己把相位写进日志）。
+  **本次的 400ms 是由单测直接数上升沿钉住的**，装机只验到"会亮/会变色/会闪"。
+- 报告里另外三条 P0/P1（多段色带 `bands`、`marker` 阈值标记控件、告警条控件）
+  **本次没做** —— 见 [`docs/控件库优化建议.md`](../../docs/控件库优化建议.md) 表 3。
+- `lamp_coolant` 与 `lamp_temp` 是**真重复**（同 PID、同 crit 图，只差闪烁策略），
+  报告建议 7 里提过合并，本次**没动**（删 key 会让老设计文件悬空）。
+
+---
+
 ## v2.81.0 · 2026-10-11 · 🎯 预览的指针改成**真弹簧**（不是补间）+ 表盘数据化 + 弧进度走 dashoffset + 数字鼓
 
 > 参考实现是一个**独立的宝马风格仪表盘**（SVG + GSAP + 自写弹簧）。这一版把它的

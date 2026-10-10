@@ -32,6 +32,25 @@ window.GRID = 24;
 window.STEP = window.CANVAS / window.GRID;   // 15
 window.MIN_SIZE = 2 * window.STEP;           // 30
 
+/**
+ * 闪烁周期的**下限**（毫秒）。与 App 侧 `AlertPulse.MIN_BLINK_MS` 同源，
+ * 由 `tests/verify-crosslang.js` 逐条比对守着。
+ *
+ * ## 依据：WCAG 2.3.1 Three Flashes or Below Threshold（Level A）
+ *
+ * 标准原文：*"Web pages do not contain anything that flashes more than
+ * three times in any one second period..."* —— 即 **≤3 Hz**。
+ * 400ms 一个周期 = **2.5 Hz**，留出余量（采样/掉帧不会把它顶过 3 Hz）。
+ *
+ * ⚠️ 原来这里（以及 `editor.js` / `app.js`）的下限是 **60ms = 16.7 Hz**，
+ * 比红线高 **5 倍多**；控件库里的 `blinkMs: 220`（4.5Hz）/ `260`（3.8Hz）
+ * 同样超标。这是**安全/合规**问题，不是观感问题。
+ *
+ * ⚠️ 这是**闪烁周期**的下限。不闪烁的状态（`blink: false`）周期无意义，
+ * 但一并按此填写，避免"改一下勾选框就掉到红线以下"。
+ */
+window.MIN_BLINK_MS = 400;
+
 /** 节点类型。下标即语义，不要重排 */
 window.NODE_GROUP = "group";
 window.NODE_IMAGE = "image";

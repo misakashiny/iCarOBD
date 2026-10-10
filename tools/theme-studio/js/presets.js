@@ -99,9 +99,10 @@
       statePid: "obd.coolant",
     });
     n.states = {
-      normal: { assetId: "", alpha: 77, blink: false, blinkMs: 200 },
-      warn: { assetId: "", alpha: 255, blink: false, blinkMs: 200 },
-      critical: { assetId: "", alpha: 255, blink: true, blinkMs: 200 },
+      // WCAG 2.3.1：闪烁每秒不超过三次 → 周期下限 400ms（见 window.MIN_BLINK_MS）
+      normal: { assetId: "", alpha: 77, blink: false, blinkMs: 400 },
+      warn: { assetId: "", alpha: 255, blink: false, blinkMs: 400 },
+      critical: { assetId: "", alpha: 255, blink: true, blinkMs: 400 },
     };
     return n;
   }
@@ -244,9 +245,10 @@
               assetId: E(d.normal),
               statePid: d.pid,
               states: {
-                normal:   { assetId: E(d.normal), alpha: 120, blink: false, blinkMs: 200 },
-                warn:     { assetId: E(d.warn),   alpha: 255, blink: false, blinkMs: 200 },
-                critical: { assetId: E(d.crit),   alpha: 255, blink: true,  blinkMs: 220 },
+                normal:   { assetId: E(d.normal), alpha: 120, blink: false, blinkMs: 400 },
+                warn:     { assetId: E(d.warn),   alpha: 255, blink: false, blinkMs: 400 },
+                // WCAG 2.3.1：闪烁**每秒不超过三次**。400ms = 2.5Hz（见 AlertPulse.MIN_BLINK_MS）
+                critical: { assetId: E(d.crit),   alpha: 255, blink: true,  blinkMs: 400 },
               },
             });
           },
@@ -498,12 +500,26 @@
           name: d.name, assetId: off, x: 40, y: 40, w: 56, h: 56, z: 96,
         });
         // **状态系统**：按 PID 自动切三态图（与既有指示灯同一个套路）
-        n.pid = window.resolvePid(d.pid);
-        n.rawPid = d.pid;
+        //
+        // ⚠️ 这里**必须写 `statePid`，不能写 `pid`**（v1.20.16 修）。
+        //
+        // 原来这 16 个灯写的是 `n.pid` / `n.rawPid`，于是它们的灯**永远是暗的**：
+        //   1. `NodeTreeRenderer.resolveState()`（ui/dash/NodeTreeRenderer.kt）只读
+        //      `node.statePid`，`isBlank()` 就**直接返回 normal**，根本不看 `pid`；
+        //   2. `model.js` 的 `nodeToJson` 对 `NODE_IMAGE` **只序列化 `statePid`**，
+        //      `pid` / `rawPid` 被丢掉 —— 连设计文件都进不去。
+        // 净结果：用户拖一个「胎压灯」出来，它永远显示暗的 `lamp-off.png`，
+        // **用户会以为车没问题**。这是这个库里最贵的一条。
+        //
+        // 与第一批（`lamp_coolant` 等，本文件上面的 `statePid: d.pid`）对齐。
+        n.rawStatePid = d.pid;
+        n.statePid = window.resolvePid(d.pid);
         n.states = {
-          normal: { assetId: off, alpha: 255, blink: false, blinkMs: 200 },
+          normal: { assetId: off, alpha: 255, blink: false, blinkMs: 400 },
+          // WCAG 2.3.1：闪烁**每秒不超过三次**。600ms = 1.7Hz（本来就合规，保持观感差别）
           warn: { assetId: warn, alpha: 255, blink: true, blinkMs: 600 },
-          critical: { assetId: crit, alpha: 255, blink: true, blinkMs: 260 },
+          // 原来是 260ms = 3.8Hz，**超红线**。400ms = 2.5Hz
+          critical: { assetId: crit, alpha: 255, blink: true, blinkMs: 400 },
         };
         return n;
       },

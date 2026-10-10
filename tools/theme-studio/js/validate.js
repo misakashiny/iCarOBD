@@ -417,7 +417,15 @@ themeColors: (root.themeColors && typeof root.themeColors === "object" && !Array
       node.showRange = o.showRange === undefined ? true : !!o.showRange;
     } else if (type === window.NODE_IMAGE) {
       node.assetId = typeof o.assetId === "string" ? o.assetId : "";
-      node.statePid = typeof o.statePid === "string" ? o.statePid : "";
+      // ⚠️ `statePid` 必须与 `model.js` 的 `createNode`（NODE_IMAGE 分支）**同源**：
+      //    内部查表用 id、回显与写文件用别名。原来这里直接抄 `o.statePid`、
+      //    而且**不设 `rawStatePid`** —— 于是「导出再导入」之后编辑器里
+      //    状态 PID 输入框变成空的（`std_05` 认不出别名），
+      //    再保存一次就会把 `std_05` 写回文件（丢掉可读的语义别名）。
+      //    v1.20.16 修（由 tests/verify-lamp-state.js 的往返用例抓到）。
+      const rawState = o.rawStatePid || o.statePid || "";
+      node.rawStatePid = rawState;
+      node.statePid = rawState ? window.resolvePid(rawState) : "";
       node.states = parseStates(o.states, path, errors, warnings, assetIds);
       node.stateWarn = parseThreshold(o.stateWarn, path + ".stateWarn", warnings);
       node.stateCritical = parseThreshold(o.stateCritical, path + ".stateCritical", warnings);
@@ -584,7 +592,9 @@ themeColors: (root.themeColors && typeof root.themeColors === "object" && !Array
         assetId: typeof v.assetId === "string" ? v.assetId : "",
         alpha: Math.max(0, Math.min(255, Math.round(num(v.alpha, 255)))),
         blink: !!v.blink,
-        blinkMs: Math.max(60, Math.round(num(v.blinkMs, 200))),
+        // WCAG 2.3.1「每秒不超过三次」→ 周期下限 400ms（=2.5Hz）。
+        // 原来是 60ms（16.7Hz），比红线高 5 倍多。与 AlertPulse.MIN_BLINK_MS 同源。
+        blinkMs: Math.max(window.MIN_BLINK_MS, Math.round(num(v.blinkMs, window.MIN_BLINK_MS))),
       };
       if (st.assetId && assetIds && !assetIds.has(st.assetId)) {
         warnings.push(path + ".states." + s.v + " 引用的素材 `" + st.assetId + "` 不在 `assets` 清单里");

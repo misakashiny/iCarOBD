@@ -672,6 +672,22 @@ data class NodeState(
         const val STATE_WARN = "warn"
         const val STATE_CRITICAL = "critical"
 
+        /**
+         * **闪烁周期的下限**（毫秒）。与工具侧 `window.MIN_BLINK_MS` 同源，
+         * 由 `tools/theme-studio/tests/verify-crosslang.js` 逐条比对守着。
+         *
+         * ## 依据：WCAG 2.3.1 Three Flashes or Below Threshold（Level A）
+         *
+         * 标准原文：*"Web pages do not contain anything that flashes more than
+         * three times in any one second period..."* —— 即 **≤3 Hz**。
+         * 400ms 一个周期 = **2.5 Hz**，留出余量（采样/掉帧不会把它顶过 3 Hz）。
+         *
+         * ⚠️ 修复前这里夹的是 **60ms = 16.7 Hz**，比红线高 5 倍多。
+         * 放在**数据层**而不是 UI 层：这是**设计文件的契约**
+         * （"文件里写了 100ms 也不许照闪"），工具侧同一个数字。
+         */
+        const val MIN_BLINK_MS = 400
+
         /** 与工具侧 `STATE_NAMES` 一致 */
         val NAMES = listOf(STATE_NORMAL, STATE_WARN, STATE_CRITICAL)
         val DISPLAY_NAMES = listOf("正常", "警告", "严重")
@@ -694,7 +710,8 @@ data class NodeState(
                     assetId = aid,
                     alpha = s.optInt("alpha", 255).coerceIn(0, 255),
                     blink = s.optBoolean("blink", false),
-                    blinkMs = s.optInt("blinkMs", 200).coerceAtLeast(60)
+                    // WCAG 2.3.1：闪烁每秒不超过三次。文件里写了更小的值也**不能照闪**
+                    blinkMs = s.optInt("blinkMs", MIN_BLINK_MS).coerceAtLeast(MIN_BLINK_MS)
                 )
             }
             return out.ifEmpty { null }

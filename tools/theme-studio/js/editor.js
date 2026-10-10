@@ -215,12 +215,13 @@
           (n.stateCritical === null || n.stateCritical === undefined ? "" : window.r2(n.stateCritical)) +
           '" oninput="ceSetStateThreshold(\'stateCritical\',this.value)">') : "",
         n.states ? window.STATE_NAMES.map(function (s) {
-          const v = n.states[s.v] || { assetId: "", alpha: 255, blink: false, blinkMs: 200 };
+          const v = n.states[s.v] || { assetId: "", alpha: 255, blink: false, blinkMs: window.MIN_BLINK_MS };
           const blinkRow = row("闪烁",
             '<label class="chk"><input type="checkbox"' + (v.blink ? " checked" : "") +
             ' onchange="ceSetState(\'' + s.v + '\',\'blink\',this.checked)"> 闪</label>' +
-            '<input type="number" min="60" step="20" value="' + v.blinkMs +
-            '" oninput="ceSetState(\'' + s.v + '\',\'blinkMs\',this.value)" title="周期 ms">');
+            '<input type="number" min="' + window.MIN_BLINK_MS + '" step="20" value="' + v.blinkMs +
+            '" oninput="ceSetState(\'' + s.v + '\',\'blinkMs\',this.value)" title="周期 ms（下限 ' +
+            window.MIN_BLINK_MS + 'ms —— WCAG 2.3.1 闪烁每秒不超过三次）">');
           return '<div class="stateBox"><div class="stateName">' + esc(s.n) + '</div>' +
             row("图片", '<select onchange="ceSetState(\'' + s.v + '\',\'assetId\',this.value)">' +
               assetOpts(v.assetId) + '</select>') +
@@ -364,9 +365,9 @@
   window.ceToggleStates = function (on) {
     if (!draft) return;
     draft.states = on ? {
-      normal: { assetId: draft.assetId || "", alpha: 255, blink: false, blinkMs: 200 },
-      warn: { assetId: "", alpha: 255, blink: false, blinkMs: 200 },
-      critical: { assetId: "", alpha: 255, blink: true, blinkMs: 200 },
+      normal: { assetId: draft.assetId || "", alpha: 255, blink: false, blinkMs: window.MIN_BLINK_MS },
+      warn: { assetId: "", alpha: 255, blink: false, blinkMs: window.MIN_BLINK_MS },
+      critical: { assetId: "", alpha: 255, blink: true, blinkMs: window.MIN_BLINK_MS },
     } : null;
     if (on && !draft.statePid) window.ceSetStatePid("obd.rpm");
     after();
@@ -379,12 +380,13 @@
   };
   window.ceSetState = function (state, key, v) {
     if (!draft || !draft.states) return;
-    if (!draft.states[state]) draft.states[state] = { assetId: "", alpha: 255, blink: false, blinkMs: 200 };
+    if (!draft.states[state]) draft.states[state] = { assetId: "", alpha: 255, blink: false, blinkMs: window.MIN_BLINK_MS };
     const st = draft.states[state];
     if (key === "blink") st.blink = !!v;
     else if (key === "assetId") st.assetId = String(v);
     else if (key === "alpha") st.alpha = Math.max(0, Math.min(255, Math.round(Number(v) || 0)));
-    else if (key === "blinkMs") st.blinkMs = Math.max(60, Math.round(Number(v) || 200));
+    // WCAG 2.3.1：闪烁每秒不超过三次 → 周期下限 400ms（见 window.MIN_BLINK_MS）
+    else if (key === "blinkMs") st.blinkMs = Math.max(window.MIN_BLINK_MS, Math.round(Number(v) || window.MIN_BLINK_MS));
     after();
   };
 
