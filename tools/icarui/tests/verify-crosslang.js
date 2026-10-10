@@ -250,8 +250,24 @@ console.log("\n=== 1. 基础常量 ===");
 
   const minSize = kotlinConstExpr(dashLayoutKt, "MIN_SIZE", n =>
     n === "STEP" ? tool.STEP : kotlinConstAny(dashLayoutKt, n));
-  if (minSize !== null) eq(tool.MIN_SIZE, minSize, "最小尺寸 MIN_SIZE（Kotlin 侧 = 2 * STEP）");
-  else note("DashLayout.kt 的 MIN_SIZE 不是「数字 * 名字」形式，工具侧的 30 未做跨语言校验");
+  if (minSize !== null) {
+    eq(tool.MIN_SIZE, minSize, "最小尺寸 MIN_SIZE（Kotlin 侧 = 2 * STEP）");
+  } else {
+    // ⚠️ 这个 else 分支**原来只 `note(...)`** —— 于是 `MIN_SIZE` 一旦被改成
+    // 别的写法（或改名/删掉），整条比对就**静默消失**，套件照样绿（v1.20.20 修）。
+    //
+    // 实测：今天走的是 `if` 分支（`kotlinConstExpr` 认「数字 * 名字」，
+    // `2 * STEP` 里的 STEP 由 `tool.STEP` 解析出来 = 15 → 30），
+    // 所以这个 else 是**尚未被触发的死代码** —— 而"没被触发的静默跳过"
+    // 恰恰是最难发现的那种：等它真的被触发时，没人会注意到断言少了。
+    //
+    // 值其实**是可以推出来的**：Kotlin 写的是 `2 * STEP`、`STEP = CANVAS / GRID`，
+    // 那工具侧的 MIN_SIZE 就必须等于 `2 * CANVAS / GRID`。用工具侧自己的
+    // 两个常量算出来再比 —— 不再退化成一行备注。
+    ok(/const val MIN_SIZE\s*=/.test(dashLayoutKt), "DashLayout.kt 里仍有 MIN_SIZE 常量");
+    eq(tool.MIN_SIZE, 2 * (tool.CANVAS / tool.GRID),
+      "最小尺寸 MIN_SIZE（由 CANVAS / GRID 推出，与 Kotlin 的 `2 * STEP` 同值）");
+  }
 
   // P9「非数值 PID 模型」方向 A：数值 → 文字映射表的上限
   eq(tool.VALUE_LABELS_MAX, kotlinConstAny(valueLabelsKt, "MAX"),
@@ -443,12 +459,18 @@ console.log("\n=== 4b. 字体枚举（v2 新增，跨语言契约）===");
     "对齐方式一致");
 
   // 默认值
+  //
+  // ⚠️ 这两条原来是 `if (kDefSize) eq(...)` / `if (kDefColor) { eq(...) }` ——
+  // 典型的"条件成立才断言"：常量被改名/删掉时正则抓不到，整条断言**静默消失**、
+  // 套件照样绿（v1.20.20 修）。改成"解析不到就是失败"。
   const kDefSize = /const val DEFAULT_SIZE = ([\d.]+)f/.exec(nodeKt);
-  if (kDefSize) eq(tool.FONT_DEFAULT.size, Number(kDefSize[1]), "默认字号一致");
+  ok(kDefSize !== null, `从 DesignNode.kt 解析到 DEFAULT_SIZE（${kDefSize ? kDefSize[1] : "解析失败"}）`);
+  eq(tool.FONT_DEFAULT.size, kDefSize ? Number(kDefSize[1]) : null, "默认字号一致");
+
   const kDefColor = /const val DEFAULT_COLOR = 0x([0-9A-Fa-f]+)/.exec(nodeKt);
-  if (kDefColor) {
-    eq(tool.FONT_DEFAULT.color.toUpperCase(), "#" + kDefColor[1].slice(2).toUpperCase(), "默认字色一致");
-  }
+  ok(kDefColor !== null, `从 DesignNode.kt 解析到 DEFAULT_COLOR（${kDefColor ? kDefColor[1] : "解析失败"}）`);
+  eq(tool.FONT_DEFAULT.color.toUpperCase(),
+    kDefColor ? "#" + kDefColor[1].slice(2).toUpperCase() : null, "默认字色一致");
 
   // 节点类型
   const kTypes = kotlinConstList(nodeKt, "TYPES");
@@ -457,10 +479,12 @@ console.log("\n=== 4b. 字体枚举（v2 新增，跨语言契约）===");
     "节点类型的名字与顺序一致");
 
   // 状态名
+  //
+  // ⚠️ 原来是 `if (kStates.length) { eq(...) }` —— `NAMES` 被改名/删掉时
+  // `kotlinConstList` 返回空数组，`if` 为假，**整条断言消失**（v1.20.20 修）。
   const kStates = kotlinConstList(nodeKt, "NAMES");
-  if (kStates.length) {
-    eq(JSON.stringify(tool.STATE_NAMES.map(x => x.v)), JSON.stringify(kStates), "状态名一致");
-  }
+  ok(kStates.length > 0, `从 DesignNode.kt 解析到 ${kStates.length} 个状态名`);
+  eq(JSON.stringify(tool.STATE_NAMES.map(x => x.v)), JSON.stringify(kStates), "状态名一致");
 
   // 节点上限
   //
@@ -480,6 +504,40 @@ console.log("\n=== 4b. 字体枚举（v2 新增，跨语言契约）===");
   const kMaxDepth = kotlinConstAny(nodeKt, "MAX_NODE_DEPTH");
   ok(kMaxDepth !== null, `从 DesignNode.kt 解析到 MAX_NODE_DEPTH（${kMaxDepth}）`);
   eq(tool.MAX_NODE_DEPTH, kMaxDepth, "嵌套深度上限一致（MAX_NODE_DEPTH）");
+
+  // ---- 子部件条数上限（v1.20.20）------------------------------------------
+  //
+  // ⚠️ 为什么这条断言必须存在：`MAX_NODES` **挡不住 `parts`**。
+  //
+  // `MAX_NODES` 数的是节点树的 `children`（`flatten` 根本不看 `parts`），
+  // 所以一份畸形文件可以在一块表上挂 100 万个部件、每个再挂 100 万个子部件
+  // （深度 5）—— `MAX_NODES=200` 一点忙都帮不上。
+  //
+  // 修复前两侧的实际状态**还不一样**：工具侧 `normalizePart` 里有一句写死的
+  // `.slice(0, 64)`（只夹了嵌套那一层），App 侧**一层都没夹**。
+  // 抽成同名常量之后两边才真正是同一个数 —— 这条断言就是"两边是同一个数"的机器证明。
+  const kMaxParts = kotlinConstAny(nodeKt, "MAX_PARTS");
+  ok(kMaxParts !== null, `从 DesignNode.kt 解析到 MAX_PARTS（${kMaxParts}）`);
+  eq(tool.MAX_PARTS, kMaxParts, "子部件条数上限一致（MAX_PARTS）");
+
+  // ---- "非数字静默回落"的字段清单（v1.20.20）--------------------------------
+  //
+  // 这三张清单决定"哪些字段写了非数字要出声"。**单边加字段 = 新的跨语言分叉**
+  // （工具报了、App 没报，用户换一端就看不到那条提示），所以逐条钉住。
+  //
+  // 用 `ok(... !== null)` + `length > 0` 双保险：常量被改名/删掉时，
+  // 下面那些 `eq` 会因为两边都是"空"而**静默通过** —— 这正是本仓库最恨的形态。
+  const fieldLists = [
+    ["NUMERIC_NODE_FIELDS", tool.NUMERIC_NODE_FIELDS],
+    ["NUMERIC_PART_FIELDS", tool.NUMERIC_PART_FIELDS],
+    ["NUMERIC_GAUGE_FIELDS", tool.NUMERIC_GAUGE_FIELDS],
+  ];
+  fieldLists.forEach(([name, toolList]) => {
+    ok(Array.isArray(toolList) && toolList.length > 0, `工具侧 ${name} 有 ${toolList ? toolList.length : 0} 项`);
+    const kList = kotlinConstList(nodeKt, name);
+    ok(kList.length > 0, `从 DesignNode.kt 解析到 ${name}（${kList.length} 项）`);
+    eq(JSON.stringify(toolList), JSON.stringify(kList), `${name} 逐条一致（名字与顺序）`);
+  });
 
   // 缩放模式
   const dfKt = read(path.join(KOTLIN, "data", "DesignFile.kt"));
@@ -745,9 +803,14 @@ console.log("\n=== 8. 内置主题配色（P8-5 内嵌配色的跨语言契约�
   });
 
   const glowKt = (body.match(/,\s*(true|false)\s*\)/g) || []).map(s => s.replace(/[,\s)]/g, ""));
+  // ⚠️ 原来是 `ALIASES.forEach((al, k) => { if (glowKt[k] === undefined) return; eq(...); })`
+  // —— 正则少抓到一条就**静默 return**：那套主题的 glow 比对消失，而且**不记失败**
+  // （v1.20.20 修）。先断言"抓够了"，再逐条比。
+  ok(glowKt.length >= ALIASES.length,
+    `从 GaugeTheme.kt 的 builtins 里解析到 ${glowKt.length} 个 glow 标志（需要 ${ALIASES.length} 个）`);
   ALIASES.forEach((al, k) => {
-    if (glowKt[k] === undefined) return;
-    eq(String(tool.GAUGE_THEMES[al].glow), glowKt[k], al + "：glow 标志一致");
+    eq(String(tool.GAUGE_THEMES[al].glow), glowKt[k],
+      al + "：glow 标志一致" + (glowKt[k] === undefined ? "（Kotlin 侧没解析到，见上一条）" : ""));
   });
 
   const aliasKt = (themeKt.match(/-> "(neon|ice|amber)"/g) || []).map(s => s.replace(/-> |"/g, ""));

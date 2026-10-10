@@ -311,6 +311,30 @@ data class DesignNode(
          */
         const val MAX_NODE_DEPTH = 32
 
+        /**
+         * 会被"**非数字静默回落到默认值**"的数值字段清单（v1.20.20）。
+         *
+         * 用途：解析时逐个检查"这个字段写了值、但那不是数字" → 给一条**警告**。
+         * 数值怎么回落**完全不变**（见 [DesignFile.warnNonNumeric] 的理由）。
+         *
+         * ⚠️ 这三张清单与工具侧 `tools/icarui/js/schema.js` 的
+         * `window.NUMERIC_NODE_FIELDS` / `NUMERIC_PART_FIELDS` / `NUMERIC_GAUGE_FIELDS`
+         * **必须逐条一致**，由 `tools/icarui/tests/verify-crosslang.js` 钉着。
+         * 单边加字段 = 新的跨语言分叉（工具报了、App 没报）——
+         * 那正是这个项目最恨的失效形态，所以让它变成**跑不过**而不是"看人记性"。
+         */
+        val NUMERIC_NODE_FIELDS = listOf("x", "y", "w", "h", "rotation", "scale", "alpha", "z")
+
+        /** 见 [NUMERIC_NODE_FIELDS] */
+        val NUMERIC_PART_FIELDS = listOf(
+            "x", "y", "w", "h", "alpha", "rotation", "pivotX", "pivotY", "sweepFrom", "sweepTo"
+        )
+
+        /** 见 [NUMERIC_NODE_FIELDS] */
+        val NUMERIC_GAUGE_FIELDS = listOf(
+            "style", "min", "max", "warnLow", "warnHigh", "ringStyle", "ringSegments", "cardStyle"
+        )
+
         fun typeName(t: String): String =
             TYPE_NAMES.getOrElse(TYPES.indexOf(t)) { t }
 
@@ -371,6 +395,12 @@ data class DesignNode(
                 alpha = alpha.coerceIn(0, 255)
             }
 
+            // ⚠️ **"写了值但不是数字"要出声**（v1.20.20）。
+            // `optDouble` / `optInt` 对非数字**静默回落**（`x="abc"` → 0），
+            // 用户看到的现象是"我明明写了坐标，它跑到左上角去了"，
+            // 而没有任何线索指向那一行。数值怎么回落完全不变，只补一条警告。
+            DesignFile.warnNonNumeric(o, NUMERIC_NODE_FIELDS, path, warnings)
+
             // ---- 类型专属
             var gauge: GaugeItem? = null
             var card: CardOverride? = null
@@ -401,19 +431,51 @@ data class DesignNode(
                     if (rawPid !in DesignFile.PID_ALIASES && BuiltInPids.all().none { it.id == pid }) {
                         warnings.add("$path 的 pid `$rawPid` 不在内置 PID 库里 —— 需要先在 App 里导入对应 PID")
                     }
-                    // ⚠️ **必须把解析后的 pid 注进去再交给 fromJson**。
+                    // ⚠️⚠️ **必须把解析后的 pid 与 `unit` 一起注进去再交给 fromJson**。
+                    //
+                    // 这两个注入是**同一件事的两半** —— 都是"v1 路径做了、v2 忘了做"的岔口。
+                    // 少任何一个，同一份设计的 `gauges[]` 在两条路上就会算出不同的数。
+                    //
+                    // ## `pid`：别名解析
+                    //
                     // GaugeItem.fromJson 直接读 `pid` 字段、**不做别名解析** ——
                     // 不注入的话 `obd.rpm` 会原样变成 pidId，下游按 id 查表全部落空
                     // （查不到量程/单位/报警阈值）。这与工具侧 createNode 上踩过的是同一类坑。
+                    //
+                    // ## `unit`：坐标单位（v1.20.20 修）
+                    //
+                    // `GaugeItem.fromJson` 用**元素自己的 `unit` 字段**判断"这是旧格式
+                    // （归一化 0..1，要 ×360）还是新格式"。而设计文件的单位声明在
+                    // **`canvas.unit`** 上，节点里没有 —— 于是 v2 走这条路的每个坐标都被
+                    // 又乘了一次 360：`x=30 w=180` → `x=10800 w=64800`。
+                    //
+                    // 症状是**导入确认框弹假警报**「超出画布右下角：右=75600」，
+                    // 以及 `Store.customGauges` 被污染 —— 渲染走节点树所以**画面是对的**，
+                    // 但「清除导入的设计文件」回退到 `customGauges` 那条路上，
+                    // 整盘表会跑到屏幕外。**不在渲染路径上，在回退路径上**。
+                    //
+                    // v1 的 `DesignFile.parseGauge` 一直注入了这个字段（那里的注释
+                    // 甚至写着"这个坑是单测抓出来的"）—— v2 这条路漏了。
+                    // `DesignCoordUnitTest` 现在把两条路的 `gauges[]` 钉成逐字段相等。
                     val patched = JSONObject(o.toString())
                     patched.put("pid", pid)
+                    patched.put("unit", GaugeItem.CANVAS.toInt())
                     val g = GaugeItem.fromJson(patched)
                     if (g.minVal >= g.maxVal) {
                         errors.add("$path（$pid）量程非法：min=${g.minVal} ≥ max=${g.maxVal}")
                         return null
                     }
-                    gauge = g
-                    parts = GaugePart.parseAll(o.optJSONArray("parts"), "$path.parts", warnings, assetIds)
+                    // 与 `DesignFile.parseGauge` 的结尾**逐字对齐**：设计文件里的表
+                    // 永远不是 v1.4.0 的网格配置。不置位的话 `fromJson` 会按"元素里
+                    // 有没有 x/y/w/h"自行判断，而 `DashLayout.migrateFromGrid` 一旦
+                    // 看到任何一条 `legacyGrid`，就会把**整张盘**的 x/y/w/h
+                    // 按 2 列网格重算一遍。
+                    gauge = g.also { it.legacyGrid = false }
+                    // 仪表专属的数值字段（量程 / 样式 / 环 / 卡片档位）同样"非数字要出声"。
+                    // 放在 fromJson **之后**：`min`/`max` 已经过一遍量程校验，
+                    // 这条只是补充说明"你写的那个值没被用上"。
+                    DesignFile.warnNonNumeric(o, NUMERIC_GAUGE_FIELDS, path, warnings)
+                    parts = GaugePart.parseAll(o.optJSONArray("parts"), "$path.parts", errors, warnings, assetIds)
                     card = CardOverride.parse(o.optJSONObject("card"), "$path.card", warnings)
                     labelFont = GaugeFont.parse(o.optJSONObject("labelFont"), "$path.labelFont", warnings)
                     showLabel = o.optBoolean("showLabel", true)
@@ -607,15 +669,53 @@ data class GaugePart(
         val KINDS = listOf(KIND_DIAL, KIND_TICKS, KIND_NEEDLE, KIND_VALUE, KIND_DECOR)
         val KIND_NAMES = listOf("表盘", "刻度", "指针", "数值", "装饰")
 
+        /**
+         * **一个 `parts` 数组最多几项**（v1.20.20 加，与工具侧成对）。
+         *
+         * ## 为什么 `MAX_NODES` 挡不住它
+         *
+         * `parts` 是**数组**，而 [DesignNode.MAX_NODES] 数的是节点树的 `children` ——
+         * [DesignNode.flatten] 走的是 `DesignNode.children`，**根本不看 `parts`**。
+         * 于是一份畸形文件可以在一块表上挂 100 万个部件，每个部件再挂 100 万个子部件
+         * （深度上限 5）—— `MAX_NODES=200` 一点忙都帮不上，内存直接被打爆。
+         *
+         * ## 为什么是 64
+         *
+         * 这个数**不是新拍的**：工具侧 `normalizePart` 里本来就有一句
+         * `.slice(0, 64)` 在夹嵌套的 `children` —— 只是写在函数体里、没有名字，
+         * 而且**只夹了嵌套那一层，顶层 `parts` 是无限的**。抽成常量之后
+         * 顶层与嵌套用同一个数，两边也能逐字对齐。
+         *
+         * 真实设计的部件数是个位数（表盘/刻度/指针/数值/装饰），64 只会拦住畸形文件。
+         *
+         * ⚠️ **必须与 `tools/icarui/js/schema.js` 的 `window.MAX_PARTS` 成对改** ——
+         * `tools/icarui/tests/verify-crosslang.js` 钉着这两个常量，漏改一边就跑不过。
+         */
+        const val MAX_PARTS = 64
+
         fun parseAll(
             arr: org.json.JSONArray?, path: String,
+            errors: MutableList<String>,
             warnings: MutableList<String>, assetIds: Set<String>,
             depth: Int = 0
         ): List<GaugePart>? {
             if (arr == null || arr.length() == 0) return null
-            val out = ArrayList<GaugePart>(arr.length())
-            for (i in 0 until arr.length()) {
+            // ⚠️ **先截断、后报错**（顺序要紧）。
+            //
+            // 反过来先遍历完整个数组、内存已经爆了才报错 —— 闸门就白加了。
+            // 与工具侧 `parseParts` 同一个顺序。
+            if (arr.length() > MAX_PARTS) {
+                errors.add(
+                    "$path 有 ${arr.length()} 项，超过上限 $MAX_PARTS" +
+                        "（正常设计是个位数：表盘 / 刻度 / 指针 / 数值 / 装饰）"
+                )
+            }
+            val n = minOf(arr.length(), MAX_PARTS)
+            val out = ArrayList<GaugePart>(n)
+            for (i in 0 until n) {
                 val o = arr.optJSONObject(i) ?: continue
+                // "写了值但不是数字"要出声（数值怎么回落完全不变）
+                DesignFile.warnNonNumeric(o, DesignNode.NUMERIC_PART_FIELDS, "$path[$i]", warnings)
                 var kind = o.optString("kind", KIND_DECOR)
                 if (kind !in KINDS) {
                     warnings.add("$path[$i].kind = $kind 不认识（本版本认：${KINDS.joinToString(" / ")}）—— 已回落到 $KIND_DECOR")
@@ -650,7 +750,10 @@ data class GaugePart(
                         // 防手改文件写出超深结构。
                         sweepFollow = o.optBoolean("sweepFollow", false),
                         children = if (depth >= 5) emptyList()
-                        else parseAll(o.optJSONArray("children"), "$path[$i].children", warnings, assetIds, depth + 1) ?: emptyList()
+                        else parseAll(
+                            o.optJSONArray("children"), "$path[$i].children",
+                            errors, warnings, assetIds, depth + 1
+                        ) ?: emptyList()
                     )
                 )
             }

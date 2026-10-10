@@ -353,7 +353,13 @@ const eq = (a, b, m) => ok(a === b, m + (a === b ? '' : `（实际 ${JSON.string
   const UL = JSON.parse(loaded);
   console.log('    · ' + loaded);
   if (UL.跳过) {
-    ok(true, "localStorage 不可用，跳过（" + UL.跳过 + "）");
+    // ⚠️ 原来是 `ok(true, "localStorage 不可用，跳过（…）")` —— 环境缺失时**假装通过**
+    // （v1.20.20 修）。那正是本项目最恨的"会骗人的绿"：套件报 ✅，
+    // 而"坏数据在加载时被丢掉"这条**一个断言都没跑**。
+    //
+    // 这里的环境（headless Edge + 临时 profile）一定有 localStorage ——
+    // 真不可用就是环境坏了，该红。跳过不等于通过。
+    ok(false, "localStorage 不可用，无法验证撤销栈的坏数据清理（" + UL.跳过 + "）");
   } else {
     eq(UL.剩下几条, 1, "**加载时就把 2 条坏的丢掉了**（3 条只剩 1 条）");
     ok(UL.只剩好的, "剩下的确实是那条好的（不是随机留下一条）");
@@ -408,11 +414,24 @@ const eq = (a, b, m) => ok(a === b, m + (a === b ? '' : `（实际 ${JSON.string
 
   // ================================================================ 校验消息有上限且**说出来**
   console.log('\n=== 海量警告不能把面板撑爆（且必须说明截断了）===');
+  //
+  // ⚠️ 警告的**发生器**换过一次（v1.20.20）。
+  //
+  // 原来靠"一块表挂 5000 个 parts"来造 >1000 条警告。v1.20.20 给 `parts`
+  // 加了条数上限（`window.MAX_PARTS = 64`，与 App 侧成对）——
+  // 5000 项现在是**一条硬错误**（文件被拒收），警告数是 0，
+  // 于是这条用例测的东西（面板渲染上限 + 截断提示）**根本没跑到**。
+  //
+  // 换成"150 个节点、每个踩 8 个可警告的点"：同样是海量警告，
+  // 但不依赖那个已经不成立的输入形态。**被测行为一个字没改。**
   const cap = await cdp.eval(`(() => {
-    const parts = [];
-    for (let i = 0; i < 5000; i++) parts.push({ kind:'dial', x:0, y:0, w:10, h:10 });
-    const txt = JSON.stringify({ schema:'icar.ui/2', canvas:{unit:360}, meta:{name:'x'},
-      nodes:[{ id:'n1', type:'gauge', pid:'obd.rpm', x:0,y:0,w:100,h:100, parts: parts }] });
+    const nodes = [];
+    for (let i = 0; i < 150; i++) {
+      // 每个节点踩满：alpha 越界 / 6 个非数字字段 / pid 不在库 / 尺寸过小
+      nodes.push({ id:'n'+i, type:'gauge', pid:'std_FF',
+        alpha: 999, x:'a', y:'a', w:5, h:5, rotation:'a', scale:'a', z:'a' });
+    }
+    const txt = JSON.stringify({ schema:'icar.ui/2', canvas:{unit:360}, meta:{name:'x'}, nodes: nodes });
     document.getElementById('jsonArea').value = txt;
     const t0 = performance.now();
     const v = window.validateNow();

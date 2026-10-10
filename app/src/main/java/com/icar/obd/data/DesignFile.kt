@@ -326,6 +326,72 @@ data class DesignFile(
         /** 把别名解析成真实 PID id。已经是 id 就原样返回 */
         fun resolvePid(name: String): String = PID_ALIASES[name] ?: name
 
+        // ---------------------------------------------------------------- 非数字数值字段（v1.20.20）
+
+        /**
+         * 把一个 JSON 标量渲染成**警告文案里的样子**。
+         *
+         * 为什么不能直接用 `toString()`：字符串不加引号的话，`x = "abc"` 和
+         * `x = abc` 在文案里长得一样，而"写成了字符串"恰恰是最常见的那种错。
+         * 对象/数组也不该被打印成 `[object Object]`。
+         *
+         * ⚠️ 必须与工具侧 `validate.js` 的 `scalarText` **逐字一致** ——
+         * 同一条问题在两边要长得一样，否则用户会以为是两个不同的毛病。
+         */
+        fun scalarText(v: Any?): String = when (v) {
+            null -> "null"
+            is String -> "\"$v\""
+            is JSONArray -> "数组"
+            is JSONObject -> "对象"
+            else -> v.toString()
+        }
+
+        /**
+         * 挑出"写了值、但那不是数字"的数值字段，逐个给一条**警告**（v1.20.20）。
+         *
+         * ## 为什么只警告、不改判定
+         *
+         * 这些字段现在的行为是"非数字**静默回落到默认值**"
+         * （`optDouble` / `optInt` 的语义，见 [com.icar.obd.data.OptJsonBehaviorTest] 实测）。
+         * 把它改成硬错误会**拒收存量文件** —— 一份 `x="abc"` 的设计现在能导入
+         * （虽然位置是错的），改完就导不进去了。这个代价比"值不对"更大。
+         *
+         * 所以：**数值怎么回落完全不变**，只是让用户知道"这个值没按你写的用"。
+         * 不告诉他的话，症状是"我明明写了坐标，它跑到左上角去了"，
+         * 而**没有任何一条线索**指向那一行 —— 这正是这个项目最恨的失效形态。
+         *
+         * ## 判据与"会不会回落"是同一个
+         *
+         * 用 `toDoubleOrNull() != null`（数字与**数字字符串**都算数字）。
+         * 与 `optDouble` 实际会不会回落**完全同源** —— 否则会出现
+         * "报了警告但其实值是对的"这种更坏的情况。
+         *
+         * 数字字符串（`"123"`）**不算非数字**：它确实会被解析成 123
+         * （`OptJsonBehaviorTest` 实测），警告它反而是假警报。
+         *
+         * ⚠️ `keys` 来自 [DesignNode.NUMERIC_NODE_FIELDS] /
+         * [DesignNode.NUMERIC_PART_FIELDS] / [DesignNode.NUMERIC_GAUGE_FIELDS]，
+         * 三张清单与工具侧 `schema.js` 的同名清单**必须逐条一致**，
+         * `tools/icarui/tests/verify-crosslang.js` 钉着。
+         * 单边加字段 = 新的跨语言分叉（工具报了、App 没报）。
+         */
+        fun warnNonNumeric(
+            o: JSONObject?,
+            keys: List<String>,
+            path: String,
+            warnings: MutableList<String>
+        ) {
+            if (o == null) return
+            for (k in keys) {
+                if (!o.has(k) || o.isNull(k)) continue
+                val v = o.opt(k)
+                // 数字 / 数字字符串 → optDouble 会照原样用，不该报警告
+                if (v is Number) continue
+                if (v is String && v.trim().toDoubleOrNull() != null) continue
+                warnings.add("$path.$k = ${scalarText(v)} 不是数字 —— 已按默认值处理")
+            }
+        }
+
         /**
          * 解析并校验。
          *
@@ -658,6 +724,12 @@ data class DesignFile(
             if (rawPid.isNotBlank() && !PID_ALIASES.containsKey(rawPid) && BuiltInPids.all().none { it.id == pid }) {
                 warnings.add("gauges[$i] 的 pid `$rawPid` 不在内置 PID 库里 —— 需要先在 App 里导入对应 PID")
             }
+
+            // ⚠️ **"写了值但不是数字"要出声**（v1.20.20）。
+            // `GaugeItem.fromJson` 里的 `optDouble` / `optInt` 对非数字**静默回落**
+            // （`x="abc"` → 0），用户看到的现象是"我明明写了坐标，它跑到左上角去了"。
+            // 数值怎么回落完全不变，这里只补一条警告。
+            warnNonNumeric(o, DesignNode.NUMERIC_GAUGE_FIELDS, "gauges[$i]", warnings)
 
             // ⚠️ **必须注入 unit 标记再交给 fromJson**。
             //

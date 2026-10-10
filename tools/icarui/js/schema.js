@@ -28,6 +28,62 @@ window.MAX_NODES = 200;
 window.MAX_GAUGES = 32;
 
 /**
+ * **一个 `parts` 数组最多几项**（v2.84.0 加）。
+ *
+ * ## 为什么需要它
+ *
+ * `parts` 是**数组**，而 `MAX_NODES` 只数节点树的 `children` ——
+ * `DesignNode.flatten` 走的是 `DesignNode.children`，**根本不看 `parts`**。
+ * 于是一份畸形文件可以在一块表上挂 100 万个部件，每个部件再挂 100 万个子部件
+ * （深度上限 5）—— `MAX_NODES=200` 一点忙都帮不上，内存直接被打爆。
+ *
+ * ## 为什么是 64
+ *
+ * 这个数**不是新拍的**：`normalizePart` 里本来就有一句
+ * `.slice(0, 64)` 在夹嵌套的 `children` —— 只是它写在函数体里、没有名字，
+ * 而且**只夹了嵌套那一层，没夹顶层 `parts`**。抽成常量之后：
+ *
+ *  - 顶层与嵌套层用**同一个**上限（原来顶层是无限的）
+ *  - App 侧的 `GaugePart.MAX_PARTS` 能跟它逐字对齐（跨语言比对守着）
+ *
+ * 真实设计的部件数是个位数（表盘/刻度/指针/数值/装饰），64 只会拦住畸形文件。
+ *
+ * ⚠️ **必须与 `app/.../data/DesignNode.kt` 的 `GaugePart.MAX_PARTS` 成对改** ——
+ * `tools/icarui/tests/verify-crosslang.js` 钉着这两个常量，漏改一边就跑不过。
+ */
+window.MAX_PARTS = 64;
+
+/**
+ * 会被"**非数字静默回落到默认值**"的数值字段清单。
+ *
+ * ## 它们用来做什么
+ *
+ * 校验时逐个检查："这个字段写了值，但那不是数字" → 给一条**警告**。
+ *
+ * ## 为什么只警告、不改成硬错误
+ *
+ * 这些字段现在的行为是"非数字 → 静默用默认值"（`Number(v)` 得到 NaN → 走 `d`）。
+ * 把它改成硬错误会**拒收存量文件** —— 一份 `x="abc"` 的设计现在能导入
+ * （虽然位置是错的），改完就导不进去了。这个代价比"值不对"更大。
+ *
+ * 所以数值怎么回落**完全不变**，只是让用户知道"这个值被当成默认值了"。
+ * 不告诉他的话，症状是"我明明写了坐标，它跑到左上角去了"，
+ * 而没有任何一条线索指向那一行。
+ *
+ * ## ⚠️ 这三张清单与 App 侧**必须逐条一致**
+ *
+ * `DesignNode.NUMERIC_NODE_FIELDS` / `NUMERIC_PART_FIELDS` / `NUMERIC_GAUGE_FIELDS`
+ * 是同名的三张清单，由 `verify-crosslang.js` 逐条比对。
+ * **单边加字段 = 新的跨语言分叉**（工具报了、App 没报），而那种分叉正是
+ * 这个项目最恨的失效形态。
+ */
+window.NUMERIC_NODE_FIELDS = ["x", "y", "w", "h", "rotation", "scale", "alpha", "z"];
+window.NUMERIC_PART_FIELDS = ["x", "y", "w", "h", "alpha", "rotation", "pivotX", "pivotY",
+  "sweepFrom", "sweepTo"];
+window.NUMERIC_GAUGE_FIELDS = ["style", "min", "max", "warnLow", "warnHigh", "ringStyle",
+  "ringSegments", "cardStyle"];
+
+/**
  * **分组嵌套的深度上限**（v2.83.0 加，Round 2）。
  *
  * ## 为什么需要一个"看着多余"的上限
@@ -200,9 +256,13 @@ window.normalizePart = function (o, depth) {
   //
   // ⚠️ 用**局部变量**存深度，不要在 map 回调里用 arguments ——
   // 那指向回调自己的参数，不是 normalizePart 的（第一版就是这么错的）。
+  //
+  // 条数上限用 `window.MAX_PARTS`（v2.84.0）：原来是写死的 `.slice(0, 64)`，
+  // **只夹了嵌套这一层**，顶层 `parts` 数组仍然无限。抽成常量后顶层与嵌套
+  // 用同一个数，且能与 App 侧逐字对齐。
   const d = Number(depth) || 0;
   p.children = (d >= 5) ? [] : (Array.isArray(p.children) ? p.children : [])
-    .slice(0, 64)
+    .slice(0, window.MAX_PARTS)
     .map(function (c) { return window.normalizePart(c, d + 1); })
     .filter(Boolean);
   if (!Number.isFinite(p.sweepTo)) p.sweepTo = 405;

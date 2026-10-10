@@ -26,6 +26,54 @@
   }
 
   /**
+   * 把一个 JSON 标量渲染成**警告文案里的样子**。
+   *
+   * 为什么不能直接用 `trimNum`：它对 `true` 会算成 `Number(true) = 1` 并打印 "1"，
+   * 于是 `x = true` 的警告会写成「x = 1 不是数字」—— 用户拿这句话回文件里
+   * 找不到 `1`。字符串加引号是为了让"写成了字符串"一眼可见。
+   *
+   * ⚠️ 必须与 App 侧 `DesignFile.scalarText` 逐字一致。
+   */
+  function scalarText(v) {
+    if (v === null) return "null";
+    if (typeof v === "string") return '"' + v + '"';
+    if (Array.isArray(v)) return "数组";
+    if (typeof v === "object") return "对象";
+    return String(v);
+  }
+
+  /**
+   * 挑出"写了值、但那不是数字"的数值字段，逐个给一条**警告**（v2.84.0）。
+   *
+   * ## 为什么只警告、不改判定
+   *
+   * 这些字段的行为是"非数字静默回落到默认值"。改成硬错误会**拒收存量文件**
+   * —— 一份 `x="abc"` 的设计现在能导入（虽然位置是错的），改完就导不进去了。
+   * 所以数值怎么回落**完全不变**，只是让用户知道"这个值没按你写的用"。
+   *
+   * ## 判据
+   *
+   * 用 `Number.isFinite(Number(v))` —— 也就是**与 `num()` 回落时同一个判据**。
+   * 这样"会不会出这条警告"与"值会不会被回落"永远是同一件事，
+   * 不会出现"报了警告但其实值是对的"这种更坏的情况。
+   *
+   * 数字字符串（`"123"`）**不算非数字** —— 它确实会被解析成 123，
+   * 警告它反而是假警报。这条与 `OptJsonBehaviorTest` 实测的行为一致。
+   *
+   * ⚠️ 清单来自 `window.NUMERIC_*_FIELDS`，与 App 侧同名清单由
+   * `verify-crosslang.js` 逐条比对。
+   */
+  function warnNonNumeric(o, keys, path, warnings) {
+    if (!o || typeof o !== "object") return;
+    for (const k of keys) {
+      if (!has(o, k)) continue;
+      const v = o[k];
+      if (Number.isFinite(Number(v))) continue;
+      warnings.push(path + "." + k + " = " + scalarText(v) + " 不是数字 —— 已按默认值处理");
+    }
+  }
+
+  /**
    * 把 JSON.parse 的报错转成**带位置**的可读信息。
    * Kotlin 用 org.json，文案不可能逐字一致 —— 这条差异在差异清单里显式列出。
    */
@@ -378,6 +426,12 @@ themeColors: (root.themeColors && typeof root.themeColors === "object" && !Array
       alpha = Math.max(0, Math.min(255, Math.round(alpha)));
     }
 
+    // ⚠️ **"写了值但不是数字"要出声**（v2.84.0）。
+    // 上面的 `num()` 对非数字**静默回落**（`x="abc"` → 0），用户看到的现象是
+    // "我明明写了坐标，它跑到左上角去了"，而没有任何线索指向那一行。
+    // 数值怎么回落完全不变，这里只补一条警告。
+    warnNonNumeric(o, window.NUMERIC_NODE_FIELDS, path, warnings);
+
     const node = {
       id: typeof o.id === "string" && o.id ? o.id : window.newId("n"),
       type: type,
@@ -418,10 +472,13 @@ themeColors: (root.themeColors && typeof root.themeColors === "object" && !Array
         cs = (Number.isInteger(c) && c >= 0 && c < window.CARD_NAMES.length) ? c : null;
       }
       node.cardStyle = cs;
+      // 仪表专属的数值字段（量程 / 样式 / 环 / 卡片档位）同样"非数字要出声" ——
+      // 清单与 App 侧 `DesignNode.NUMERIC_GAUGE_FIELDS` 逐条一致。
+      warnNonNumeric(o, window.NUMERIC_GAUGE_FIELDS, path, warnings);
       if (node.min >= node.max) {
         errors.push(path + "（" + pid + "）量程非法：min=" + trimNum(node.min) + " ≥ max=" + trimNum(node.max));
       }
-      node.parts = parseParts(o.parts, path + ".parts", warnings, assetIds);
+      node.parts = parseParts(o.parts, path + ".parts", errors, warnings, assetIds);
       // ⚠️ **数值映射表必须读回来**（v2.83.0 修，Round 1）。
       //
       // 原来这里**只写不读**：`model.js` 的 `nodeToJson` 会写出 `valueLabels`，
@@ -485,20 +542,35 @@ themeColors: (root.themeColors && typeof root.themeColors === "object" && !Array
    *
    * 部件引用的素材不在清单里只给**警告**：设计文件常跨机器传，
    * 素材可能还没拷过来。
+   *
+   * ## 条数上限（v2.84.0）
+   *
+   * `parts` 是**数组**，而 `MAX_NODES` 只数节点树的 `children`
+   * （`flatten` 根本不看 `parts`）—— 所以一块表挂 100 万个部件时
+   * `MAX_NODES=200` 一点忙都帮不上。这里按 `window.MAX_PARTS` 夹住，
+   * **先把内存限住**，再报一条硬错误（超过上限的文件不是正常设计）。
+   *
+   * 顺序要紧：**先截断、后报错**。反过来先遍历完整个数组，
+   * 内存已经爆了才报错 —— 闸门就白加了。
    */
-  function parseParts(arr, path, warnings, assetIds) {
+  function parseParts(arr, path, errors, warnings, assetIds) {
     if (arr === undefined || arr === null) return null;
     if (!Array.isArray(arr)) {
       warnings.push(path + " 不是数组 —— 已忽略（改用 style 的程序化画法）");
       return null;
     }
     if (!arr.length) return null;
+    if (arr.length > window.MAX_PARTS) {
+      errors.push(path + " 有 " + arr.length + " 项，超过上限 " + window.MAX_PARTS +
+        "（正常设计是个位数：表盘 / 刻度 / 指针 / 数值 / 装饰）");
+    }
     const out = [];
-    arr.forEach((o, i) => {
+    arr.slice(0, window.MAX_PARTS).forEach((o, i) => {
       if (o === null || typeof o !== "object" || Array.isArray(o)) {
         warnings.push(path + "[" + i + "] 不是一个对象 —— 已忽略");
         return;
       }
+      warnNonNumeric(o, window.NUMERIC_PART_FIELDS, path + "[" + i + "]", warnings);
       const p = window.normalizePart(o);
       if (o.kind !== undefined && p.kind !== o.kind) {
         warnings.push(path + "[" + i + "].kind = " + trimNum(o.kind) + " 不认识（本版本认：" +
