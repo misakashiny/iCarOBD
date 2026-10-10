@@ -2,10 +2,12 @@
 
 > **这份文档的用途**：改代码前先在这里定位「该动哪个文件」，改完回来更新对应行。
 >
-> 文档共六份，**各有单一职责，按需查阅即可**：
+> ⚠️ **本文只负责「改哪里」（逐文件职责 / 关键符号 / 改动风险 / 任务索引）。**
+> 「哪份文档对什么负责」的**权威表**在 [`README.md`](README.md)（文档索引）。
 >
 > | 文档 | 回答什么问题 |
 > |---|---|
+> | [`README.md`](README.md) | **我该看哪份** —— 文档索引 + 权威表（按角色分） |
 > | [`接手大纲.md`](接手大纲.md) | **项目全貌 + 上手路线 + 红线**（接手者从这里开始） |
 > | [`迭代清单.md`](迭代清单.md) | 做完了什么 / 接下来做什么 |
 > | [`ARCHITECTURE.md`](ARCHITECTURE.md) | **为什么这样设计** —— 分层边界、数据流排障、UI 自适应 |
@@ -13,17 +15,20 @@
 > | [`HANDOVER.md`](HANDOVER.md) | 详细手册 —— 扩展流程、安全模型、装机清单、踩坑 |
 > | [`CHANGELOG.md`](CHANGELOG.md) | **改过什么** —— 按版本的变更与验证记录 |
 >
-> 规模：**113 个 Kotlin 文件 / 约 30,800 行**（`app/src/main/java` 实测 **30,773** 非空行），
-> **25 个布局 XML**（资源目录合计 48 个 XML）。
-> ⚠️ v1.20.14 的 112 里有 **2 个是工作区里未提交的新文件**（本版交付的控件检视器）：
-> `data/UiInspectorInfo.kt` + `ui/view/UiInspectorOverlay.kt`。
-> ⚠️ v1.20.15 又加 **1 个**：`data/TreeWalkBudget.kt`（遍历预算，纯类、JVM 可测），
-> 所以文件数 112 → **113**。测试文件 51 个 / 10,334 非空行（v1.20.15 新增
-> `data/TreeWalkBudgetTest.kt`，`UiInspectorInfoTest` 33 → 39 条）。
-> ✅ 另一个智能体曾在本工作区加过 `data/UiScale.kt` + `ui/view/UiScaleApplier.kt`
-> （全局字号 / 间距 / 导航栏缩放，设置页叫「界面调参」）—— **用户明确否掉，交付前已整套撤掉**，
-> 所以文件数从 114 回到 112（少了那 2 个文件、约 739 非空行）。
-> （这些数字会随迭代漂，改完顺手核一遍 —— 见 §4 末尾那条警告。）
+> ⚠️ **上面这张表以前写「文档共六份」** —— 那早就不成立了：`docs/` 下现在有 **25 份** markdown
+> （见 [`README.md`](README.md) 的完整索引）。**只有这 6 份是"主干"，其余按需查阅。**
+>
+> **规模（2026-10-11 v1.20.20 实测）**：`app/src/main` 下 **115 个 Kotlin 文件 / 31,807 非空行**；
+> `app/src/test` 下 **58 个测试文件 / 12,444 非空行**；
+> **25 个布局 XML**（`layout/` 25 + `layout-land/` 1，其中 `activity_main.xml` 两个方向各一份 → 去重 25）。
+> 复核命令：
+> ```powershell
+> (Get-ChildItem app/src/main -Recurse -File -Filter *.kt).Count          # 115
+> (Get-ChildItem app/src/test -Recurse -File -Filter *.kt).Count          # 58
+> ```
+> ⚠️ **这些数字会随迭代漂，改完顺手核一遍** —— 见 §4 末尾那条警告。
+> 本文以前记的是「113 个 Kotlin 文件 / 约 30,800 行 / 51 个测试文件 / 10,334 行」（v1.20.15 的数），
+> 以及更早的「112 / 114」来回改的历史，都已被上面的实测取代。
 
 ---
 
@@ -63,7 +68,7 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 │   ├── LVGL-放弃记录.md            LVGL 方案为什么被放弃（教训）
 │   ├── 主题格式参考.md             Sky Gauge 格式逆向（已不用，格式知识仍有效）
 │   ├── archive/                    归档的历史文档（`CHANGELOG-v1.0~v1.8.md`）
-│   └── screenshots/                实机截图 20 张 + 索引 README
+│   └── screenshots/                实机截图 20 张（19 张界面 + studio/ 1 张）+ 索引 README
 ├── dist/                           当前版本 APK（只保留最新一个）
 ├── README.md                       面向使用者
 └── .gitignore                      排除 build/ .gradle/ .kotlin/ local.properties stage/
@@ -119,7 +124,7 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `DashCanvas.kt` | 199 | **一套画布**（多画布，v1.20.0）：`id/name/type/gauges/designJson` **+ `theme/pageIndex/bg*/scaleMode`**；另带**画布名浮标的位置常量**（v1.20.1） | `TYPE_NORMAL/PERF/CUSTOM`、`TYPE_NAMES`、`MAX_CANVASES`(8)、`DEFAULT_NAME`、`typeName`、`sanitizeName`、`gaugeCount`、`toJson/fromJson/listFromJson`、**`NAME_POS_*`/`NAME_POS_NAMES`/`namePosName`** | 🟡 **一套画布 = 一屏**：主题/背景/页号都跟着它走（留全局会出现"性能页顶着日常页底图"的半套效果）。`listFromJson` 坏条目**跳过**而不是整体失败。⚠️ `NAME_POS_*` 是**全局显示偏好**（存在 `Settings.canvasNamePos`），**不是每套画布各自的属性** —— 否则横滑时小字会在四个角之间乱跳 |
 | `GestureActions.kt` | 198 | **双指手势 → 动作**的映射表（v1.20.9；**v1.20.10 加两个切 tab 动作**）：4 个方向（左/右/上/下）× **7 个动作**（无 / 呼出导航 / 收起导航 / 切上·下一套画布 / **切上·下一个 tab**），**纯逻辑** | `NONE`/`NAV_SHOW`/`NAV_HIDE`/`CANVAS_PREV`/`CANVAS_NEXT`/**`TAB_PREV`/`TAB_NEXT`**、`ACTION_IDS`/`ACTION_NAMES`、`SLOT_LEFT/RIGHT/UP/DOWN`/`SLOT_COUNT`/`SLOT_NAMES`、**`DEFAULTS`**、**`TAB_TAGS`**（6 个导航页的 tag，**循环顺序的唯一一处**）、**`slotOf(dx,dy,threshold)`**、**`normalize(slot,id)`**、`actionName/actionIndex/shortSlotName`、**`adjacentTab(actionId,current)` / `adjacentTab(current,delta)`**（`floorMod` 回绕）、**`isTabAction`**、**`summary(map)`** | 🔴 **方向判定只有这一份实现**（`MainActivity.dispatchTouchEvent` 调它）：**先比主轴再比阈值** —— 反过来判会把"斜着划"一律当成横滑（两根手指不可能完全同步，斜划非常常见）。⚠️ `normalize` 对**认不得的值落回该槽位的默认值、不是落回「无」**：旧配置根本没这四个键，落回「无」的表现是"升级之后手势全没了"。⚠️ **两个新动作的默认值必须是「无」**（`DEFAULTS` 里不许出现 `TAB_*`，有单测钉着）—— v1.20.9 及以前根本没这两个动作，升级后某个方向突然开始切页是不可接受的。⚠️ **新动作追加在 `ACTION_IDS` 末尾**：下标同时被 `Store.Settings` 与设置页 Spinner 用，插在中间会让旧配置落错动作。⚠️ 动作**刻意只给"导航类 + 翻页类"** —— 不给编辑态 / 全屏 / **跳指定页**（`adjacentTab` 对认不得的当前页返回 **null 而不是落回第一个**，就是为了不变成"跳页"）。⚠️ **双击兜底不在这一张表里**（它是"卡在仪表盘出不去"的保险，不可关）。⚠️ 加动作要同时改 `ACTION_IDS` / `ACTION_NAMES` / `shortAction` + `MainActivity.runGesture` 的 `when`（漏一处的表现是"能选但没反应"）。⚠️ 改 `TAB_TAGS` 要同时改 `res/menu/bottom_nav.xml`（菜单是"导航栏长什么样"的权威，`TAB_TAGS` 是"循环按什么顺序"的权威） |
 | `DesignNode.kt` | 725 | **`icar.ui/2` 的节点树**（`group`/`image`/`gauge`/`text`）+ 子部件 `GaugePart` + 底框覆盖 `CardOverride` + 图片状态 `NodeState`；字体枚举 `GaugeFont`。`type=="gauge"` 的节点**复用 `GaugeItem.fromJson`**（字段同名同义，v1 的每一项都能一对一升级成一个根节点） | `TYPES`/`TYPE_NAMES`、`MAX_NODES`(200)、**`MAX_NODE_DEPTH`**(32)、**`NUMERIC_NODE_FIELDS`/`NUMERIC_PART_FIELDS`/`NUMERIC_GAUGE_FIELDS`**、`parse(o, path, errors, warnings, assetIds, forceGauge, depth)`、`flatten`、`collectGauges`、`sortedChildren`；`GaugePart.MAX_PARTS`(64)/`KINDS`/`angleFor`/`parseAll`；`NodeState.MIN_BLINK_MS`(400) | 🔴 **`parse` 是递归的**，所以深度闸门必须在**递归之前**（没有它时 2 万层嵌套直接 `StackOverflowError` → 用户看到"点了导入，App 闪退"）。⚠️⚠️ **`type=="gauge"` 分支必须把 `pid` 与 `unit` 两个字段一起注进去再交给 `GaugeItem.fromJson`**（v1.20.20 修）：`fromJson` 用**元素自己的 `unit`** 判坐标单位，而设计文件的单位声明在 `canvas.unit` 上 —— 漏注入 `unit` 时每个坐标被**再乘一次 360**（`x=30 w=180` → `x=10800 w=64800`），症状是**导入确认框弹假警报**「超出画布右下角：右=75600」+ `Store.customGauges` 被污染（渲染走节点树所以**画面是对的**，坏在**回退路径**上）。**同一次修还要 `.also { it.legacyGrid = false }`**（v1 的 `parseGauge` 有这一句、v2 没有；不置位时 `DashLayout.migrateFromGrid` 会把**整张盘**按 2 列网格重算）。`DesignCoordUnitTest` 把两条路钉成逐字段相等。⚠️ **`MAX_NODES` 挡不住 `parts`**（`flatten` 只看 `children`）→ `GaugePart.MAX_PARTS` 必须**先截断、后报错**。⚠️ `NUMERIC_*_FIELDS` 三张清单与工具侧 `schema.js` **逐条比对**（`verify-crosslang.js`），**单边加字段 = 新的跨语言分叉** |
-| `DesignFile.kt` | 612 | **`icar.ui/1` 设计文件**（PC 端设计 → App 加载）。**不抛异常**，返回带字段路径的可读错误 | `SCHEMA`、`MAX_GAUGES`(32)、**`PID_ALIASES`**(27)、`resolvePid`、**`missingAliases()`**、parse(text)、`Result.errors/warnings`、**`Background`/`FIT_*`/`fitName`**、**`warnNonNumeric(o, keys, path, warnings)` / `scalarText(v)`**（v1.20.20：挑出"写了值但不是数字"的字段给**警告**） | 🔴 改校验规则要**同时改 `tools/icarui/index.html`**，否则编辑器与 App 分叉（`ThemeStudioSampleTest` 会失败）。`PID_ALIASES` 改一处要同步三处（Kotlin / 工具 / 设计指南）。⚠️ **`parseGauge`（v1 路）必须注入 `unit`** —— `GaugeItem.fromJson` 靠**元素自己的 `unit`** 判"归一化 0..1 还是 360 单位"，设计文件的单位声明在 `canvas.unit` 上；不注入则每个坐标被**再乘一次 360**（`x=30 → 10800`）。v2 的 `DesignNode.parse` 曾漏了这一句（v1.20.20 修，见 `DesignCoordUnitTest`）。⚠️ **`warnNonNumeric` 的判据必须与 `optDouble` 会不会回落同源**（数字与**数字字符串**都算数字，见 `OptJsonBehaviorTest` 实测）：数字字符串确实会被解析成数字，警告它就成了**假警报**，而假警报的代价是用户学会无视整个警告列表。⚠️ 字段清单 `DesignNode.NUMERIC_*_FIELDS` 与工具侧 `schema.js` **逐条比对**（`verify-crosslang.js` 钉着）—— 单边加字段 = 新的跨语言分叉。**数值怎么回落一个字没改**（改硬错误会拒收存量文件） |
+| `DesignFile.kt` | 612 | **`icar.ui/1` 设计文件**（PC 端设计 → App 加载）。**不抛异常**，返回带字段路径的可读错误 | `SCHEMA`、`MAX_GAUGES`(32)、**`PID_ALIASES`**(**35** —— 2026-10-11 实测；`UI设计指南.md` 里"27 条"是 v1.10.2 时的旧数)、`resolvePid`、**`missingAliases()`**、parse(text)、`Result.errors/warnings`、**`Background`/`FIT_*`/`fitName`**、**`warnNonNumeric(o, keys, path, warnings)` / `scalarText(v)`**（v1.20.20：挑出"写了值但不是数字"的字段给**警告**） | 🔴 改校验规则要**同时改 `tools/icarui/index.html`**，否则编辑器与 App 分叉（`ThemeStudioSampleTest` 会失败）。`PID_ALIASES` 改一处要同步三处（Kotlin / 工具 / 设计指南）。⚠️ **`parseGauge`（v1 路）必须注入 `unit`** —— `GaugeItem.fromJson` 靠**元素自己的 `unit`** 判"归一化 0..1 还是 360 单位"，设计文件的单位声明在 `canvas.unit` 上；不注入则每个坐标被**再乘一次 360**（`x=30 → 10800`）。v2 的 `DesignNode.parse` 曾漏了这一句（v1.20.20 修，见 `DesignCoordUnitTest`）。⚠️ **`warnNonNumeric` 的判据必须与 `optDouble` 会不会回落同源**（数字与**数字字符串**都算数字，见 `OptJsonBehaviorTest` 实测）：数字字符串确实会被解析成数字，警告它就成了**假警报**，而假警报的代价是用户学会无视整个警告列表。⚠️ 字段清单 `DesignNode.NUMERIC_*_FIELDS` 与工具侧 `schema.js` **逐条比对**（`verify-crosslang.js` 钉着）—— 单边加字段 = 新的跨语言分叉。**数值怎么回落一个字没改**（改硬错误会拒收存量文件） |
 | `DesignPack.kt` | 325 | **设计包（`.icarzip`）的解开与校验**（v1.20.9，App 侧）：`design.json` + 只打包真正引用到的素材 + `manifest.json`。**纯 JVM**（`java.util.zip` + `java.io.File`，**零新依赖**） | `PACK_FORMAT`(`icar.pack/1`)、`DESIGN_ENTRY`/`MANIFEST_ENTRY`、`Asset`/`Missing`/`Manifest`、**`Result.Ok/Fail`**、**`isZipHead(head)`**、**`safeEntryName(raw)`**、`parseManifest(text)`、**`unpack(input, destDir)`** | 🔴 治的是"**表盘只剩空卡片**"那个病（见 `DesignAssets`）：解压目录直接当 `designBaseDir`，**不需要任何路径映射**（包内路径 = 设计里的相对路径）。⚠️ **不静默**：字节数 / CRC32 对不上、清单里声明了但包里没有 → **整个包拒收**并把每条都列出来（只导一半恰恰会重现"空卡片"）；唯一放行的是 manifest 自己 `missing` 里已登记的素材，且逐条列成警告。⚠️ **路径穿越防护**：`safeEntryName` 拒绝对路径与任何一段 `..`（反斜杠先归一化 —— `..\..\x` 能构造出来），命中即**整包拒收 + 删掉已解压内容**（不留半个目录）。⚠️ `crc32` 是**无符号 32 位**（工具侧 `crc >>> 0`），比较用 `Long`，报错文案给**十六进制**（十进制看不出来对不对）。⚠️ 判"是不是 zip"只看前 4 字节的三种合法签名（`isZipHead`），**不认 "PK" 开头的任意字节** |
 | `CrashCatcher.kt` | 60 | 全局未捕获异常兜底，写 `files/last-crash.log` | `install()` | 🟢 用户报「闪退」时先看那个文件 |
 | `IslandStyle.kt` | 313 | **灵动岛提示的五组样式**（v1.20.13，用户要「可以自定义样式」）：位置 3 / 尺寸 3 / 圆角 3 / 停留 3 / 配色 2，**纯函数** | `POS_*`/`SIZE_*`/`CORNER_*`/`COLOR_*`/`HOLD_CHOICES_MS`、各 `*_NAMES` 与 `*_DEFAULT`、**`SIZE_TEXT_SP`/`SIZE_PAD_H_DP`/`SIZE_PAD_V_DP`/`CORNER_RADIUS_DP`**（下标一一对应）、`BG_PRESETS`/`FG_PRESETS`、**`normalizePos/Size/Corner/ColorMode/HoldMs/Color`**、**`Spec`**（已解析样式：`textSp`/`padHdp`/`padVdp`/`cornerDp`/`holdMs`/`bg`/`fg`/`accent`）、**`spec(...)`**、`holdIndex`、`summary`、`hexOf`、**`parseHex`** | 🔴 **默认值 = v1.20.12 写死在 `IslandNotice` 里的那些数**（13sp/14dp/7dp/18dp/`0xF01A1F27`/白/琥珀），改动任何一个都会让升级后的观感变样 —— `IslandStyleTest` 逐个断言。⚠️ **归一化对"认不得的档位"落回默认值，不是夹到边界**（夹到边界会让一份手改坏的 `settings.json` 把提示**静默挪到靠右**）。⚠️ **停留时长必须在 `HOLD_CHOICES_MS` 里**，否则落回默认（手改 `999999` 会让提示赖在画布上不走）。⚠️ **全透明（alpha==0）一律落回兜底** —— 它等于"胶囊看不见"，而用户看到的是"提示坏了"；半透明**原样保留**（那是有意的选择）。⚠️ 放在 `data/` 而不是 `ui/view/`：要被 `Store.Settings` 引用（落盘），而 `data/` 不能反向依赖 `ui/`；顺带好处是归一化/摘要/取值全可 JVM 单测。⚠️ **显示层只能从 `Store.settings.islandStyle()` 拿样式**，不许自己读那七个原始字段（归一化只在这一处发生） |
@@ -245,10 +250,10 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 
 ---
 
-### 2.5 单元测试 `app/src/test/java/com/icar/obd/`（**54 个文件 / 1007 个用例**）
+### 2.5 单元测试 `app/src/test/java/com/icar/obd/`（**58 个文件 / 1050 个用例**）
 
 > ⚠️ 下表的「用例」列**长期滞后于实际**（`run-tests.ps1` 的输出才是准的）——
-> 2026-10-11（v1.20.17）实测 `TOTAL=1007`（54 个文件）。加用例时顺手把这一行和本表改掉。
+> 2026-10-11（v1.20.20）实测 `TOTAL=1050`（58 个文件）。加用例时顺手把这一行和本表改掉。
 
 | 文件 | 用例 | 覆盖 |
 |---|---|---|
@@ -354,14 +359,14 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `tools/gen_sounds.py` | 纯标准库生成 4 个 wav 音效，改音色后重跑 |
 | `tools/crop_png.py` | 纯标准库最小 PNG 解码 + 裁剪放大，用于放大截图排查像素级问题（本机无 PIL） |
 | `tools/oncar-check.ps1` | **实车取证脚本**（P0-1~P0-4）：一条命令收齐设备/版本、崩溃与 ANR、GATT 表、AT 命令 TX/RX 与超时、初始化结果、轮询与规则、扫描器日志，并按 GATT 表直接给出判定 |
-| `tools/icarui/tests/verify-crosslang.js` | **跨语言一致性检查**（**157 项**）：从 Kotlin 源码解析常量，与工具逐条比对。改别名/量程/样式/校验文案后必跑。**§3b 闪烁频率红线（v1.20.16）**：两侧 `MIN_BLINK_MS` 逐字一致、`AlertPulse` 直接引用 `NodeState.MIN_BLINK_MS`（不是另写一个数）、没有 200ms 方波残留、没有 `Math.max(60, …)` 残留。**v1.20.19**：加「嵌套深度上限一致（`MAX_NODE_DEPTH`）」，并把 `MAX_NODES` 那条从 `if (常量) eq(...)` 改成"解析不到就是失败"（原来常量被改名/删掉时**整条断言会静默消失**）。**v1.20.20**：把**剩下 4 处同形态**一并修掉（`DEFAULT_SIZE`/`DEFAULT_COLOR`/`NAMES`/`MIN_SIZE` 的 `else note(...)` 分支 + `glowKt` 的静默 `return`），并新增 **`MAX_PARTS`** 与 **`NUMERIC_{NODE,PART,GAUGE}_FIELDS` 三张字段清单**的逐条比对。⚠️ **反向验证过**：临时把 `DEFAULT_SIZE`/`NAMES` 改名 → 套件从 **PASS=153 FAIL=0（绿）** 变成 **PASS=153 FAIL=4（红）**；临时给工具侧 `NUMERIC_NODE_FIELDS` 加一项 → 精确报出两边清单不一致。**v2.83.0 新增两节**：①「状态灯：阈值推断与回退链必须与 App 逐条一致」—— 危险线的「中点」系数 `0.5`、`max > warnAt` 前置条件、比较方向 `>=`、阈值优先级 `stateWarn ?? warnHigh`、**回退链 `critical → warn → normal`**、状态素材为空的兜底；②「`DIFF_NOTES` 不许与 App 源码打架」—— 差异页签的每条说法都与 App 源码绑定（App 源码变了、说法没跟上就红） |
+| `tools/icarui/tests/verify-crosslang.js` | **跨语言一致性检查**（**159 项**）：从 Kotlin 源码解析常量，与工具逐条比对。改别名/量程/样式/校验文案后必跑。**§3b 闪烁频率红线（v1.20.16）**：两侧 `MIN_BLINK_MS` 逐字一致、`AlertPulse` 直接引用 `NodeState.MIN_BLINK_MS`（不是另写一个数）、没有 200ms 方波残留、没有 `Math.max(60, …)` 残留。**v1.20.19**：加「嵌套深度上限一致（`MAX_NODE_DEPTH`）」，并把 `MAX_NODES` 那条从 `if (常量) eq(...)` 改成"解析不到就是失败"（原来常量被改名/删掉时**整条断言会静默消失**）。**v1.20.20**：把**剩下 4 处同形态**一并修掉（`DEFAULT_SIZE`/`DEFAULT_COLOR`/`NAMES`/`MIN_SIZE` 的 `else note(...)` 分支 + `glowKt` 的静默 `return`），并新增 **`MAX_PARTS`** 与 **`NUMERIC_{NODE,PART,GAUGE}_FIELDS` 三张字段清单**的逐条比对。⚠️ **反向验证过**：临时把 `DEFAULT_SIZE`/`NAMES` 改名 → 套件从 **PASS=153 FAIL=0（绿）** 变成 **PASS=153 FAIL=4（红）**；临时给工具侧 `NUMERIC_NODE_FIELDS` 加一项 → 精确报出两边清单不一致。**v2.83.0 新增两节**：①「状态灯：阈值推断与回退链必须与 App 逐条一致」—— 危险线的「中点」系数 `0.5`、`max > warnAt` 前置条件、比较方向 `>=`、阈值优先级 `stateWarn ?? warnHigh`、**回退链 `critical → warn → normal`**、状态素材为空的兜底；②「`DIFF_NOTES` 不许与 App 源码打架」—— 差异页签的每条说法都与 App 源码绑定（App 源码变了、说法没跟上就红） |
 | `tools/icarui/tests/verify-lamp-state.js` | **指示灯状态接线（v1.20.16，54 项）** —— 这个套件是为**仓库里最贵的一条 bug** 立的守卫：19 个灯里 16 个写的是 `pid` 而不是 `statePid`，而 App 只读 `statePid`、`model.js` 只序列化 `statePid` → 拖出来**永远是暗的**，**用户会以为车没问题**。断言的是「**所有** `states` 非空的控件 `statePid` 必须非空」（**跑全库 122 个**，不是只查那 16 个）+ 胎压灯接线 + 序列化 + 往返 + 闪烁下限三路（全库 / 输入夹取 / 解析夹取）+ 跨语言下限一致性。**v2.83.0 新增**：§9 闪烁周期不许裸写字面量、§10 `STATE_NAMES` 与 `STATE_DEFAULTS` 一一对应、§11 状态素材的**回退链**（缺 `critical` 键要退到 `warn`，与 App 一致） |
 | `tools/icarui/tests/verify-fields.js` | **字段级往返保真（v2.83.0，18 项）** —— 专治本仓库最贵的一类 bug 形态：**序列化一侧写了、解析一侧漏了**（已发生两次：v1.20.16 的 `statePid`、v2.83.0 的 `valueLabels`，两次都是"静默"）。① **行为面**：122 个内置控件模板 + 一个"全字段"节点逐个走 `toV2Json → parseDesign → toV2Json` **逐字段深比**；② **结构面**：从源码抽出 `nodeToJson` 写出的字段名与 `parseNode` 还原的字段名做**集合差**（罕见分支也躲不过）。⚠️ 结构面**反向验证过**：换回修复前的 `validate.js`，它精确报出 `valueLabels` 一个 |
 | `tools/icarui/tests/verify-rename.js` | **「工具叫 ICarUI」的守卫（v2.83.0，**32 项**）** —— 改名是一次性机械操作，但 ① 改一处忘一处是**静默**的、② 后来的人复制老文档会把旧名字带回来。钉住：`<title>` 就是 `ICarUI`、目录已改、`tools/` + `docs/` 里不再有旧路径字面量（历史日志除外）、**格式 id（`icar.pack/1` / `icar.ui/1` / `icar.ui/2`）未被改动**、零安装形态未破。**v1.20.19**：第 8 节从"台账（只拦新条目）"升级成**零容忍**（`app/` 里出现任何一处旧路径即失败，`APP_LEDGER` 已删）+ 断言 `ThemeStudioSampleTest` **按 `tools/icarui/sample.json` 找样例**且**代码里没有 `assumeTrue`**（判的是**代码**、剥掉注释 —— 这个类的注释里故意写着那段历史，第一版对全文 `indexOf` 误报过一次） |
 | `tools/run-tests.ps1` | **单测入口**：先建 ASCII 目录联接再跑 `testDebugUnitTest`（**不要**在原路径直接跑，见 §6）。**v1.20.19**：汇总行加 `SKIPPED=`，且 **只要有跳过就 `exit 3`**（3 = 有断言没跑，与 gradle 的 1 区分）—— `ThemeStudioSampleTest` 那 14 个用例曾经静默跳过而汇总行照样全绿 |
 | `tools/run-all.ps1` | **一条命令跑完全部验证**（Kotlin + 构建守卫 + 浏览器套件）。`-SkipBrowser` / `-SkipKotlin` 可按需跳过 |
 | `docs/archive/` | **归档的历史文档**。目前是 `CHANGELOG-v1.0~v1.8.md`（含 LVGL 迁移的完整调试日志，8712 行） |
-| `tools/run-browser-tests.ps1` | **跑工具的全部浏览器测试套件**（**29 个 / 1596 条断言**）。每个套件独立进程；跑前后各清一次测试浏览器残留。`-Filter` 只跑匹配的，`-List` 只列出 |
+| `tools/run-browser-tests.ps1` | **跑工具的全部浏览器测试套件**（**29 个 / 1611 条断言** —— 数量以脚本输出为准）。每个套件独立进程；跑前后各清一次测试浏览器残留。`-Filter` 只跑匹配的，`-List` 只列出 |
 | `tools/icarui/tests/` | 浏览器测试套件（`verify-*.js`，**29 个**）+ `_common.js`（公共前置）。**原来散在 %TEMP% 里**，v2.14.0 搬进仓库；路径从 `__dirname` 推导（v2.15.0） |
 | `tools/icarui/tests/_common.js` | **测试套件的公共前置**（v2.35.0）：`stubDialogs(cdp)` 把 `alert`/`confirm`/`prompt` 换成空实现。**headless Chrome 里 `alert()` 会阻塞渲染进程**，漏一个就会重现 v2.34.0 那种"求值超时"（报错位置离原因很远，极难查）。文件名以 `_` 开头，不会被 `verify-*.js` 的匹配当套件跑 |
 
@@ -372,10 +377,10 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `tools/check-build-guard.ps1` | **构建守卫**：检查 `abiFilters` 是否生效 / APK 是否只编一个 ABI / 体积 / `.ps1` 的 BOM。`abiFilters` 失效那个坑**犯过两次**，所以做成机器检查 |
 | `tools/kill-test-browsers.ps1` | **只结束本项目的无头测试浏览器**。判定：profile 路径形如 `*\Temp\edge-*`。**默认只列出、不动手**，加 `-Kill` 才真杀。🔴 **禁止** `Get-Process msedge \| Stop-Process -Force` —— 那会杀掉**用户自己的浏览器窗口**（实测用户 13 个进程、AI 的 0 个，那条命令唯一的实际效果就是干掉用户的浏览器） |
 | `tools/icarui/png.js` | **极简 PNG 编码器**（零依赖，只用内置 zlib）。PNG 结构 + CRC32 + 绘图原语（rect/roundRect/circle/ring/arc/line/poly）。抗锯齿用**超采样**（4 倍绘制再降采样） |
-| `tools/icarui/gen-assets.js` | **生成示例素材**：`node gen-assets.js` → `assets/<分类>/*.png`（**344 个**）+ `assets/builtin.js`（清单）。**全部是几何图形，不含任何车标** |
+| `tools/icarui/gen-assets.js` | **生成示例素材**：`node gen-assets.js` → `assets/<分类>/*.png`（**355 个**）+ `assets/builtin.js`（清单）。**全部是几何图形，不含任何车标**。⚠️ 本行曾写 344 —— 那是 v2.38.0 补 `frame` 之前的数；**数量以 `check-build-guard.ps1` 输出为准** |
 | `tools/icarui/` | **PC 端主题制作工具「ICarUI」**（v2.83.0 起用这个名字；原称 theme-studio）：`index.html` + `css/studio.css` + `js/{schema,model,validate,presets,canvas,panels,editor,app,spring,zip,pack,pinyin}.js` + `png.js`（PNG 编码器）+ `gen-assets.js` + `tests/`（**29 个浏览器套件** + `_common.js` 公共前置） + `gen-sample.js` + `sample.json`(v1) + `sample-v2.json` + `README.md` + `CHANGELOG.md`。**双击 index.html 即用，零安装**（经典脚本，不用 ES module/fetch —— 那在 `file://` 下被 CORS 挡）。校验规则与 `DesignFile.kt` 同源，`ThemeStudioSampleTest` 钉着 |
 | `app/src/test/java/com/icar/obd/` | JVM 单元测试（见 §2.5）。**用例数不要写死在这里** —— 跑 `tools/run-tests.ps1` 看 `TOTAL=` 与 `SKIPPED=`（v1.20.19 时是 **56 个文件 / 1028 用例 / SKIPPED=0**；工作区里可能还有未提交的新测试文件） |
-| `docs/screenshots/` | 真机截图：`01~10` 竖屏，`11~17` 横屏 |
+| `docs/screenshots/` | 真机截图：**19 张**（竖屏 5 / 横屏 8 / 视觉主题 4 / 修复证据 2），编号 `06`~`27` **不连续**（旧图已按 README 的规矩删掉）；另 `studio/` 1 张工具截图 |
 
 ### ⚠️ 改这两个地方时必须成对
 

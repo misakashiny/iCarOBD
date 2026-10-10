@@ -1925,7 +1925,7 @@ while (parts.size > 2 && body.length > CHAIN_MAX) {
 
 ---
 
-
+## v1.20.8 · 2026-10-08 · P12 S3+S4：**能自己造监听型 PID** + **探测页解码显示（"看得懂"）**
 
 > 执行规格：[`下一步-CAN信号库实现规格.md`](下一步-CAN信号库实现规格.md) §2-S3 / §2-S4。
 > S1/S2 已在 v1.20.7 做完（**不要重做**）；S5 的帧率闸已在 v1.20.6 做完（`obd/FrameRateGate.kt`）。
@@ -4890,6 +4890,8 @@ ECU 拒绝 | 服务=0x11 NRC=0x13 报文长度或格式错误
   **它们卡在同一个设计决定上**：「布尔 / 枚举 / 文本型数据怎么进 `min~max` 数值模型」——
   挡位（P/N/R/D）与故障码是同一类问题。三个候选方向见
   [`tools/theme-studio/CHANGELOG.md`](../tools/theme-studio/CHANGELOG.md) v2.60.0，
+  （📌 该目录 v2.83.0 起已改名 `tools/icarui/` —— 见 [`tools/icarui/CHANGELOG.md`](../tools/icarui/CHANGELOG.md)；
+  上面那个链接是**当时的路径**，保留原样以保持历史可追溯）
   **等这个决定才能往下做**（决定了之后守卫从 `Warn` 改成 `Fail`）
 - `dist/iCarOBD-debug-v1.15.0-android.apk` **未删除** —— v1.15.0 是「首个公开版本」，
   按约定应上传 GitHub Releases 后再删本地包；未经确认不做不可逆删除

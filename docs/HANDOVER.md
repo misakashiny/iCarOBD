@@ -5,11 +5,38 @@
 >
 > **⚠️ 请先从 [`接手大纲.md`](接手大纲.md) 开始** —— 那是唯一入口，
 > 里面有项目全貌、上手路线和红线清单。本文是它的展开手册。
+> **不知道某件事该查哪份文档 → 看 [`README.md`](README.md)（文档索引 + 权威表）。**
 >
+> ## ⚠️⚠️ 本文的时效性（2026-10-11 全量文档迭代时核实 —— 请务必先读这段）
+>
+> **本文很长（800+ 行），其中"当前状态"性质的段落严重过期**：
+>
+> | 本文写的是 | 实际（2026-10-11） | 权威在哪 |
+> |---|---|---|
+> | 最新状态 **v1.9.0**（2026-10-03） | **v1.20.20**（versionCode 89） | [`迭代清单.md`](迭代清单.md) |
+> | **415 个单元测试 / 19 个文件** | **1050 用例 / `SKIPPED=0` / 58 个测试文件** | 跑 `tools\run-tests.ps1` 看输出 |
+> | 产物 `dist/iCarOBD-debug-v1.10.4-android.apk` | `dist/iCarOBD-debug-v1.20.20-android.apk` | `app/build.gradle.kts` |
+> | 页脚"版本 `1.4.0`（versionCode 6）" | **v1.20.20** | 同上 |
+> | §1「尚未完成」里 **"尚未接入真实车辆"** | ❌ **早已实车打通**（2026-10-06，阿特兹怠速，见 CHANGELOG v1.18.3） | [`接手大纲.md`](接手大纲.md) §1 |
+> | §1「**无单元测试**」 | ❌ 1050 条 | 同上 |
+> | §1「仅支持 BLE，不支持 SPP」 | ❌ v1.4.0 起支持 SPP | [`FILE_MAP.md`](FILE_MAP.md) §2.2 |
+> | §1「仪表渲染层：三种自绘 View」 | ❌ 现在是 **8 种样式**（`GaugeViewFactory`） | [`UI控件清单.md`](UI控件清单.md) §一 |
+> | §1「3 种仪表盘」 | ❌ 现在是 **多套画布**（最多 8 套，v1.20.0） | [`主题设计大纲.md`](主题设计大纲.md) |
+>
+> **本文仍然可靠的部分**：架构意图、扩展流程（怎么加 PID / 规则 / 仪表）、
+> 安全模型（扫描器的七道闸门）、装机与排障步骤、**踩坑记录**。
+> 这些都是长期有效的，也是本文真正的价值所在。
+>
+> ⚠️ **改本文时不要为了"对上数字"去重写历史段落** —— 只更新"当前状态"性质的表述。
+> **本文以下内容保留原样**（那是 v1.9.0 时点的记录）。
 
 ---
 
-## ⭐ 最新状态（v1.9.0 · 2026-10-03）—— **先读这一节**
+## ⭐ 最新状态（v1.9.0 · 2026-10-03）—— ⚠️ **已过期，见文件头那张表**
+
+> 🔴 **这一节是 2026-10-03（v1.9.0）的时点记录，里面的数字与"未完成"清单早已不成立。**
+> **当前状态请看文件头那张对照表**，或直接看 [`迭代清单.md`](迭代清单.md)（版本清单的权威）。
+> **本节保留原样**是为了留下当时的判断依据（例如"霓虹性能基准没量准"那条风险后来怎么收的）。
 
 > 上面那些章节是长期有效的架构与手册；这一节只讲"现在到哪了"。
 > 会话轮次很多，历史细节见 [`CHANGELOG.md`](CHANGELOG.md)（已 9000+ 行，按版本倒序）。
@@ -35,6 +62,18 @@ dist/iCarOBD-debug-v1.10.4-android.apk    6.69 MB
 | **UI 文档化** | [UI控件清单.md](UI控件清单.md)（所有控件名/ID/颜色）· [动画实现.md](动画实现.md)（动画机制） |
 
 ### ⚠️ 未完成 / 未验证（**接手时请优先处理**）
+
+> 🔴 **这五条是 v1.9.0 时点的清单，现在逐条已变 —— 不要照它开工：**
+>
+> | # | v1.9.0 时 | 现在（2026-10-11） |
+> |---|---|---|
+> | 1 | 霓虹性能基准没量准 | ✅ **已量**（v1.10.1：12 表 + 11 层辉光跑满 120fps，**零掉帧**）→ 见 [`ARCHITECTURE.md`](ARCHITECTURE.md) 红线 4.5.22 |
+> | 2 | 四种仪表没接霓虹 | ✅ **已接**（`NeonCoverageTest` 守着覆盖） |
+> | 3 | 模拟器分组太粗 | ✅ **已重做**（`SignalSimulator` 分组 + 可折叠，见 [`FILE_MAP.md`](FILE_MAP.md)） |
+> | 4 | LVGL 代码未删除 | ❌ **仍未删**（`app/src/main/cpp/lvgl` 14.4 MB **还在**，确认无构建引用之外的改动）—— **这条仍然有效** |
+> | 5 | 实车 BLE 写入链路从未复验 | ✅ **已复验**（2026-10-06 实车：`CCCD 写入完成` 出现、`写入被拒` 0 条） |
+>
+> **现在真正"未完成"的清单在 [`迭代清单.md`](迭代清单.md) 的待办节**，不在本文。
 
 1. **🔴 霓虹的性能基准没量准**。`dumpsys gfxinfo` 只采到 5 帧（样本太小）。
    **9 层辉光上限能否在 8 个仪表下守住 60fps，尚未验证。**
@@ -72,11 +111,12 @@ dist/iCarOBD-debug-v1.10.4-android.apk    6.69 MB
 
 ---
 > 项目路径：`D:/icarobd`（ASCII 联结 → `D:\AI Dsh\车机项目\iCarOBD2`）
-> 包名：`com.icar.obd`　版本：`1.4.0`（versionCode 6）
+> 包名：`com.icar.obd`　版本：**`1.20.20`**（versionCode 89 —— ⚠️ 本行曾长期写着 `1.4.0`，已过期）
 >
-> **六份文档的分工**（别重复读）：
+> **六份主干文档的分工**（别重复读；**完整索引见 [`README.md`](README.md)**）：
 > | 文档 | 回答什么 |
 > |---|---|
+> | [`README.md`](README.md) | **我该看哪份** —— 文档索引 + 权威表 |
 > | [`接手大纲.md`](接手大纲.md) | **入口** —— 项目全貌、上手路线、红线清单 |
 > | [`迭代清单.md`](迭代清单.md) | 做完了什么 / 接下来做什么（带验收标准） |
 > | [`ARCHITECTURE.md`](ARCHITECTURE.md) | **为什么** —— 架构意图、数据流、边界速查 |
@@ -126,6 +166,9 @@ dist/iCarOBD-debug-v1.10.4-android.apk    6.69 MB
 
 ### 尚未完成 / 未验证（**接手时请优先处理**）
 
+> 🔴 **这张表是 v1.4.0~v1.9.0 时点的，多数已不成立**（"尚未接入真实车辆""无单元测试"
+> "仅支持 BLE"三条都已被推翻，见文件头对照表）。**保留原样是为了留当时的判断依据。**
+
 | 项 | 严重度 | 说明 |
 |---|---|---|
 | **仅支持 BLE，不支持经典蓝牙 SPP / WiFi** | 🔴 高 | 见 §10.1。若你的 iCar Pro 2S 在系统蓝牙里显示为经典设备而非 BLE，当前代码扫不到它 |
@@ -158,9 +201,9 @@ export ANDROID_SDK_ROOT='C:\Android\Sdk'
 > 见 [`FILE_MAP.md`](FILE_MAP.md) §6。
 
 产物：`app/build/outputs/apk/debug/app-debug.apk`
-归档副本：`dist/iCarOBD-debug-v1.10.4-android.apk`
+归档副本：`dist/iCarOBD-debug-v1.20.20-android.apk`（⚠️ `dist/` 里**历史 APK 全都还在**，不是只留最新一个）
 
-**跑单元测试**（415 个用例）—— **不要**直接 `./gradlew testDebugUnitTest`：
+**跑单元测试**（**1050 用例 / `SKIPPED=0`**）—— **不要**直接 `./gradlew testDebugUnitTest`：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\run-tests.ps1
@@ -174,7 +217,7 @@ powershell -ExecutionPolicy Bypass -File tools\run-tests.ps1
 
 ```bash
 # 中文路径会让 Git Bash 向 adb 传参编码错乱，所以先复制成英文名
-cp dist/iCarOBD-debug-v1.10.4-android.apk /tmp/stage.apk
+cp dist/iCarOBD-debug-v1.20.20-android.apk /tmp/stage.apk
 C:/Android/Sdk/platform-tools/adb.exe install -r -d /tmp/stage.apk
 
 # 装机后立刻查崩溃（编译通过 ≠ 能运行）
@@ -478,7 +521,7 @@ BLE 设备会出现在 BLE 扫描里；**经典设备在 BLE 扫描里根本不�
 
 ```bash
 # 1. 装机
-cp dist/iCarOBD-debug-v1.10.4-android.apk /tmp/stage.apk
+cp dist/iCarOBD-debug-v1.20.20-android.apk /tmp/stage.apk
 C:/Android/Sdk/platform-tools/adb.exe install -r -d /tmp/stage.apk
 
 # 2. 启动

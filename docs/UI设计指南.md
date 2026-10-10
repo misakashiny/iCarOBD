@@ -3,7 +3,25 @@
 > **在电脑上设计仪表盘，推到设备上加载。**
 > 不用改代码、不用重新编译、不用在平板上用手指拖。
 >
-> 格式标识：`icar.ui/1` · 实现：`data/DesignFile.kt` · 测试：`DesignFileTest.kt`（22 个用例）
+> 格式标识：`icar.ui/1` · 实现：`data/DesignFile.kt` · 测试：`DesignFileTest.kt`（**25 个用例** —— ⚠️ 曾写 22，已过期）
+>
+> ## ⚠️ 本文只管 `icar.ui/1`（扁平 gauges 列表）—— 别拿它当 `icar.ui/2` 的规格
+>
+> **当前主用格式是 `icar.ui/2`（节点树），权威定义在
+> [`主题设计大纲.md`](主题设计大纲.md) §二，解析器是 `data/DesignNode.kt`。**
+> 本文写的是**旧格式**，它**仍然被支持**（存量设计文件照旧能加载，见 §六 的报错文案），
+> 但**新做设计请用 v2 格式 + ICarUI 工具**（`tools/icarui/`）。
+>
+> | | `icar.ui/1`（本文） | `icar.ui/2`（[主题设计大纲.md](主题设计大纲.md)） |
+> |---|---|---|
+> | 结构 | 扁平 `gauges: [...]` | **节点树** `nodes: [...]`（group / image / gauge / text） |
+> | 能力 | 只能放仪表 | 图片 · 层级 · 变换 · **状态**（正常/警告/严重三张图）· 子部件拼装 |
+> | 解析器 | `data/DesignFile.kt` | `data/DesignNode.kt` |
+> | 工具 | 手写 JSON | **ICarUI**（`tools/icarui/index.html`，双击即用） |
+> | 状态 | ✅ 仍支持（存量） | ✅ **当前主用** |
+>
+> **两处都读同一份字段语义**（`GaugeItem.fromJson`），所以 `style` / `min` / `max` / `pid` 这些
+> **在两边含义相同** —— 本文的字段表对 v2 的 `type=="gauge"` 节点同样成立。
 >
 > **控件名字查 [UI控件清单.md](UI控件清单.md)** —— 所有 View 类、控件 ID、颜色、样式、drawable 都在那一份。
 
@@ -175,8 +193,13 @@ y_设计 = y_像素 / 屏高 × 360
 | `calc.gforce` | calc_gforce | G |
 | `calc.gx` / `calc.gy` | calc_gx / calc_gy | G |
 
-> **v1.10.2 起，每个默认启用的内置 PID 都有别名**（20 标准 + 7 派生 = 27 条）。
-> `ThemeStudioSampleTest` 的 `每个内置 PID 都有语义别名` 用例守着这条 ——
+> **v1.10.2 起，每个默认启用的内置 PID 都有别名。**
+> ⚠️ **条数以代码为准**（`data/DesignFile.kt` 的 `PID_ALIASES`）—— **2026-10-11 实测 35 条**
+> （22 标准 + 13 派生）。**本行以前写「20 标准 + 7 派生 = 27 条」**，那是 v1.10.2 时的数字，
+> 之后陆续加过（`obd.engineFault` / `obd.odo` / 4 个厂家模板 / 2 个监听型）**没有再更新过这里**。
+> 复核命令：`git grep -c '" to "' -- app/src/main/java/com/icar/obd/data/DesignFile.kt`，
+> 或直接看 [`FILE_MAP.md`](FILE_MAP.md) 里 `DesignFile.kt` 那一行的 `PID_ALIASES` 条数。
+> `ThemeStudioSampleTest` 的 `每个内置 PID 都有语义别名` 用例守着"**不漏**"这条 ——
 > 漏一个就失败，不靠人记得同步三处。
 >
 > 厂家模板（`tpl_*`，4 条）**刻意没有别名**：它们是占位示例（默认 `enabled=false`，

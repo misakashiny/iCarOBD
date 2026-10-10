@@ -2,6 +2,12 @@
 
 > ⚠️ **要"照着改样式/排版"（尺寸、边距、字号、颜色、在哪个文件第几行）→ 去 [UI样式与排版总表.md](UI样式与排版总表.md)。**
 > 本文只负责**控件 id 与用途**（唯一权威），不写排版细节。
+>
+> ⚠️ **要查控件库里有什么可拖的控件 / 素材有多少个 → 去 [主题设计大纲.md](主题设计大纲.md) §2.40。**
+> 本文的"控件"是 **App 的 Android View**（`R.id.*`），**不是** ICarUI 控件库里的 122 个模板 —— 两回事。
+>
+> ⚠️ **要查界面上的字该怎么说 → 去代码**（`LogViewText.kt` / `CanFilterPresets.kt` / `UiInspectorInfo.kt` 等纯函数）。
+> 本文不抄文案。
 
 > **本工程所有 UI 控件的名字、类型、位置。** 做设计/改代码时查这一份就够。
 > 配套：[UI样式与排版总表.md](UI样式与排版总表.md)（逐页逐控件的尺寸/边距/字号/颜色 + 「怎么改」工作流）· [UI设计指南.md](UI设计指南.md)（设计文件格式）· [ARCHITECTURE.md](ARCHITECTURE.md)（分层红线）
@@ -95,10 +101,22 @@ View
 | `View` | `connDot` | 连接状态圆点（`dot_online`/`dot_offline`/`dot_warn`） |
 | `TextView` | `tvStatus` | 连接状态文字 |
 | `TextView` | `tvRate` | 采样率（`-- Hz`） |
-| `FrameLayout` | `pageContainer` | **四个 Fragment 的容器**（show/hide 切换，不走 replace） |
-| `BottomNavigationView` | `navView` | 底部导航 |
+| `FrameLayout` | `pageContainer` | **六个 Fragment 的容器**（show/hide 切换，不走 replace） |
+| `BottomNavigationView` | `navView` | 底部导航（竖屏） |
 
-**导航项 ID**：`nav_dashboard` / `nav_connect` / `nav_pid` / `nav_rule` / `nav_log`
+> ⚠️ **`navView` 在 `layout/` 与 `layout-land/` 两份布局里同名**（竖屏 `BottomNavigationView`、
+> 横屏 `NavigationRailView`），靠同名 id + 共同基类 `NavigationBarView` 做到零分支 —— 见
+> [ARCHITECTURE.md](ARCHITECTURE.md) 红线 §4.2.11。
+> ⚠️ `connDot` / `tvStatus` / `tvRate` **在 `activity_main.xml` 与 `fragment_connect.xml` 里各有一套**
+> （状态条 vs 连接页），改样式时别改错那一份。
+
+**导航项 ID（6 个）**：`nav_dashboard` / `nav_connect` / `nav_pid` / `nav_rule` / `nav_log` / `nav_knowledge`
+
+> ⚠️ `nav_knowledge` 是 **v1.20.3 新增的第 6 个 tab**（知识库）。竖屏 `BottomNavigationView`
+> 的菜单项上限是 5，第 6 项靠 `ui/view/NavBottomBar.kt` 重写 `getMaxItemCount()` 才放得下
+> （不重写会在竖屏**启动即崩** —— 见 CHANGELOG v1.20.5）。
+> 菜单的**权威**是 `res/menu/bottom_nav.xml`；`GestureActions.TAB_TAGS` 是**循环顺序**的权威，
+> 两者要一起改。
 
 ### fragment_dash.xml —— 仪表盘（**v1.20.0 起只是宿主**）
 
@@ -109,7 +127,7 @@ View
 
 > ⚠️ v1.20.0 **删掉了** `dashToggle` / `btnDashNormal` / `btnDashPerf` / `btnDashCustom` /
 > `btnDashPreset` / `btnDashTheme` / `btnEditDash`。原能力的新位置：
-> 「布局 / 风格」→ 设置页的 `btnCanvasLook`；「编辑」→ 画布页的 `btnEditCanvas`。
+> 「布局 / 风格」→ 设置页的 `btnCanvasLook`；编辑入口 → 设置页**操作菜单**的「编辑这一套…」。
 
 ### fragment_dash_canvas.xml —— 一套画布（含就地编辑器）
 
@@ -174,14 +192,17 @@ View
 | `MaterialSwitch` | `swScreenOn` | 行车保持亮屏 |
 | `Spinner` | `spGForce` | G 值来源 |
 | `MaterialButton` | `btnSimulator` | **进入模拟信号页** |
-| `MaterialButton` | `btnCanSniffer` | 进入 CAN 被动探测 |
 | `MaterialButton` | `btnDashEngine` | 引擎切换（**已隐藏**，`visibility = GONE`） |
+
+> ⚠️ **`btnCanSniffer` 不在这一页** —— 它在 **`fragment_pid.xml`**（见下一节）。
+> 本文档曾把它记在连接页，是过期条目（v1.20.20 全量文档迭代时核实：
+> `grep -l btnCanSniffer app/src/main/res/layout/*.xml` → 只有 `fragment_pid.xml`）。
 
 ### fragment_pid.xml —— PID 列表
 
 | 类型 | ID |
 |---|---|
-| `MaterialButton` | `btnAddPid` / `btnScanner` / `btnImport` / `btnExport` / `btnSeedMazda` |
+| `MaterialButton` | `btnAddPid` / `btnScanner` / `btnImport` / `btnExport` / `btnSeedMazda` / **`btnCanSniffer`**（进入 CAN 被动探测） |
 | `TextView` | `tvPidHint` |
 | `RecyclerView` | `rvPids` |
 
@@ -259,6 +280,17 @@ View
 | `item_log.xml` | `tvLog` |
 | `row_condition.xml` | `spSource` `spOp` `etThreshold` `btnRemove` |
 | `row_action.xml` | `spType` `etP1` `etP2` `btnRemove` |
+
+> ⚠️ **两个 Activity 没有 XML 布局 —— 界面全在代码里建的**，所以它们**没有 `R.id.*` 可查**，
+> 本表（按布局文件组织）覆盖不到：
+>
+> | Activity | 界面在哪 | 排版权威 |
+> |---|---|---|
+> | `ui/ProbeLogActivity.kt`（探测记录，v1.19.22 / v1.19.23 重做） | 代码建 `ScrollView` + `LinearLayout` | [UI样式与排版总表.md](UI样式与排版总表.md) §8 第 19 项（`ProbeLogActivity.kt:62-208`） |
+> | `ui/BenchActivity.kt`（性能基准） | 代码建 `FrameLayout` + `LinearLayout` | [UI样式与排版总表.md](UI样式与排版总表.md) §8 第 20 项（`BenchActivity.kt:143-207`） |
+>
+> 两者都在 `AndroidManifest.xml` 里注册；入口在连接页的「运行选项」。**新增这类代码建界面的 Activity 时，
+> 记得回来在这里登记一行**（否则下一个人按本表找控件会找不到）。
 
 ---
 
