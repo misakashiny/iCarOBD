@@ -26,10 +26,12 @@ import com.icar.obd.data.IslandStyle
 import com.icar.obd.data.Store
 import com.icar.obd.obd.ObdController
 import com.icar.obd.ui.DashFragment
+import com.icar.obd.ui.MainActivity
 import com.icar.obd.ui.ThemeEditorActivity
 import com.icar.obd.ui.view.DashboardBackground
 import com.icar.obd.ui.view.GaugeTheme
 import com.icar.obd.ui.view.IslandCapsuleView
+import com.icar.obd.ui.view.UiInspectorOverlay
 
 /**
  * **画布设置页**（ViewPager2 的最后一页，滑到最右）。
@@ -68,6 +70,8 @@ class CanvasSettingsFragment : Fragment() {
     private lateinit var btnNameLabel: MaterialButton
     private lateinit var btnIsland: MaterialButton
     private lateinit var tvIslandSummary: TextView
+    private lateinit var swInspector: MaterialSwitch
+    private lateinit var tvInspectorSummary: TextView
     private lateinit var tvLastImport: TextView
 
     /**
@@ -295,6 +299,8 @@ class CanvasSettingsFragment : Fragment() {
         btnNameLabel = view.findViewById(R.id.btnNameLabel)
         btnIsland = view.findViewById(R.id.btnIsland)
         tvIslandSummary = view.findViewById(R.id.tvIslandSummary)
+        swInspector = view.findViewById(R.id.swInspector)
+        tvInspectorSummary = view.findViewById(R.id.tvInspectorSummary)
         tvLastImport = view.findViewById(R.id.tvLastImport)
 
         btnAdd.setOnClickListener { showAddDialog() }
@@ -330,6 +336,27 @@ class CanvasSettingsFragment : Fragment() {
             ObdController.applySoundEnabled()
             // ⚠️ 这里**刻意不弹 Toast**（用户明确要求，v1.20.9）：
             // 开关自己的位置就是反馈，再弹一条只是噪声。
+        }
+
+        // ---- 控件检视（v1.20.14）----
+        //
+        // ⚠️ 这一页**不写**那个开关状态：它**刻意不落盘**（一开就吃掉全部触摸，
+        // 绝不能活到下一次启动 —— 理由见 `UiInspectorOverlay.enabled`）。
+        // 状态与副作用都在宿主 `MainActivity.setInspectorEnabled` 一处，
+        // 这里只负责"把用户的操作转过去 + 回头刷新界面"。
+        swInspector.setOnCheckedChangeListener { _, checked ->
+            // 回填不是用户操作（与 swSound 同一道闸）
+            if (binding) return@setOnCheckedChangeListener
+            val host = activity as? MainActivity
+            if (host == null) {
+                // 理论上到不了（这一页就挂在 MainActivity 的 pager 上）。
+                // 真到了也**不能静默**：界面说"开着"而实际什么都没发生是最糟的一种
+                AppLog.w(AppLog.M_UI, "控件检视开关无效", "宿主不是 MainActivity，已拨回")
+                refresh()
+                return@setOnCheckedChangeListener
+            }
+            host.setInspectorEnabled(checked)
+            refresh()
         }
 
         refresh()
@@ -423,6 +450,16 @@ class CanvasSettingsFragment : Fragment() {
         tvIslandSummary.text = Store.settings.islandSummary()
         if (swSound.isChecked != Store.settings.soundEnabled) {
             swSound.isChecked = Store.settings.soundEnabled
+        }
+        // 控件检视（v1.20.14）：状态**不在** Store 里（刻意不落盘），
+        // 直接问浮层那个进程内开关 —— 这样"界面显示"与"真的有没有生效"永远一致
+        if (swInspector.isChecked != UiInspectorOverlay.enabled) {
+            swInspector.isChecked = UiInspectorOverlay.enabled
+        }
+        tvInspectorSummary.text = if (UiInspectorOverlay.enabled) {
+            "已开启：点任意控件看它的类型 / ID / 样式；右上角 × 或本开关可关闭"
+        } else {
+            "已关闭。开启后 App 的触摸会被接管（横滑翻页暂停），关掉即恢复"
         }
     }
 

@@ -54,6 +54,22 @@ private fun cappedWidth(view: View, maxWidthPx: Int, widthMeasureSpec: Int): Int
     return if (mode == View.MeasureSpec.UNSPECIFIED) maxWidthPx else minOf(size, maxWidthPx)
 }
 
+/**
+ * 「我有限宽」——三个变体共有的能力。
+ *
+ * v1.20.14 加：**控件检视器**要显示"这个控件的限宽是多少 dp"
+ * （`maxWidthDp` 正是 `UI样式与排版总表.md` 里搜得到的一项）。
+ * 原来的 `maxWidthPx` 是 `private`，外面只能看到一个"被夹过的宽度"，
+ * 分不清"它本来就窄"还是"被限宽夹了"。
+ *
+ * 用接口而不是给三个类各加一个 `fun`：检视器只需 `is MaxWidthCapable` 一次判断，
+ * 不必去枚举三个具体类型（以后再加第四个变体也不会漏）。
+ */
+interface MaxWidthCapable {
+    /** XML 里 `app:maxWidthDp` 换算出的像素上限 */
+    val maxWidthPx: Int
+}
+
 /** 从 XML 读取 maxWidthDp，缺省用 [DEFAULT_MAX_DP]。 */
 private fun readMaxWidth(context: Context, attrs: AttributeSet?, defStyleAttr: Int): Int {
     val fallback = (DEFAULT_MAX_DP * context.resources.displayMetrics.density).toInt()
@@ -70,9 +86,9 @@ private const val DEFAULT_MAX_DP = 720f
 /** 纵向滚动 + 最大宽度约束 */
 class MaxWidthScrollView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
-) : ScrollView(context, attrs, defStyleAttr) {
+) : ScrollView(context, attrs, defStyleAttr), MaxWidthCapable {
 
-    private val maxWidthPx = readMaxWidth(context, attrs, defStyleAttr)
+    override val maxWidthPx = readMaxWidth(context, attrs, defStyleAttr)
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         super.onMeasure(
@@ -87,9 +103,9 @@ class MaxWidthScrollView @JvmOverloads constructor(
 /** NestedScrollView + 最大宽度约束（给 Fragment 用，支持嵌套滚动） */
 class MaxWidthNestedScrollView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
-) : NestedScrollView(context, attrs, defStyleAttr) {
+) : NestedScrollView(context, attrs, defStyleAttr), MaxWidthCapable {
 
-    private val maxWidthPx = readMaxWidth(context, attrs, defStyleAttr)
+    override val maxWidthPx = readMaxWidth(context, attrs, defStyleAttr)
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         super.onMeasure(
@@ -104,9 +120,9 @@ class MaxWidthNestedScrollView @JvmOverloads constructor(
 /** 通用包装容器：给不是 ScrollView 的内容（如 RecyclerView）加限宽 */
 class MaxWidthLayout @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
-) : FrameLayout(context, attrs, defStyleAttr) {
+) : FrameLayout(context, attrs, defStyleAttr), MaxWidthCapable {
 
-    private val maxWidthPx = readMaxWidth(context, attrs, defStyleAttr)
+    override val maxWidthPx = readMaxWidth(context, attrs, defStyleAttr)
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         super.onMeasure(
@@ -147,9 +163,9 @@ class MaxWidthLayout @JvmOverloads constructor(
  */
 class MaxWidthLinearLayout @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
-) : LinearLayout(context, attrs, defStyleAttr) {
+) : LinearLayout(context, attrs, defStyleAttr), MaxWidthCapable {
 
-    private val maxWidthPx = readMaxWidth(context, attrs, defStyleAttr)
+    override val maxWidthPx = readMaxWidth(context, attrs, defStyleAttr)
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         super.onMeasure(

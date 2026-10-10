@@ -26,6 +26,7 @@ import com.icar.obd.obd.VehicleBus
 import com.icar.obd.service.ObdService
 import com.icar.obd.ui.view.IslandNotice
 import com.icar.obd.ui.view.MonitorWarnBar
+import com.icar.obd.ui.view.UiInspectorOverlay
 
 /**
  * 主界面：底部导航 + 顶部状态条 + 页面容器。
@@ -143,6 +144,9 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
         // 常驻监听可能是在「CAN 探测」页开的 —— 回到主界面立刻把警示挂上，
         // 不等下一秒的 tick（用户第一眼就要看到"轮询已暂停"）
         syncMonitorWarn()
+        // 控件检视（v1.20.14）：从别的 Activity 回来时把浮窗重新挂上
+        // （旋转重建 / 从设置页返回都会走到这里；`applyInspectorState` 是幂等的）
+        applyInspectorState()
     }
 
     override fun onStop() {
@@ -293,6 +297,9 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
         // 灵动岛的收起节拍要停掉：它是 Handler 上的 postDelayed 循环，
         // 不停的话 Activity 没了它还在跑（而且会抓着旧的 content）
         island.dismissNow()
+        // 控件检视（v1.20.14）：停掉长按计时、断开宿主引用 ——
+        // 不停的话那个 Handler 还抓着旧的 content（与灵动岛同一条理由）
+        inspector.detach()
         super.onDestroy()
     }
 
@@ -611,6 +618,17 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
         supportFragmentManager.findFragmentByTag("dash") as? DashFragment
 
     override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        // ---- 控件检视（v1.20.14）：**只在检视模式抢触摸** ----
+        //
+        // 规格 §4.1 是硬约束：平时**完全不介入**，否则会挡住画布横滑与编辑态拖拽
+        // （v1.20.4 那条贴边把手就栽在"总抢系统手势"上）。
+        // 所以这一段的第一句就是 `if (UiInspectorOverlay.enabled)` ——
+        // 关着的时候这里**一次都不进**，`super` 照走，与加这段代码之前逐字节等价。
+        //
+        // 开着的时候反过来：**除了浮窗自己**，所有触摸都消费掉（返回 true），
+        // 于是 ViewPager2 的横滑、拖表盘、双击呼出导航**都不会发生** ——
+        // 这正是判据 5 要的"检视模式下横滑画布不翻页"。
+        if (UiInspectorOverlay.enabled && consumeForInspector(ev)) return true
         // ---- 双指手势（旁听，不消费）----
         if (ev.pointerCount >= 2) {
             when (ev.actionMasked) {
@@ -766,12 +784,137 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
      */
     private val island by lazy { IslandNotice(this) }
 
+    // ------------------------------------------------ 控件检视（v1.20.14）
+
+    /**
+     * **控件检视器**（规格 `docs/下一步-控件检视器.md`）—— 浮窗本体。
+     *
+     * 它挂在 `android.R.id.content` 上（与灵动岛、监听警示条同一个宿主），
+     * `activity_main.xml` / `fragment_dash.xml` **一个字没动**（规格 §4.2）。
+     *
+     * `onRequestClose` = 浮窗右上角那个 `×` —— 用户要的"出口要明显"（规格 §4.5）。
+     * 它和设置页那个开关**走同一条路**（[setInspectorEnabled]），所以不存在
+     * "两处各写一份开关状态"的问题。
+     */
+    private val inspector by lazy {
+        UiInspectorOverlay(this) { setInspectorEnabled(false) }
+    }
+
+    /**
+     * 把"检视开着没有"落实到界面上。**幂等**，可以每秒调一次
+     * （与 [syncMonitorWarn] 同一套写法）。
+     *
+     * ⚠️ 状态的**唯一权威**是 [UiInspectorOverlay.enabled]（进程内，刻意不落盘 ——
+     * 理由见那边的长注释：它一开就吃掉全部触摸，绝不能活到下一次启动）。
+     */
+    private fun applyInspectorState() {
+        val host = findViewById<android.view.ViewGroup>(android.R.id.content) ?: return
+        if (UiInspectorOverlay.enabled) {
+            inspector.show(host)
+            // ⚠️ 检视期间**保持导航栏可见**（v1.20.14 实测补的）。
+            //
+            // 不加这一句会有一个死胡同：检视模式**消费全部触摸**（规格 §4.1 的硬约束），
+            // 而开关在「画布设置页」—— 那是仪表盘 pager 的最后一页，**只能靠横滑到达**。
+            // 于是用户在设置页打开检视之后：既滑不回去（横滑被消费），
+            // 也切不了 tab（点导航栏也被消费）→ **只能检视设置页这一个页面**，
+            // "点任意控件"根本做不到。
+            //
+            // 导航栏是本项目**悬浮**的（v1.20.4：平移不占布局），所以让它显示
+            // **不会改变画布尺寸**（判据 6 仍然成立）。配合下面
+            // [consumeForInspector] 对导航栏的放行，用户就能在检视模式下自由切页。
+            if (railHidden) setRailVisible(true)
+        } else {
+            inspector.hide()
+        }
+    }
+
+    /**
+     * 开 / 关控件检视。**全项目唯一一处写这个开关的地方**
+     * （设置页那个开关与浮窗的 `×` 都调它）。
+     *
+     * 关掉时必须真的把浮层摘掉 —— 否则"关掉了但触摸还是没反应"，
+     * 用户会以为 App 坏了（规格 §4.5 / 判据 1）。
+     */
+    fun setInspectorEnabled(on: Boolean) {
+        if (UiInspectorOverlay.enabled == on) {
+            // 值没变也要走一遍 apply：可能是宿主刚重建、浮层还没挂上
+            applyInspectorState()
+            return
+        }
+        UiInspectorOverlay.enabled = on
+        applyInspectorState()
+        AppLog.i(
+            AppLog.M_UI, if (on) "开启控件检视" else "关闭控件检视",
+            "浮窗=${if (on) "已挂上，触摸被接管" else "已摘掉，触摸恢复正常"}"
+        )
+    }
+
+    /**
+     * 检视模式下的触摸处理。**返回 true = 这一段已经把这次触摸消费掉了**
+     * （调用方直接 `return true`，不再走 `super`）。
+     *
+     * 两种情形：
+     *  - **落在浮窗上** → 返回 `false`，交给 `super`（浮窗自己要处理拖动 / 长按 / `×`）。
+     *    这里必须记住"这一次手势是浮窗的"（[inspectorOnPanel]）：手指拖出浮窗范围后
+     *    仍然要放行，否则拖到一半就断了。
+     *  - **落在别处** → 在 `ACTION_DOWN` 时解析命中的控件，然后**全部消费**。
+     *
+     * ⚠️ 消费掉之后 `ViewPager2` 收不到事件 → 横滑不翻页（判据 5 的前半句）；
+     * 关掉开关后这一段整个不执行 → 横滑恢复正常（判据 5 的后半句）。
+     */
+    private var inspectorOnPanel = false
+    private var inspectorOnNav = false
+
+    /**
+     * 落点是否在导航栏上（**屏幕坐标**版）。
+     *
+     * ⚠️ 不能复用 [isOnNav]：那个用的是 `ev.x/ev.y`（窗口局部坐标），
+     * 而这里拿到的是 `rawX/rawY`（屏幕坐标）。两者在系统栏显示/隐藏时差一截，
+     * 用错了会"点了导航栏却被当成点画布"。
+     */
+    private fun isOnNavRaw(rawX: Float, rawY: Float): Boolean {
+        val nav = findViewById<View>(R.id.navView) ?: return false
+        if (nav.visibility != View.VISIBLE || nav.width <= 0) return false
+        val loc = IntArray(2)
+        nav.getLocationOnScreen(loc)
+        return rawX >= loc[0] && rawX < loc[0] + nav.width &&
+            rawY >= loc[1] && rawY < loc[1] + nav.height
+    }
+
+    private fun consumeForInspector(ev: android.view.MotionEvent): Boolean {
+        if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
+            inspectorOnPanel = inspector.isOnPanel(ev.rawX, ev.rawY)
+            // 导航栏也放行（理由见 [applyInspectorState]）：不放行的话
+            // 检视模式一开就**切不了 tab**，而开关又只能从设置页到达 —— 死胡同。
+            // 放行**不等于不检视**：下面照样 `inspect` 一次，用户点导航栏也能看到它的信息。
+            inspectorOnNav = !inspectorOnPanel && isOnNavRaw(ev.rawX, ev.rawY)
+            if (inspectorOnNav) inspector.inspect(ev.rawX, ev.rawY)
+        }
+        if (inspectorOnPanel || inspectorOnNav) {
+            val done = ev.actionMasked == android.view.MotionEvent.ACTION_UP ||
+                ev.actionMasked == android.view.MotionEvent.ACTION_CANCEL
+            if (done) {
+                inspectorOnPanel = false
+                inspectorOnNav = false
+            }
+            return false
+        }
+        // 只在 DOWN 时解析：一次触摸只检视一个控件（MOVE/UP 不该反复刷新面板）
+        if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
+            inspector.inspect(ev.rawX, ev.rawY)
+        }
+        return true
+    }
+
     private fun syncMonitorWarn() {
         val host = findViewById<android.view.ViewGroup>(android.R.id.content) ?: return
         monitorBar.sync(host)
         // 灵动岛与警示条都在顶部：让灵动岛避开警示条那一行（见 IslandNotice 约束 ③）
         island.attach(host)
         island.setTopOffsetPx(monitorBar.heightPx())
+        // 控件检视：浮层也是挂在 content 上的，宿主换了要重建（旋转重建 / 换 Activity）。
+        // 放在这个每秒的 ticker 里 = 多一道兜底，不需要在每处切换点都记得调一次。
+        applyInspectorState()
     }
 
     private fun startRateTicker() {

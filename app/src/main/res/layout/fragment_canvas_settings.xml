@@ -245,6 +245,33 @@
                 android:textColor="@color/text_primary"
                 android:textSize="13sp" />
 
+            <!--
+                控件检视（v1.20.14）：用户要的「开启之后显示悬浮窗、点击控件后
+                悬浮窗会显示控件的类型、ID、样式之类的东西」。规格见
+                docs/下一步-控件检视器.md。
+
+                ⚠️ 为什么这一行必须写清"会接管触摸"：
+                开起来之后 App **把全部触摸都消费掉**（只剩浮窗自己能点）——
+                这是规格 §4.1 的硬要求（否则画布横滑会把检视点歪），
+                但用户第一反应会是"怎么点不动了"。写在开关上，比让他去猜好。
+            -->
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/swInspector"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="控件检视（点控件看它的类型 / ID / 样式；开启期间触摸被接管）"
+                android:textColor="@color/text_primary"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tvInspectorSummary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="@color/text_dim"
+                android:textSize="11sp" />
+
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnNameLabel"
                 style="@style/Widget.Material3.Button.OutlinedButton"
