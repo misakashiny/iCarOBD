@@ -1298,14 +1298,45 @@ function uniformMatrix(m, w, h) {
         ctx.fillText(l.text, cx + Math.cos(aa) * labelR, cy + Math.sin(aa) * labelR);
       });
 
-      // ---- 4) 分区（红区 / 色带）
+      // ---- 4) 进度弧：**路径恒定，进度只改一个标量**（stroke-dashoffset）
       //
-      // ⚠️ **实际顺序是"先分区、后进度弧"**（这一段在第 5 步之前）。
-      //    所以值进入分区之后，进度弧会**盖住**分区那一段 ——
-      //    原来的注释写的是"画在填充之上，报警区任何时刻都该看得见"，
-      //    与代码**不符**（v2.87.0 核对时发现，见 CHANGELOG）。
-      //    本轮**不动这个顺序**：改了会动到所有存量红区的像素，
-      //    而 `bands` 的约定是"缺省 = 完全旧行为"。已记进 CHANGELOG 待拍板。
+      // 参考实现（SVG）用 `strokeDasharray = len; strokeDashoffset = len × (1 - 进度)`。
+      // canvas 的对应物是 `setLineDash([len])` + `lineDashOffset`，语义完全一致。
+      //
+      // ⚠️ 为什么不"按比例重画一段短弧"（原来的做法）：
+      //   ① 每帧都要重新构造一遍路径；
+      //   ② 弧的两端（抗锯齿）每帧都在动，数值抖动时看着像在"呼吸"；
+      //   ③ 进度不再是一个**可插值的标量** —— 想给它做弹簧/补间都无从下手。
+      //
+      // ⚠️ **进度弧画在分区之下**（v2.88.0 调了顺序，见下面第 5 步）。
+      ctx.strokeStyle = T.accent;
+      ctx.lineWidth = Math.max(1.5, r * 0.12);
+      window.applyArcProgress(ctx, face.arc.len, ratioMech);
+      ctx.beginPath(); ctx.arc(cx, cy, r, a0, a1); ctx.stroke();
+      window.clearArcProgress(ctx);
+
+      // ---- 5) 分区（红区 / 色带）—— **画在进度弧之后**
+      //
+      // ## 为什么顺序必须是这个（v2.88.0 修）
+      //
+      // 修前这一段在第 4 步（进度弧之前）。分区与进度弧**半径、线宽完全相同**
+      // （都是 `r` / `max(1.5, r*0.12)`），所以后画的那个**整段盖住**前一个。
+      // 于是：**值一进红区，进度弧就把红区盖掉** —— 红区的意义恰恰是"现在危险"，
+      // 而它在**最该被看见的那一刻**消失了。这不是观感问题，
+      // 是**这个功能在最关键的时候失效**。
+      //
+      // 反过来（分区在上）是唯一正确的取舍：
+      //   · 分区 = **安全信息**（"红线在哪 / 我现在在不在里面"）
+      //   · 进度弧 = **读数**（"现在是多少"）
+      //   两者重叠时让安全信息赢 —— 而且重叠只发生在**已经进红区**的那一段，
+      //   出了红区两件事照样同时看得见（弧在前、红区在后，互不遮挡）。
+      //
+      // ⚠️ **这会动到存量红区的像素**（重叠段由 accent 色变成红区色）——
+      // 这是**预期的、往正确方向**的变化，已在 CHANGELOG v2.88.0 写明。
+      // 不重叠的那些像素**逐点不变**（分区位置、线宽、颜色都没动）。
+      //
+      // 判据钉在 `tests/verify-spring.js` 第 20 节（像素级）：
+      // "值进红区时，红区那一段的像素仍然是红区色，不是 accent 色"。
       //
       // v2.87.0：颜色 / 透明度**按段取**（`bands` 带进来的），
       // 没带就回落到老红区的 `#FF4D4F` + 不透明 —— 老设计的像素**逐点不变**。
@@ -1319,21 +1350,6 @@ function uniformMatrix(m, w, h) {
         ctx.stroke();
         ctx.globalAlpha = prevA;
       });
-
-      // ---- 5) 进度弧：**路径恒定，进度只改一个标量**（stroke-dashoffset）
-      //
-      // 参考实现（SVG）用 `strokeDasharray = len; strokeDashoffset = len × (1 - 进度)`。
-      // canvas 的对应物是 `setLineDash([len])` + `lineDashOffset`，语义完全一致。
-      //
-      // ⚠️ 为什么不"按比例重画一段短弧"（原来的做法）：
-      //   ① 每帧都要重新构造一遍路径；
-      //   ② 弧的两端（抗锯齿）每帧都在动，数值抖动时看着像在"呼吸"；
-      //   ③ 进度不再是一个**可插值的标量** —— 想给它做弹簧/补间都无从下手。
-      ctx.strokeStyle = T.accent;
-      ctx.lineWidth = Math.max(1.5, r * 0.12);
-      window.applyArcProgress(ctx, face.arc.len, ratioMech);
-      ctx.beginPath(); ctx.arc(cx, cy, r, a0, a1); ctx.stroke();
-      window.clearArcProgress(ctx);
 
       // ---- 6) 指针（红细线）
       const a = a0 + (a1 - a0) * ratioMech;

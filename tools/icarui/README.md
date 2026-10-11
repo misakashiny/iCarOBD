@@ -460,13 +460,13 @@ node tools/icarui/gen-sample.js
 工具的浏览器套件在 `tests/`，一条命令跑全部：
 
 ```powershell
-.\tools\run-browser-tests.ps1              # 全部 26 个套件（1430 条断言）
+.\tools\run-browser-tests.ps1              # 全部 32 个套件（1854 条断言）
 .\tools\run-browser-tests.ps1 -Filter font  # 只跑名字含 font 的
 .\tools\run-browser-tests.ps1 -List         # 只列出会跑哪些
 ```
 
 > ⚠️ 这里的数字**很容易过期**（本行从 23/959 直接跳到了 25/1242 —— 中间几版都忘了改；
-> v2.81.0 又补成 26/1430）。以 `run-browser-tests.ps1` 的输出为准；
+> v2.81.0 补成 26/1430，v2.88.0 补成 **32/1854**）。以 `run-browser-tests.ps1` 的输出为准；
 > 数字对不上不是测试坏了，是**这行字**坏了。
 
 > 这些套件原来散在 `%TEMP%` 里 —— 系统一清就没了，也不在版本控制里。

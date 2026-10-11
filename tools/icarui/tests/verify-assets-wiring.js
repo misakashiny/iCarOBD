@@ -341,6 +341,59 @@ const KNOWN_BLANK_REFS = {};
     eq(quad.filter(n => n > 0).length, 4,
       '**四角标记的四个角都有墨迹**（修前只有左上那一个 —— 负宽高被静默吃掉）' +
       (quad.filter(n => n > 0).length !== 4 ? '：' + quad.join('/') : ''));
+
+    // ---- 3c) 四个角标：**文件名就是 API**（v2.88.0 修「命名镜像」）----
+    //
+    // ## 为什么这条必须存在
+    //
+    // v2.87.0 把四个角标从"全透明空图"修成了"有内容"，但**内容在哪个角**没人管 ——
+    // 实测那时每个文件装的都是**对角**那个角：`corner-tl` 的墨迹在右下、
+    // `corner-br` 在左上、`corner-tr` 在左下、`corner-bl` 在右上。
+    //
+    // 这不是"风格问题"，是**可证明的错**：用户按名字选"左上角"，
+    // 拿到的是右下角 —— **文件名就是 API**，内容对不上名字就是 bug。
+    // （四个角标**没有任何控件引用**，所以修它不会动到任何存量设计的观感。）
+    //
+    // 根因是 `gen-assets-more.js` 里的**双重取负**：
+    // `ox = x + sx*56` 把原点挪到一个角，`c.rect(ox, oy, -sx*40, -sy*6)` 又往回画。
+    //
+    // ## 判据为什么用"象限"而不是"最亮的那个点"
+    //
+    // 角标是**两条互相垂直的短线**（40×6 + 6×40），必须整条都落在名字那个象限里。
+    // 用"墨迹重心"或"最亮点"会被抗锯齿/端点带偏；数**四个象限各自的不透明像素**
+    // 是直接、稳定、可复现的（实测每个角都是 522 个，全在同一个象限里）。
+    const QUAD_NAME = ['左上', '右上', '左下', '右下'];
+    const cornerQuad = [];
+    cornerPaths.forEach((p, i) => {
+      const img = decodePng(readPng(p));
+      const q = [0, 0, 0, 0];
+      if (img) {
+        for (let y = 0; y < img.h; y++) for (let x = 0; x < img.w; x++) {
+          if (img.rgba[(y * img.w + x) * 4 + 3] > 8) q[(y < img.h / 2 ? 0 : 2) + (x < img.w / 2 ? 0 : 1)]++;
+        }
+      }
+      cornerQuad.push(q);
+      const want = QUAD_NAME[i];
+      const ink = q[0] + q[1] + q[2] + q[3];
+      const at = QUAD_NAME[q.indexOf(Math.max.apply(null, q))];
+      console.log('    · ' + p.split('/').pop() + ' 的墨迹象限 [左上,右上,左下,右下] = ' +
+        JSON.stringify(q) + ' → ' + at);
+      ok(ink > 0 && q[i] === ink,
+        `**\`${p.split('/').pop()}\` 的墨迹全在「${want}」象限**（名字说什么角，内容就得是什么角）` +
+        (q[i] === ink ? `：${ink} 个不透明像素` : `：实测分布 ${JSON.stringify(q)}（主象限「${at}」）`));
+    });
+    // 四张**互不相同**由上面那条 md5 断言负责（`cornerMd5` 四张两两不同）；
+    // 这里再钉一层**结构**判据：四个文件必须落在**四个不同的象限**，
+    // 而且各自**只有一个**象限有墨迹（不是"两个角都沾一点"的糊图）。
+    const filled = cornerQuad.map(q => q.indexOf(Math.max.apply(null, q)));
+    eq(new Set(filled).size, 4,
+      '**四个角标各自落在四个不同的象限**（修前四个文件只覆盖对角线两侧）' +
+      (new Set(filled).size !== 4 ? '：' + JSON.stringify(filled) : ''));
+    eq(cornerQuad.filter(q => q.filter(n => n > 0).length === 1).length, 4,
+      '**每个角标只有一个象限有墨迹**（另一条对角线必须是干净的 0）' +
+      (cornerQuad.filter(q => q.filter(n => n > 0).length === 1).length !== 4
+        ? '：' + JSON.stringify(cornerQuad) : ''));
+
     // 渐变轨道 vs 普通轨道：渐变层真的回来了（修前两者几乎逐像素相同）
     const chanDiff = (pa, pb) => {
       const A = decodePng(readPng(pa)), B = decodePng(readPng(pb));
@@ -357,6 +410,15 @@ const KNOWN_BLANK_REFS = {};
         (d ? (100 * d.sameRatio).toFixed(1) + '%' : '?') + '，平均差 ' + (d ? d.meanDiff.toFixed(2) : '?'));
       ok(!!d && d.sameRatio < 0.6 && d.meanDiff > 6,
         `**${dir}渐变轨道的渐变层回来了**（与普通轨道不再逐像素相同：相同 ${d ? (100 * d.sameRatio).toFixed(1) : '?'}% < 60%、平均差 ${d ? d.meanDiff.toFixed(2) : '?'} > 6）`);
+    });
+    // 修好了**还要真的接进控件库** —— 否则"素材是好的"和"用户能拖出来"是两件事。
+    // v2.86.0 的"不接"是对的（那时它是坏的），v2.88.0 修好后接上；
+    // 这条断言把"接上了"钉住，省得哪天有人按老注释又把它摘掉。
+    [['assets/bar/track-gradient-h.png', 'bar_trackgradh', '渐变轨道(水平)'],
+     ['assets/bar/track-gradient-v.png', 'bar_trackgradv', '渐变轨道(垂直)']].forEach(([p, key, name]) => {
+      const users = R.byPath[p] || [];
+      ok(users.indexOf(key) >= 0,
+        `**${name}（\`${key}\`）已接进控件库**（引用 \`${p}\` 的控件：${users.join(', ') || '一个都没有'}）`);
     });
     // `img_bgvign`（暗角背景）拖出来必须**真的有东西**
     //

@@ -38,14 +38,14 @@
     "verify-pid": 24,
     "verify-props": 11,
     "verify-rename": 32,
-    "verify-spring": 190,
+    "verify-spring": 195,
     "verify-studio2": 46,
     "verify-theme": 23,
     "verify-tokens": 251,
     "verify-tokens2": 38,
     "verify-v27": 48,
     "verify-v28": 28,
-    "verify-assets-wiring": 64,
+    "verify-assets-wiring": 72,
     "verify-asset-gen": 26,
     "verify-bands": 129
   }

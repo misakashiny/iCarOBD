@@ -833,6 +833,113 @@ function runSpring(k, c, steps, dt, target) {
       ok(D.cache2 >= D.cache1, '改颜色时盘面缓存有新增条目（说明签名变了 → 重建了盘面，没有命中旧缓存）');
     }
 
+    // ---------- 20) 值进红区时，红区**仍然可见**（v2.88.0 修的绘制顺序）----------
+    //
+    // ## 这条钉的是什么
+    //
+    // 盘面的分区（红区/色带）与进度弧**半径、线宽完全相同**，
+    // 所以**后画的那个整段盖住前一个**。修前分区在第 4 步、进度弧在第 5 步 →
+    // **值一进红区，进度弧就把红区盖掉** —— 红区的意义恰恰是"现在危险"，
+    // 而它在最该被看见的那一刻消失了（不是观感问题，是功能失效）。
+    //
+    // 修法：把分区挪到进度弧**之后**（`canvas.js` 第 4/5 步对调）。
+    //
+    // ## 判据为什么是"沿弧采样分类计数"而不是"取一个点"
+    //
+    // 一个点会被抗锯齿、被指针、被取错角度骗过去。这里沿**红区那一段弧**
+    // 以 1.5° 步进取样，把每个点分类成"红区色 / accent 色 / 其它"，数出来：
+    //   · 值=95（弧伸进红区）：**重叠段必须几乎全是红区色**（修前这里全是 accent）
+    //   · 值=0（弧为空，对照组）：红区整段本来就该是红 —— 证明红区本身画得出来
+    //   · 值=95 且**不在红区**的那段弧：仍然必须是 accent ——
+    //     证明只是"重叠段让位"，不是"进度弧整段没了"
+    console.log('\n=== 20. 像素级：值进红区后红区仍可见（浏览器）===');
+    {
+      const r = await cdp.eval(`(() => {
+        const S = window.CanvasState;
+        S.selection = []; S.showGrid = false; S.showPid = false;
+        S.simSprings.active = false; S.simSprings.clear();
+        S.anim.release(); S.tweenValues = null;
+        S.design.nodes = [];
+        window.dialCacheClear();
+        // 同一块表、同一条数据（v=95，量程 0~100）—— 红区 80~100
+        const dial = window.createNode(window.NODE_GAUGE, {
+          pid: 'obd.rpm', min: 0, max: 100, x: 20, y: 20, w: 200, h: 200,
+          bands: [{ from: 80, to: 100, color: '#FF4D4F' }]
+        });
+        dial.style = 0; dial.showLabel = false; dial.showRange = false;
+        S.design.nodes.push(dial);
+        const cv = document.getElementById('cv');
+        const c2 = cv.getContext('2d');
+        const m0 = window.nodeToCanvasMatrix();
+        const um = window.uniformMatrix({ a: m0.a, b: 0, c: 0, d: m0.d,
+          e: m0.a * dial.x + m0.e, f: m0.d * dial.y + m0.f }, dial.w, dial.h);
+        const R = Math.min(dial.w, dial.h) * 0.36;
+        // 用**画的时候那一块盘面**（同一个 dialFaceFor 缓存）取角度，不另算一遍
+        const face = window.dialFaceFor(window.gaugeDialOpts(dial, R, ''));
+        const redFrom = face.redlines[0].angFrom, redTo = face.redlines[0].angTo;
+        const sample = (ang) => {
+          const lx = dial.w / 2 + Math.cos(ang * Math.PI / 180) * R;
+          const ly = dial.h / 2 + Math.sin(ang * Math.PI / 180) * R;
+          const px = Math.round(um.a * lx + um.c * ly + um.e);
+          const py = Math.round(um.b * lx + um.d * ly + um.f);
+          const d = c2.getImageData(px, py, 1, 1).data;   // 弧线中心线上的**一个像素**
+          return [d[0], d[1], d[2]];
+        };
+        const hex = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+        const accent = hex(window.currentTheme().accent);
+        const isRed = (c) => c[0] > 180 && c[1] < 130 && c[2] < 130;
+        const isAccent = (c) => Math.abs(c[0] - accent[0]) <= 40 && Math.abs(c[1] - accent[1]) <= 40 && Math.abs(c[2] - accent[2]) <= 40;
+        const scan = (v, a0, a1) => {
+          S.previewValues = {}; S.previewValues[dial.pid] = v;
+          window.draw();
+          const out = { red: 0, accent: 0, other: 0, n: 0, first: [] };
+          for (let a = a0; a <= a1 + 1e-9; a += 1.5) {
+            const c = sample(a);
+            out.n++;
+            if (isRed(c)) out.red++;
+            else if (isAccent(c)) out.accent++;
+            else out.other++;
+            if (out.first.length < 4) out.first.push([Math.round(a * 10) / 10, c]);
+          }
+          return out;
+        };
+        const ratio = 0.95;
+        // ⚠️ face.arc 只有 angFrom/angTo/len，**没有 sweep** ——
+        // 第一版写 face.arc.sweep 得到 undefined → NaN → JSON 里变成 null。
+        const arcEnd = face.arc.angFrom + (face.arc.angTo - face.arc.angFrom) * ratio;   // 135 + 270×0.95 = 391.5°
+        const overlap = [Math.max(redFrom, face.arc.angFrom) + 3, Math.min(redTo, arcEnd) - 3];
+        const full = [redFrom + 3, redTo - 3];
+        const out = {
+          accent: accent, redFrom: redFrom, redTo: redTo, arcEnd: arcEnd,
+          overlap: overlap, full: full,
+          值95_重叠段: scan(95, overlap[0], overlap[1]),
+          值95_红区整段: scan(95, full[0], full[1]),
+          值0_红区整段: scan(0, full[0], full[1]),
+          值95_弧上非红区: scan(95, 200, 260),
+        };
+        S.previewValues = null;
+        return JSON.stringify(out);
+      })()`);
+      const D = JSON.parse(r);
+      const pct = (o) => o.n ? (100 * o.red / o.n).toFixed(0) + '% 红 / ' + (100 * o.accent / o.n).toFixed(0) + '% accent' : '(无采样)';
+      console.log('    · 盘面几何：红区 ' + D.redFrom.toFixed(1) + '°~' + D.redTo.toFixed(1) +
+        '°，值 95 的进度弧到 ' + D.arcEnd.toFixed(1) + '° → 重叠 ' + D.overlap[0].toFixed(1) + '°~' + D.overlap[1].toFixed(1) + '°');
+      console.log('    · 值=95 重叠段：' + D.值95_重叠段.n + ' 个采样点 —— ' + pct(D.值95_重叠段));
+      console.log('    · 值=95 红区整段：' + pct(D.值95_红区整段));
+      console.log('    · 值=0  红区整段：' + pct(D.值0_红区整段) + '（对照组）');
+      console.log('    · 值=95 弧上非红区：' + pct(D.值95_弧上非红区));
+      ok(D.值95_重叠段.n >= 20, '重叠段采样点够多才有意义（' + D.值95_重叠段.n + ' 个）');
+      ok(D.值95_重叠段.red / D.值95_重叠段.n >= 0.9,
+        '**值进入红区后，重叠那一段的像素仍然是红区色**（' + pct(D.值95_重叠段) + '）——' +
+        ' 修前这里是 100% accent：进度弧把红区整段盖住了');
+      ok(D.值95_重叠段.accent === 0,
+        '**重叠段里一个 accent 像素都没有**（修前这里全是 accent）—— 红区在最该被看见的时刻没有被盖住');
+      ok(D.值0_红区整段.red / D.值0_红区整段.n >= 0.9,
+        '对照：**值=0（弧为空）时红区整段是红的**（' + pct(D.值0_红区整段) + '）—— 红区本身一直画得出来');
+      ok(D.值95_弧上非红区.accent / D.值95_弧上非红区.n >= 0.9,
+        '**进度弧没有被整段盖掉**：不在红区的那段弧仍然是主题 accent 色（' + pct(D.值95_弧上非红区) + '）');
+    }
+
     await cdp.ws.close();
   } catch (e) {
     console.log('  ❌ 执行失败: ' + e.message);
