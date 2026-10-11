@@ -1,8 +1,8 @@
 # 架构与维护规则
 
 > 本文回答「为什么这样设计、哪些边界不能跨越」。查找要修改的文件请看
-> [FILE_MAP.md](FILE_MAP.md)，接手项目与真实设备验证请看
-> [HANDOVER.md](HANDOVER.md)。
+> [FILE_MAP.md](05-FILE_MAP.md)，接手项目与真实设备验证请看
+> [HANDOVER.md](06-HANDOVER.md)。
 
 ## 1. 分层与依赖方向
 
@@ -94,7 +94,7 @@ BLE → BleTransport → ElmSession → ObdEngine → ObdProtocol
 
 ## 4. 不可跨越的边界（**唯一权威清单**）
 
-> ⚠️ **这份清单只在本文件维护。** `接手大纲.md` §6 与 `HANDOVER.md` §14
+> ⚠️ **这份清单只在本文件维护。** `01-接手大纲.md` §6 与 `06-HANDOVER.md` §14
 > 只做索引与补充说明，**不再重复列出条目**。
 >
 > 历史上这份清单曾在两处各写一份，结果分叉成「一处 7 条、另一处 12 条」，
@@ -177,9 +177,9 @@ BLE → BleTransport → ElmSession → ObdEngine → ObdProtocol
 
 ## 5. 维护约定
 
-- 新增、删除或重命名文件后，更新 [FILE_MAP.md](FILE_MAP.md)。
+- 新增、删除或重命名文件后，更新 [FILE_MAP.md](05-FILE_MAP.md)。
 - 变更架构边界、数据流或扩展机制后，更新本文。
-- 每次发版在 [CHANGELOG.md](CHANGELOG.md) 记录版本、日期、验证方式和遗留问题。
+- 每次发版在 [CHANGELOG.md](07-CHANGELOG.md) 记录版本、日期、验证方式和遗留问题。
 - 新工具脚本放在 `tools/`，并登记到文件大纲。
 - **改了渲染层或动画后重跑性能基准**（红线 21）。
 - **改了 `GaugeItem` / `DesignFile` 字段后同步主题工具**（红线 22）。

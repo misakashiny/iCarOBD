@@ -65,8 +65,11 @@ function walk(dir, out) {
 /** 历史日志 —— 旧名字在这里是**历史事实**，允许保留 */
 const HISTORY = new Set([
   path.join(STUDIO, "CHANGELOG.md"),
-  path.join(ROOT, "docs", "CHANGELOG.md"),
-  path.join(ROOT, "docs", "迭代清单.md"),
+  // ⚠️ 2026-10-11「docs 活文档加数字前缀」之后，下面两份的名字前面多了编号。
+  //    这个集合按**精确路径**匹配，名字一改就整条失效 → 本套件会红（红过一次）。
+  //    以后 `docs/` 再改名，这里必须跟着改。
+  path.join(ROOT, "docs", "07-CHANGELOG.md"),
+  path.join(ROOT, "docs", "03-迭代清单.md"),
   // 本文件自己：断言的就是"旧名字不该出现"，字面量必须写出来。
   // （同 check-build-guard.ps1 把自己排除在破折号检查外）
   __filename,
@@ -75,9 +78,10 @@ const HISTORY = new Set([
 /** **引用**旧路径、而不是**用**旧路径的地方。
     ⚠️ 每加一条都要写清理由 —— 这张表不是"懒得改"的收容所。 */
 const QUOTES_OLD_PATH = new Map([
-  [path.join(ROOT, "docs", "下一步-全量文档迭代.md"),
+  [path.join(ROOT, "docs", "26-下一步-全量文档迭代.md"),
     "收尾任务计划书，正文说的是「改名后 tools/theme-studio/ 的引用要全部更新」——" +
-    "旧路径在这里是被**清理的对象**，不是过期引用（app/ 那 8 处就是它要清的）"],
+    "旧路径在这里是被**清理的对象**，不是过期引用（app/ 那 8 处就是它要清的）。" +
+    "（2026-10-11 加编号前叫 docs/下一步-全量文档迭代.md）"],
   [path.join(ROOT, "tools", "doc-link-allowlist.json"),
     "v2.85.0 死链守卫的豁免清单。它的 `link` 字段必须**逐字写出旧路径**才能匹配到" +
     "历史文档里那条失效链接 —— 那是**匹配用的键**，不是过期引用；" +

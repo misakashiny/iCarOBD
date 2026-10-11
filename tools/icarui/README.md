@@ -7,9 +7,9 @@
 | 想了解 | 去哪 |
 |---|---|
 | 怎么用（本文） | 往下读 |
-| **为什么这样设计** | [`docs/主题设计大纲.md`](../../docs/主题设计大纲.md) |
+| **为什么这样设计** | [`docs/12-主题设计大纲.md`](../../docs/12-主题设计大纲.md) |
 | 改了什么 | [`CHANGELOG.md`](CHANGELOG.md) |
-| 格式字段定义 | [`docs/UI设计指南.md`](../../docs/UI设计指南.md) |
+| 格式字段定义 | [`docs/13-UI设计指南.md`](../../docs/13-UI设计指南.md) |
 | 解析器 | [`data/DesignFile.kt`](../../app/src/main/java/com/icar/obd/data/DesignFile.kt) |
 
 ---
@@ -26,7 +26,7 @@
 —— 拿不到它旁边的 `assets/`，于是 `designBaseDir` 永远是空 →
 **所有素材加载失败** → 由控件（素材图片）拼出来的表盘**只剩空卡片**。
 用户报的「画布不显示我做好的内容、显示是空的」就是这个
-（[`docs/CHANGELOG.md`](../../docs/CHANGELOG.md) v1.20.3 查明的真凶）。
+（[`docs/07-CHANGELOG.md`](../../docs/07-CHANGELOG.md) v1.20.3 查明的真凶）。
 
 App 侧 v1.20.3 加了「选素材文件夹」兜底，但那是**两步操作、体验差**。
 本工具的解法：**导出一个自包含的包**，App 侧解开这一个文件就能拿到全部素材。

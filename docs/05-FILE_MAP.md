@@ -3,20 +3,20 @@
 > **这份文档的用途**：改代码前先在这里定位「该动哪个文件」，改完回来更新对应行。
 >
 > ⚠️ **本文只负责「改哪里」（逐文件职责 / 关键符号 / 改动风险 / 任务索引）。**
-> 「哪份文档对什么负责」的**权威表**在 [`README.md`](README.md)（文档索引）。
+> 「哪份文档对什么负责」的**权威表**在 [`00-README.md`](00-README.md)（文档索引）。
 >
 > | 文档 | 回答什么问题 |
 > |---|---|
-> | [`README.md`](README.md) | **我该看哪份** —— 文档索引 + 权威表（按角色分） |
-> | [`接手大纲.md`](接手大纲.md) | **项目全貌 + 上手路线 + 红线**（接手者从这里开始） |
-> | [`迭代清单.md`](迭代清单.md) | 做完了什么 / 接下来做什么 |
-> | [`ARCHITECTURE.md`](ARCHITECTURE.md) | **为什么这样设计** —— 分层边界、数据流排障、UI 自适应 |
-> | `FILE_MAP.md`（本文） | **改哪里** —— 每个文件干什么、关键符号、改动风险 |
-> | [`HANDOVER.md`](HANDOVER.md) | 详细手册 —— 扩展流程、安全模型、装机清单、踩坑 |
-> | [`CHANGELOG.md`](CHANGELOG.md) | **改过什么** —— 按版本的变更与验证记录 |
+> | [`00-README.md`](00-README.md) | **我该看哪份** —— 文档索引 + 权威表（按角色分） |
+> | [`01-接手大纲.md`](01-接手大纲.md) | **项目全貌 + 上手路线 + 红线**（接手者从这里开始） |
+> | [`03-迭代清单.md`](03-迭代清单.md) | 做完了什么 / 接下来做什么 |
+> | [`04-ARCHITECTURE.md`](04-ARCHITECTURE.md) | **为什么这样设计** —— 分层边界、数据流排障、UI 自适应 |
+> | `05-FILE_MAP.md`（本文） | **改哪里** —— 每个文件干什么、关键符号、改动风险 |
+> | [`06-HANDOVER.md`](06-HANDOVER.md) | 详细手册 —— 扩展流程、安全模型、装机清单、踩坑 |
+> | [`07-CHANGELOG.md`](07-CHANGELOG.md) | **改过什么** —— 按版本的变更与验证记录 |
 >
-> ⚠️ **上面这张表以前写「文档共六份」** —— 那早就不成立了：`docs/` 下现在有 **25 份** markdown
-> （见 [`README.md`](README.md) 的完整索引）。**只有这 6 份是"主干"，其余按需查阅。**
+> ⚠️ **上面这张表以前写「文档共六份」** —— 那早就不成立了：`docs/` 下现在有 **27 份** markdown
+> （见 [`00-README.md`](00-README.md) 的完整索引）。**只有这 6 份是"主干"，其余按需查阅。**
 >
 > **规模（2026-10-11 v1.20.21 实测）**：`app/src/main` 下 **117 个 Kotlin 文件 / 27,433 非空行**；
 > `app/src/test` 下 **60 个测试文件 / 11,838 非空行**；
@@ -51,27 +51,35 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 ├── local.properties                sdk.dir
 ├── tools/                          辅助脚本（见 §4）
 │   ├── icarui/               PC 端主题制作工具「ICarUI」（**v2 多文件**，双击 index.html 即用，见 §4）
-├── docs/                           **全部文档集中在此**
-│   ├── 接手大纲.md                 【入口】项目全貌 + 上手路线 + 红线
-│   ├── 交接-换电脑.md              **换机专用**：环境变量 / ASCII 联结 / 编译 / 本机实测偏差
-│   ├── 上车监控清单.md             **上车专用**：§4 判据表 + **§11 本趟工单** + 取证 + 已知的坑
-│   ├── 迭代清单.md                 版本清单 + 待办（带验收标准）+ §五 阻塞关系
-│   ├── 下一步-主题工具与仪表盘重构.md  主题工具 + 仪表盘重构的执行规格（**已完成**，留作记录）
-│   ├── ARCHITECTURE.md             为什么
-│   ├── FILE_MAP.md                 本文（改哪里）
-│   ├── HANDOVER.md                 详细手册
-│   ├── CHANGELOG.md                逐版本变更记录
-│   ├── UI设计指南.md               `icar.ui/1` 设计文件格式
-│   ├── 主题设计大纲.md              **主题设计系统架构**（节点树 / 素材 / 状态 / 分辨率 / 编辑器分阶段）
-│   ├── UI控件清单.md               全部 View / 控件 ID / 颜色 / 样式 / drawable
-│   ├── 动画实现.md                 动画机制（**三层数值过渡** / 爆闪 / 共用时钟）
-│   ├── 仪表框架.md                 8 种仪表 + 「某块表为什么是空的」排查
-│   ├── CAN-信号库与逆向框架.md     **CAN 信号逆向的方法论**（DBC 分析 / 采样率是前提 / 四阶段方案）
-│   ├── 下一步-CAN信号库实现规格.md  **上一条的执行规格**（**S1~S5 全部已做**：S1/S2 = v1.20.7、S3/S4 = v1.20.8、S5 = v1.20.10）
-│   ├── 下一步-变量模式与组件变体.md  **主题工具的下一轮执行规格**（变量·模式 / 组件·变体，待评审）
-│   ├── LVGL-放弃记录.md            LVGL 方案为什么被放弃（教训）
-│   ├── 主题格式参考.md             Sky Gauge 格式逆向（已不用，格式知识仍有效）
-│   ├── archive/                    归档的历史文档（`CHANGELOG-v1.0~v1.8.md`）
+├── docs/                           **全部文档集中在此**（活文档带 `NN-` 前缀，数字 = 阅读顺序）
+│   ├── 00-README.md                **文档索引**：按角色分「我该看哪一份」+ 权威表
+│   ├── 01-接手大纲.md              【入口】项目全貌 + 上手路线 + 红线
+│   ├── 02-交接-换电脑.md           **换机专用**：环境变量 / ASCII 联结 / 编译 / 本机实测偏差
+│   ├── 03-迭代清单.md              版本清单 + 待办（带验收标准）+ §五 阻塞关系
+│   ├── 04-ARCHITECTURE.md          为什么
+│   ├── 05-FILE_MAP.md              本文（改哪里）
+│   ├── 06-HANDOVER.md              详细手册
+│   ├── 07-CHANGELOG.md             逐版本变更记录
+│   ├── 08-UI控件清单.md            全部 View / 控件 ID / 颜色 / 样式 / drawable
+│   ├── 09-UI样式与排版总表.md       **排版数值唯一权威**（逐页逐控件，带 `文件:行`）
+│   ├── 10-动画实现.md              动画机制（**三层数值过渡** / 爆闪 / 共用时钟）
+│   ├── 11-仪表框架.md              8 种仪表 + 「某块表为什么是空的」排查
+│   ├── 12-主题设计大纲.md          **主题设计系统架构**（节点树 / 素材 / 状态 / 分辨率 / 编辑器分阶段）
+│   ├── 13-UI设计指南.md            `icar.ui/1` 设计文件格式
+│   ├── 14-主题格式参考.md          Sky Gauge 格式逆向（已不用，格式知识仍有效）
+│   ├── 15-CAN-信号库与逆向框架.md  **CAN 信号逆向的方法论**（DBC 分析 / 采样率是前提 / 四阶段方案）
+│   ├── 16-上车监控清单.md          **上车专用**：§4 判据表 + **§11 本趟工单** + 取证 + 已知的坑
+│   ├── 17-知识库审校.md            App 内知识库审校结果（**不是正文**）
+│   ├── 18-控件库优化建议.md        控件库调研报告 12 条 + 落地状态表
+│   ├── 19-LVGL-放弃记录.md         LVGL 方案为什么被放弃（教训）
+│   ├── 20-下一步-CAN信号库实现规格.md  **上一条的执行规格**（**S1~S5 全部已做**：S1/S2 = v1.20.7、S3/S4 = v1.20.8、S5 = v1.20.10）
+│   ├── 21-下一步-主题工具与仪表盘重构.md  主题工具 + 仪表盘重构的执行规格（**主要部分已完成**，留作记录）
+│   ├── 22-下一步-表盘制作与动效方案.md   表盘制作 5 套方案 + 动效清单（**待评审**）
+│   ├── 23-下一步-变量模式与组件变体.md   **主题工具的下一轮执行规格**（变量·模式 / 组件·变体，待评审）
+│   ├── 24-下一步-控件检视器.md      控件检视器规格（**已完成**，留作决策记录）
+│   ├── 25-下一步-UI改进四项.md      检视器清除 / CAN 预设 / 文案 / 日志页（**四项全部已做**）
+│   ├── 26-下一步-全量文档迭代.md    2026-10-11 全量文档迭代的任务书（**已完成**）
+│   ├── archive/                    归档的历史文档（`CHANGELOG-v1.0~v1.8.md`）—— **不加编号**（改它 = 改历史）
 │   └── screenshots/                实机截图 20 张（19 张界面 + studio/ 1 张）+ 索引 README
 ├── dist/                           当前版本 APK（只保留最新一个）
 ├── README.md                       面向使用者
@@ -86,7 +94,7 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 ## 2. Kotlin 源文件清单
 
 > 「风险」列的含义：
-> 🔴 = 改错会导致数据错误/连接异常/用户配置丢失，改前必读 `HANDOVER.md` 对应章节
+> 🔴 = 改错会导致数据错误/连接异常/用户配置丢失，改前必读 `06-HANDOVER.md` 对应章节
 > 🟡 = 需要连带改动别处
 > 🟢 = 相对独立，随便改
 
@@ -128,14 +136,14 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `DashCanvas.kt` | 199 | **一套画布**（多画布，v1.20.0）：`id/name/type/gauges/designJson` **+ `theme/pageIndex/bg*/scaleMode`**；另带**画布名浮标的位置常量**（v1.20.1） | `TYPE_NORMAL/PERF/CUSTOM`、`TYPE_NAMES`、`MAX_CANVASES`(8)、`DEFAULT_NAME`、`typeName`、`sanitizeName`、`gaugeCount`、`toJson/fromJson/listFromJson`、**`NAME_POS_*`/`NAME_POS_NAMES`/`namePosName`** | 🟡 **一套画布 = 一屏**：主题/背景/页号都跟着它走（留全局会出现"性能页顶着日常页底图"的半套效果）。`listFromJson` 坏条目**跳过**而不是整体失败。⚠️ `NAME_POS_*` 是**全局显示偏好**（存在 `Settings.canvasNamePos`），**不是每套画布各自的属性** —— 否则横滑时小字会在四个角之间乱跳 |
 | `GestureActions.kt` | 198 | **双指手势 → 动作**的映射表（v1.20.9；**v1.20.10 加两个切 tab 动作**）：4 个方向（左/右/上/下）× **7 个动作**（无 / 呼出导航 / 收起导航 / 切上·下一套画布 / **切上·下一个 tab**），**纯逻辑** | `NONE`/`NAV_SHOW`/`NAV_HIDE`/`CANVAS_PREV`/`CANVAS_NEXT`/**`TAB_PREV`/`TAB_NEXT`**、`ACTION_IDS`/`ACTION_NAMES`、`SLOT_LEFT/RIGHT/UP/DOWN`/`SLOT_COUNT`/`SLOT_NAMES`、**`DEFAULTS`**、**`TAB_TAGS`**（6 个导航页的 tag，**循环顺序的唯一一处**）、**`slotOf(dx,dy,threshold)`**、**`normalize(slot,id)`**、`actionName/actionIndex/shortSlotName`、**`adjacentTab(actionId,current)` / `adjacentTab(current,delta)`**（`floorMod` 回绕）、**`isTabAction`**、**`summary(map)`** | 🔴 **方向判定只有这一份实现**（`MainActivity.dispatchTouchEvent` 调它）：**先比主轴再比阈值** —— 反过来判会把"斜着划"一律当成横滑（两根手指不可能完全同步，斜划非常常见）。⚠️ `normalize` 对**认不得的值落回该槽位的默认值、不是落回「无」**：旧配置根本没这四个键，落回「无」的表现是"升级之后手势全没了"。⚠️ **两个新动作的默认值必须是「无」**（`DEFAULTS` 里不许出现 `TAB_*`，有单测钉着）—— v1.20.9 及以前根本没这两个动作，升级后某个方向突然开始切页是不可接受的。⚠️ **新动作追加在 `ACTION_IDS` 末尾**：下标同时被 `Store.Settings` 与设置页 Spinner 用，插在中间会让旧配置落错动作。⚠️ 动作**刻意只给"导航类 + 翻页类"** —— 不给编辑态 / 全屏 / **跳指定页**（`adjacentTab` 对认不得的当前页返回 **null 而不是落回第一个**，就是为了不变成"跳页"）。⚠️ **双击兜底不在这一张表里**（它是"卡在仪表盘出不去"的保险，不可关）。⚠️ 加动作要同时改 `ACTION_IDS` / `ACTION_NAMES` / `shortAction` + `MainActivity.runGesture` 的 `when`（漏一处的表现是"能选但没反应"）。⚠️ 改 `TAB_TAGS` 要同时改 `res/menu/bottom_nav.xml`（菜单是"导航栏长什么样"的权威，`TAB_TAGS` 是"循环按什么顺序"的权威） |
 | `DesignNode.kt` | 725 | **`icar.ui/2` 的节点树**（`group`/`image`/`gauge`/`text`）+ 子部件 `GaugePart` + 底框覆盖 `CardOverride` + 图片状态 `NodeState`；字体枚举 `GaugeFont`。`type=="gauge"` 的节点**复用 `GaugeItem.fromJson`**（字段同名同义，v1 的每一项都能一对一升级成一个根节点） | `TYPES`/`TYPE_NAMES`、`MAX_NODES`(200)、**`MAX_NODE_DEPTH`**(32)、**`NUMERIC_NODE_FIELDS`/`NUMERIC_PART_FIELDS`/`NUMERIC_GAUGE_FIELDS`**、`parse(o, path, errors, warnings, assetIds, forceGauge, depth)`、`flatten`、`collectGauges`、`sortedChildren`；`GaugePart.MAX_PARTS`(64)/`KINDS`/`angleFor`/`parseAll`；`NodeState.MIN_BLINK_MS`(400) | 🔴 **`parse` 是递归的**，所以深度闸门必须在**递归之前**（没有它时 2 万层嵌套直接 `StackOverflowError` → 用户看到"点了导入，App 闪退"）。⚠️⚠️ **`type=="gauge"` 分支必须把 `pid` 与 `unit` 两个字段一起注进去再交给 `GaugeItem.fromJson`**（v1.20.20 修）：`fromJson` 用**元素自己的 `unit`** 判坐标单位，而设计文件的单位声明在 `canvas.unit` 上 —— 漏注入 `unit` 时每个坐标被**再乘一次 360**（`x=30 w=180` → `x=10800 w=64800`），症状是**导入确认框弹假警报**「超出画布右下角：右=75600」+ `Store.customGauges` 被污染（渲染走节点树所以**画面是对的**，坏在**回退路径**上）。**同一次修还要 `.also { it.legacyGrid = false }`**（v1 的 `parseGauge` 有这一句、v2 没有；不置位时 `DashLayout.migrateFromGrid` 会把**整张盘**按 2 列网格重算）。`DesignCoordUnitTest` 把两条路钉成逐字段相等。⚠️ **`MAX_NODES` 挡不住 `parts`**（`flatten` 只看 `children`）→ `GaugePart.MAX_PARTS` 必须**先截断、后报错**。⚠️ `NUMERIC_*_FIELDS` 三张清单与工具侧 `schema.js` **逐条比对**（`verify-crosslang.js`），**单边加字段 = 新的跨语言分叉** |
-| `DesignFile.kt` | 612 | **`icar.ui/1` 设计文件**（PC 端设计 → App 加载）。**不抛异常**，返回带字段路径的可读错误 | `SCHEMA`、`MAX_GAUGES`(32)、**`PID_ALIASES`**(**35** —— 2026-10-11 实测；`UI设计指南.md` 里"27 条"是 v1.10.2 时的旧数)、`resolvePid`、**`missingAliases()`**、parse(text)、`Result.errors/warnings`、**`Background`/`FIT_*`/`fitName`**、**`warnNonNumeric(o, keys, path, warnings)` / `scalarText(v)`**（v1.20.20：挑出"写了值但不是数字"的字段给**警告**） | 🔴 改校验规则要**同时改 `tools/icarui/index.html`**，否则编辑器与 App 分叉（`ThemeStudioSampleTest` 会失败）。`PID_ALIASES` 改一处要同步三处（Kotlin / 工具 / 设计指南）。⚠️ **`parseGauge`（v1 路）必须注入 `unit`** —— `GaugeItem.fromJson` 靠**元素自己的 `unit`** 判"归一化 0..1 还是 360 单位"，设计文件的单位声明在 `canvas.unit` 上；不注入则每个坐标被**再乘一次 360**（`x=30 → 10800`）。v2 的 `DesignNode.parse` 曾漏了这一句（v1.20.20 修，见 `DesignCoordUnitTest`）。⚠️ **`warnNonNumeric` 的判据必须与 `optDouble` 会不会回落同源**（数字与**数字字符串**都算数字，见 `OptJsonBehaviorTest` 实测）：数字字符串确实会被解析成数字，警告它就成了**假警报**，而假警报的代价是用户学会无视整个警告列表。⚠️ 字段清单 `DesignNode.NUMERIC_*_FIELDS` 与工具侧 `schema.js` **逐条比对**（`verify-crosslang.js` 钉着）—— 单边加字段 = 新的跨语言分叉。**数值怎么回落一个字没改**（改硬错误会拒收存量文件） |
+| `DesignFile.kt` | 612 | **`icar.ui/1` 设计文件**（PC 端设计 → App 加载）。**不抛异常**，返回带字段路径的可读错误 | `SCHEMA`、`MAX_GAUGES`(32)、**`PID_ALIASES`**(**36** —— 2026-10-11 实测；`13-UI设计指南.md` 里"27 条"是 v1.10.2 时的旧数)、`resolvePid`、**`missingAliases()`**、parse(text)、`Result.errors/warnings`、**`Background`/`FIT_*`/`fitName`**、**`warnNonNumeric(o, keys, path, warnings)` / `scalarText(v)`**（v1.20.20：挑出"写了值但不是数字"的字段给**警告**） | 🔴 改校验规则要**同时改 `tools/icarui/index.html`**，否则编辑器与 App 分叉（`ThemeStudioSampleTest` 会失败）。`PID_ALIASES` 改一处要同步三处（Kotlin / 工具 / 设计指南）。⚠️ **`parseGauge`（v1 路）必须注入 `unit`** —— `GaugeItem.fromJson` 靠**元素自己的 `unit`** 判"归一化 0..1 还是 360 单位"，设计文件的单位声明在 `canvas.unit` 上；不注入则每个坐标被**再乘一次 360**（`x=30 → 10800`）。v2 的 `DesignNode.parse` 曾漏了这一句（v1.20.20 修，见 `DesignCoordUnitTest`）。⚠️ **`warnNonNumeric` 的判据必须与 `optDouble` 会不会回落同源**（数字与**数字字符串**都算数字，见 `OptJsonBehaviorTest` 实测）：数字字符串确实会被解析成数字，警告它就成了**假警报**，而假警报的代价是用户学会无视整个警告列表。⚠️ 字段清单 `DesignNode.NUMERIC_*_FIELDS` 与工具侧 `schema.js` **逐条比对**（`verify-crosslang.js` 钉着）—— 单边加字段 = 新的跨语言分叉。**数值怎么回落一个字没改**（改硬错误会拒收存量文件） |
 | `DesignPack.kt` | 325 | **设计包（`.icarzip`）的解开与校验**（v1.20.9，App 侧）：`design.json` + 只打包真正引用到的素材 + `manifest.json`。**纯 JVM**（`java.util.zip` + `java.io.File`，**零新依赖**） | `PACK_FORMAT`(`icar.pack/1`)、`DESIGN_ENTRY`/`MANIFEST_ENTRY`、`Asset`/`Missing`/`Manifest`、**`Result.Ok/Fail`**、**`isZipHead(head)`**、**`safeEntryName(raw)`**、`parseManifest(text)`、**`unpack(input, destDir)`** | 🔴 治的是"**表盘只剩空卡片**"那个病（见 `DesignAssets`）：解压目录直接当 `designBaseDir`，**不需要任何路径映射**（包内路径 = 设计里的相对路径）。⚠️ **不静默**：字节数 / CRC32 对不上、清单里声明了但包里没有 → **整个包拒收**并把每条都列出来（只导一半恰恰会重现"空卡片"）；唯一放行的是 manifest 自己 `missing` 里已登记的素材，且逐条列成警告。⚠️ **路径穿越防护**：`safeEntryName` 拒绝对路径与任何一段 `..`（反斜杠先归一化 —— `..\..\x` 能构造出来），命中即**整包拒收 + 删掉已解压内容**（不留半个目录）。⚠️ `crc32` 是**无符号 32 位**（工具侧 `crc >>> 0`），比较用 `Long`，报错文案给**十六进制**（十进制看不出来对不对）。⚠️ 判"是不是 zip"只看前 4 字节的三种合法签名（`isZipHead`），**不认 "PK" 开头的任意字节** |
 | `CrashCatcher.kt` | 60 | 全局未捕获异常兜底，写 `files/last-crash.log` | `install()` | 🟢 用户报「闪退」时先看那个文件 |
 | `IslandStyle.kt` | 313 | **灵动岛提示的五组样式**（v1.20.13，用户要「可以自定义样式」）：位置 3 / 尺寸 3 / 圆角 3 / 停留 3 / 配色 2，**纯函数** | `POS_*`/`SIZE_*`/`CORNER_*`/`COLOR_*`/`HOLD_CHOICES_MS`、各 `*_NAMES` 与 `*_DEFAULT`、**`SIZE_TEXT_SP`/`SIZE_PAD_H_DP`/`SIZE_PAD_V_DP`/`CORNER_RADIUS_DP`**（下标一一对应）、`BG_PRESETS`/`FG_PRESETS`、**`normalizePos/Size/Corner/ColorMode/HoldMs/Color`**、**`Spec`**（已解析样式：`textSp`/`padHdp`/`padVdp`/`cornerDp`/`holdMs`/`bg`/`fg`/`accent`）、**`spec(...)`**、`holdIndex`、`summary`、`hexOf`、**`parseHex`** | 🔴 **默认值 = v1.20.12 写死在 `IslandNotice` 里的那些数**（13sp/14dp/7dp/18dp/`0xF01A1F27`/白/琥珀），改动任何一个都会让升级后的观感变样 —— `IslandStyleTest` 逐个断言。⚠️ **归一化对"认不得的档位"落回默认值，不是夹到边界**（夹到边界会让一份手改坏的 `settings.json` 把提示**静默挪到靠右**）。⚠️ **停留时长必须在 `HOLD_CHOICES_MS` 里**，否则落回默认（手改 `999999` 会让提示赖在画布上不走）。⚠️ **全透明（alpha==0）一律落回兜底** —— 它等于"胶囊看不见"，而用户看到的是"提示坏了"；半透明**原样保留**（那是有意的选择）。⚠️ 放在 `data/` 而不是 `ui/view/`：要被 `Store.Settings` 引用（落盘），而 `data/` 不能反向依赖 `ui/`；顺带好处是归一化/摘要/取值全可 JVM 单测。⚠️ **显示层只能从 `Store.settings.islandStyle()` 拿样式**，不许自己读那七个原始字段（归一化只在这一处发生） |
 | `PidMerge.kt` | 121 | **燃油两条同义 PID 的合并**（v1.20.13，用户拍板「燃油可以合并」）：**保留两个 id，只在列表里不重复显示** | `KEEP_ID`(`calc_lh`)、`FOLDED_ID`(`std_5E`)、`FOLDED_IDS`、`isFolded`、**`filterForList(all, keep)`**、`mergeNote`、`describe` | 🔴 **先读代码确认了关系**：`std_5E` 是**输入**（`01 5E`）、`calc_lh` 是**派生输出**（`Derived.computeAll` 算出来），而 `computeAll` 的优先级是"`std_5E` 有值就用它、否则 MAF 推算" → **`calc_lh` 是超集通道，两者数值不等价** → **删任何一条都是错的**（车不支持 `01 5E` 时 `std_5E` 根本没值）。⚠️ **不许改 `Store.allPids()`** —— 轮询 / 模拟器 / 派生通道读的都是它，过滤**只能发生在"拿去做列表"那一步**（PID 管理页 / 仪表编辑器 / 规则编辑器）。⚠️ **`keep` 参数不是保险，是个真陷阱**：编辑器（`showEditDialog` / `addConditionRow`）都是 `indexOfFirst` 找不到就不设 → Spinner 停在 **0 号（发动机转速）** → 点「确定」把老仪表/老规则条件**静默改成转速**（有单测钉着）。⚠️ `mergeNote` 必须是**纯文本**（PID 行是 `TextView` 直接显示，写 `**` 用户看到的就是星号）。⚠️ 与 `PidDedup` 的分工：`PidDedup` 判的是"同一个信号的**两份条目**"（可清理），这里判的是"**输入与派生输出**"（**不可清理**，`PidDedup` 刻意不判内置之间的重复） |
-| `UiInspectorInfo.kt` | 367 | **控件检视器的显示内容**（v1.20.14；**v1.20.15 修了这里的一个死循环**；**v1.20.17 加「清除」的占位文案**）：**纯函数**（44 条单测）—— px→dp/sp、四边数值、颜色 `#RRGGBB`、父链拼装、整屏渲染。**规格 §6 明确要求抽成纯函数**（View 在 JVM 里碰不得） | **`num`/`dp`/`sp`**、**`colorHex`**、`specName`（`MATCH_PARENT`/`WRAP_CONTENT`）、**`sizeLine`**、`quad`/`boxLine`、`textLine`、`shortResName`、`backgroundLine`、`stateLine`、**`chainLine`/`chainBody`**（v1.20.15 拆开）、**`toggleLabel`/`inspecting`/`panelStealsTouch`**（v1.20.15 检视开关的纯判据）、`optLine`/`optNumLine`、**`InspectorSnapshot`**、**`render`/`renderBody`**、`clipboardText`、`NONE`/`NO_ID`/`NO_HIT`/`HINT_DOC`/`HINT_SELF_DRAWN`/`HINT_OPS`/**`HINT_PAUSED`**/**`TOGGLE_ON`/`TOGGLE_PAUSED`**/**`CLEAR_LABEL`/`CLEAR_DESC`/`PLACEHOLDER_TITLE`/`placeholderLines`**（v1.20.17：「清除」按钮与占位态，**`show()` 与 `clearPanel()` 共用同一份**，否则"清除后回到占位"这条判据靠不住） | 🔴 **拿不到就写"（无）"，绝不编**（规格 §3）：非 `TextView` 的字号/颜色写「（无）」；`wrap_content` 没有"声明的宽高" → 写「尺寸 …（实测；声明 MATCH_PARENT × 40dp）」。⚠️ **`idLine` 收的是资源名**（`getResourceEntryName` 的结果）而不是数字 —— 用户要拿它去 `UI样式与排版总表.md` 搜 `文件:行`，数字搜不到任何东西。⚠️ **`chainLine` 的截断规则是"从头部丢、尾部永远完整"**：实测踩过第一版砍尾巴，最有用的一段显示成 `… > M…`（`MaterialTextView` 被砍成 `M…`）；另有 `NAME_MAX=20` 先截单个类名。🔴 **`chainLine` 的收敛必须是"有界 for + 单调递增的 `dropCount`"（v1.20.15 血的教训）**：旧写法 `while (parts.size > 2 && body.length > CHAIN_MAX)` 每轮 `parts.drop(1)` 后 `listOf(ELLIPSIS) + rest` 又加回来 → **第一轮之后 `parts` 就是不动点**，只要长度仍 > 56 就**永不退出**。它在**主线程的 `dispatchTouchEvent` 里**（`inspect → render → chainLine`）→ `am_anr: Waited 5000ms for MotionEvent(action=DOWN)`。触发条件是**长度算术**（折叠成 5 段后 `|c1|+|c_{n-2}|+|c_{n-1}| > 42`），靠人眼看不出 —— 所以回归用例是 **`@Test(timeout=...)` + 穷举**（`父链超长时不会死循环` / `任意父链都不许死循环`）。**改这里之前先看那两条用例**。⚠️ **本文件不许 import 任何 Android 类型**（`Gravity` 的解码因此放在 `UiInspectorOverlay`，用 `gravityText` 传进来）—— 一旦 import 就跑不了 JVM 单测，这一份的价值就没了。⚠️ `背景` 的**资源名**要反射拿（见 `UiInspectorOverlay.backgroundResName`），本文件只负责把拿到的名字缩成 `@drawable/bg_card` |
+| `UiInspectorInfo.kt` | 367 | **控件检视器的显示内容**（v1.20.14；**v1.20.15 修了这里的一个死循环**；**v1.20.17 加「清除」的占位文案**）：**纯函数**（44 条单测）—— px→dp/sp、四边数值、颜色 `#RRGGBB`、父链拼装、整屏渲染。**规格 §6 明确要求抽成纯函数**（View 在 JVM 里碰不得） | **`num`/`dp`/`sp`**、**`colorHex`**、`specName`（`MATCH_PARENT`/`WRAP_CONTENT`）、**`sizeLine`**、`quad`/`boxLine`、`textLine`、`shortResName`、`backgroundLine`、`stateLine`、**`chainLine`/`chainBody`**（v1.20.15 拆开）、**`toggleLabel`/`inspecting`/`panelStealsTouch`**（v1.20.15 检视开关的纯判据）、`optLine`/`optNumLine`、**`InspectorSnapshot`**、**`render`/`renderBody`**、`clipboardText`、`NONE`/`NO_ID`/`NO_HIT`/`HINT_DOC`/`HINT_SELF_DRAWN`/`HINT_OPS`/**`HINT_PAUSED`**/**`TOGGLE_ON`/`TOGGLE_PAUSED`**/**`CLEAR_LABEL`/`CLEAR_DESC`/`PLACEHOLDER_TITLE`/`placeholderLines`**（v1.20.17：「清除」按钮与占位态，**`show()` 与 `clearPanel()` 共用同一份**，否则"清除后回到占位"这条判据靠不住） | 🔴 **拿不到就写"（无）"，绝不编**（规格 §3）：非 `TextView` 的字号/颜色写「（无）」；`wrap_content` 没有"声明的宽高" → 写「尺寸 …（实测；声明 MATCH_PARENT × 40dp）」。⚠️ **`idLine` 收的是资源名**（`getResourceEntryName` 的结果）而不是数字 —— 用户要拿它去 `09-UI样式与排版总表.md` 搜 `文件:行`，数字搜不到任何东西。⚠️ **`chainLine` 的截断规则是"从头部丢、尾部永远完整"**：实测踩过第一版砍尾巴，最有用的一段显示成 `… > M…`（`MaterialTextView` 被砍成 `M…`）；另有 `NAME_MAX=20` 先截单个类名。🔴 **`chainLine` 的收敛必须是"有界 for + 单调递增的 `dropCount`"（v1.20.15 血的教训）**：旧写法 `while (parts.size > 2 && body.length > CHAIN_MAX)` 每轮 `parts.drop(1)` 后 `listOf(ELLIPSIS) + rest` 又加回来 → **第一轮之后 `parts` 就是不动点**，只要长度仍 > 56 就**永不退出**。它在**主线程的 `dispatchTouchEvent` 里**（`inspect → render → chainLine`）→ `am_anr: Waited 5000ms for MotionEvent(action=DOWN)`。触发条件是**长度算术**（折叠成 5 段后 `|c1|+|c_{n-2}|+|c_{n-1}| > 42`），靠人眼看不出 —— 所以回归用例是 **`@Test(timeout=...)` + 穷举**（`父链超长时不会死循环` / `任意父链都不许死循环`）。**改这里之前先看那两条用例**。⚠️ **本文件不许 import 任何 Android 类型**（`Gravity` 的解码因此放在 `UiInspectorOverlay`，用 `gravityText` 传进来）—— 一旦 import 就跑不了 JVM 单测，这一份的价值就没了。⚠️ `背景` 的**资源名**要反射拿（见 `UiInspectorOverlay.backgroundResName`），本文件只负责把拿到的名字缩成 `@drawable/bg_card` |
 | `TreeWalkBudget.kt` | 126 | **反向遍历 View 树的预算**（v1.20.15，纯类、JVM 可测）：深度上限 / 节点数上限 / **按身份去重断环**。治的是"**在主线程的触摸路径上做无界遍历**"这颗雷 | `maxDepth`/`maxNodes`、**`canEnter(depth)`**、**`claim(ViewKey)`**、`nodes`/`deepest`/**`truncated`**、**`ViewKey`**（`identityHashCode` 做哈希、**引用相等**做判等）、`MAX_DEPTH`(32)/`MAX_NODES`(4000) | 🔴 **这条路径在主线程上**（`UiInspectorOverlay.hitTest` ← `inspect` ← `dispatchTouchEvent`）：转不出来 = ANR。⚠️ **达到上限是"收手"不是"报错"** —— 退化成"这一下没检视到"，触摸照常放行（宁可漏检，不能卡死）。⚠️ **`ViewKey` 只拿 `identityHashCode` 当哈希**：碰撞最多让两个不同 View 里少检视一个，**不会**把两个不同 View 判成同一个（判等用 `===`）。⚠️ 32 层是"正常页面（实测 12~20 层）两倍"的余量；4000 个节点是"铺满屏幕的 RecyclerView（几百个）"一个数量级的余量 —— **调到刚好卡住正常页面就是新 bug**。⚠️ `UiInspectorOverlay.chainOf`（向上找父链）用的是同一个 `MAX_DEPTH * 2` 硬上限 |
-| `CanFilterPresets.kt` | 168 | **CAN 探测「过滤器预设」表 + "过滤串 → 实际 AT 命令"的解析**（v1.20.17，规格 `下一步-UI改进四项.md` §2）：**纯数据 + 纯函数**（19 条单测） | `Preset`(`value`/`label`/`desc`)、**`ALL`**（**12 条**：8 个段 + 转向灯 + 全总线 + OBD 应答 + 不过滤）、`segmentValue(seg)`/`segmentLabel(seg)`、**`FULL_BUS_NOTE`**、`LEFT_TURN_DESC`、`find`/**`findAll`**、**`resolveCommands(filter)`**、**`describe(filter)`** | 🔴 **`resolveCommands` 必须与 `CanSniffer.start()` 逐字同规则**（空 → 空列表；`AT` 开头按 `+`/`;` 原样切、**不转大写**；其余 → `ATCRA${uppercase()}`）—— 两处各写一份的话界面会**自信地显示一条根本没发出去的命令**。⚠️ **⚠️ 不许编"哪个灯在哪个段"**：本项目**从没实测过**各灯在哪个段，所以常用段（`0x2xx`/`0x4xx`/`0x6xx`）的说明**只允许**写「常见车身域（未在本车实测）」，**一个灯名都不许点名**；唯一实测确认的是转向灯 `0x09A`（单独一条，且必须写明"本车实测"）。**这条有单测钉着**（扫全部预设的 `desc` 里不许出现灯名）。⚠️ **`ATCF000` 是全总线、不是「第 0 段」**（`FULL_BUS_NOTE`，界面上必须写清）—— 而 `ATCM700+ATCF000` 同时是"全部 11 位 ID"和"`0x000~0x0FF` 段"（掩码之下它才等于第 0 段），**两条 value 逐字节相同** → 所以 `findAll` 会返回两条、`describe` 把两条说明都写出来；按 value 反查标签会查到错的那一条（**实测踩过**，所以段标签走 `segmentLabel(seg)` 而不是反查）。⚠️ 标签**不许出现 AT 语法**（有单测钉着）：用户要的是"选哪个能看见什么" |
+| `CanFilterPresets.kt` | 168 | **CAN 探测「过滤器预设」表 + "过滤串 → 实际 AT 命令"的解析**（v1.20.17，规格 `25-下一步-UI改进四项.md` §2）：**纯数据 + 纯函数**（19 条单测） | `Preset`(`value`/`label`/`desc`)、**`ALL`**（**12 条**：8 个段 + 转向灯 + 全总线 + OBD 应答 + 不过滤）、`segmentValue(seg)`/`segmentLabel(seg)`、**`FULL_BUS_NOTE`**、`LEFT_TURN_DESC`、`find`/**`findAll`**、**`resolveCommands(filter)`**、**`describe(filter)`** | 🔴 **`resolveCommands` 必须与 `CanSniffer.start()` 逐字同规则**（空 → 空列表；`AT` 开头按 `+`/`;` 原样切、**不转大写**；其余 → `ATCRA${uppercase()}`）—— 两处各写一份的话界面会**自信地显示一条根本没发出去的命令**。⚠️ **⚠️ 不许编"哪个灯在哪个段"**：本项目**从没实测过**各灯在哪个段，所以常用段（`0x2xx`/`0x4xx`/`0x6xx`）的说明**只允许**写「常见车身域（未在本车实测）」，**一个灯名都不许点名**；唯一实测确认的是转向灯 `0x09A`（单独一条，且必须写明"本车实测"）。**这条有单测钉着**（扫全部预设的 `desc` 里不许出现灯名）。⚠️ **`ATCF000` 是全总线、不是「第 0 段」**（`FULL_BUS_NOTE`，界面上必须写清）—— 而 `ATCM700+ATCF000` 同时是"全部 11 位 ID"和"`0x000~0x0FF` 段"（掩码之下它才等于第 0 段），**两条 value 逐字节相同** → 所以 `findAll` 会返回两条、`describe` 把两条说明都写出来；按 value 反查标签会查到错的那一条（**实测踩过**，所以段标签走 `segmentLabel(seg)` 而不是反查）。⚠️ 标签**不许出现 AT 语法**（有单测钉着）：用户要的是"选哪个能看见什么" |
 | `LogViewText.kt` | 78 | **日志页的文案**（v1.20.17，规格 §3）：统计行 / 级别描述 / 空态。**纯函数**（10 条单测） | `ALL`/`LEVEL_ALL`、**`statsLine(shown,buffered,levelText,module)`**、**`levelFilterText(tag)`**、**`emptyHint(buffered,levelTag,module)`** | 🔴 **空态必须说清"为什么空 + 下一步做什么"**（规格 §3 原话："不要只写暂无数据"）：三种原因（还没产生 / 级别筛掉了 / 模块筛掉了）的下一步动作完全不同，有单测逐条钉着（且断言里不许出现"暂无数据"）。⚠️ **`statsLine` 判"级别没在筛"用的是 `startsWith(LEVEL_ALL)` 而不是 `!=`** —— `levelFilterText("V")` 返回的是「全部（V 及以上）」，用 `!=` 比会把"什么都不挡"写成过滤条件（**实测踩过**：统计行变成「只显示 全部（V 及以上）」）。⚠️ **级别判据是 `prio >= 选中级别`**（选 `W` 时 `E` 也显示），所以描述写「W 及以上」而不是只写 `W`。⚠️ **性能红线**（规格 §4）：这里只有字符串拼接、**没有任何集合拷贝**，调用点也必须挂在**每 250ms 一次的合并刷新**上（不是每条日志） |
 
 | `PidDedup.kt` | 186 | **PID 重复判定**（v1.20.12，纯逻辑，可单测）：请求型按 `mode+pid+公式`、监听型按 `报文 ID+位段指纹` | `Duplicate`、**`bitFingerprint(formula)`**、`isMonitor`、`isSameSignal`、`findDuplicates(all)`、`isReferenced`、`removable`、`summary`、**`confirmMessage`** | 🔴 **位段指纹**把 `bit(C,2)` / `bits(A,6,4)` / `bitsAt(18,1,0,0)` / `signed(A)` 都归一成「帧内起始位:长度:字节序:符号 + 系数/偏移」—— 设备上那条真重复（`bitsAt(18,1,0,0)` vs `bit(C,2)`）文字完全不同、指纹相同。⚠️ 认不出的公式**返回 null 并一律判"不重复"**（宁可漏报，误报会删掉真信号）。⚠️ **监听型与请求型不互判**（被动听广播 vs 主动问 ECU）；⚠️ **内置之间不判重复**（内置表是刻意设计的，且永远不给用户删）。⚠️ `confirmMessage` **必须是纯文本**：这一页的 `TextView` 不做 Markdown 渲染，写 `**粗体**` 用户看到的就是星号（v1.20.11 在知识库踩过，有单测钉着） |
@@ -235,10 +243,10 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `MonitorWarnBar.kt` | 108 | **常驻监听警示条**（v1.20.6，P10-3）：监听期间在顶部挂 `监听中 · 轮询已暂停（转速/水温冻结）`，**跨页面可见** | `sync(host)`、**`heightPx()`**（v1.20.12，给灵动岛让位）、`TEXT`（文案的**唯一**出处，CAN 探测页共用） | 🔴 挂 `android.R.id.content` 而**不是**改 `activity_main.xml` —— 加一行会让 `pageContainer` 变矮 → 画布尺寸变化 → 表盘重排 + 闪一下。⚠️ 判据只有 `FrameMonitor.running` 一处，UI 不再自己判断 |
 | `IslandNotice.kt` | 226 | **灵动岛式悬浮提示**（v1.20.12；**v1.20.13 起样式可自定义**）：平时**完全隐藏**、规则触发展开、按设置停留（默认 4 秒）后淡出；展开期间换文案并显示 `+N` | `attach(host)`、**`setTopOffsetPx`**（只动纵向）、`show(text)`、`dismissNow()`、私有 **`layoutParams()`**、`applied`（样式缓存） | 🔴 三条硬约束：**浮层不改布局**（挂 `android.R.id.content`，`layoutParams()` 里**不许出现具体宽高** —— 只有 `WRAP_CONTENT`）/ **`isClickable=false` 不抢触摸**（在 `IslandCapsuleView` 里统一设）/ **与警示条错开**（纵向**永远**是 `topOffsetPx + TOP_MARGIN_DP`）。⚠️ v1.20.13：位置档位只改**水平** `Gravity`（`START`/`CENTER_HORIZONTAL`/`END` + 靠边留 `SIDE_MARGIN_DP`），**纵向自由度是刻意不给的**（给了就能把胶囊拖到画布正中间 —— 那正是 v1.20.12 修掉的病）。⚠️ 样式每次 `show()` 从 `Store.settings.islandStyle()` **现读**（改完下一条就生效），但**只有 `Spec` 变了才动 View**（转向灯 450ms 一条，每次都设属性会白重排） |
 | `IslandCapsuleView.kt` | 106 | **灵动岛胶囊本体**（v1.20.13 从 `IslandNotice.build()` 抽出来）：`applySpec(Spec)` + `setContent(text, pending)` | `applySpec`、`setContent` | 🔴 **样式 → View 的映射只有这一处**（红线 4.5）：设置页对话框的**实时预览**与真弹出来的胶囊用的是**同一个类 + 同一个 `IslandStyle.spec`** —— 两处各写一遍的后果不是"多几十行"，而是"预览里看到的样子和真弹出来的不一样"，而用户正是照着预览做决定的。⚠️ 构造里 `isClickable=false`/`isFocusable=false`，**子 `TextView` 也一样**（约束 ②）；本类**不设任何尺寸**（约束 ①）。⚠️ 背景 `GradientDrawable` **只建一次**、之后原地改 `cornerRadius`/颜色 —— 每次 `show()` 新建 drawable 会 `invalidate` 整棵子树，而 `show()` 在规则高频触发时被调 |
-| `UiInspectorOverlay.kt` | 856 | **控件检视器的浮层本体**（v1.20.14；**v1.20.15 加面板开关 + 触摸路径加固**；**v1.20.17 加「清除」按钮**）：面板 + **描边高亮** + **自己遍历 View 树**解析命中（规格 §6 方向 A）。规格 `docs/下一步-控件检视器.md` | **`enabled`** + **`paused`** + **`active`**（三个都是 `@Volatile`，**进程内、刻意不落盘**）、`show(host)`/`hide()`/`detach()`/**`setPaused(p)`**、**`clearPanel()`**（v1.20.17：只清内容回占位，**开关一个字不动**）、**`isOnPanel(rawX,rawY)`**、**`inspect(rawX,rawY): Boolean`**（v1.20.15 起**有返回值**）、`snapshotOf`、`chainOf`、`gravityTextOf`、**`backgroundResName`/`resIdOf`/`findResIdField`**（反射 `mResourceId`）、`installDragAndLongPress`/**`dragListener`**（v1.20.15 改成字段，暂停时摘掉）、**`applyPausedToPanel`**、`copyToClipboard`、私有 **`HighlightView`** | 🔴 **本类不注册任何全局触摸监听** —— 消费与否由宿主 `MainActivity.dispatchTouchEvent` 决定（`if (UiInspectorOverlay.active) { runCatching { consumeForInspector(ev) } }`），所以**关着（或暂停）的时候对触摸完全不存在**（v1.20.4 把手就栽在"总抢手势"）。🔴 **`HighlightView` 永远 `MATCH_PARENT`、命中只 `invalidate()`** —— 不做"跟着控件走的小 View"：后者每次命中改 `layoutParams` → `requestLayout`，而 v1.20.12 那个「画布 0×0」的触发条件就是布局重排。🔴 **`enabled`/`paused` 不许进 `Store.Settings`**：`enabled` 一开就吃掉全部触摸，活到下次启动 = 用户以为"装坏了"，备份还会带到别的机器（有单测钉着）；`paused` 是临时状态，重启/旋屏一律回到「接管」。⚠️ **浮层自己必须从命中解析里排除**（`c === panel \|\| c === highlight`），否则点哪儿都命中高亮层 —— 也是"**开关/清除自己的点击不被检视消费吃掉**"的实现（`isOnPanel` 先排除浮层 → 宿主把这次触摸交回 `super`）。⚠️ **v1.20.17 的「清除」**：只做三件事 —— 清高亮 + 把面板刷回 `UiInspectorInfo.placeholderLines()` + 重对齐暂停态（`applyPausedToPanel` 内部幂等短路）；**不写 `enabled`/`paused`**、**不动任何 `layoutParams`**（面板宽度是常量、高度是 `WRAP_CONTENT`，所以"面板变矮不会把画布顶开"）。⚠️ **占位文案必须与 `show()` 用同一份**（`PLACEHOLDER_TITLE`/`placeholderLines()`）—— 两处各写一遍字面量，"清除后回到占位"这条判据迟早靠不住（有单测钉着）。⚠️ **`inspect` 传的是 `MotionEvent.rawX/rawY`（屏幕坐标）**：面板/警示条/导航栏都在 `android.R.id.content` 里各占一块，用窗口局部坐标会在系统栏显隐时错位；`containsPoint` 用 `getLocationOnScreen`（把 `translationX`/`scrollY` 全算进去）而不是自己加 `left/top`。⚠️ **`gravityTextOf` 放在这里而不是 `data/UiInspectorInfo`** —— `Gravity` 是 Android 类型，放进去那份纯函数就跑不了 JVM 单测。⚠️ **`backgroundResName` 是尽力而为**：公开 API 拿不到"Drawable 是哪个资源"，只能反射 `mResourceId`（Drawable 自己 → 它的 `ConstantState`，按类缓存、全程 `runCatching`），失败就退化成类名 —— **绝不编假资源名**。⚠️ 默认位置**左下角**（顶部居中已被灵动岛占、顶部已被警示条占）。⚠️ 拖动超过 `scaledTouchSlop` 就取消长按（否则"想挪一下位置"会顺手把信息复制进剪贴板）。<br>🔴 **v1.20.15 触摸路径四条加固（别改回去）**：① `hitTest` 走 `TreeWalkBudget`（深度/节点数/断环三道闸，用尽就**收手**）；② 坐标查询复用 `locTmp`/`baseTmp`，不再按节点 `new IntArray(2)`；③ **`inspect` 返回 `false` = 解析失败**（整段 `runCatching`，连 `StackOverflowError` 一起接）→ 宿主**不消费**这一次触摸（宁可漏检，不能卡死）；④ `show()` 多一道 `panel?.parent !== h` 检查（挂到失效父容器会先摘干净再重建，否则 `panel != null` 让它直接 `return`、浮层永远挂不回去）。<br>⚠️ **面板开关（`检视 开 / 暂停`）两条硬约束**：暂停时面板**本体**必须 `isClickable=false` **并且**把 `dragListener` 摘掉（只改 `isClickable` 不够 —— 监听器返回 `true` 照样消费），否则会挡住画布横滑与编辑手势；开关做成**小药丸 TextView 而不是 `Switch`**（320dp 面板塞不下，且 Switch 的触摸热区比看上去大）。⚠️ `applyPausedToPanel` 有**幂等短路**（`appliedPaused`）：宿主那个 1 秒的 ticker 反复调它，状态没变就一点都不做（否则每秒新建一个 `GradientDrawable`） 🔴 **本类不注册任何全局触摸监听** —— 消费与否由宿主 `MainActivity.dispatchTouchEvent` 决定（`if (UiInspectorOverlay.active) { runCatching { consumeForInspector(ev) } }`），所以**关着（或暂停）的时候对触摸完全不存在**（v1.20.4 把手就栽在"总抢手势"）。🔴 **`HighlightView` 永远 `MATCH_PARENT`、命中只 `invalidate()`** —— 不做"跟着控件走的小 View"：后者每次命中改 `layoutParams` → `requestLayout`，而 v1.20.12 那个「画布 0×0」的触发条件就是布局重排。🔴 **`enabled`/`paused` 不许进 `Store.Settings`**：`enabled` 一开就吃掉全部触摸，活到下次启动 = 用户以为"装坏了"，备份还会带到别的机器（有单测钉着）；`paused` 是临时状态，重启/旋屏一律回到「接管」。⚠️ **浮层自己必须从命中解析里排除**（`c === panel \|\| c === highlight`），否则点哪儿都命中高亮层 —— 也是"**开关自己的点击不被检视消费吃掉**"的实现（`isOnPanel` 先排除浮层 → 宿主把这次触摸交回 `super`）。⚠️ **`inspect` 传的是 `MotionEvent.rawX/rawY`（屏幕坐标）**：面板/警示条/导航栏都在 `android.R.id.content` 里各占一块，用窗口局部坐标会在系统栏显隐时错位；`containsPoint` 用 `getLocationOnScreen`（把 `translationX`/`scrollY` 全算进去）而不是自己加 `left/top`。⚠️ **`gravityTextOf` 放在这里而不是 `data/UiInspectorInfo`** —— `Gravity` 是 Android 类型，放进去那份纯函数就跑不了 JVM 单测。⚠️ **`backgroundResName` 是尽力而为**：公开 API 拿不到"Drawable 是哪个资源"，只能反射 `mResourceId`（Drawable 自己 → 它的 `ConstantState`，按类缓存、全程 `runCatching`），失败就退化成类名 —— **绝不编假资源名**。⚠️ 默认位置**左下角**（顶部居中已被灵动岛占、顶部已被警示条占）。⚠️ 拖动超过 `scaledTouchSlop` 就取消长按（否则"想挪一下位置"会顺手把信息复制进剪贴板）。<br>🔴 **v1.20.15 触摸路径四条加固（别改回去）**：① `hitTest` 走 `TreeWalkBudget`（深度/节点数/断环三道闸，用尽就**收手**）；② 坐标查询复用 `locTmp`/`baseTmp`，不再按节点 `new IntArray(2)`；③ **`inspect` 返回 `false` = 解析失败**（整段 `runCatching`，连 `StackOverflowError` 一起接）→ 宿主**不消费这一次触摸**（宁可漏检，不能卡死）；④ `show()` 多一道 **`panel?.parent !== h`** 检查 —— 挂到失效父容器上会**先摘干净再重建**，否则 `panel != null` 会让它直接 `return`，浮层**永远挂不回去**。<br>⚠️ **面板开关（`检视 开 / 暂停`）两条硬约束**：暂停时面板**本体**必须 `isClickable=false` **并且**把 `dragListener` 摘掉（只改 `isClickable` 不够 —— 监听器返回 `true` 照样消费），否则会挡住画布横滑与编辑手势；开关做成**小药丸 TextView 而不是 `Switch`**（320dp 面板塞不下，且 Switch 的触摸热区比看上去大）。⚠️ `applyPausedToPanel` 有**幂等短路**（`appliedPaused`）：宿主那个 1 秒的 ticker 反复调它，状态没变就一点都不做（否则每秒新建一个 `GradientDrawable`）
+| `UiInspectorOverlay.kt` | 856 | **控件检视器的浮层本体**（v1.20.14；**v1.20.15 加面板开关 + 触摸路径加固**；**v1.20.17 加「清除」按钮**）：面板 + **描边高亮** + **自己遍历 View 树**解析命中（规格 §6 方向 A）。规格 `docs/24-下一步-控件检视器.md` | **`enabled`** + **`paused`** + **`active`**（三个都是 `@Volatile`，**进程内、刻意不落盘**）、`show(host)`/`hide()`/`detach()`/**`setPaused(p)`**、**`clearPanel()`**（v1.20.17：只清内容回占位，**开关一个字不动**）、**`isOnPanel(rawX,rawY)`**、**`inspect(rawX,rawY): Boolean`**（v1.20.15 起**有返回值**）、`snapshotOf`、`chainOf`、`gravityTextOf`、**`backgroundResName`/`resIdOf`/`findResIdField`**（反射 `mResourceId`）、`installDragAndLongPress`/**`dragListener`**（v1.20.15 改成字段，暂停时摘掉）、**`applyPausedToPanel`**、`copyToClipboard`、私有 **`HighlightView`** | 🔴 **本类不注册任何全局触摸监听** —— 消费与否由宿主 `MainActivity.dispatchTouchEvent` 决定（`if (UiInspectorOverlay.active) { runCatching { consumeForInspector(ev) } }`），所以**关着（或暂停）的时候对触摸完全不存在**（v1.20.4 把手就栽在"总抢手势"）。🔴 **`HighlightView` 永远 `MATCH_PARENT`、命中只 `invalidate()`** —— 不做"跟着控件走的小 View"：后者每次命中改 `layoutParams` → `requestLayout`，而 v1.20.12 那个「画布 0×0」的触发条件就是布局重排。🔴 **`enabled`/`paused` 不许进 `Store.Settings`**：`enabled` 一开就吃掉全部触摸，活到下次启动 = 用户以为"装坏了"，备份还会带到别的机器（有单测钉着）；`paused` 是临时状态，重启/旋屏一律回到「接管」。⚠️ **浮层自己必须从命中解析里排除**（`c === panel \|\| c === highlight`），否则点哪儿都命中高亮层 —— 也是"**开关/清除自己的点击不被检视消费吃掉**"的实现（`isOnPanel` 先排除浮层 → 宿主把这次触摸交回 `super`）。⚠️ **v1.20.17 的「清除」**：只做三件事 —— 清高亮 + 把面板刷回 `UiInspectorInfo.placeholderLines()` + 重对齐暂停态（`applyPausedToPanel` 内部幂等短路）；**不写 `enabled`/`paused`**、**不动任何 `layoutParams`**（面板宽度是常量、高度是 `WRAP_CONTENT`，所以"面板变矮不会把画布顶开"）。⚠️ **占位文案必须与 `show()` 用同一份**（`PLACEHOLDER_TITLE`/`placeholderLines()`）—— 两处各写一遍字面量，"清除后回到占位"这条判据迟早靠不住（有单测钉着）。⚠️ **`inspect` 传的是 `MotionEvent.rawX/rawY`（屏幕坐标）**：面板/警示条/导航栏都在 `android.R.id.content` 里各占一块，用窗口局部坐标会在系统栏显隐时错位；`containsPoint` 用 `getLocationOnScreen`（把 `translationX`/`scrollY` 全算进去）而不是自己加 `left/top`。⚠️ **`gravityTextOf` 放在这里而不是 `data/UiInspectorInfo`** —— `Gravity` 是 Android 类型，放进去那份纯函数就跑不了 JVM 单测。⚠️ **`backgroundResName` 是尽力而为**：公开 API 拿不到"Drawable 是哪个资源"，只能反射 `mResourceId`（Drawable 自己 → 它的 `ConstantState`，按类缓存、全程 `runCatching`），失败就退化成类名 —— **绝不编假资源名**。⚠️ 默认位置**左下角**（顶部居中已被灵动岛占、顶部已被警示条占）。⚠️ 拖动超过 `scaledTouchSlop` 就取消长按（否则"想挪一下位置"会顺手把信息复制进剪贴板）。<br>🔴 **v1.20.15 触摸路径四条加固（别改回去）**：① `hitTest` 走 `TreeWalkBudget`（深度/节点数/断环三道闸，用尽就**收手**）；② 坐标查询复用 `locTmp`/`baseTmp`，不再按节点 `new IntArray(2)`；③ **`inspect` 返回 `false` = 解析失败**（整段 `runCatching`，连 `StackOverflowError` 一起接）→ 宿主**不消费**这一次触摸（宁可漏检，不能卡死）；④ `show()` 多一道 `panel?.parent !== h` 检查（挂到失效父容器会先摘干净再重建，否则 `panel != null` 让它直接 `return`、浮层永远挂不回去）。<br>⚠️ **面板开关（`检视 开 / 暂停`）两条硬约束**：暂停时面板**本体**必须 `isClickable=false` **并且**把 `dragListener` 摘掉（只改 `isClickable` 不够 —— 监听器返回 `true` 照样消费），否则会挡住画布横滑与编辑手势；开关做成**小药丸 TextView 而不是 `Switch`**（320dp 面板塞不下，且 Switch 的触摸热区比看上去大）。⚠️ `applyPausedToPanel` 有**幂等短路**（`appliedPaused`）：宿主那个 1 秒的 ticker 反复调它，状态没变就一点都不做（否则每秒新建一个 `GradientDrawable`） 🔴 **本类不注册任何全局触摸监听** —— 消费与否由宿主 `MainActivity.dispatchTouchEvent` 决定（`if (UiInspectorOverlay.active) { runCatching { consumeForInspector(ev) } }`），所以**关着（或暂停）的时候对触摸完全不存在**（v1.20.4 把手就栽在"总抢手势"）。🔴 **`HighlightView` 永远 `MATCH_PARENT`、命中只 `invalidate()`** —— 不做"跟着控件走的小 View"：后者每次命中改 `layoutParams` → `requestLayout`，而 v1.20.12 那个「画布 0×0」的触发条件就是布局重排。🔴 **`enabled`/`paused` 不许进 `Store.Settings`**：`enabled` 一开就吃掉全部触摸，活到下次启动 = 用户以为"装坏了"，备份还会带到别的机器（有单测钉着）；`paused` 是临时状态，重启/旋屏一律回到「接管」。⚠️ **浮层自己必须从命中解析里排除**（`c === panel \|\| c === highlight`），否则点哪儿都命中高亮层 —— 也是"**开关自己的点击不被检视消费吃掉**"的实现（`isOnPanel` 先排除浮层 → 宿主把这次触摸交回 `super`）。⚠️ **`inspect` 传的是 `MotionEvent.rawX/rawY`（屏幕坐标）**：面板/警示条/导航栏都在 `android.R.id.content` 里各占一块，用窗口局部坐标会在系统栏显隐时错位；`containsPoint` 用 `getLocationOnScreen`（把 `translationX`/`scrollY` 全算进去）而不是自己加 `left/top`。⚠️ **`gravityTextOf` 放在这里而不是 `data/UiInspectorInfo`** —— `Gravity` 是 Android 类型，放进去那份纯函数就跑不了 JVM 单测。⚠️ **`backgroundResName` 是尽力而为**：公开 API 拿不到"Drawable 是哪个资源"，只能反射 `mResourceId`（Drawable 自己 → 它的 `ConstantState`，按类缓存、全程 `runCatching`），失败就退化成类名 —— **绝不编假资源名**。⚠️ 默认位置**左下角**（顶部居中已被灵动岛占、顶部已被警示条占）。⚠️ 拖动超过 `scaledTouchSlop` 就取消长按（否则"想挪一下位置"会顺手把信息复制进剪贴板）。<br>🔴 **v1.20.15 触摸路径四条加固（别改回去）**：① `hitTest` 走 `TreeWalkBudget`（深度/节点数/断环三道闸，用尽就**收手**）；② 坐标查询复用 `locTmp`/`baseTmp`，不再按节点 `new IntArray(2)`；③ **`inspect` 返回 `false` = 解析失败**（整段 `runCatching`，连 `StackOverflowError` 一起接）→ 宿主**不消费这一次触摸**（宁可漏检，不能卡死）；④ `show()` 多一道 **`panel?.parent !== h`** 检查 —— 挂到失效父容器上会**先摘干净再重建**，否则 `panel != null` 会让它直接 `return`，浮层**永远挂不回去**。<br>⚠️ **面板开关（`检视 开 / 暂停`）两条硬约束**：暂停时面板**本体**必须 `isClickable=false` **并且**把 `dragListener` 摘掉（只改 `isClickable` 不够 —— 监听器返回 `true` 照样消费），否则会挡住画布横滑与编辑手势；开关做成**小药丸 TextView 而不是 `Switch`**（320dp 面板塞不下，且 Switch 的触摸热区比看上去大）。⚠️ `applyPausedToPanel` 有**幂等短路**（`appliedPaused`）：宿主那个 1 秒的 ticker 反复调它，状态没变就一点都不做（否则每秒新建一个 `GradientDrawable`）
 | `IslandStateMachine.kt` | 123 | 灵动岛的**纯逻辑**状态机（不碰 View、`now` 由调用方传入） | `HOLD_MS`(4000)、**`holdMs`（v1.20.13 起是 `var`）**、`Snapshot`、`onMessage`、`onTick`、`reset` | 🔴 **同一条文本只续期**（转向灯每 450ms 触发一次，重播动画会一直闪、`+N` 会涨到几百）；**不做严格 FIFO**（第 3 条等 8 秒才看到是有害的）。⚠️ `holdMs` 是 `var` 而不是构造参数：停留时长进了设置（2/4/6 秒）且**运行中可改**，而**重建**状态机会把"正在显示的那条"一起丢掉（表现是"改完时长后提示闪一下"）—— 调用方每次弹之前赋一次值即可 |
 | `DashCanvasEditorView.kt` | 319 | **拖拽画布**（ViewGroup；点选 / 拖动 / 手柄缩放 / 网格吸附） | `submit`、`add`、`refresh`、`currentItems`、`hitTest`、`inHandle` | 🟡 坐标一律走 `DashLayout.Drag` |
-| `MaxWidthViews.kt` | 168 | **限宽容器 4 个变体** + **`MaxWidthCapable` 接口**（v1.20.14：暴露 `maxWidthPx`，供控件检视器显示「限宽 720dp」） | `MaxWidthScrollView`、`MaxWidthNestedScrollView`、`MaxWidthLayout`、`MaxWidthLinearLayout`、**`MaxWidthCapable`** | 🟡 见 `ARCHITECTURE.md` §3。⚠️ `maxWidthPx` 原本是 `private` —— 外面只能看到"被夹过的宽度"，分不清"它本来就窄"还是"被限宽夹了"。用**接口**而不是给四个类各加一个 `fun`：检视器只需 `is MaxWidthCapable` 一次判断，以后再加第五个变体也不会漏 |
+| `MaxWidthViews.kt` | 168 | **限宽容器 4 个变体** + **`MaxWidthCapable` 接口**（v1.20.14：暴露 `maxWidthPx`，供控件检视器显示「限宽 720dp」） | `MaxWidthScrollView`、`MaxWidthNestedScrollView`、`MaxWidthLayout`、`MaxWidthLinearLayout`、**`MaxWidthCapable`** | 🟡 见 `04-ARCHITECTURE.md` §3。⚠️ `maxWidthPx` 原本是 `private` —— 外面只能看到"被夹过的宽度"，分不清"它本来就窄"还是"被限宽夹了"。用**接口**而不是给四个类各加一个 `fun`：检视器只需 `is MaxWidthCapable` 一次判断，以后再加第五个变体也不会漏 |
 | `ColumnFlowLayout.kt` | 190 | **按宽度自动分 1/2 列的瀑布流容器**（横屏表单不再一行一个超宽输入框） | `assign` / `assignColumns`（纯函数，`onMeasure` 与 `onLayout` **共用同一个**） | 🔴 两处各算一次必然算出不同结果 → 错位。**不用 `layout-land` 副本**（红线 §4.2.13） |
 | `Easing.kt` | 300 | 数值动画的**纯逻辑**：输入滤波 + 4 种缓动曲线 + 收敛判据（不碰 View，时间由调用方传入） | `MODE_STANDARD/LINEAR/SOFT/SNAPPY`、`MODE_NAMES`、`step`、`smooth`、`needsMoreFrames`、`shouldSnap`、`REF_FRAME_MS`、`HOLD_MS` | 🔴 曲线参数作用在**累计进度**上（不是每帧 dt）；进度型曲线用**固定总行程**（不是剩余距离），否则永远到不了目标 |
 | `GaugeAnimator.kt` | 130 | 单值动画**状态机**（起点/总行程/目标稳定计时），从 `stepFrame` 抽出来以便单测 | `step(raw, nowMs, epsilon)`、`display`、`restart()`、`snapTo()`、`tauMs/mode/smoothMs/range` | 🔴 **数据还在变时不许停止动画**（`HOLD_MS` 之前）；`restart()` 必须清掉稳定计时与总行程 |
@@ -386,7 +394,7 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 > **宁可写"见 run-all 输出"，也不要写一个会悄悄变旧的数字。**
 | `tools/check-build-guard.ps1` | **构建守卫**：检查 `abiFilters` 是否生效 / APK 是否只编一个 ABI / 体积 / `.ps1` 的 BOM。`abiFilters` 失效那个坑**犯过两次**，所以做成机器检查 |
 | `tools/check-doc-links.js` | **`docs/**/*.md` 死链守卫**（v2.85.0，零依赖 Node，`node tools/check-doc-links.js`，`--verbose` 看豁免命中与每文件统计）。查两类：① **Markdown 链接 `[x](path)`** —— 只按**所在文件目录**解析（Markdown 语义，不做多基准兜底，否则"相对路径写错"这种真 bug 会被洗绿）；② **反引号里的路径** —— 按 **{所在目录, 仓库根, docs/}** 多基准兜底（散文里"相对谁"真有歧义），且只认 `./x` `../x` `docs/ tools/ app/ gradle/` 开头的**明确路径形态**（裸文件名一律不查：`org.json` 是包名、`dash.json` 是举例，全查会出 1600+ 假红）。失效 → 打印**文件:行 + 链接 + 解析到的绝对路径** + `exit 1`。**守卫自己不许静默跳过**：`docs/` 不存在 / 一份 .md 都没扫到 / 豁免清单读不到或 JSON 坏 / 条目缺 `reason` / 候选数低于金丝雀阈值 → **一律算失败**（"解析不到就是错"） |
-| `tools/doc-link-allowlist.json` | **死链守卫的豁免清单**（v2.85.0）。按 **(文件, 链接原文)** 精确匹配，**每条必须写 `reason`**（缺 reason 即失败）。目前 14 条：`docs/archive/CHANGELOG-v1.0~v1.8.md` 的 19 处（历史归档，写于 docs/ 平铺时期）、`docs/CHANGELOG.md` 的 10 处（改名前的 `tools/theme-studio/` 路径，历史条目不许改）、`docs/README.md:252` 与 `docs/迭代清单.md` 的 3 处（正文/验收记录里引述旧路径）、`docs/下一步-全量文档迭代.md` 1 处（提案里的候选文件名，从未创建）。⚠️ **不是"有清单就全放过"**：同一个文件里新增一条指向别的死目标的链接**照样红**；条目不再命中只**警告**不红（提示可以删掉）。它还带 `minMarkdownLinks` / `minBacktickPaths` 两个**解析器金丝雀**阈值 |
+| `tools/doc-link-allowlist.json` | **死链守卫的豁免清单**（v2.85.0）。按 **(文件, 链接原文)** 精确匹配，**每条必须写 `reason`**（缺 reason 即失败）。**目前 18 条 / 84 处命中**：`docs/archive/CHANGELOG-v1.0~v1.8.md` 的 **24 处**（历史归档：19 条 Markdown 链接写于 `docs/` 平铺时期 + 2026-10-11 编号后由活链变死链的 5 条）、`docs/07-CHANGELOG.md` 的 10 处（改名前的 `tools/theme-studio/` 路径，历史条目不许改）、`docs/00-README.md` 与 `docs/03-迭代清单.md` 的 3 处（正文/验收记录里引述旧路径）、`docs/26-下一步-全量文档迭代.md` 1 处（提案里的候选文件名，从未创建）。⚠️ **不是"有清单就全放过"**：同一个文件里新增一条指向别的死目标的链接**照样红**；条目不再命中只**警告**不红（提示可以删掉）。它还带 `minMarkdownLinks` / `minBacktickPaths` 两个**解析器金丝雀**阈值 |
 | `tools/kill-test-browsers.ps1` | **只结束本项目的无头测试浏览器**。判定：profile 路径形如 `*\Temp\edge-*`。**默认只列出、不动手**，加 `-Kill` 才真杀。🔴 **禁止** `Get-Process msedge \| Stop-Process -Force` —— 那会杀掉**用户自己的浏览器窗口**（实测用户 13 个进程、AI 的 0 个，那条命令唯一的实际效果就是干掉用户的浏览器） |
 | `tools/icarui/png.js` | **极简 PNG 编码器**（零依赖，只用内置 zlib）。PNG 结构 + CRC32 + 绘图原语（rect/roundRect/circle/ring/arc/line/poly）。抗锯齿用**超采样**（4 倍绘制再降采样）。**v2.87.0**：① `rect()` 把**负宽高归一化**（原来 `for (py=y0; py<y1; py++)` 遇到负值**静默空转**，什么都不画 —— 这是"四个角标只亮一个"的根因）；② `color()` 把越界 alpha **夹到 0..255**（`sa>1` 会让 source-over 变成减色）；③ `fill()` 在"整层最不透明的像素都 < 2/255"时**大声警告**（0..1 写法的指纹）。⚠️ `fill()` 把 alpha **除了两遍**（有效不透明度 = `(a/255)²`）—— **v2.88.0 拍板：不改**（改了会动**所有**走过 `fill()` 的存量素材的不透明度）。现在是**已知怪癖 + 有守卫**：`fill()` 的"整层最大 alpha < 2"警告 + `verify-asset-gen.js` 的 `fillAlpha(128) === 64` 断言（谁改成线性那条就红，提醒他存量素材要一起处理）。见工具 CHANGELOG v2.88.0 ③ |
 | `tools/icarui/gen-assets.js` | **生成示例素材**：`node gen-assets.js` → `assets/<分类>/*.png`（**359 个**）+ `assets/builtin.js`（清单）。**全部是几何图形，不含任何车标**。⚠️ 本行曾写 344 / 355 —— 那是扩库之前的数；**数量以 `check-build-guard.ps1` 输出为准**。**v2.87.0**：`background/brushed-metal.png` 的 `Math.random()` 换成固定种子的 LCG → **生成器幂等**（`verify-asset-gen.js` 真跑两次逐字节比对守着）；新增 `ICARUI_ASSETS_OUT` 环境变量出口（测试要跑两次生成，**不能写进真素材目录**；默认值不变） |
@@ -410,8 +418,8 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | **多段色带 `bands` 的语义**（`js/schema.js` 的 `normalizeBands`） | `js/canvas.js`（绘制）/ `js/panels.js`（面板）/ `js/app.js`（写入）/ App 侧 `CircularGaugeView` / `BarGaugeView` | ⚠️ **`bands` 只管"画出来的分区"；`warnLow`/`warnHigh` 继续管报警判定**。让 `bands` 顺带改报警 = **静默改变存量设计的安全语义**（本来不报警的表开始报警）。另：`bands` 缺省/空/全非法一律归一成 `null` = **完全旧行为**，序列化**只在非空时写**。`verify-bands.js` 逐条守着 |
 | `ui/view/NeonStyle.kt` 的档位名 | 存量 `dash.json` / `design.json` 的迁移 | 用户的「夸张」霓虹**静默回落**到「标准」。`NeonStyleTest` 冻结了名字 |
 | 渲染层 / 动画（`BaseGaugeView`、`NeonPainter`、`GaugeTicker`、各 View） | 重跑**性能基准**（连接页 →「运行选项」→「性能基准」） | 不知道有没有把 120fps 做掉到 60fps 以下 |
-| **旋转语义**（工具侧 `js/canvas.js` 的 `withDeviceRotation` / `deviceMatrix`） | `js/model.js` 的 `ungroupNode`（取消组合要在**设备空间**换算）+ [`主题设计大纲.md`](主题设计大纲.md) §2.3 + `tools/icarui/README.md` | 取消组合位置偏 23.7px（父空间转了、设备空间没转）；**App 侧若按节点空间旋转会得到平行四边形**（实测 45° 对角线差 209px、内容放大 1.82 倍）—— App 侧现在是 `View.setRotation`（`NodeTreeRenderer.kt:206`），与工具同一语义，`verify-crosslang.js` 守着 |
-| **节点树结构**（`js/model.js` 的 `groupNodes` / `reparent`） | `docs/主题设计大纲.md` §2.5 + 工具 CHANGELOG 末尾的「待优化与功能建议」 | 打组后子控件跳位置（`x/y` 相对父节点，换父级要补平移量） |
+| **旋转语义**（工具侧 `js/canvas.js` 的 `withDeviceRotation` / `deviceMatrix`） | `js/model.js` 的 `ungroupNode`（取消组合要在**设备空间**换算）+ [`12-主题设计大纲.md`](12-主题设计大纲.md) §2.3 + `tools/icarui/README.md` | 取消组合位置偏 23.7px（父空间转了、设备空间没转）；**App 侧若按节点空间旋转会得到平行四边形**（实测 45° 对角线差 209px、内容放大 1.82 倍）—— App 侧现在是 `View.setRotation`（`NodeTreeRenderer.kt:206`），与工具同一语义，`verify-crosslang.js` 守着 |
+| **节点树结构**（`js/model.js` 的 `groupNodes` / `reparent`） | `docs/12-主题设计大纲.md` §2.5 + 工具 CHANGELOG 末尾的「待优化与功能建议」 | 打组后子控件跳位置（`x/y` 相对父节点，换父级要补平移量） |
 
 ### 构建命令（必须显式设置环境变量）
 
@@ -452,7 +460,7 @@ $ADB exec-out run-as com.icar.obd cat files/log/obd-$(date +%Y%m%d).log
 | 加一个内置标准 PID | `data/BuiltInPids.kt` 的 `STANDARD`（**只增不改**） |
 | 加一个派生通道（由其它量算出来） | `data/BuiltInPids.kt` 的 `DERIVED` + `obd/VehicleBus.kt` 的 `Derived` |
 | 加公式函数（如 `log()`） | `data/Formula.kt` 的 `call()` + `check()` 的提示文案（未知函数列表也要加） |
-| 改「信号表」的列（增列/改名/改顺序） | `data/SignalTableCsv.kt` 的 `C_*` 常量与 `COLUMNS`（**导入是按列名匹配的**，改列名会让旧 CSV 读不到那一列 → 必填列缺失就整行拒绝）。规格同步 `下一步-CAN信号库实现规格.md` §3.1 |
+| 改「信号表」的列（增列/改名/改顺序） | `data/SignalTableCsv.kt` 的 `C_*` 常量与 `COLUMNS`（**导入是按列名匹配的**，改列名会让旧 CSV 读不到那一列 → 必填列缺失就整行拒绝）。规格同步 `20-下一步-CAN信号库实现规格.md` §3.1 |
 | 让一种"值不可信"变成 `--` | 判据放 `data/PidModels.kt` 的**纯函数**（照 `dlcTooShort`/`hitsInvalidRaw` 的样子）→ 在 `obd/FrameMonitor.feedLine` 里调 → 结果写 `PidValue(ok=false)`。**不要**在仪表/规则/CSV 里各判一遍（那就是"两份权威"） |
 | 给 PID 编辑器加一个字段（v1.20.8 起） | 三处一起改：`data/PidDraft.kt`（`Fields` + `of()` + `build()` + 校验）→ `res/layout/activity_pid_editor.xml`（控件）→ `ui/PidEditorActivity.kt`（`evaluate()` 读它、`applySourceUi()` 决定对哪一类来源可见）。**校验只写在 `PidDraft` 里**（写在 Activity 里就一条都测不到） |
 | 改"哪些字段对监听型/主动请求型适用" | `ui/PidEditorActivity.applySourceUi()`（只改 `visibility`，**不许清空输入框** —— 隐藏不等于清空，清了就会丢用户的值） |
@@ -484,7 +492,7 @@ $ADB exec-out run-as com.icar.obd cat files/log/obd-$(date +%Y%m%d).log
 | 改版本号 | `app/build.gradle.kts` 的 `versionCode`/`versionName` |
 | 加一个自定义控件属性 | `values/attrs.xml` 登记 + 控件构造函数 `obtainStyledAttributes` 读取 |
 
-架构边界、UI 自适应和维护约定见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+架构边界、UI 自适应和维护约定见 [ARCHITECTURE.md](04-ARCHITECTURE.md)。
 
 ---
 
@@ -544,28 +552,37 @@ if (-not $ProjectDir) {        ← 这一行被并进上一行注释，整个 if
 
 ## 7. 文档清单（`docs/` 逐份职责）
 
-> **权威的读法顺序在 [`接手大纲.md`](接手大纲.md) §2** —— 这里只回答"这份是干什么的"。
+> **权威的读法顺序在 [`01-接手大纲.md`](01-接手大纲.md) §2** —— 这里只回答"这份是干什么的"。
 > 新增文档请**同时**加进本节与 §1 的目录树。
 
 | 文件 | 职责 |
 |---|---|
-| docs/接手大纲.md | **唯一入口**：项目全貌 + 上手路线 + 验证方法 + 交付物清单 |
-| docs/交接-换电脑.md | **换机专用**：搬什么 / 工具链怎么起 / 本机实测偏差 |
-| docs/上车监控清单.md | **上车专用**：环境 / 实时监控 / **§4 判据表** / **§11 本趟工单** / 取证 / 已知的坑 |
-| docs/迭代清单.md | 版本清单 + 待办（带验收标准）+ 发版固定动作 + **§五 当前阻塞关系** |
-| docs/ARCHITECTURE.md | **为什么这样设计**：分层边界、数据流、排障、**§4 红线唯一权威清单** |
-| docs/HANDOVER.md | 详细手册：扩展流程（加 PID / 加规则）、安全模型、装机清单、踩坑 |
-| docs/CHANGELOG.md | 逐版本变更 + 根因 + **验证方式 + 遗留问题**（最老的部分在 `docs/archive/`） |
-| docs/主题设计大纲.md | **主题设计系统架构**（节点树 / 素材 / 状态 / 分辨率 / 编辑器分阶段） |
-| docs/UI设计指南.md | `icar.ui/1` 设计文件格式（PC 端做设计用） |
-| docs/UI控件清单.md | **UI 控件清单**：全部自定义 View、控件 ID、颜色/样式/drawable 资源 |
-| docs/动画实现.md | **动画实现分析**：共用时钟 / 数值缓动 / 阈值爆闪，两套机制的区别 |
-| docs/仪表框架.md | 8 种仪表 + 「某块表为什么是空的」排查顺序 |
-| docs/LVGL-放弃记录.md | LVGL 方案放弃记录（动机/成果/原因/保留项/后续） |
-| docs/主题格式参考.md | Sky Gauge 格式逆向（已不用，格式知识仍有效） |
-| docs/CAN-信号库与逆向框架.md | **CAN 信号逆向的方法论**（DBC 分析 / 采样率是前提 / 四阶段方案） |
-| docs/下一步-CAN信号库实现规格.md | **上一条的执行规格**：S1/S2 已做（v1.20.7），S3~S5 待做 |
-| docs/下一步-主题工具与仪表盘重构.md | 主题制作工具 + 仪表盘重构分步方案（**已完成**，留作决策记录） |
-| docs/下一步-变量模式与组件变体.md | **主题工具的下一轮执行规格**（变量·模式 / 组件·变体，待评审，App 侧零改动） |
+| docs/01-接手大纲.md | **唯一入口**：项目全貌 + 上手路线 + 验证方法 + 交付物清单 |
+| docs/02-交接-换电脑.md | **换机专用**：搬什么 / 工具链怎么起 / 本机实测偏差 |
+| docs/16-上车监控清单.md | **上车专用**：环境 / 实时监控 / **§4 判据表** / **§11 本趟工单** / 取证 / 已知的坑 |
+| docs/03-迭代清单.md | 版本清单 + 待办（带验收标准）+ 发版固定动作 + **§五 当前阻塞关系** |
+| docs/04-ARCHITECTURE.md | **为什么这样设计**：分层边界、数据流、排障、**§4 红线唯一权威清单** |
+| docs/06-HANDOVER.md | 详细手册：扩展流程（加 PID / 加规则）、安全模型、装机清单、踩坑 |
+| docs/07-CHANGELOG.md | 逐版本变更 + 根因 + **验证方式 + 遗留问题**（最老的部分在 `docs/archive/`） |
+| docs/12-主题设计大纲.md | **主题设计系统架构**（节点树 / 素材 / 状态 / 分辨率 / 编辑器分阶段） |
+| docs/13-UI设计指南.md | `icar.ui/1` 设计文件格式（PC 端做设计用） |
+| docs/08-UI控件清单.md | **UI 控件清单**：全部自定义 View、控件 ID、颜色/样式/drawable 资源 |
+| docs/10-动画实现.md | **动画实现分析**：共用时钟 / 数值缓动 / 阈值爆闪，两套机制的区别 |
+| docs/11-仪表框架.md | 8 种仪表 + 「某块表为什么是空的」排查顺序 |
+| docs/19-LVGL-放弃记录.md | LVGL 方案放弃记录（动机/成果/原因/保留项/后续） |
+| docs/14-主题格式参考.md | Sky Gauge 格式逆向（已不用，格式知识仍有效） |
+| docs/15-CAN-信号库与逆向框架.md | **CAN 信号逆向的方法论**（DBC 分析 / 采样率是前提 / 四阶段方案） |
+| docs/20-下一步-CAN信号库实现规格.md | **上一条的执行规格**：**S1~S5 全部已做**（S1/S2 = v1.20.7、S3/S4 = v1.20.8、S5 = v1.20.10），留作决策记录 |
+| docs/21-下一步-主题工具与仪表盘重构.md | 主题制作工具 + 仪表盘重构分步方案（**已完成**，留作决策记录） |
+| docs/23-下一步-变量模式与组件变体.md | **主题工具的下一轮执行规格**（变量·模式 / 组件·变体，待评审，App 侧零改动） |
+| docs/00-README.md | **文档索引**：按角色分「我该看哪一份」+ 权威表 + 待办汇总 + 已放弃清单 |
+| docs/05-FILE_MAP.md | 本文：**改哪里** —— 逐文件职责 / 关键符号 / 改动风险 / 任务索引 |
+| docs/09-UI样式与排版总表.md | **排版数值唯一权威**：逐页逐控件，带 `文件:行` |
+| docs/17-知识库审校.md | App 内知识库审校结果清单（**不是正文**，正文在 `KnowledgeFragment.kt`） |
+| docs/18-控件库优化建议.md | 控件库调研报告 12 条建议 + 落地状态表 |
+| docs/22-下一步-表盘制作与动效方案.md | **表盘制作 5 套方案 + 跨控件/整屏动效清单**（待评审） |
+| docs/24-下一步-控件检视器.md | 控件检视器规格（**已完成**，留作决策记录） |
+| docs/25-下一步-UI改进四项.md | 检视器清除 / CAN 预设 / 文案 / 日志页（**四项全部已做**） |
+| docs/26-下一步-全量文档迭代.md | 2026-10-11 全量文档迭代的任务书（**已完成**） |
 | docs/archive/ | 归档的历史文档（`CHANGELOG-v1.0~v1.8.md`，含 LVGL 完整调试日志） |
 | docs/screenshots/ | 真机截图 + 索引 README |
