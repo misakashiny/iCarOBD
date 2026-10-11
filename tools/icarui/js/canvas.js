@@ -734,6 +734,12 @@ function uniformMatrix(m, w, h) {
   window.fontFor = fontFor;
 
   function drawImageNode(n) {
+    // **代码绘制的条形轨道**（v2.91.0）：有这个字段就**不贴图**，全部用 canvas 画。
+    //
+    // 为什么放在最前面：`trackStyle` 的语义就是"别用那张 PNG"——
+    // 用户报的正是"贴图放大就糊"。所以只要它在，位图那条路整个不走
+    //（连状态系统也不走：轨道不是状态灯）。
+    if (window.trackUsable(n.trackStyle)) { drawTrackNode(n); return; }
     // 状态系统：先解析当前该显示哪个状态（预览用模拟值，没有就用 normal）
     const st = resolveState(n);
     const assetId = st && st.assetId ? st.assetId : n.assetId;
@@ -776,6 +782,166 @@ function uniformMatrix(m, w, h) {
       }
     }
   }
+
+  /**
+   * **代码绘制的条形轨道**（v2.91.0）。
+   *
+   * ## 为什么
+   *
+   * 用户原话：「**条形轨道：想办法以代码绘制、而不是以图片的形式添加、
+   * 缩放会导致模糊**」。实测：`bar_trackh/v` 等控件拖出来都是
+   * `NODE_IMAGE` + 一张 256×24 的 PNG，拉长到 600 宽就是横向拉伸的位图。
+   *
+   * ## 怎么保证"代码画出来"与 App 侧以后画的**是同一个东西**
+   *
+   * 这里**只读 `n.trackStyle` 的字段**（见 schema.js 的字段表），不读任何
+   * 工具本地的状态（除了主题配色 —— 那也是设计文件里的 `themeColors`）。
+   * 也就是说：**同一份 `trackStyle` + 同一个矩形，谁画都是这一张图**。
+   * App 侧照这张表实现即可（见 CHANGELOG 的「App 侧待办」）。
+   *
+   * ## 向后兼容
+   *
+   * `trackStyle` 为 `null` 时**根本不会走到这里**（`drawImageNode` 第一行就分流了）
+   * —— 所以存量设计（贴图轨道）逐像素不变。
+   *
+   * 坐标一律用**节点自己的 w/h**（不是设备像素），所以任意缩放都清晰。
+   */
+  function drawTrackNode(n) {
+    const T = themeColors();
+    const t = n.trackStyle;
+    const W = n.w, H = n.h;
+    if (!(W > 0) || !(H > 0)) return;
+    const vertical = t.orient === "v";
+    const radius = t.radius === null || t.radius === undefined
+      ? Math.min(W, H) / 2 : t.radius;
+    // ⚠️ 兜底色走 `C`（`readCanvasColors()` 读的 CSS 变量），**不硬编码** ——
+    // `tools/guard-color-probe.js` 有一条「canvas.js 不许有裸色值」的守卫，
+    // 而它的白名单只放行工具 UI 层（选中框/占位 X 那几个）。
+    // 正常情况下这两行拿到的都是**设计主题**的 `track` / `accent`。
+    //
+    // ⚠️ `C` 是 `draw()` 开头赋的（每帧一份）；理论上 `drawTrackNode` 只会在
+    // 绘制路径里被调到，但**不假设**：拿不到就现取一份，免得 `undefined` 传进
+    // `fillStyle`（那会静默画成黑色，且不报错）。
+    const CC = C || (window.readCanvasColors ? window.readCanvasColors() : {});
+    const trackCol = t.color || T.track || CC.track;
+    const accent = t.accent || T.accent || CC.accent;
+
+    // 沿短边的渐变：对水平轨道是上下、对垂直轨道是左右（"这根槽有厚度"）
+    function crossGrad(x, y, w, h, a0, a1) {
+      const g = vertical ? ctx.createLinearGradient(x, y, x + w, y)
+        : ctx.createLinearGradient(x, y, x, y + h);
+      g.addColorStop(0, a0);
+      g.addColorStop(1, a1);
+      return g;
+    }
+    // 沿长边的渐变：水平轨道左右、垂直轨道上下（"这条是活的"）
+    function longGrad(x, y, w, h, col) {
+      const g = vertical ? ctx.createLinearGradient(x, y, x, y + h)
+        : ctx.createLinearGradient(x, y, x + w, y);
+      g.addColorStop(0, "rgba(0,0,0,0)");
+      g.addColorStop(0.5, col);
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      return g;
+    }
+
+    ctx.save();
+    // 发光先画（在轨道下面），否则会盖住轨道本体
+    if (t.glow) {
+      ctx.globalAlpha = (ctx.globalAlpha === undefined ? 1 : ctx.globalAlpha) * 0.45;
+      ctx.fillStyle = accent;
+      roundRect(-3, -3, W + 6, H + 6, radius + 3);
+      ctx.fill();
+      ctx.globalAlpha = (n.alpha === undefined ? 255 : n.alpha) / 255;
+    }
+
+    // ---- 底色：三段色带 / 纯色
+    if (t.band) {
+      // 绿 / 黄 / 红 三段，**沿长边**铺（水平左→右、垂直上→下）。
+      //
+      // ⚠️ 这三个色是**语义色**（不是"跟着主题的装饰色"）：绿=安全、黄=注意、
+      // 红=危险。所以它们与 `window.BAND_DEFAULT_COLOR` 同类 —— 由
+      // `guard-color-probe.js` 的 `ALLOW_COLOR` 放行（那一侧的注释写了理由：
+      // `GAUGE_THEMES` 没有 warn / critical 字段，状态色跟不了主题）。
+      // ⚠️ 改这里要**同时**改 `tools/guard-color-probe.js` 的 ALLOW_COLOR。
+      const stops = [[0, "#39D98A"], [0.35, "#FFB020"], [0.7, "#FF4D4F"], [1, "#FF4D4F"]];
+      const g = vertical ? ctx.createLinearGradient(0, 0, 0, H)
+        : ctx.createLinearGradient(0, 0, W, 0);
+      stops.forEach(function (s) { g.addColorStop(s[0], s[1]); });
+      ctx.fillStyle = g;
+    } else if (t.inset) {
+      ctx.fillStyle = crossGrad(0, 0, W, H, "rgba(0,0,0,0.55)", "rgba(255,255,255,0.10)");
+    } else if (t.gradient === "gloss") {
+      ctx.fillStyle = crossGrad(0, 0, W, H, "rgba(255,255,255,0.16)", "rgba(0,0,0,0.30)");
+      // 先铺一层底色，再叠高光/阴影
+      ctx.fillStyle = trackCol;
+      roundRect(0, 0, W, H, radius); ctx.fill();
+      ctx.fillStyle = crossGrad(0, 0, W, H, "rgba(255,255,255,0.16)", "rgba(0,0,0,0.30)");
+    } else {
+      ctx.fillStyle = trackCol;
+    }
+    roundRect(0, 0, W, H, radius);
+    ctx.fill();
+
+    // `gradient: "fade"`：两端收进背景（**叠加**在底色上，不是替换底色）
+    if (t.gradient === "fade") {
+      ctx.fillStyle = longGrad(0, 0, W, H, "rgba(255,255,255,0.10)");
+      roundRect(0, 0, W, H, radius); ctx.fill();
+    }
+
+    // ---- 分段：在轨道上切出等分格
+    if (t.segments > 1) {
+      const gap = Math.max(1, Math.min(W, H) * 0.14);
+      const total = vertical ? H : W;
+      const step = total / t.segments;
+      ctx.fillStyle = "rgba(0,0,0,0.45)";
+      for (let i = 1; i < t.segments; i++) {
+        const p = i * step - gap / 2;
+        if (vertical) ctx.fillRect(0, p, W, gap);
+        else ctx.fillRect(p, 0, gap, H);
+      }
+    }
+
+    // ---- 刻度：长边上的短横线（贴在**朝向短边中心**的那一侧）
+    if (t.ticks > 0) {
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      const total = vertical ? H : W;
+      const step = total / t.ticks;
+      const len = Math.min(W, H) * 0.34;
+      for (let i = 0; i < t.ticks; i++) {
+        const p = (i + 0.5) * step;
+        if (vertical) ctx.fillRect(0, p, len, Math.max(1, W * 0.05));
+        else ctx.fillRect(p, 0, Math.max(1, H * 0.05), len);
+      }
+    }
+
+    // ---- 填充：从起点画到 `fill` 比例
+    if (t.fill !== null && t.fill !== undefined) {
+      const f = Math.max(0, Math.min(1, t.fill));
+      const fw = vertical ? W : W * f;
+      const fh = vertical ? H * f : H;
+      if (fw > 0.5 && fh > 0.5) {
+        ctx.save();
+        roundRect(0, 0, W, H, radius);
+        ctx.clip();
+        ctx.fillStyle = accent;
+        roundRect(0, 0, fw, fh, radius);
+        ctx.fill();
+        // 顶面高光（沿短边、只占 30%）
+        ctx.fillStyle = "rgba(255,255,255,0.22)";
+        if (vertical) ctx.fillRect(0, 0, fw * 0.32, fh);
+        else ctx.fillRect(0, 0, fw, fh * 0.32);
+        ctx.restore();
+      }
+    }
+
+    // ---- 描边：把轨道从背景里"抠"出来（渐变/内凹时尤其需要）
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    ctx.lineWidth = 1;
+    roundRect(0.5, 0.5, W - 1, H - 1, Math.max(0, radius - 0.5));
+    ctx.stroke();
+    ctx.restore();
+  }
+  window.drawTrackNode = drawTrackNode;
 
   /**
    * 文字控件。字体来自 `n.font`（family / size / weight / italic /

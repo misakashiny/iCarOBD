@@ -652,6 +652,96 @@
       if (k === "alpha") n[k] = Math.max(0, Math.min(255, Math.round(n[k])));
     }, "改 " + k, "num:" + k);
   };
+
+  // ================================================================ 拖动滑块：实时预览（v2.91.0）
+  //
+  // ## 修的是什么（实测复现）
+  //
+  // 用户报「**属性的透明度不能实时拖动、只能点击操作**」。根因是这一条链：
+  //
+  //   <input type=range oninput=setNodeNum('alpha',v)>
+  //     → commit() → refreshAll()
+  //       → renderPanels()  … 重建素材库 / 控件树 / 控件库
+  //       → draw()
+  //   … 而 **`renderProps()` 也在别处被调**，它做的是 `box.innerHTML = out.join("")`
+  //   —— 把 `#props` 的**整个 DOM 换掉**，正在被拖的那个 `<input type=range>`
+  //   连**同一个节点都不是了**。浏览器于是立刻结束指针捕获，
+  //   拖动在**第一个 input 事件之后**就断了：表现就是"只能点一下、拖不动"。
+  //
+  // 数字框（`type=number`）没有这个问题，因为它不靠指针捕获 —— 这就是
+  // "能点击不能拖动"这个现象的由来。
+  //
+  // ## 修法：拖动期间**不重建任何面板**
+  //
+  // 与滚轮缩放**同一套思路**（见 canvas.js 的 `S.suppressPanelRender` 注释：
+  // 一次滚轮事件 17.8ms，其中 `renderPanels` 占 8.78ms，而它一个字都不会变）：
+  // 手势期间只改数据 + 重画画布，收手时补一次完整刷新。
+  //
+  // ⚠️ **不能只靠 `suppressPanelRender`**：那只挡住 `refreshAll()` 里的
+  // `renderPanels()`，`renderProps()` 仍会被调（`onDragEnd` / 别处），
+  // 而它才是真正替换掉滑块 DOM 的那一步。所以这里显式跳过
+  // `refreshAll` 里的 `draw()` 之外的**全部**刷新，只留 `draw()`。
+  //
+  // 撤销仍然是**一步**：`commit(..., "num:alpha")` 的合并键没变，
+  // 手势期间的几十次 input 只会替换栈顶（见 model.js `UndoStack.push`）。
+
+  /** 手势进行中？供测试断言（`window.__liveEdit`） */
+  let liveEdit = false;
+  window.__liveEdit = function () { return liveEdit; };
+
+  /** 开始一次"拖动即预览"的手势。重复调用无害（第一次生效） */
+  window.beginLiveEdit = function () {
+    if (liveEdit) return;
+    liveEdit = true;
+    S.suppressPanelRender = true;
+  };
+
+  /**
+   * 收手：恢复面板重建 + 补一次完整刷新 + 把最终状态落盘。
+   *
+   * 必须幂等 —— `change` 事件在"点一下"时也会触发（那次没有 `input`），
+   * 没开过手势就直接返回，不做多余的重建。
+   */
+  window.endLiveEdit = function () {
+    if (!liveEdit) return;
+    liveEdit = false;
+    S.suppressPanelRender = false;
+    if (window.onDragEnd) window.onDragEnd();   // 结束合并 + flushUndoStack + renderProps
+    if (window.refreshAll) window.refreshAll(); // 补齐手势期间跳过的那次完整刷新
+  };
+
+  /**
+   * 通用：手势期间改一个数字字段。
+   *
+   * `apply()` 负责写值（含夹取）。`label` / `key` 用来生成撤销步骤
+   * （`key` 是合并键 —— 手势期间的几十次 input 只会替换栈顶）。
+   * 收手由 `endLiveEdit()`（绑在 `onchange` 上）负责。
+   *
+   * ⚠️ **顺序是这条修复的关键**（v2.91.0 实测踩到过一次）：
+   * `beginLiveEdit()` 必须在 `commit()` **之前**。第一版写在之后，于是
+   * **第一次 input 仍然会重建面板**（`commit` → `refreshAll` → `renderPanels`
+   * → `renderProps` → `innerHTML`），滑块在拖动的**第一帧**就被换掉了 ——
+   * 症状与修之前一模一样，而"后续帧都不重建"是白搭。
+   *
+   * 反过来（先置标志再改数据）没有副作用：`commit` 的快照是在 `apply()`
+   * **之后**拍的，所以撤销栈里存的仍然是"改完之后"的状态。
+   */
+  function liveNum(label, key, apply) {
+    window.beginLiveEdit();
+    window.commit(function () { apply(); }, label, key);
+  }
+
+  /** 属性面板的 `x/y/w/h/rotation/scale/alpha` —— 滑块与数字框共用 */
+  window.setNodeNumLive = function (k, v) {
+    const n = sel(); if (!n) return;
+    const num = Number(v);
+    liveNum("改 " + k, "num:" + k, function () {
+      n[k] = Number.isFinite(num) ? num : 0;
+      if (k === "w" || k === "h") n[k] = Math.max(1, n[k]);
+      if (k === "scale") n[k] = Math.max(0.05, n[k]);
+      if (k === "alpha") n[k] = Math.max(0, Math.min(255, Math.round(n[k])));
+    });
+  };
   window.setNodeStr = function (k, v) {
     const n = sel(); if (!n) return;
     window.commit(() => { n[k] = String(v); }, "改 " + k, "str:" + k);
@@ -846,6 +936,31 @@
       tidyCard(n);
     }, "底框 " + k, "card:" + k);
   };
+
+  /**
+   * 底框 `alpha` / `radius` 的**拖动即预览**版（v2.91.0）。
+   *
+   * ⚠️ 为什么单开一个：`setCardNum` 里那句 `window.commit(..., "card:"+k)`
+   * 会连带重建属性面板 —— 而底框的 alpha 就是一个 `<input type=range>`，
+   * 于是**与「不透明度」完全同一个毛病**（拖一下就断）。用户报的是
+   * 「其它同类滑块一起查」，这一处就是查出来的那个。
+   *
+   * 语义与 `setCardNum` 逐字一致（空串 = null = 跟随主题；alpha 夹 0..255、
+   * radius 夹 0..120），只是手势期间不重建面板。
+   */
+  window.setCardNumLive = function (k, v) {
+    const n = sel(); if (!n) return;
+    const s = String(v).trim();
+    liveNum("底框 " + k, "card:" + k, function () {
+      const c = ensureCard(n);
+      if (s === "") { c[k] = null; }
+      else {
+        const x = Number(s);
+        c[k] = Number.isFinite(x) ? Math.max(0, Math.min(k === "alpha" ? 255 : 120, Math.round(x))) : null;
+      }
+      tidyCard(n);
+    });
+  };
   window.resetCard = function () {
     const n = sel(); if (!n) return;
     window.commit(() => { n.card = null; }, "底框恢复跟随主题");
@@ -890,6 +1005,52 @@
       n.rawStatePid = raw;
       n.statePid = raw ? window.resolvePid(raw) : "";
     }, "改状态驱动 PID", "statepid");
+  };
+
+  // ================================================================ 代码绘制的条形轨道（v2.91.0）
+  //
+  // 与 `setBandField` 同一个套路：**所有写入都过 `normalizeTrackStyle`**
+  // （唯一入口）—— 这样"内存里合法、文件里非法"的状态不存在，
+  // 而且 `null`（= 老行为，贴图）与"一个对象"的语义只有一处定义。
+
+  /** 当前选中的图片节点（轨道只对图片有意义） */
+  function imageSel() {
+    const n = sel();
+    if (!n || n.type !== window.NODE_IMAGE) { window.toast("代码轨道只能加在图片控件上"); return null; }
+    return n;
+  }
+
+  /** 把一个字段写进 `trackStyle`（值来自面板） */
+  window.setTrackField = function (k, v) {
+    const n = imageSel(); if (!n) return;
+    window.commit(function () {
+      const cur = Object.assign({}, n.trackStyle || {});
+      if (k === "orient" || k === "gradient") {
+        cur[k] = (v === "" || v === undefined || v === null) ? null : String(v);
+      } else if (k === "color" || k === "accent") {
+        // 空串 = 跟随主题（写 null，不是写 ""）
+        cur[k] = (String(v).trim() === "") ? null : String(v);
+      } else if (k === "radius" || k === "segments" || k === "ticks" || k === "fill") {
+        cur[k] = (String(v).trim() === "") ? null : Number(v);
+      } else {
+        cur[k] = !!v;
+      }
+      // ⚠️ `normalizeTrackStyle` 会把非法值夹住；`null` 只在**一个字段都没写**时返回，
+      // 而这里 `cur` 至少有 `orient` 或用户改的那一项，所以不会变回 null。
+      n.trackStyle = window.normalizeTrackStyle(cur, n.w, n.h);
+    }, "改轨道 " + k, "track:" + k);
+  };
+
+  /** 开/关「代码绘制」（关 = 回到贴图，`trackStyle = null`） */
+  window.toggleTrackStyle = function (on) {
+    const n = imageSel(); if (!n) return;
+    window.commit(function () {
+      if (!on) { n.trackStyle = null; return; }
+      // 默认一条最普通的水平轨道 —— 与 `cd_trackh` 那个控件同形
+      n.trackStyle = window.normalizeTrackStyle({ orient: "h" }, n.w, n.h);
+    }, on ? "改成代码绘制轨道" : "轨道恢复贴图");
+    if (on) window.toast("已改成代码绘制 —— 缩放不再模糊（颜色跟随设计主题）");
+    else window.toast("已恢复成贴图（`trackStyle` 已清空 = 完全旧行为）");
   };
 
   window.setNodeCard = function (v) {    const n = sel(); if (!n) return;
@@ -1358,6 +1519,12 @@
       card: cssVar("--cvCard", "rgba(28,36,48,0.75)"),
       cardLine: cssVar("--cvCardLine", "#2A3547"),
       track: cssVar("--cvTrack", "#263143"),
+      // 代码绘制的轨道（v2.91.0）的**兜底色**：设计没主题时用工具 UI 的主色。
+      // ⚠️ 这两个是给 `drawTrackNode` 的 `themeColors()` 兜底用的 ——
+      // 正常路径（设计带主题）拿到的是 `themeColors().track / .accent`，
+      // 也就是**跟设计主题**。写在这里而不是硬编码在 canvas.js 里，
+      // 是因为构建守卫有一条「canvas.js 不许有裸色值」（那正是 v2.59.0 加的）。
+      accent: cssVar("--accent", "#00D8FF"),
       text: cssVar("--cvText", "#8FA0B8"),
       textDim: cssVar("--cvTextDim", "#5F6E85"),
       textFaint: cssVar("--cvTextFaint", "#3A4A5E"),
@@ -1368,7 +1535,7 @@
   // ================================================================ 折叠面板
 
   /**
-   * 设计信息 / 背景图 / 预设布局 的折叠。
+   * 设计信息 / 背景图 / 预设布局 / **JSON 与差异**（v2.91.0 加） 的折叠。
    *
    * 折叠状态存 localStorage —— 用户调好一次布局，下次打开还是他要的样子。
    */
@@ -1380,20 +1547,72 @@
     body.style.display = open ? "" : "none";
     if (caret) caret.textContent = open ? "▾" : "▸";
     try { localStorage.setItem("studio.panel." + name, open ? "1" : "0"); } catch (e) { }
-    // 展开/收起会改变右栏高度，画布要重新量
-    setTimeout(() => window.applyCanvasSize(), 0);
+    // ⚠️ **JSON 面板不重算画布尺寸**（v2.91.0）。
+    //
+    // 其余三个面板改的是**右栏**高度，而画布在**中栏**（`main` 是三栏 grid，
+    // 列宽写死 `320px / 1fr / 420px`）—— 右栏怎么变都挤不到画布。
+    // 但 `applyCanvasSize()` 是按 `wrap.clientWidth/Height` 重算的，
+    // 万一将来布局改成"右栏能挤压中栏"，这里就会**在展开 JSON 时把画布缩小**。
+    // 这是本项目的**老坑**（见 studio.css 里 `flex: 0 0 auto` 那段注释：
+    // 位图比例与 CSS 尺寸不一致 → 坐标换算全错、旋转手柄点不中）。
+    // 所以对 JSON 面板走**保尺寸**的那条路：收/展前后画布尺寸必须一模一样。
+    if (name === "json") applyCanvasSizePreserving();
+    else setTimeout(() => window.applyCanvasSize(), 0);
   };
 
+  /**
+   * 重算画布尺寸，但**尺寸不许变**。
+   *
+   * 收/展面板是**布局**操作，不该动画布 —— 尺寸变了就是回归（老坑）。
+   * 做法：先把当前 CSS 尺寸记下来，调一次 `applyCanvasSize()`，
+   * 若算出来的尺寸**与原来不同**，就改回去并记一条警告（供测试断言）。
+   */
+  function applyCanvasSizePreserving() {
+    const cv = document.getElementById("cv");
+    if (!cv) return;
+    const before = { w: cv.style.width, h: cv.style.height, bw: cv.width, bh: cv.height };
+    if (window.applyCanvasSize) window.applyCanvasSize();
+    const after = { w: cv.style.width, h: cv.style.height, bw: cv.width, bh: cv.height };
+    const changed = before.w !== after.w || before.h !== after.h ||
+      before.bw !== after.bw || before.bh !== after.bh;
+    window.__panelCanvasResize = window.__panelCanvasResize || [];
+    window.__panelCanvasResize.push({ before: before, after: after, changed: changed });
+    if (changed) {
+      cv.style.width = before.w; cv.style.height = before.h;
+      cv.width = before.bw; cv.height = before.bh;
+      if (window.draw) window.draw();
+      if (window.console && console.warn) {
+        console.warn("切换面板把画布尺寸改了：" + JSON.stringify(before) + " → " + JSON.stringify(after) +
+          "（已还原；这是回归，见 togglePanel 的注释）");
+      }
+    }
+  }
+  window.applyCanvasSizePreserving = applyCanvasSizePreserving;
+
+  /**
+   * 恢复各面板的折叠状态。
+   *
+   * ⚠️ 默认值是**逐个写死**的，不是"一律展开"：
+   *   · `preset`（预设布局）默认收起 —— 用一次就不再动
+   *   · `json`（JSON 与差异）默认收起（v2.91.0，用户要求「JSON页面默认隐藏」）
+   *   · `info` / `bg` 默认展开 —— 新建设计时最常改的就是这两块
+   */
   function restorePanels() {
-    ["preset", "info", "bg"].forEach(name => {
+    ["preset", "info", "bg", "json"].forEach(name => {
       let open;
       try {
         const saved = localStorage.getItem("studio.panel." + name);
-        open = saved === null ? (name !== "preset") : saved === "1";   // 预设布局默认收起
-      } catch (e) { open = name !== "preset"; }
+        const defOpen = (name !== "preset" && name !== "json");
+        open = saved === null ? defOpen : saved === "1";
+      } catch (e) { open = (name !== "preset" && name !== "json"); }
       const body = el("body-" + name);
       const caret = el("caret-" + name);
-      if (body) body.style.display = open ? "" : "none";
+      if (body) {
+        body.style.display = open ? "" : "none";
+        // `body-json` 是**列向 flex**（页签 + 文本域），展开时要恢复 display:flex ——
+        // 置空会让它回到 CSS 的 `display:block`，页签与文本域就摞不紧了。
+        if (name === "json") body.style.display = open ? "flex" : "none";
+      }
       if (caret) caret.textContent = open ? "▾" : "▸";
     });
   }

@@ -539,6 +539,42 @@ themeColors: (root.themeColors && typeof root.themeColors === "object" && !Array
       node.states = parseStates(o.states, path, errors, warnings, assetIds);
       node.stateWarn = parseThreshold(o.stateWarn, path + ".stateWarn", warnings);
       node.stateCritical = parseThreshold(o.stateCritical, path + ".stateCritical", warnings);
+      // **代码绘制的条形轨道**（v2.91.0）。
+      //
+      // ⚠️ 判据必须与 `model.js` 的 `createNode`（NODE_IMAGE 分支）**同源** ——
+      // 两处都走 `normalizeTrackStyle`，否则「新建的轨道」与「重新打开的设计」
+      // 会得到两种内部表示（这个坑本项目踩过：`statePid` 只写不读，
+      // 往返一次映射表静默消失，见下面 valueLabels 那段）。
+      //
+      // 非法值只给**警告**、不给硬错误 —— 与 `bands` 同理：
+      // `normalizeTrackStyle` 已经把非法项夹住/丢掉，文件照样能用
+      //（最差就是画成一条普通轨道）。把它变成硬错误等于**拒收存量文件**。
+      node.trackStyle = window.normalizeTrackStyle(o.trackStyle, w, h);
+      if (o.trackStyle !== undefined && o.trackStyle !== null) {
+        if (typeof o.trackStyle !== "object" || Array.isArray(o.trackStyle)) {
+          warnings.push(path + " 的 `trackStyle` 不是一个对象 —— 已忽略（这条会画成普通图片）");
+        } else if (!window.trackUsable(node.trackStyle)) {
+          warnings.push(path + " 的 `trackStyle` 里一个可识别字段都没有 —— 已忽略（这条会画成普通图片）");
+        } else {
+          // 轨道里的数值字段：**写了值但不是数字**要出声。
+          //
+          // ⚠️ 不能塞进 `NUMERIC_NODE_FIELDS` —— 那张表是**跨语言契约**
+          //（`verify-crosslang.js` 与 `DesignNode.NUMERIC_NODE_FIELDS` 逐条比），
+          // 单边加一个字段就是新的分叉。而 `trackStyle` 是本轮**只在工具侧**落地
+          // 的字段（App 侧待办见 CHANGELOG），所以它的告警在本地做。
+          warnNonNumeric(o.trackStyle, ["radius", "segments", "ticks", "fill"],
+            path + ".trackStyle", warnings);
+          if (o.trackStyle.orient !== undefined && o.trackStyle.orient !== "h" && o.trackStyle.orient !== "v") {
+            warnings.push(path + ".trackStyle.orient 只认 `h` / `v`（实际 `" +
+              String(o.trackStyle.orient).slice(0, 12) + "`）—— 已按 `h` 画");
+          }
+          if (o.trackStyle.gradient !== undefined && o.trackStyle.gradient !== null &&
+              o.trackStyle.gradient !== "" && o.trackStyle.gradient !== "fade" && o.trackStyle.gradient !== "gloss") {
+            warnings.push(path + ".trackStyle.gradient 只认 `fade` / `gloss`（实际 `" +
+              String(o.trackStyle.gradient).slice(0, 12) + "`）—— 已按「无渐变」画");
+          }
+        }
+      }
       if (node.assetId && assetIds && !assetIds.has(node.assetId)) {
         warnings.push(path + " 引用的素材 `" + node.assetId + "` 不在 `assets` 清单里 —— 请重新导入");
       }

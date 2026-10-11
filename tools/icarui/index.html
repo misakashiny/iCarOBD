@@ -171,17 +171,29 @@
       <div class="panelResize" onpointerdown="beginPanelResize(event,'props')" title="拖动调整属性面板高度"></div>
     </div>
 
+    <!-- JSON 面板（v2.91.0：默认**收起**，见下面 body-json 的说明）
+         ⚠️ 折叠箭头用的是与「设计信息 / 背景图 / 预设布局」**同一套** panelHead + pcaret
+         —— 不再自己写一个，否则"箭头长什么样"会有两种。 -->
     <div class="panel grow" style="min-height:200px">
-      <div class="tabs">
-        <button id="tabJson" class="on" onclick="showTab('json')">JSON</button>
-        <button id="tabDiff" onclick="showTab('diff')">与 App 规则的差异</button>
+      <div class="panelHead" onclick="togglePanel('json')" title="点标题或箭头收起 / 展开 JSON">
+        <span class="pcaret" id="caret-json">▸</span>JSON 与差异
       </div>
-      <div id="paneJson" class="tabPane">
-        <textarea id="jsonArea" spellcheck="false" oninput="jsonEdited()"></textarea>
-        <div class="hint">直接编辑也可以：改动会立刻回灌到画布。校验用的就是这一份文本。</div>
-      </div>
-      <div id="paneDiff" class="tabPane" style="display:none">
-        <div class="msgs" id="diffBox"></div>
+      <!-- ⚠️ **默认 display:none**（用户要求「JSON页面默认隐藏」）。
+           但 `.panel.grow` 是 flex:1 1 auto —— 收起时它仍然占着右栏的剩余高度，
+           所以"默认隐藏"不会把右栏布局挤变形（画布在中栏，与右栏无关）。
+           `restorePanels()` 会按 localStorage 覆盖这个初始值（记住用户上次的选择）。 -->
+      <div class="panelBody" id="body-json" style="display:none;flex:1 1 auto;min-height:0;flex-direction:column">
+        <div class="tabs">
+          <button id="tabJson" class="on" onclick="showTab('json')">JSON</button>
+          <button id="tabDiff" onclick="showTab('diff')">与 App 规则的差异</button>
+        </div>
+        <div id="paneJson" class="tabPane">
+          <textarea id="jsonArea" spellcheck="false" oninput="jsonEdited()"></textarea>
+          <div class="hint">直接编辑也可以：改动会立刻回灌到画布。校验用的就是这一份文本。</div>
+        </div>
+        <div id="paneDiff" class="tabPane" style="display:none">
+          <div class="msgs" id="diffBox"></div>
+        </div>
       </div>
     </div>
   </div>

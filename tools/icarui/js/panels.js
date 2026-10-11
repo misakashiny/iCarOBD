@@ -287,9 +287,22 @@
   function row(label, inner) {
     return '<div class="prow"><label>' + esc(label) + '</label>' + inner + '</div>';
   }
+  /**
+   * 数字输入框（`type=number`）。
+   *
+   * ⚠️ v2.91.0：`oninput` 改成 `setNodeNumLive`、并补一个 `onchange` 收手。
+   *
+   * 为什么连数字框一起改：`commit()` 会重建整个属性面板（`renderProps` 里
+   * `box.innerHTML = ...`），而 `oninput` **每敲一个字符**都会触发 ——
+   * 输入框被换掉、光标丢失。用户报的是滑块拖不动，数字框是**同一个根因**
+   * 的另一种表现（"打第二位数字时焦点跑了"）。
+   *
+   * `setNodeNumLive` 的语义与 `setNodeNum` 逐字一致（夹取规则同源），
+   * 区别只是手势期间不重建面板、收手时补一次（见 app.js 的 `liveNum`）。
+   */
   function numIn(k, v, step) {
     return '<input type="number" step="' + (step || "1") + '" value="' + window.r2(v) +
-      '" oninput="setNodeNum(\'' + k + '\', this.value)">';
+      '" oninput="setNodeNumLive(\'' + k + '\', this.value)" onchange="endLiveEdit()">';
   }
 
   /**
@@ -342,8 +355,12 @@
       row("缩放（倍）", numIn("scale", n.scale, "0.05") +
         '<button class="mini" onclick="setNodeNum(\'scale\',1)">1×</button>'),
       row("不透明度", numIn("alpha", n.alpha) +
+        // ⚠️ v2.91.0：`oninput` 走 `setNodeNumLive`（**不重建属性面板**，见 numIn 的说明）、
+        // `onchange` 收手补一次完整刷新。改之前这里是 `setNodeNum` ——
+        // 拖动时 `renderProps()` 会把**这个 input 本身**换掉，指针捕获当场失效，
+        // 表现就是用户报的「透明度不能实时拖动、只能点击操作」。
         '<input type="range" min="0" max="255" value="' + Math.round(n.alpha) +
-        '" oninput="setNodeNum(\'alpha\',this.value)">'),
+        '" oninput="setNodeNumLive(\'alpha\',this.value)" onchange="endLiveEdit()">'),
       // 用户明确说这段说明不需要（"旋转绕自身中心；缩放是额外倍率"）
     ].join("")));
 
@@ -382,6 +399,9 @@
           ' onchange="setNodeFontFlag(\'showRange\',this.checked)"> 量程</label>'))));
     }
     if (n.type === window.NODE_IMAGE) out.push(group("img", "图片", imageFields(n)));
+    // **代码绘制的条形轨道**（v2.91.0）：单独一组，放在「图片」下面。
+    // 只有图片控件有它 —— 轨道就是"图片控件的一种画法"（见 schema.js 的说明）。
+    if (n.type === window.NODE_IMAGE) out.push(group("track", "条形轨道（代码绘制）", trackFields(n)));
     if (n.type === window.NODE_IMAGE) out.push(group("st", "状态系统", stateFields(n)));
     if (n.type === window.NODE_TEXT) {
       out.push(group("txt", "文字", textFields(n)));
@@ -542,13 +562,14 @@
           ' onchange="setCardFlag(\'show\',this.checked)"> 画底框</label>'),
         row("底框透明度", '<input type="number" min="0" max="255" placeholder="跟随主题" value="' +
           (n.card && n.card.alpha !== null && n.card.alpha !== undefined ? n.card.alpha : "") +
-          '" oninput="setCardNum(\'alpha\',this.value)">' +
+          '" oninput="setCardNumLive(\'alpha\',this.value)" onchange="endLiveEdit()">' +
+          // 同一个毛病（v2.91.0 一起修）：拖动时属性面板被重建 → 滑块当场断
           '<input type="range" min="0" max="255" value="' +
           (n.card && n.card.alpha !== null && n.card.alpha !== undefined ? n.card.alpha : 190) +
-          '" oninput="setCardNum(\'alpha\',this.value)">'),
+          '" oninput="setCardNumLive(\'alpha\',this.value)" onchange="endLiveEdit()">'),
         row("底框圆角", '<input type="number" min="0" max="120" placeholder="跟随主题" value="' +
           (n.card && n.card.radius !== null && n.card.radius !== undefined ? n.card.radius : "") +
-          '" oninput="setCardNum(\'radius\',this.value)">'),
+          '" oninput="setCardNumLive(\'radius\',this.value)" onchange="endLiveEdit()">'),
         '<div class="btnRow"><button onclick="resetCard()">底框恢复跟随主题</button></div>',
       row("霓虹档位", '<select onchange="setNodeNeon(this.value)">' +
         '<option value="">（跟随主题）</option>' +
@@ -575,6 +596,63 @@
         '<option value="">（未选）</option>' + opts + '</select>'),
       '<div class="hint">素材从左侧<b>素材库</b>拖到画布即可添加新图片控件。</div>',
     ].join("");
+  }
+
+  /**
+   * **代码绘制的条形轨道**（v2.91.0）。
+   *
+   * 字段表是 `schema.js` 的 `normalizeTrackStyle`（唯一真源）——
+   * 这里只负责把它们画成控件。改一个字段走 `setTrackField`，
+   * 它内部会再过一遍 `normalizeTrackStyle`。
+   *
+   * ⚠️ 关掉「代码绘制」= `trackStyle = null` = **画 `assetId` 那张图**
+   *（也就是这个控件改之前的行为）。这句话必须写在面板上：
+   * 用户点了关之后看到一张图，得知道"这不是坏了，是回到贴图"。
+   */
+  function trackFields(n) {
+    const t = n.trackStyle;
+    let h = row("绘制方式", '<label class="chk"><input type="checkbox"' + (t ? " checked" : "") +
+      ' onchange="toggleTrackStyle(this.checked)"> 用代码画（缩放不模糊）</label>');
+    if (!t) {
+      h += '<div class="hint">现在用的是<b>贴图</b>（素材那张 PNG）—— 拉长会模糊。' +
+        '勾上「用代码画」改成 canvas 绘制，颜色跟随设计主题，任意缩放都清晰。' +
+        '（存量设计不受影响：没有这个字段的控件仍然走贴图。）</div>';
+      return h;
+    }
+    h += row("方向", '<select onchange="setTrackField(\'orient\',this.value)">' +
+      window.TRACK_ORIENTS.map(o => '<option value="' + attr(o.v) + '"' +
+        (t.orient === o.v ? " selected" : "") + '>' + esc(o.n) + '</option>').join("") +
+      '</select>');
+    h += row("圆角", '<input type="number" min="0" max="64" value="' + t.radius +
+      '" onchange="setTrackField(\'radius\',this.value)" title="0 = 直角；缺省 = 短边的一半（胶囊）">' +
+      '<span class="hint inline">0 = 直角，' + Math.round(Math.min(n.w, n.h) / 2) + ' = 胶囊</span>');
+    h += row("渐变", '<select onchange="setTrackField(\'gradient\',this.value)">' +
+      '<option value=""' + (t.gradient ? "" : " selected") + '>（无）</option>' +
+      window.TRACK_GRADIENTS.map(g => '<option value="' + attr(g.v) + '"' +
+        (t.gradient === g.v ? " selected" : "") + '>' + esc(g.n) + '</option>').join("") +
+      '</select>');
+    h += row("效果", '<label class="chk"><input type="checkbox"' + (t.inset ? " checked" : "") +
+      ' onchange="setTrackField(\'inset\',this.checked)"> 内凹</label>' +
+      '<label class="chk"><input type="checkbox"' + (t.glow ? " checked" : "") +
+      ' onchange="setTrackField(\'glow\',this.checked)"> 发光</label>' +
+      '<label class="chk"><input type="checkbox"' + (t.band ? " checked" : "") +
+      ' onchange="setTrackField(\'band\',this.checked)"> 三段色带</label>');
+    h += row("分段 / 刻度", '<input type="number" min="0" max="' + window.MAX_TRACK_SEGMENTS +
+      '" value="' + t.segments + '" onchange="setTrackField(\'segments\',this.value)" title="0 = 实心；>1 = 等分格">' +
+      '<input type="number" min="0" max="' + window.MAX_TRACK_TICKS +
+      '" value="' + t.ticks + '" onchange="setTrackField(\'ticks\',this.value)" title="长边上的短刻度数；0 = 不画">');
+    h += row("填充比例", '<input type="number" min="0" max="1" step="0.01" placeholder="不填 = 只画轨道" value="' +
+      (t.fill === null || t.fill === undefined ? "" : t.fill) +
+      '" onchange="setTrackField(\'fill\',this.value)" title="0..1；填了就从起点画一段主色填充">');
+    h += row("颜色", '<input type="color" value="' + attr(t.color || (window.currentTheme ? (window.currentTheme().track || "#263143") : "#263143")) +
+      '" onchange="setTrackField(\'color\',this.value)" title="轨道底色">' +
+      '<input type="color" value="' + attr(t.accent || (window.currentTheme ? (window.currentTheme().accent || "#00D8FF") : "#00D8FF")) +
+      '" onchange="setTrackField(\'accent\',this.value)" title="填充 / 发光用的主色">' +
+      '<button class="mini" onclick="setTrackField(\'color\',\'\');setTrackField(\'accent\',\'\')" title="清掉覆盖，回到跟随主题">跟随主题</button>');
+    h += '<div class="hint">代码绘制的轨道：<b>同一份字段谁画都是这张图</b>（工具与 App 逐字段对齐）。' +
+      '取消勾选「用代码画」会回到贴图。<br>' +
+      '⚠️ <b>App 侧还没实现</b> —— 现在导出后设备上仍按贴图/空白处理，见 CHANGELOG 的「App 侧待办」。</div>';
+    return h;
   }
 
   function stateFields(n) {

@@ -34,11 +34,11 @@
 
 | 要验的 | `file://` 实测结果 |
 |---|---|
-| 页面加载 | ✅ `readyState=complete`，`BUILTIN_ASSETS=359` 条、`BUILTIN_CONTROLS=176` 个 |
+| 页面加载 | ✅ `readyState=complete`，`BUILTIN_ASSETS=416` 条、`BUILTIN_CONTROLS=200` 个 |
 | 所有 `js/` 加载 | ✅ 24 个 `.js` 请求**全部 200**；87 个子资源**零** `loadingFailed` |
 | 两个字库 | ✅ `js/pinyin.js` 368 条；⚠️ 5×7 点阵字库在 `png.js` 里，**浏览器本来就不加载它**（Node 侧素材生成用），与 `file://` 无关 |
 | console 报错 | ✅ **0 条** error / JS 异常（0 条 warning） |
-| 素材能出来 | ✅ 画布 385,888 个像素与底色不同；11 个 `builtin-data-*.js` 全部注入，359/359 条素材带内嵌 base64 |
+| 素材能出来 | ✅ 画布 385,888 个像素与底色不同；11 个 `builtin-data-*.js` 全部注入，416/416 条素材带内嵌 base64 |
 | 导出 JSON | ✅ 走 `blob:` + `<a download>` |
 | 导出 PNG | ✅ 走 `data:` + `<a download>`（画布没被污染） |
 | 导出设计包 `.icarzip` | ✅ 走 `blob:`，**导出后自检通过**（3 条目 / 1 素材 / 0 缺失） |
@@ -542,13 +542,14 @@ node tools/icarui/gen-sample.js
 工具的浏览器套件在 `tests/`，一条命令跑全部：
 
 ```powershell
-.\tools\run-browser-tests.ps1              # 全部 32 个套件（1854 条断言）
+.\tools\run-browser-tests.ps1              # 全部 33 个套件（1951 条断言）
 .\tools\run-browser-tests.ps1 -Filter font  # 只跑名字含 font 的
 .\tools\run-browser-tests.ps1 -List         # 只列出会跑哪些
 ```
 
 > ⚠️ 这里的数字**很容易过期**（本行从 23/959 直接跳到了 25/1242 —— 中间几版都忘了改；
-> v2.81.0 补成 26/1430，v2.88.0 补成 **32/1854**）。以 `run-browser-tests.ps1` 的输出为准；
+> v2.81.0 补成 26/1430，v2.88.0 补成 32/1854，v2.91.0 补成 **33/1951**）。
+> 以 `run-browser-tests.ps1` 的输出为准；
 > 数字对不上不是测试坏了，是**这行字**坏了。
 
 > 这些套件原来散在 `%TEMP%` 里 —— 系统一清就没了，也不在版本控制里。

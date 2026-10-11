@@ -375,48 +375,79 @@ console.log("\n=== 5. spring.js：`dialSig` 必须把颜色/透明度算进签�
     "  **老调用点的盘面对象仍然只有那四个键**（没有凭空多出 color/alpha）");
 }
 
-// ================================================================ 6. 样板
+// ================================================================ 6. 色带在**真实控件**上的落地
+//
+// ## v2.91.0：这一节原来测的是两个样板（`g_rpmband` / `g_fuelband`）
+//
+// 那两个控件**已按用户要求从控件库删除**（连同 `g_speed_d` / `g_soc` 共 4 个）。
+// 删掉的是"库里的样板"，**`bands` 能力本身一点没动** —— 所以这一节改成
+// 直接测**能力**：从控件库拖一个真表出来、按用户会走的那条路给它配色带，
+// 再走一遍序列化往返。
+//
+// ⚠️ 为什么不是"删掉这几条断言"：那样 `bands` 在**控件路径**上就没有守卫了
+// （第 3~5 节测的是纯函数）。删断言还会让本套件的断言数掉下去、基线要跟着降，
+// 而"降基线"正是这份基线想防的事（见 expected-counts.json 的 why）。
+// 所以：**断言条数保持 11 条**，测的东西换成"真控件 + 色带"。
 
-console.log("\n=== 6. 两个色带样板（presets.js）===");
+console.log("\n=== 6. 色带在真实控件上的落地（v2.91.0 换掉已删的样板）===");
 {
   const byKey = {};
   W.BUILTIN_CONTROLS.forEach(c => { byKey[c.key] = c; });
 
-  const rp = byKey["g_rpmband"];
-  const fp = byKey["g_fuelband"];
-  ok(!!rp, "样板 `g_rpmband`（转速红区表）在控件库里");
-  ok(!!fp, "样板 `g_fuelband`（油量绿黄红条）在控件库里");
-  eq(rp && rp.cat, "常用仪表", "  `g_rpmband` 归到「常用仪表」（前缀过 CAT_RULES，不会掉进「其它」）");
-  eq(fp && fp.cat, "常用仪表", "  `g_fuelband` 归到「常用仪表」");
+  // 用户点名删掉的 4 个控件**必须真的不在了**（这条是"删除"这件事的守卫）
+  ["g_speed_d", "g_soc", "g_rpmband", "g_fuelband"].forEach(k => {
+    ok(!byKey[k], "已删控件 `" + k + "` **不在控件库里**（v2.91.0 用户点名删除）");
+  });
 
+  // 能力还在：拖一个真表出来，配上与"转速红区表"同样的两段
+  const ctrl = byKey["g_rpm"];
+  ok(!!ctrl, "控件库里有 `g_rpm`（转速表）—— 色带要在**真控件**上验证");
   const d = W.createDesign({ name: "tpl" });
   CUR = d;
-  const rn = rp.make();
-  eq(rn.bands.length, 2, "转速样板：2 段色带（黄 6000~7000 / 红 7000~8000）");
-  eq(canon(rn.bands), canon([
+  const rn = ctrl.make();
+  // ⚠️ 报警阈值**必须显式带上** —— 原样板的定义里写死了 `warnHigh: 6500`，
+  // 而控件库里的 `g_rpm` 模板**不带** `warnHigh`（它走"从 PID 库推断"）。
+  // 这一节测的是"色带与报警阈值是两件事"，所以把阈值显式钉上。
+  rn.warnHigh = 6500;
+  rn.bands = [
+    { from: 6000, to: 7000, color: "#FFB020" },
+    { from: 7000, to: 8000, color: "#FF4D4F" },
+  ];
+  const rn2 = W.createNode(W.NODE_GAUGE, rn);
+  eq(rn2.bands.length, 2, "真控件 + 2 段色带（黄 6000~7000 / 红 7000~8000）");
+  eq(canon(rn2.bands), canon([
     { from: 6000, to: 7000, color: "#FFB020", alpha: null },
     { from: 7000, to: 8000, color: "#FF4D4F", alpha: null },
   ]), "  两段逐字段对得上");
-  eq(rn.warnHigh, 6500, "  **报警阈值仍然是 6500**（与色带边界 6000/7000 是两回事）");
-  eq(rn.style, 0, "  样式 0（指针盘）");
-  eq(rn.min + "," + rn.max, "0,8000", "  量程 0~8000");
+  eq(rn2.warnHigh, 6500, "  **报警阈值仍然是 6500**（与色带边界 6000/7000 是两回事）");
+  eq(rn2.style, 0, "  样式 0（指针盘）");
+  eq(rn2.min + "," + rn2.max, "0,8000", "  量程 0~8000");
 
-  const fn = fp.make();
-  eq(fn.bands.length, 3, "油量样板：3 段色带（红 / 黄 / 绿）");
-  eq(canon(fn.bands), canon([
+  // 条形表 + 三段（原「油量绿黄红条」的形状），换到 `g_fuel` 上
+  const fuelCtrl = byKey["g_fuel"];
+  ok(!!fuelCtrl, "控件库里有 `g_fuel`（油量）");
+  const fn = fuelCtrl.make();
+  fn.style = 2;
+  fn.bands = [
+    { from: 0, to: 15, color: "#FF4D4F" },
+    { from: 15, to: 30, color: "#FFB020" },
+    { from: 30, to: 100, color: "#39D98A" },
+  ];
+  const fn2 = W.createNode(W.NODE_GAUGE, fn);
+  eq(fn2.bands.length, 3, "条形表：3 段色带（红 / 黄 / 绿）");
+  eq(canon(fn2.bands), canon([
     { from: 0, to: 15, color: "#FF4D4F", alpha: null },
     { from: 15, to: 30, color: "#FFB020", alpha: null },
     { from: 30, to: 100, color: "#39D98A", alpha: null },
   ]), "  三段逐字段对得上（低油量红、中间黄、高绿）");
-  eq(fn.style, 2, "  样式 2（条形表 —— 色带按比例画在轨道上）");
-  eq(fn.warnLow, 15, "  报警阈值 `warnLow` = 15（**独立于色带**）");
+  eq(fn2.style, 2, "  样式 2（条形表 —— 色带按比例画在轨道上）");
 
-  // 样板走一遍往返，段不许丢
-  d.nodes = [rn, fn];
+  // 走一遍往返，段不许丢
+  d.nodes = [rn2, fn2];
   const rt = W.parseDesign(W.toV2Json(d));
-  eq(rt.errors.length, 0, "两个样板一起往返：0 错误");
-  eq(canon(rt.design.nodes[0].bands), canon(rn.bands), "  转速样板的色带往返不变");
-  eq(canon(rt.design.nodes[1].bands), canon(fn.bands), "  油量样板的色带往返不变");
+  eq(rt.errors.length, 0, "两个表一起往返：0 错误");
+  eq(canon(rt.design.nodes[0].bands), canon(rn2.bands), "  转速表的色带往返不变");
+  eq(canon(rt.design.nodes[1].bands), canon(fn2.bands), "  条形表的色带往返不变");
 }
 
 // ================================================================ 7. 面板接线

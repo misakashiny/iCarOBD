@@ -1,4 +1,4 @@
-﻿// guard-color-probe.js —— 扫 canvas.js 里的裸色值，按**函数归属**报告（v2.59.0）
+// guard-color-probe.js —— 扫 canvas.js 里的裸色值，按**函数归属**报告（v2.59.0）
 //
 // 为什么单独一个文件：内嵌在守卫的字符串里要套三层转义
 // （PowerShell 字符串 → JS 字符串 → 正则），实测**极容易写错**。
@@ -25,10 +25,16 @@ const ALLOW_FN = {
   drawPartOutlines: '子部件外框',
 };
 
-// **状态色**（告警红 / 警告黄 / 紫）。理论上属于设计内容，
+// **状态色**（告警红 / 警告黄 / 紫 / 安全绿）。理论上属于设计内容，
 // 但 GAUGE_THEMES 目前**没有** warn / critical 字段，跟不了主题。
 // 先按"已知缺口"放行，缺口记在 CHANGELOG 的"下次优化建议"里。
-const ALLOW_COLOR = ['#FF4D4F', '#FFB020', '#FF4DD2'];
+//
+// ⚠️ v2.91.0 加了 `#39D98A`：代码绘制的条形轨道里 `trackStyle.band = true`
+// 画的是**三段色带**（绿/黄/红 = 安全/注意/危险）。它与 `bands` 的
+// `BAND_DEFAULT_COLOR` 是同一类**语义色** —— 不跟主题是对的：
+// 把"危险红"跟着主题改成琥珀色，语义就没了。
+// ⚠️ 这一条与 canvas.js 里 `drawTrackNode` 的注释**成对**，改一处要改两处。
+const ALLOW_COLOR = ['#FF4D4F', '#FFB020', '#FF4DD2', '#39D98A'];
 
 let src = '';
 try { src = fs.readFileSync(file, 'utf8'); }

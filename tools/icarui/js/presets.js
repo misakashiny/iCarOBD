@@ -179,58 +179,21 @@
         });
       });
 
-      // ---- 多段色带样板（v2.87.0）
+      // ---- 多段色带样板（v2.87.0 加，**v2.91.0 按用户要求删除**）
       //
-      // ## 为什么需要这两个样板
+      // 这里原来有两个控件：`g_rpmband`（转速红区表）与 `g_fuelband`（油量绿黄红条）。
+      // 用户点名要删，已删。**`bands` 能力本身一点没动** ——
+      // 它仍然在属性面板的「多段色带（只画分区）」组里，任何仪表都能加分区；
+      // 删掉的只是"库里的两个样板"。
       //
-      // `bands` 是**新能力**，而"新能力没人用"的原因通常不是不好用，
-      // 是**不知道该填什么**。这两个样板各自演示一种典型用法：
+      // ⚠️ **删除前查过引用**（`stage/recon-v291.js`，全仓扫 key）：
+      // 4 个待删 key 在 `stage/**` 的设计文件里**一个都没有出现**，
+      // 只在 `docs/` 与本仓库的测试/守卫里被提到 —— 所以删掉**不会让任何
+      // 存量设计悬空**。`docs/` 与本文件下方的说明已同步。
       //
-      //  · `g_rpmband`：**单端危险**（越高越危险）。红区从 6000 起分两档，
-      //    黄 6000~7000 是"该收油了"、红 7000~8000 是"必须收油"。
-      //  · `g_fuelband`：**条形表 + 多段**。油量低才是危险，所以**红在下、绿在上**。
-      //
-      // ⚠️ 两个样板都**同时保留 `warnHigh` / `warnLow`**，而且它们**不等于**色带边界 ——
-      //    这是刻意的：色带是"画出来的参考"，报警线是"App 用来判定/爆闪的阈值"。
-      //    用户可以把色带改成任何样子，报警行为**一点都不会变**（见 schema.js 的说明）。
-      [
-        {
-          key: "g_rpmband", name: "转速红区表", icon: "◉",
-          pid: "obd.rpm", style: 0, w: 160, h: 160,
-          min: 0, max: 8000, warnHigh: 6500,
-          bands: [
-            { from: 6000, to: 7000, color: "#FFB020" },
-            { from: 7000, to: 8000, color: "#FF4D4F" },
-          ],
-        },
-        {
-          key: "g_fuelband", name: "油量绿黄红条", icon: "▬",
-          pid: "obd.fuel_level", style: 2, w: 240, h: 80,
-          min: 0, max: 100, warnLow: 15,
-          bands: [
-            { from: 0, to: 15, color: "#FF4D4F" },
-            { from: 15, to: 30, color: "#FFB020" },
-            { from: 30, to: 100, color: "#39D98A" },
-          ],
-        },
-      ].forEach(function (d) {
-        list.push({
-          key: d.key, name: d.name, icon: d.icon,
-          make: function () {
-            const info = window.BUILTIN_PIDS[window.resolvePid(d.pid)] || {};
-            return window.createNode(window.NODE_GAUGE, {
-              name: d.name, pid: d.pid, style: d.style,
-              min: d.min, max: d.max,
-              warnLow: d.warnLow === undefined ? null : d.warnLow,
-              warnHigh: d.warnHigh === undefined ? null : d.warnHigh,
-              // 色带跟着模板走。`createNode` 会再过一遍 `normalizeBands`
-              // （夹到量程、颜色只认 #RRGGBB）—— 所以这里写错也不会污染设计
-              bands: d.bands,
-              x: 40, y: 40, w: d.w, h: d.h, z: 99,
-            });
-          },
-        });
-      });
+      // ⚠️ 为什么要留这段注释而不是删干净：下一个"库里怎么没有红区样板了"的人
+      // 需要知道**这是刻意的**，以及要加回去时该加什么（见上面被删的两条定义，
+      // 或者直接在任意仪表上用 `bands` 手配 —— 能力一直在）。
 
       // ---- 文字：标题 / 标签 / 单位 / 大号数字（做主题最常用的四种）
       [
@@ -277,33 +240,90 @@
         });
       });
 
-      // ---- 警告灯：带**状态系统**，按 PID 自动切三态图
+      // ================================================================ 指示灯（v2.91.0 重做）
+      //
+      // ## 为什么要重做（实测，不是感觉）
+      //
+      // 体检脚本 `stage/recon-v291.js` 的实测输出：
+      //
+      // ```
+      // normal 去重：{"assets/warning/lamp-off.png": 19}     ← 19 个灯**全是同一张**
+      // warn   去重：{"assets/warning/lamp-warn.png": 19}    ← 19 个灯**全是同一张**
+      // critical 去重：19 个里 18 张不同
+      // ```
+      //
+      // 也就是用户说的「**指示灯需要优化、而不是全部都是一个图**」——实测成立。
+      // 拖 5 个灯到画布上，平时看到的是 **5 个一模一样的圆**，认不出哪个是哪个；
+      // 只有严重态才区分得出来。
+      //
+      // ## 现在每个灯三态各一张自己的图
+      //
+      // 新增 57 张（19 类 × 3 态，`assets/warning/lamp-<key>-<off|warn|crit>.png`），
+      // 由 `gen-lamps.js` **代码绘制**（192×192，旧灯盘是 64×64 = 9 倍像素）。
+      // 版权：形状按 ISO 2575 的**常见语义**自画几何图形，没有下载任何第三方图片。
+      //
+      // ## ⚠️ 旧的 `lamp-off` / `lamp-warn` / `lamp-crit` **一个字都没动**
+      //
+      // 它们是**存量设计文件按路径引用**的素材（§2.41「素材路径是设计文件里的契约」）。
+      // 改内容 = 改所有存量设计在设备上的样子。所以只**新增**、不改旧的；
+      // `img_lampcrit`（严重态灯底）那个控件仍然指向旧的 `lamp-crit.png`。
+      //
+      // ## 三态的默认 alpha / 闪烁保持原样（行为不变）
+      //
+      // 只有 `normal` 是半透明（120）、`critical` 闪、周期走 `window.MIN_BLINK_MS`
+      // —— 与 v1.20.16 那版逐字一致，改的只是**素材**。
       [
-        { key: "lamp_coolant", name: "水温灯", pid: "obd.coolant",
-          normal: "assets/warning/lamp-off.png", warn: "assets/warning/lamp-warn.png",
-          crit: "assets/warning/coolant-warn.png" },
-        { key: "lamp_oil", name: "机油灯", pid: "tpl_oilPressure",
-          normal: "assets/warning/lamp-off.png", warn: "assets/warning/lamp-warn.png",
-          crit: "assets/warning/oil-warn.png" },
-        { key: "lamp_batt", name: "电池灯", pid: "obd.voltage",
-          normal: "assets/warning/lamp-off.png", warn: "assets/warning/lamp-warn.png",
-          crit: "assets/warning/battery-warn.png" },
+        // key 尾缀 —— 与 `gen-lamps.js` 的 LAMPS 表**逐条对应**（那边是唯一真源）
+        { key: "lamp_coolant",   name: "水温灯",   pid: "obd.coolant",     g: "coolant" },
+        { key: "lamp_oil",       name: "机油灯",   pid: "tpl_oilPressure", g: "oil" },
+        { key: "lamp_batt",      name: "电池灯",   pid: "obd.voltage",     g: "batt" },
+        { key: "lamp_brake",     name: "制动灯",   pid: "obd.brakeFluid",  g: "brake" },
+        { key: "lamp_pad",       name: "刹车片",   pid: "obd.brakePad",    g: "pad" },
+        { key: "lamp_tpms",      name: "胎压灯",   pid: "obd.tpms",        g: "tpms" },
+        { key: "lamp_airbag",    name: "气囊灯",   pid: "obd.airbag",      g: "airbag" },
+        { key: "lamp_belt",      name: "安全带灯", pid: "obd.seatbelt",    g: "belt" },
+        { key: "lamp_abs",       name: "ABS 灯",   pid: "obd.abs",         g: "abs" },
+        { key: "lamp_esp",       name: "ESP 灯",   pid: "obd.esp",         g: "esp" },
+        { key: "lamp_engine",    name: "发动机灯", pid: "obd.engineFault", g: "engine" },
+        { key: "lamp_fuel",      name: "燃油报警", pid: "obd.fuel_level",  g: "fuel" },
+        { key: "lamp_door",      name: "车门未关", pid: "obd.door",        g: "door" },
+        { key: "lamp_washer",    name: "玻璃水",   pid: "obd.washer",      g: "washer" },
+        { key: "lamp_service",   name: "保养提示", pid: "obd.service",     g: "service" },
+        { key: "lamp_temp",      name: "水温报警", pid: "obd.coolant",     g: "temp" },
+        { key: "lamp_charge",    name: "充电提示", pid: "obd.voltage",     g: "charge" },
+        { key: "lamp_lane",      name: "车道辅助", pid: "obd.laneKeep",    g: "lane" },
+        { key: "lamp_collision", name: "碰撞预警", pid: "obd.collision",   g: "collision" },
       ].forEach(function (d) {
+        // 三张图按**命名约定**拼出来（与 `gen-lamps.js` 的 save() 同名）
+        const P = function (suffix) { return "assets/warning/lamp-" + d.g + "-" + suffix + ".png"; };
         list.push({
           key: d.key, name: d.name, icon: "⚠",
           make: function () {
             const E = window.ensureBuiltinAsset || function () { return ""; };
-            return window.createNode(window.NODE_IMAGE, {
-              name: d.name, x: 40, y: 40, w: 56, h: 56, z: 99,
-              assetId: E(d.normal),
-              statePid: d.pid,
-              states: {
-                normal:   { assetId: E(d.normal), alpha: 120, blink: false, blinkMs: window.MIN_BLINK_MS },
-                warn:     { assetId: E(d.warn),   alpha: 255, blink: false, blinkMs: window.MIN_BLINK_MS },
-                // WCAG 2.3.1：闪烁**每秒不超过三次**。400ms = 2.5Hz（见 AlertPulse.MIN_BLINK_MS）
-                critical: { assetId: E(d.crit),   alpha: 255, blink: true,  blinkMs: window.MIN_BLINK_MS },
-              },
+            const off = E(P("off")), warn = E(P("warn")), crit = E(P("crit"));
+            const n = window.createNode(window.NODE_IMAGE, {
+              name: d.name, assetId: off, x: 40, y: 40, w: 56, h: 56, z: 96,
             });
+            // **状态系统**：按 PID 自动切三态图
+            //
+            // ⚠️ 这里**必须写 `statePid`，不能写 `pid`**（v1.20.16 修）。
+            // 原来写的是 `n.pid` / `n.rawPid`，于是它们的灯**永远是暗的**：
+            //   1. `NodeTreeRenderer.resolveState()`（ui/dash/NodeTreeRenderer.kt）只读
+            //      `node.statePid`，`isBlank()` 就**直接返回 normal**，根本不看 `pid`；
+            //   2. `model.js` 的 `nodeToJson` 对 `NODE_IMAGE` **只序列化 `statePid`**，
+            //      `pid` / `rawPid` 被丢掉 —— 连设计文件都进不去。
+            // 净结果：用户拖一个「胎压灯」出来，它永远显示暗的图，
+            // **用户会以为车没问题**。这是这个库里最贵的一条。
+            n.rawStatePid = d.pid;
+            n.statePid = window.resolvePid(d.pid);
+            n.states = {
+              normal: { assetId: off, alpha: 120, blink: false, blinkMs: window.MIN_BLINK_MS },
+              // WCAG 2.3.1：闪烁**每秒不超过三次**。600ms = 1.7Hz
+              warn: { assetId: warn, alpha: 255, blink: true, blinkMs: 600 },
+              // 原来是 260ms = 3.8Hz，**超红线**。400ms = 2.5Hz
+              critical: { assetId: crit, alpha: 255, blink: true, blinkMs: window.MIN_BLINK_MS },
+            };
+            return n;
           },
         });
       });
@@ -427,7 +447,13 @@
     { key: "g_oiltemp", name: "机油温度", pid: "obd.oil_temp", style: 4, w: 150, h: 150, icon: "▣" },
     { key: "g_gearbox", name: "变速箱油温", pid: "tpl_atf", style: 4, w: 150, h: 150, icon: "▣" },
     { key: "g_afr", name: "空燃比", pid: "tpl_afr", style: 4, w: 150, h: 150, icon: "▣" },
-    { key: "g_speed_d", name: "数字车速", pid: "obd.speed", style: 1, w: 220, h: 110, icon: "▬" },
+    // ⚠️ **`g_speed_d`（数字车速）v2.91.0 已按用户要求删除。**
+    //
+    // 删除前的引用排查（`stage/recon-v291.js`）：这个 key 只出现在
+    // `docs/18-控件库优化建议.md` 与本文件里，**没有任何设计文件引用它**。
+    // 与它重复的是「仪表样式」里的 `gauge_1`（数字表）—— 两者 `pid`/`style` 一样，
+    // 只有默认尺寸不同（220×110 vs 120×120），而尺寸拖一下就改了。
+    //
     // ⚠️ 挡位是**枚举**，不是连续量 —— 见 P9「非数值 PID 模型」方向 A。
     // 值仍然是 0..8 的数（指针/条照常按数值走），**只有读数**查 valueLabels。
     // `min`/`max` 写死在这里：`obd.gear` 目前还不在 PID 库里，
@@ -435,7 +461,14 @@
     { key: "g_gear", name: "挡位", pid: "obd.gear", style: 1, w: 100, h: 100, icon: "▬",
       min: 0, max: 8,
       valueLabels: ["P", "R", "N", "1", "2", "3", "4", "5", "6"] },
-    { key: "g_soc", name: "电池电量", pid: "obd.soc", style: 2, w: 120, h: 120, icon: "◍" },
+    // ⚠️ **`g_soc`（电池电量）v2.91.0 已按用户要求删除。**
+    //
+    // 它绑的 `obd.soc` **既没有标准 PID、也没有派生通道** ——
+    // 一直是 `tools/guard-pid-probe.js` 的 P9 待办里"最没着落"的那一条
+    // （原话：「等 P9 在车上确认有没有厂家信号，否则按 P9 验收确认这个控件该删还是该留」）。
+    // 用户现在拍板**删**，于是 `PENDING_P9` 里那一条也一起删掉了（否则守卫会报"清单里
+    // 这条已经不需要了"）。**能力没丢**：想要电量表用「仪表样式」的任意一个，
+    // 把 PID 指到厂家信号即可。
     { key: "g_gforce", name: "G 值", pid: "calc.gforce", style: 7, w: 160, h: 160, icon: "✦" },
   ].forEach(function (d) {
     list.push({
@@ -504,6 +537,97 @@
     });
   });
 
+  // ================================================================ **代码绘制的条形轨道**（v2.91.0）
+  //
+  // ## 为什么
+  //
+  // 用户原话：「**条形轨道：想办法以代码绘制、而不是以图片的形式添加、
+  // 缩放会导致模糊**」。
+  //
+  // 下面那一批 `bar_*` 轨道都是 `NODE_IMAGE` + 一张 256×24 的 PNG
+  // （`gen-assets-more.js` 的 `genBars`）。拖到 600 宽 = 位图横向拉伸 = 糊。
+  //
+  // 这一批改成 `trackStyle`（`NODE_IMAGE` 上的一个字段，**不是新节点类型** ——
+  // 理由见 schema.js 的 `normalizeTrackStyle` 注释：新类型会撞跨语言守卫）。
+  // 绘制全在 `canvas.js` 的 `drawTrackNode` 里用 canvas 原语做，
+  // **任意缩放都清晰**，而且跟着设计主题的 `track` / `accent` 走。
+  //
+  // ## 与 `bar_*` 的关系
+  //
+  // **两批都留着**：
+  //   · `bar_*`（图片）—— 存量设计的观感锚点。设计文件按 `path` 引用它们，
+  //     删掉 = 存量设计在设备上**空白**（§2.41）。
+  //   · `cd_*`（代码）—— 新做的设计用这一批。
+  //
+  // ⚠️ 为什么不是"把 `bar_trackh` 改成代码画"：那会让**已经拖过它的设计**
+  // 在重新打开后**换一张脸**（图片版有 PNG 的纹理细节，代码版是干净的几何形）。
+  // 新增而不是替换，是为了"存量设计看起来一模一样"这条硬约束。
+  // 想要代码版的人从库里拖 `cd_*` 即可。
+  //
+  // ⚠️ key 前缀 `cd_` 必须过 `CAT_RULES`（本文件下方），否则静默掉进「其它」
+  // —— 构建守卫会抓（「控件不能掉进『其它』分类」那条）。
+  [
+    { key: "cd_trackh", name: "代码轨道(水平)", orient: "h", w: 240, h: 16 },
+    { key: "cd_trackv", name: "代码轨道(垂直)", orient: "v", w: 16, h: 240 },
+    // 渐变：`gloss` = 沿短边明暗（像刻进面板的槽）、`fade` = 沿长边淡出
+    { key: "cd_trackgradh", name: "代码渐变轨道(水平)", orient: "h", gradient: "gloss", w: 240, h: 16 },
+    { key: "cd_trackgradv", name: "代码渐变轨道(垂直)", orient: "v", gradient: "gloss", w: 16, h: 240 },
+    { key: "cd_trackfadeh", name: "代码淡出轨道(水平)", orient: "h", gradient: "fade", w: 240, h: 16 },
+    { key: "cd_trackfadev", name: "代码淡出轨道(垂直)", orient: "v", gradient: "fade", w: 16, h: 240 },
+    // 内凹：上/左暗、下/右亮 —— 刻进面板里的凹槽
+    { key: "cd_trackinseth", name: "代码内凹轨道(水平)", orient: "h", inset: true, w: 240, h: 16 },
+    { key: "cd_trackinsetv", name: "代码内凹轨道(垂直)", orient: "v", inset: true, w: 16, h: 240 },
+    // 发光：整条发主色光（"这条是活的"）
+    { key: "cd_trackglowh", name: "代码发光轨道(水平)", orient: "h", glow: true, w: 240, h: 20 },
+    { key: "cd_trackglowv", name: "代码发光轨道(垂直)", orient: "v", glow: true, w: 20, h: 240 },
+    // 带刻度：条上直接读数，省掉另摆一排数字
+    { key: "cd_trackticksh", name: "代码带刻度轨道(水平)", orient: "h", ticks: 10, w: 240, h: 24 },
+    { key: "cd_trackticksv", name: "代码带刻度轨道(垂直)", orient: "v", ticks: 10, w: 24, h: 240 },
+    // 分段：粒度不同（5 段像指针式油表、20 段像 LED 电量条）
+    { key: "cd_seg5h", name: "代码 5 段条(水平)", orient: "h", segments: 5, w: 240, h: 20 },
+    { key: "cd_seg5v", name: "代码 5 段条(垂直)", orient: "v", segments: 5, w: 20, h: 240 },
+    { key: "cd_seg10h", name: "代码 10 段条(水平)", orient: "h", segments: 10, w: 240, h: 18 },
+    { key: "cd_seg10v", name: "代码 10 段条(垂直)", orient: "v", segments: 10, w: 18, h: 240 },
+    { key: "cd_seg20h", name: "代码 20 段条(水平)", orient: "h", segments: 20, w: 240, h: 18 },
+    { key: "cd_seg20v", name: "代码 20 段条(垂直)", orient: "v", segments: 20, w: 18, h: 240 },
+    // 三段色带：**静态**的绿/黄/红阈值参考（与仪表的 `bands` 不是一回事，见 schema.js）
+    { key: "cd_band3h", name: "代码三段色带(水平)", orient: "h", band: true, w: 240, h: 18 },
+    { key: "cd_band3v", name: "代码三段色带(垂直)", orient: "v", band: true, w: 18, h: 240 },
+    // 填充：轨道 + 一段主色填充（`fill` = 比例，拖进画布后可以改）
+    { key: "cd_fillh", name: "代码填充条(水平)", orient: "h", fill: 0.62, w: 240, h: 16 },
+    { key: "cd_fillv", name: "代码填充条(垂直)", orient: "v", fill: 0.62, w: 16, h: 240 },
+    { key: "cd_fillglowh", name: "代码发光填充条(水平)", orient: "h", glow: true, fill: 0.62, w: 240, h: 18 },
+    { key: "cd_fillglowv", name: "代码发光填充条(垂直)", orient: "v", glow: true, fill: 0.62, w: 18, h: 240 },
+    // 阈值标记 / 游标：`fill` = 位置。轨道本身是透明的（`color: "transparent"` 不行 ——
+    // 只认 #RRGGBB），所以用一个极窄的圆角条 + 主色，当"那条线"用
+    { key: "cd_markerh", name: "代码阈值标记(水平)", orient: "h", fill: 1, radius: 2, w: 12, h: 32 },
+    { key: "cd_markerv", name: "代码阈值标记(垂直)", orient: "v", fill: 1, radius: 2, w: 32, h: 12 },
+    { key: "cd_cursorh", name: "代码发光游标(水平)", orient: "h", glow: true, fill: 1, radius: 2, w: 16, h: 40 },
+    { key: "cd_cursorv", name: "代码发光游标(垂直)", orient: "v", glow: true, fill: 1, radius: 2, w: 40, h: 16 },
+  ].forEach(function (d) {
+    list.push({
+      key: d.key, name: d.name, icon: "▬",
+      make: function () {
+        // `assetId` 留空 —— `drawTrackNode` 不会去读它（`trackStyle` 非空就整个走代码画）
+        const n = window.createNode(window.NODE_IMAGE, {
+          name: d.name, assetId: "", x: 40, y: 40, w: d.w, h: d.h, z: 97,
+          trackStyle: {
+            orient: d.orient,
+            radius: d.radius === undefined ? null : d.radius,
+            inset: !!d.inset,
+            gradient: d.gradient || null,
+            glow: !!d.glow,
+            segments: d.segments || 0,
+            ticks: d.ticks || 0,
+            band: !!d.band,
+            fill: d.fill === undefined ? null : d.fill,
+          },
+        });
+        return n;
+      },
+    });
+  });
+
   // ---- 条形轨道（新分类的控件，以前一个都没有）
   [
     { key: "bar_trackh", name: "水平轨道", path: "assets/bar/track-h.png", w: 240, h: 16 },
@@ -549,60 +673,22 @@
     });
   });
 
-  // ---- 指示灯（第二批）：ISO 2575 的常见条目
-  [
-    { key: "lamp_brake", name: "制动灯", pid: "obd.brakeFluid", crit: "assets/warning/brake.png" },
-    { key: "lamp_pad", name: "刹车片", pid: "obd.brakePad", crit: "assets/warning/brake-pad.png" },
-    { key: "lamp_tpms", name: "胎压灯", pid: "obd.tpms", crit: "assets/warning/tpms.png" },
-    { key: "lamp_airbag", name: "气囊灯", pid: "obd.airbag", crit: "assets/warning/airbag.png" },
-    { key: "lamp_belt", name: "安全带灯", pid: "obd.seatbelt", crit: "assets/warning/seatbelt.png" },
-    { key: "lamp_abs", name: "ABS 灯", pid: "obd.abs", crit: "assets/warning/abs-warn.png" },
-    { key: "lamp_esp", name: "ESP 灯", pid: "obd.esp", crit: "assets/warning/esp-warn.png" },
-    { key: "lamp_engine", name: "发动机灯", pid: "obd.engineFault", crit: "assets/warning/engine.png" },
-    { key: "lamp_fuel", name: "燃油报警", pid: "obd.fuel_level", crit: "assets/warning/fuel-low.png" },
-    { key: "lamp_door", name: "车门未关", pid: "obd.door", crit: "assets/warning/door-warn.png" },
-    { key: "lamp_washer", name: "玻璃水", pid: "obd.washer", crit: "assets/warning/washer.png" },
-    { key: "lamp_service", name: "保养提示", pid: "obd.service", crit: "assets/warning/service.png" },
-    { key: "lamp_temp", name: "水温报警", pid: "obd.coolant", crit: "assets/warning/coolant-warn.png" },
-    { key: "lamp_charge", name: "充电提示", pid: "obd.voltage", crit: "assets/warning/charge-cable.png" },
-    { key: "lamp_lane", name: "车道辅助", pid: "obd.laneKeep", crit: "assets/warning/lane-keep.png" },
-    { key: "lamp_collision", name: "碰撞预警", pid: "obd.collision", crit: "assets/warning/collision.png" },
-  ].forEach(function (d) {
-    list.push({
-      key: d.key, name: d.name, icon: "⚠",
-      make: function () {
-        const off = window.ensureBuiltinAsset("assets/warning/lamp-off.png");
-        const warn = window.ensureBuiltinAsset("assets/warning/lamp-warn.png");
-        const crit = window.ensureBuiltinAsset(d.crit);
-        const n = window.createNode(window.NODE_IMAGE, {
-          name: d.name, assetId: off, x: 40, y: 40, w: 56, h: 56, z: 96,
-        });
-        // **状态系统**：按 PID 自动切三态图（与既有指示灯同一个套路）
-        //
-        // ⚠️ 这里**必须写 `statePid`，不能写 `pid`**（v1.20.16 修）。
-        //
-        // 原来这 16 个灯写的是 `n.pid` / `n.rawPid`，于是它们的灯**永远是暗的**：
-        //   1. `NodeTreeRenderer.resolveState()`（ui/dash/NodeTreeRenderer.kt）只读
-        //      `node.statePid`，`isBlank()` 就**直接返回 normal**，根本不看 `pid`；
-        //   2. `model.js` 的 `nodeToJson` 对 `NODE_IMAGE` **只序列化 `statePid`**，
-        //      `pid` / `rawPid` 被丢掉 —— 连设计文件都进不去。
-        // 净结果：用户拖一个「胎压灯」出来，它永远显示暗的 `lamp-off.png`，
-        // **用户会以为车没问题**。这是这个库里最贵的一条。
-        //
-        // 与第一批（`lamp_coolant` 等，本文件上面的 `statePid: d.pid`）对齐。
-        n.rawStatePid = d.pid;
-        n.statePid = window.resolvePid(d.pid);
-        n.states = {
-          normal: { assetId: off, alpha: 255, blink: false, blinkMs: window.MIN_BLINK_MS },
-          // WCAG 2.3.1：闪烁**每秒不超过三次**。600ms = 1.7Hz（本来就合规，保持观感差别）
-          warn: { assetId: warn, alpha: 255, blink: true, blinkMs: 600 },
-          // 原来是 260ms = 3.8Hz，**超红线**。400ms = 2.5Hz
-          critical: { assetId: crit, alpha: 255, blink: true, blinkMs: window.MIN_BLINK_MS },
-        };
-        return n;
-      },
-    });
-  });
+  // ---- 指示灯（第二批）**已并入上面那一张统一表**（v2.91.0）
+  //
+  // 原来这里是 16 个灯的独立块，与上面 3 个（`lamp_coolant` / `lamp_oil` /
+  // `lamp_batt`）**各自写了一遍状态系统**，而且默认值不一样：
+  //
+  // | | normal.alpha | warn.blink |
+  // |---|---|---|
+  // | 上面 3 个（v1.20.16 之前就在） | 120（半透明 = "灯没亮"） | false |
+  // | 这 16 个（v1.20.16 加的） | 255 | true（600ms） |
+  //
+  // 同一个"灯没亮"在库里有两套默认值，用户拖出来的观感不一样 —— 那不是设计，
+  // 是分两批加的副作用。v2.91.0 合成**一张表**、默认值统一到 16 个那一套
+  // （`normal.alpha = 120`、`warn.blink = true @600ms`）。
+  //
+  // ⚠️ 为什么不留着两套：`normal.alpha` 决定"暗态有多暗"，255 时暗态灯盘
+  // 和"灯坏了"分不清；`warn.blink` 决定黄灯闪不闪 —— 两者都该只有一种答案。
 
   // ---- 数字刻度（v2.23.0，靠 5×7 点阵字库才做得出来）
   [
@@ -946,6 +1032,12 @@
     [/^g_/, "常用仪表"],
     [/^t_/, "文字"],
     [/^lamp_/, "指示灯"],
+    // v2.91.0：**代码绘制的条形轨道**单独一组。
+    //
+    // ⚠️ 必须放在 `/^bar_/` **前面**吗？不需要 —— `cd_` 与 `bar_` 不重叠。
+    // 但它必须**存在**：`CAT_RULES` 是前缀匹配，漏了就会静默掉进「其它」，
+    // 而构建守卫会报「控件掉进『其它』分类」（那条守卫就是为这个加的）。
+    [/^cd_/, "条形轨道(代码)"],
     // v2.86.0：`ticks` / `seg` 补进来。原来只列了 digit/nums/unit，
     // 于是 `img_ticks90`（90 格刻度）、`img_seg20`（20 段弧）掉进了「图片 / 底盘」——
     // 作者本来就打算把"刻度类"分出来（这条规则的存在就是证据），只是前缀枚举漏了。
@@ -963,7 +1055,10 @@
     c.cat = hitRule ? hitRule[1] : "其它";
   });
   /** 分类的展示顺序（固定，不随 push 顺序变 —— 否则每次改代码组序都会跳） */
-  window.CTRL_CATS = ["仪表样式", "常用仪表", "拼装表", "条形轨道", "文字", "指示灯", "数字刻度", "图标", "图片 / 底盘", "容器 / 基础", "其它"];
+  // ⚠️ v2.91.0：`条形轨道(代码)` 紧挨着 `条形轨道` 放 —— 用户找"条"的时候
+  // 两批应该在一起，而不是一个在头一个在尾。
+  window.CTRL_CATS = ["仪表样式", "常用仪表", "拼装表", "条形轨道", "条形轨道(代码)",
+    "文字", "指示灯", "数字刻度", "图标", "图片 / 底盘", "容器 / 基础", "其它"];
 
   return list;
 })();

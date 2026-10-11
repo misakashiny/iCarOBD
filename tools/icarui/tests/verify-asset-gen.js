@@ -135,7 +135,10 @@ const md5 = b => crypto.createHash('md5').update(b).digest('hex');
   // ---------- 4) 生成器源码：不许有 Math.random ----------
   console.log('\n=== 4. 生成器源码里的随机源 ===');
   const stripComments = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
-  ['gen-assets.js', 'gen-assets-more.js'].forEach(f => {
+  // ⚠️ v2.91.0：`gen-lamps.js` 也进来了。新增生成器**必须**加进这张表 ——
+  // 漏了的话"幂等"这条守卫对它就是**静默失效**（跑两次比对时它当然也在产物里，
+  // 但"源码里有没有随机源"这条静态检查会漏掉它）。
+  ['gen-assets.js', 'gen-assets-more.js', 'gen-lamps.js'].forEach(f => {
     const src = stripComments(fs.readFileSync(path.join(STUDIO, f), 'utf8'));
     const hits = (src.match(/Math\.random/g) || []).length;
     eq(hits, 0, `**${f} 里没有 \`Math.random\`**（有它 = 重新生成不幂等）`);

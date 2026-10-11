@@ -1022,6 +1022,19 @@ more.genBackgrounds3();
 more.genNumberScales();
 more.genBandsAndAlerts();
 
+// ---- 第四轮：指示灯「每类一张自己的图」（v2.91.0）
+//
+// 为什么单开一个文件（而不是往 gen-assets-more.js 里塞）：那已经 1773 行，
+// 而且这一批是**19 个图形 + 自动适配**，自带一段要解释的东西。
+// 见 `gen-lamps.js` 文件头：实测 19 个灯的 normal/warn 态**逐像素完全一样**。
+const lamps = require("./gen-lamps.js")({
+  save, Canvas,
+  C: { CYAN, CYAN_DIM, AMBER, RED, GREEN, GREY, GREY_DARK, GREY_MID, WHITE, INK },
+});
+const lampCount = lamps.genLamps();
+console.log("指示灯专用素材：" + lampCount + " 张（" + lamps.LAMPS.length + " 类 × 3 态，" +
+  lamps.S + "×" + lamps.S + " 代码绘制）");
+
 // ---- 清单写成**经典脚本**（file:// 下 fetch 被挡，但 <script src> 可以）
 const js =
   "/* 由 gen-assets.js 生成 —— 不要手改 */\n" +

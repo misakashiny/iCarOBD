@@ -1561,3 +1561,148 @@ window.bandsUsable = function (bands) {
   return !!(bands && bands.length);
 };
 
+/* ==========================================================================
+   **代码绘制的条形轨道**（v2.91.0）
+   --------------------------------------------------------------------------
+   ## 解决什么
+
+   用户原话：「**条形轨道：想办法以代码绘制、而不是以图片的形式添加、
+   缩放会导致模糊**」。
+
+   实测：`bar_trackh/v`、`bar_trackgradh/v`、`bar_trackglowh/v`、
+   `bar_trackinseth/v`、`bar_trackticksh/v` 这些控件拖出来都是
+   `NODE_IMAGE` + 一张 **256×24 的 PNG**（见 `gen-assets-more.js` 的 `genBars`）。
+   把它们拉长到 600 宽，位图被横向拉伸 → **糊**。
+
+   ## 为什么不是"加一个新节点类型 `track`"
+
+   试过这个方向，**被跨语言守卫挡住了**：`verify-crosslang.js` 有一条
+   「节点类型的名字与顺序一致」，拿 `window.NODE_TYPES` 与 App 侧
+   `DesignNode.kt` 的 `TYPES` 逐条比。加一种类型就必须**同时改 App**
+   ——而本轮的范围明确是「不要碰 `app/`」。
+
+   所以走**字段**这条路：`NODE_IMAGE` 上加一个 `trackStyle`。
+   好处是三条同时成立：
+     1. **节点类型表不动** → 跨语言守卫照旧绿，App 侧零改动也不炸；
+     2. **缺字段 = 老行为**（画那张 PNG）→ 存量设计**逐像素不变**；
+     3. App 侧以后要跟，只要在 `NodeTreeRenderer` 里加一个分支
+        （见 CHANGELOG 的「App 侧待办」），**不需要动格式版本号**。
+
+   ## 字段（全部可选，缺省即"最普通的水平实心轨道"）
+
+   | 字段 | 取值 | 缺省 | 说明 |
+   |---|---|---|---|
+   | `orient` | `"h"` / `"v"` | `"h"` | 轨道方向（决定圆角与刻度朝向） |
+   | `radius` | 0..64 | `h/2`（胶囊） | 圆角半径；`0` = 直角 |
+   | `inset` | bool | `false` | 内凹：上/左暗、下/右亮（刻进面板的槽） |
+   | `gradient` | `null` / `"fade"` / `"gloss"` | `null` | `fade` 沿长边淡出；`gloss` 沿短边明暗 |
+   | `glow` | bool | `false` | 整条发光（"这条是活的"） |
+   | `segments` | 0..64 | `0` | >1 时画等分格；`0` = 实心 |
+   | `ticks` | 0..64 | `0` | 长边上的短刻度数；`0` = 不画 |
+   | `band` | bool | `false` | 绿/黄/红三段色带铺底（静态阈值参考） |
+   | `fill` | 0..1 | `null` | 画一段**填充**到该比例；`null` = 只画轨道 |
+   | `color` | `#RRGGBB` / `null` | `null` | `null` = 跟随主题的 `track` |
+   | `accent` | `#RRGGBB` / `null` | `null` | `null` = 跟随主题的 `accent`（填充/刻度用） |
+
+   ## 与 `bands` 的区别（不要混）
+
+   `bands` 是**仪表**（`NODE_GAUGE`）上的"按量程算出来的分区"，
+   随数值与量程变；`trackStyle.band` 是**静态的**绿黄红三段底色，
+   不需要任何数据 —— 就是"印在条上的刻度区"（与 `bar_band3h/v` 那张素材同义，
+   只是改成代码画、可缩放）。
+   ========================================================================== */
+
+/** 轨道的字段名清单（校验、往返、属性面板三处共用同一份） */
+window.TRACK_FIELDS = ["orient", "radius", "inset", "gradient", "glow",
+  "segments", "ticks", "band", "fill", "color", "accent"];
+
+/** 轨道方向 */
+window.TRACK_ORIENTS = [{ v: "h", n: "水平" }, { v: "v", n: "垂直" }];
+
+/** 渐变模式（`null` 不在这个表里 —— 它就是"没有渐变"） */
+window.TRACK_GRADIENTS = [{ v: "fade", n: "沿长边淡出" }, { v: "gloss", n: "沿短边明暗" }];
+
+/** 分段 / 刻度的上限（防一份畸形文件画出几万个格子） */
+window.MAX_TRACK_SEGMENTS = 64;
+window.MAX_TRACK_TICKS = 64;
+
+/**
+ * 归一化 `trackStyle`。
+ *
+ * **`null` / 缺字段 / 空对象一律返回 `null`** —— `null` 的语义是
+ * "这是普通图片节点，画 `assetId` 那张图"，也就是**完全的老行为**。
+ * 这条是向后兼容的全部依据：存量设计里没有这个字段 → 解析出 `null` →
+ * 绘制侧走老分支 → 画面逐像素不变。
+ *
+ * 与 `normalizeBands` 同一套哲学：**非法值夹住或丢掉、不抛错**
+ * （拒收存量文件比"少画一格"贵得多），但校验侧会**出声**。
+ *
+ * @param o 原始值（可能来自设计文件，**什么都可能是**）
+ * @param w 节点宽（算缺省圆角用）
+ * @param h 节点高
+ */
+window.normalizeTrackStyle = function (o, w, h) {
+  if (!o || typeof o !== "object" || Array.isArray(o)) return null;
+  const out = {};
+  let any = false;
+
+  const orient = (o.orient === "v") ? "v" : "h";
+  if (o.orient !== undefined) any = true;
+  out.orient = orient;
+
+  const short = Math.max(1, Math.min(Number(w) || 1, Number(h) || 1));
+  let radius = null;
+  if (o.radius !== undefined && o.radius !== null && Number.isFinite(Number(o.radius))) {
+    radius = Math.round(Math.min(Math.max(Number(o.radius), 0), 64));
+    any = true;
+  }
+  out.radius = radius === null ? Math.round(short / 2) : radius;
+
+  ["inset", "glow", "band"].forEach(function (k) {
+    if (o[k] !== undefined) any = true;
+    out[k] = !!o[k];
+  });
+
+  let gradient = null;
+  if (o.gradient !== undefined && o.gradient !== null && o.gradient !== "") {
+    any = true;
+    gradient = (o.gradient === "fade" || o.gradient === "gloss") ? o.gradient : null;
+  }
+  out.gradient = gradient;
+
+  function count(v, max) {
+    if (v === undefined || v === null || v === "") return 0;
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return Math.min(Math.round(n), max);
+  }
+  if (o.segments !== undefined) any = true;
+  out.segments = count(o.segments, window.MAX_TRACK_SEGMENTS);
+  if (o.ticks !== undefined) any = true;
+  out.ticks = count(o.ticks, window.MAX_TRACK_TICKS);
+
+  let fill = null;
+  if (o.fill !== undefined && o.fill !== null && o.fill !== "") {
+    any = true;
+    const f = Number(o.fill);
+    fill = Number.isFinite(f) ? Math.min(Math.max(f, 0), 1) : null;
+  }
+  out.fill = fill;
+
+  // 颜色：**不认的写法 → null（跟随主题）**，不静默改成别的色
+  if (o.color !== undefined) any = true;
+  out.color = window.isHexColor(o.color) ? o.color : null;
+  if (o.accent !== undefined) any = true;
+  out.accent = window.isHexColor(o.accent) ? o.accent : null;
+
+  // ⚠️ **一个字段都没写 → null**（不是"全默认的对象"）。
+  // 这条决定了往返：老文件解析成 null、再序列化**不写出这个字段**，
+  // 于是"老文件 → 导入 → 导出"逐字段相同。
+  return any ? out : null;
+};
+
+/** 轨道**要不要按代码画**（`normalizeTrackStyle` 之后非空） */
+window.trackUsable = function (t) {
+  return !!(t && typeof t === "object" && !Array.isArray(t));
+};
+

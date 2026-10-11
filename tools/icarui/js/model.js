@@ -105,6 +105,12 @@
           stateCritical: (o.stateCritical === undefined || o.stateCritical === null) ? null : o.stateCritical,
         rawStatePid: rawState,
         states: o.states || null,     // null = 不启用状态系统
+        // **代码绘制的条形轨道**（v2.91.0）。
+        //
+        // ⚠️ `null` = **老行为**：画 `assetId` 那张 PNG。存量设计里没有这个字段，
+        // 解析出来就是 null → 绘制侧走老分支 → 画面逐像素不变。
+        // 传 w/h 是因为缺省圆角 = 短边的一半（胶囊），与节点尺寸有关。
+        trackStyle: window.normalizeTrackStyle(o.trackStyle, base.w, base.h),
       });
     } else if (type === window.NODE_TEXT) {
       Object.assign(base, {
@@ -860,6 +866,9 @@
       // 阈值只在**显式设过**时写出
       if (n.stateWarn !== null && n.stateWarn !== undefined) o.stateWarn = n.stateWarn;
       if (n.stateCritical !== null && n.stateCritical !== undefined) o.stateCritical = n.stateCritical;
+      // **代码绘制的条形轨道**（v2.91.0）：只在**非 null** 时写出。
+      // 这条保证了老文件的往返：解析成 null → 不写这个字段 → 文件逐字段不变。
+      if (window.trackUsable(n.trackStyle)) o.trackStyle = n.trackStyle;
     } else if (n.type === window.NODE_TEXT) {
       o.text = n.text;
       o.font = window.normalizeFont(n.font);
