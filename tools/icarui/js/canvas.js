@@ -1000,16 +1000,39 @@ function uniformMatrix(m, w, h) {
    * 仪表节点的**程序化盘面**参数（style 0 / 7）。
    *
    * 全部来自节点字段 —— 没有一个是写死的：
-   *   `min` / `max` → 刻度与数字；`warnLow` / `warnHigh` → 红区；PID → 单位
+   *   `min` / `max` → 刻度与数字；分区 → `bands`（有）或 `warnLow` / `warnHigh`（没有）；PID → 单位
    *
-   * 红区**两段**都支持：水温表 `warnLow = 60`（低于 60 也不正常 ——
+   * 分区**两段**都支持：水温表 `warnLow = 60`（低于 60 也不正常 ——
    * 冷机或节温器卡开），`warnHigh = 105`。参考实现只有一个 `redlineFrom`，
    * 对"越高越危险"的表够用，对温度/电压这种**两端都不正常**的量不够。
+   *
+   * ## ⚠️ `bands` 与 `warnLow`/`warnHigh` 的分工（v2.87.0）
+   *
+   * | | 管什么 |
+   * |---|---|
+   * | `bands` | **只**管"画出来的分区"（可多段、可带颜色/透明度） |
+   * | `warnLow` / `warnHigh` | **报警判定**（App 侧变色/闪烁/告警条） |
+   *
+   * 所以这里是"**有 bands 就用它，没有才回落到 warnLow/warnHigh**" ——
+   * 两条路都只是**决定画什么**，谁也不改谁的判定语义。
+   * 反过来（让 bands 顺带改报警）会**静默改变存量设计的安全语义**，
+   * 那正是这个项目最恨的失效形态。
    */
   function gaugeDialOpts(n, r, unit) {
     const redlines = [];
-    if (n.warnLow !== null && n.warnLow !== undefined) redlines.push({ from: n.min, to: n.warnLow });
-    if (n.warnHigh !== null && n.warnHigh !== undefined) redlines.push({ from: n.warnHigh, to: n.max });
+    const bands = window.normalizeBands(n.bands, n.min, n.max);
+    if (window.bandsUsable(bands)) {
+      bands.forEach(function (z) {
+        redlines.push({
+          from: z.from, to: z.to,
+          color: z.color || window.BAND_DEFAULT_COLOR,
+          alpha: (z.alpha === null || z.alpha === undefined) ? window.BAND_ALPHA_MAX : z.alpha,
+        });
+      });
+    } else {
+      if (n.warnLow !== null && n.warnLow !== undefined) redlines.push({ from: n.min, to: n.warnLow });
+      if (n.warnHigh !== null && n.warnHigh !== undefined) redlines.push({ from: n.warnHigh, to: n.max });
+    }
     return {
       cx: n.w / 2, cy: n.h / 2, r: r,
       start: 135, sweep: 270,
@@ -1020,6 +1043,17 @@ function uniformMatrix(m, w, h) {
     };
   }
   window.gaugeDialOpts = gaugeDialOpts;
+
+  /**
+   * 分区的**透明度倍率**（0..1）。
+   *
+   * 没写 `alpha`（`null`/`undefined`）就是 1 —— 与老红区**逐像素一致**
+   * （老路径不带 alpha，画出来是不透明的）。
+   */
+  function zoneAlpha(z) {
+    if (!z || z.alpha === null || z.alpha === undefined) return 1;
+    return Math.max(0, Math.min(window.BAND_ALPHA_MAX, z.alpha)) / window.BAND_ALPHA_MAX;
+  }
 
   function drawGaugeParts(n) {
     const values = S.previewValues || {};
@@ -1264,14 +1298,26 @@ function uniformMatrix(m, w, h) {
         ctx.fillText(l.text, cx + Math.cos(aa) * labelR, cy + Math.sin(aa) * labelR);
       });
 
-      // ---- 4) 红区：画在**填充之上** —— 报警区任何时刻都该看得见
-      //      （画在下面会被进度弧盖住，值一进红区就"看不见红"了）
+      // ---- 4) 分区（红区 / 色带）
+      //
+      // ⚠️ **实际顺序是"先分区、后进度弧"**（这一段在第 5 步之前）。
+      //    所以值进入分区之后，进度弧会**盖住**分区那一段 ——
+      //    原来的注释写的是"画在填充之上，报警区任何时刻都该看得见"，
+      //    与代码**不符**（v2.87.0 核对时发现，见 CHANGELOG）。
+      //    本轮**不动这个顺序**：改了会动到所有存量红区的像素，
+      //    而 `bands` 的约定是"缺省 = 完全旧行为"。已记进 CHANGELOG 待拍板。
+      //
+      // v2.87.0：颜色 / 透明度**按段取**（`bands` 带进来的），
+      // 没带就回落到老红区的 `#FF4D4F` + 不透明 —— 老设计的像素**逐点不变**。
       face.redlines.forEach(function (z) {
-        ctx.strokeStyle = "#FF4D4F";
+        const prevA = ctx.globalAlpha;
+        ctx.globalAlpha = prevA * zoneAlpha(z);
+        ctx.strokeStyle = z.color || window.BAND_DEFAULT_COLOR;
         ctx.lineWidth = Math.max(1.5, r * 0.12);
         ctx.beginPath();
         ctx.arc(cx, cy, r, z.angFrom * Math.PI / 180, z.angTo * Math.PI / 180);
         ctx.stroke();
+        ctx.globalAlpha = prevA;
       });
 
       // ---- 5) 进度弧：**路径恒定，进度只改一个标量**（stroke-dashoffset）
@@ -1329,6 +1375,31 @@ function uniformMatrix(m, w, h) {
       const bh = Math.max(3, n.h * 0.20);
       const bx = n.w * 0.06, bw = n.w * 0.88, by = n.h * 0.62;
       ctx.fillStyle = T.track; roundRect(bx, by, bw, bh, bh / 2); ctx.fill();
+      // ---- 分区（v2.87.0）：条形表**按比例**画在轨道上（原来根本不画）
+      //
+      // ⚠️ 画在**填充之下**（与盘面相反，盘面是画在填充之上）。理由：
+      // 条上的填充是**主读数**（"现在是多少"），分区是**参考**（"红线在哪"）。
+      // 分区压在填充上会把它整段盖住 —— 50% 的油量条会显示成"整条绿"，
+      // 读数直接消失。压在下面则两件事同时看得见：左边填充、右边剩余分区。
+      //
+      // 圆角端头靠 `clip` 保住（不裁的话方块会盖住胶囊的两头，看着像被啃了）。
+      const zones = window.normalizeBands(n.bands, n.min, n.max);
+      if (window.bandsUsable(zones)) {
+        const zspan = n.max - n.min;
+        ctx.save();
+        roundRect(bx, by, bw, bh, bh / 2);
+        ctx.clip();
+        zones.forEach(function (z) {
+          const t0 = zspan > 0 ? clamp((z.from - n.min) / zspan, 0, 1) : 0;
+          const t1 = zspan > 0 ? clamp((z.to - n.min) / zspan, 0, 1) : 0;
+          const prevA = ctx.globalAlpha;
+          ctx.globalAlpha = prevA * zoneAlpha(z);
+          ctx.fillStyle = z.color || window.BAND_DEFAULT_COLOR;
+          ctx.fillRect(bx + bw * t0, by, Math.max(1, bw * (t1 - t0)), bh);
+          ctx.globalAlpha = prevA;
+        });
+        ctx.restore();
+      }
       ctx.fillStyle = T.accent; roundRect(bx, by, bw * ratio, bh, bh / 2); ctx.fill();
     } else if (n.style === 3) {
       ctx.strokeStyle = T.accent; ctx.lineWidth = 1.5;

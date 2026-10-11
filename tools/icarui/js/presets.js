@@ -179,6 +179,59 @@
         });
       });
 
+      // ---- 多段色带样板（v2.87.0）
+      //
+      // ## 为什么需要这两个样板
+      //
+      // `bands` 是**新能力**，而"新能力没人用"的原因通常不是不好用，
+      // 是**不知道该填什么**。这两个样板各自演示一种典型用法：
+      //
+      //  · `g_rpmband`：**单端危险**（越高越危险）。红区从 6000 起分两档，
+      //    黄 6000~7000 是"该收油了"、红 7000~8000 是"必须收油"。
+      //  · `g_fuelband`：**条形表 + 多段**。油量低才是危险，所以**红在下、绿在上**。
+      //
+      // ⚠️ 两个样板都**同时保留 `warnHigh` / `warnLow`**，而且它们**不等于**色带边界 ——
+      //    这是刻意的：色带是"画出来的参考"，报警线是"App 用来判定/爆闪的阈值"。
+      //    用户可以把色带改成任何样子，报警行为**一点都不会变**（见 schema.js 的说明）。
+      [
+        {
+          key: "g_rpmband", name: "转速红区表", icon: "◉",
+          pid: "obd.rpm", style: 0, w: 160, h: 160,
+          min: 0, max: 8000, warnHigh: 6500,
+          bands: [
+            { from: 6000, to: 7000, color: "#FFB020" },
+            { from: 7000, to: 8000, color: "#FF4D4F" },
+          ],
+        },
+        {
+          key: "g_fuelband", name: "油量绿黄红条", icon: "▬",
+          pid: "obd.fuel_level", style: 2, w: 240, h: 80,
+          min: 0, max: 100, warnLow: 15,
+          bands: [
+            { from: 0, to: 15, color: "#FF4D4F" },
+            { from: 15, to: 30, color: "#FFB020" },
+            { from: 30, to: 100, color: "#39D98A" },
+          ],
+        },
+      ].forEach(function (d) {
+        list.push({
+          key: d.key, name: d.name, icon: d.icon,
+          make: function () {
+            const info = window.BUILTIN_PIDS[window.resolvePid(d.pid)] || {};
+            return window.createNode(window.NODE_GAUGE, {
+              name: d.name, pid: d.pid, style: d.style,
+              min: d.min, max: d.max,
+              warnLow: d.warnLow === undefined ? null : d.warnLow,
+              warnHigh: d.warnHigh === undefined ? null : d.warnHigh,
+              // 色带跟着模板走。`createNode` 会再过一遍 `normalizeBands`
+              // （夹到量程、颜色只认 #RRGGBB）—— 所以这里写错也不会污染设计
+              bands: d.bands,
+              x: 40, y: 40, w: d.w, h: d.h, z: 99,
+            });
+          },
+        });
+      });
+
       // ---- 文字：标题 / 标签 / 单位 / 大号数字（做主题最常用的四种）
       [
         { key: "t_title", name: "标题文字", text: "标题", w: 200, h: 34, size: 14, color: "#E8EEF7", weight: 700 },

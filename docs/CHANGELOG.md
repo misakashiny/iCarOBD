@@ -15,6 +15,39 @@
 > 靠"感觉该整理了"不会触发，定成数字才会。
 ---
 
+## 📐 格式变更登记 · `icar.ui/2` 新增可选字段 `bands`（工具 v2.87.0，**App 侧未做**）
+
+> **这一条没有对应的 App 版本** —— 本轮**一行 `app/` 代码都没改**
+> （`versionCode` / `versionName` 也没动）。登记在这里是因为
+> **设计文件的格式多了一个字段**，而那属于本文的职责。
+> 工具侧细节见 [`../tools/icarui/CHANGELOG.md`](../tools/icarui/CHANGELOG.md) v2.87.0。
+
+**新增**：节点（`gauge`）可选字段 `bands` —— **多段色带**（画出来的分区参考）。
+
+```json
+"bands": [ { "from": 6000, "to": 7000, "color": "#FFB020" },
+           { "from": 7000, "to": 8000, "color": "#FF4D4F", "alpha": 200 } ]
+```
+
+| 项 | 约定 |
+|---|---|
+| 段 | `{ from, to, color?, alpha? }`；`from`/`to` 是**量程上的值** |
+| 上限 | `MAX_BANDS = 8`；`color` 只认 `#RRGGBB`；`alpha` 0..255 |
+| 缺省 | **不写 = 空 = 完全旧行为**（红区仍由 `warnLow`/`warnHigh` 画） |
+| ⚠️ 语义 | `bands` **只决定画出来的分区**；**报警判定仍然只看 `warnLow`/`warnHigh`** —— 两者不许互相影响 |
+
+**App 侧状态**：❌ **未做**。`GaugeItem` 只有 `warnLow`/`warnHigh` 两个标量，
+**读不懂 `bands`** → 带色带的设计在设备上**只会少画分区**（不报错，属"静默失效"）。
+补齐清单（App 侧单独一轮）：
+
+1. `data/PidModels.kt` 的 `GaugeItem` 加 `bands` 字段与 `fromJson` 解析；
+2. `CircularGaugeView`（目前单段 `warnHigh→max`）与 `BarGaugeView`（目前只画两条竖线）按段画；
+3. ⚠️ **必须同时补一条 `verify-crosslang.js` 断言**，把
+   `MAX_BANDS` / `BAND_DEFAULT_COLOR` / `BAND_ALPHA_MIN` / `BAND_ALPHA_MAX`
+   与工具侧**逐条钉住** —— 工具侧 v2.87.0 **故意没加**（单边常量，加了必红）。
+
+---
+
 ## v1.20.20 · 2026-10-11 · 🔴 **v2 节点树里 gauge 坐标被 ×360**（导入弹假警报 `右=75600` + `Store.customGauges` 被污染）+ `parts` 上限与非数字警告（两侧成对）+ 浏览器套件"静默跳过"体检
 
 > 任务 1 是上一版装机时挖出来、**明确留着要单独一轮**的那个既有缺陷。

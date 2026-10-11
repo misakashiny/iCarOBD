@@ -23,7 +23,27 @@ const path = require("path");
 const { Canvas } = require("./png.js");
 
 const ROOT = __dirname;
-const ASSETS = path.join(ROOT, "assets");
+
+/**
+ * 输出目录。
+ *
+ * ## 为什么可以覆盖（v2.87.0）
+ *
+ * `tests/verify-asset-gen.js` 要证明"**生成器是幂等的**"（连跑两次、359 个文件
+ * 逐字节相同）。这条判据**不能写进真素材目录** —— 那会把工作区改脏，
+ * 而且测试跑完的字节会盖掉别人正在看的图。
+ *
+ * 于是给一个环境变量出口：
+ *
+ * ```
+ * ICARUI_ASSETS_OUT=%TEMP%\icarui-gen-a node gen-assets.js
+ * ```
+ *
+ * ⚠️ 默认值不变（`tools/icarui/assets`）—— 正常跑法完全不受影响。
+ */
+const ASSETS = process.env.ICARUI_ASSETS_OUT
+  ? path.resolve(process.env.ICARUI_ASSETS_OUT)
+  : path.join(ROOT, "assets");
 
 // ---------------------------------------------------------------- 配色（与工具/主题同调）
 
@@ -493,8 +513,19 @@ function genBackgrounds2() {
       const v = 26 + n;
       return [Math.round(v), Math.round(v + 3), Math.round(v + 8), 255];
     });
+    // ⚠️ **不许用 `Math.random()`**（v2.87.0 修）。
+    //
+    // 原来这 40 条拉丝是随机的，后果不是"这张图难看"，而是
+    // **"重新生成全部素材"这个动作不幂等** —— 实测连跑两次，359 个素材里
+    // **只有这一个文件字节不同**，于是 `git status` 永远脏着一条，
+    // 而且"生成器跑出来的 = 仓库里的"这条判据永远立不住。
+    //
+    // 用和 `noise` 同一个 LCG（显式种子）：仍然是"看起来随机"的拉丝，
+    // 但**每次跑出来逐字节相同**。
+    let seed = 20260811;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF; return seed / 0x7FFFFFFF; };
     for (let i = 0; i < 40; i++) {
-      const y = Math.random() * 256;
+      const y = rnd() * 256;
       c.rect(0, y, 256, 0.6, "#4A5568", 0.25);
     }
     save("background", "brushed-metal", c, "拉丝金属");

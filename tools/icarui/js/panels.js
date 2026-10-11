@@ -368,6 +368,10 @@
     // ---- 类型专属
     if (n.type === window.NODE_GAUGE) {
       out.push(group("data", "数据绑定", gaugeFields(n)));
+      // **多段色带**（v2.87.0）单独一组 —— 它管的是"**画出来的分区**"，
+      // 与上面那组里的 `warnLow`/`warnHigh`（**报警判定**）职责不同。
+      // 混在同一组里，用户会以为"改色带就是在改报警"，而那正是要避免的误解。
+      out.push(group("bands", "多段色带（只画分区）", bandFields(n)));
       // 表上的文字也归字体管：名字 / PID / 量程 的字体 + 是否显示
       // ---- 子部件（v2.12.0）：把仪表拆成可替换的表盘/刻度/指针/数值
       out.push(group("parts", "子部件（自己拼装）", partsFields(n)));
@@ -420,6 +424,62 @@
         '</div>',
         '<div class="btnRow"><button class="danger" onclick="delSelected()">删除全部</button></div>',
       ].join(""));
+  }
+
+  /**
+   * **多段色带编辑区**（v2.87.0）。
+   *
+   * ## 为什么是"每段一行"而不是一个 textarea
+   *
+   * 属性面板有**行高 ≤ 40px** 的排版约束（`verify-layout` 守着），
+   * 3 行 textarea 会当场把它顶红。所以照 `数值映射` / `状态系统` 的老办法：
+   * **一行一个控件组**，用现成的 `.prow` + 26px 控件 —— 行高与别的行**同一种**，
+   * 不引入新的行高种类。
+   *
+   * ## 排版上的三个刻意选择
+   *
+   * 1. **这一行不写 `<label>`**：`<label>` 固定占 84px，四五个控件挤不下。
+   *    行内靠 `title` 提示每个框是什么。
+   * 2. **控件全部是 26px 高的现成类型**（number / color / button）——
+   *    `input[type=color]` 的 CSS 早就在 `.prow` 里备好了（40px 宽）。
+   * 3. `onchange` 而不是 `oninput`（理由见 `setBandField` 的注释：
+   *    `commit` 会重建面板，`oninput` 每敲一键就失焦）。
+   */
+  function bandFields(n) {
+    const list = Array.isArray(n.bands) ? n.bands : [];
+    const out = [];
+    out.push('<div class="btnRow">' +
+      '<button onclick="bandsFromWarn()" title="把 warnLow / warnHigh 描述的红区转成可编辑的色带（画面不变）">按 warnLow/warnHigh 生成</button>' +
+      '<button onclick="addBand()">+ 加一段</button>' +
+      (list.length ? '<button class="danger" onclick="clearBands()">清空</button>' : '') +
+      '</div>');
+    if (!list.length) {
+      // 空 = 完全旧行为。这句话必须写在面板上 —— 用户看到"没有色带"时
+      // 第一反应是"是不是坏了"，而实际上是"红区由 warnLow/warnHigh 画"
+      out.push('<div class="hint">没有色带：红区按上面的 <b>warnLow / warnHigh</b> 画' +
+        '（与旧版本逐像素一致）。</div>');
+      out.push('<div class="hint">色带<b>只决定画出来的分区</b>；' +
+        '<b>报警判定仍然只看 warnLow / warnHigh</b> —— 加色带不会让表开始报警。</div>');
+      return out.join("");
+    }
+    list.forEach(function (z, i) {
+      out.push('<div class="prow">' +
+        '<input type="number" step="any" value="' + window.r2(z.from) +
+        '" title="第 ' + (i + 1) + ' 段的起点（量程上的值）" onchange="setBandField(' + i + ',\'from\',this.value)">' +
+        '<input type="number" step="any" value="' + window.r2(z.to) +
+        '" title="第 ' + (i + 1) + ' 段的终点" onchange="setBandField(' + i + ',\'to\',this.value)">' +
+        '<input type="color" value="' + attr(z.color || window.BAND_DEFAULT_COLOR) +
+        '" title="第 ' + (i + 1) + ' 段的颜色" onchange="setBandField(' + i + ',\'color\',this.value)">' +
+        '<input type="number" min="0" max="255" value="' +
+        (z.alpha === null || z.alpha === undefined ? "" : z.alpha) +
+        '" placeholder="255" title="第 ' + (i + 1) + ' 段的透明度 0..255（空 = 255）" onchange="setBandField(' + i + ',\'alpha\',this.value)">' +
+        '<button class="mini" onclick="delBand(' + i + ')" title="删掉第 ' + (i + 1) + ' 段">✕</button>' +
+        '</div>');
+    });
+    out.push('<div class="hint">每行一段：<b>起点 / 终点 / 颜色 / 透明度</b>（0..255，空 = 255）。' +
+      '最多 ' + window.MAX_BANDS + ' 段；写出量程会自动夹住，' +
+      '<code>终点 ≤ 起点</code> 的段会被丢掉。</div>');
+    return out.join("");
   }
 
   function gaugeFields(n) {

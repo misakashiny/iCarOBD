@@ -735,6 +735,104 @@ function runSpring(k, c, steps, dt, target) {
       eq(D.reset.join(','), '150,19', '复位回默认（k=150 / c=19）');
     }
 
+    // ---------- 19) 多段色带 `bands` 真的落到像素上了（v2.87.0）----------
+    //
+    // 为什么加在这个套件里：**像素探针的架子已经在这儿**（第 17 节）——
+    // 单独为它再拉一个 Edge 会话不值得。语义上也对得上：色带画在盘面 / 条形表上。
+    //
+    // 两条断言各自钉一件事：
+    //   A) 条形表（style 2）**按比例**画分区 —— 修前根本不画（一条都没有）
+    //   B) 改色带的颜色 → **画布像素真的变** —— 这是 `dialSig` 那条修复的端到端证明
+    //      （签名不算 color 的话，`dialCache` 会命中旧盘面，颜色永远改不动）
+    console.log('\n=== 19. 像素级：多段色带（浏览器）===');
+    {
+      const r = await cdp.eval(`(() => {
+        const S = window.CanvasState;
+        S.selection = []; S.showGrid = false; S.showPid = false;
+        S.simSprings.active = false; S.simSprings.clear();
+        S.anim.release(); S.tweenValues = null;
+        S.design.nodes = [];
+        window.dialCacheClear();
+        const cv = document.getElementById('cv');
+        const c2 = cv.getContext('2d');
+        const mkProbe = (n) => {
+          const m0 = window.nodeToCanvasMatrix();
+          const um = window.uniformMatrix({ a: m0.a, b: 0, c: 0, d: m0.d, e: m0.a * n.x + m0.e, f: m0.d * n.y + m0.f }, n.w, n.h);
+          const X = (lx) => um.a * lx + um.c * 100 + um.e;
+          const Y = (ly) => um.b * 100 + um.d * ly + um.f;
+          return (lx, ly, k) => {
+            const px = Math.round(X(lx)), py = Math.round(Y(ly));
+            const d = c2.getImageData(px - k, py - k, k * 2 + 1, k * 2 + 1).data;
+            let best = [0, 0, 0];
+            for (let i = 0; i < d.length; i += 4) {
+              if (d[i] + d[i + 1] + d[i + 2] > best[0] + best[1] + best[2]) best = [d[i], d[i + 1], d[i + 2]];
+            }
+            return best;
+          };
+        };
+
+        // ---- A) 条形表：红 / 黄 / 绿 三段 + 当前值只有 5%（填充只占最左边一点）
+        const bar = window.createNode(window.NODE_GAUGE, {
+          pid: 'obd.fuel_level', min: 0, max: 100, x: 20, y: 20, w: 240, h: 80,
+          bands: [
+            { from: 0, to: 15, color: '#FF4D4F' },
+            { from: 15, to: 30, color: '#FFB020' },
+            { from: 30, to: 100, color: '#39D98A' }
+          ]
+        });
+        bar.style = 2; bar.showLabel = false; bar.showRange = false;
+        S.design.nodes.push(bar);
+        S.previewValues = {}; S.previewValues[bar.pid] = 5;
+        window.draw();
+        const pb = mkProbe(bar);
+        const bh = Math.max(3, bar.h * 0.20);
+        const bx = bar.w * 0.06, bw = bar.w * 0.88, by = bar.h * 0.62 + bh / 2;
+        const at = (t) => pb(bx + bw * t, by, 2);
+        const A = { 红带: at(0.08), 黄带: at(0.22), 绿带: at(0.65), 填充: at(0.02) };
+        const acc = window.currentTheme().accent;
+        const Aacc = [parseInt(acc.slice(1, 3), 16), parseInt(acc.slice(3, 5), 16), parseInt(acc.slice(5, 7), 16)];
+
+        // ---- B) 盘面：同一块表只改色带颜色
+        const dial = window.createNode(window.NODE_GAUGE, {
+          pid: 'obd.rpm', min: 0, max: 8000, x: 200, y: 20, w: 200, h: 200,
+          bands: [{ from: 6000, to: 8000, color: '#FFB020' }]
+        });
+        dial.style = 0; dial.showLabel = false; dial.showRange = false;
+        S.design.nodes.push(dial);
+        S.previewValues = {}; S.previewValues[dial.pid] = 0;   // 进度弧为空 → 分区完整可见
+        window.draw();
+        const pd = mkProbe(dial);
+        const R = Math.min(dial.w, dial.h) * 0.36;
+        const pt = (ang, rr) => [dial.w / 2 + Math.cos(ang * Math.PI / 180) * rr, dial.h / 2 + Math.sin(ang * Math.PI / 180) * rr];
+        const B1 = pd.apply(null, pt(20, R).concat([3]));
+        const cache1 = window.dialCacheSize();
+        dial.bands[0].color = '#39D98A';
+        window.draw();
+        const B2 = pd.apply(null, pt(20, R).concat([3]));
+        return JSON.stringify({ A: A, Aacc: Aacc, B1: B1, B2: B2, cache1: cache1, cache2: window.dialCacheSize() });
+      })()`);
+      const D = JSON.parse(r);
+      const near3 = (c, hex, tol) => {
+        const e = [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+        return Math.abs(c[0] - e[0]) <= tol && Math.abs(c[1] - e[1]) <= tol && Math.abs(c[2] - e[2]) <= tol;
+      };
+      console.log('    · 条形表：红带=' + JSON.stringify(D.A.红带) + ' 黄带=' + JSON.stringify(D.A.黄带) +
+        ' 绿带=' + JSON.stringify(D.A.绿带) + ' 填充=' + JSON.stringify(D.A.填充));
+      console.log('    · 盘面色带：改色前=' + JSON.stringify(D.B1) + ' 改色后=' + JSON.stringify(D.B2) +
+        '（盘面缓存 ' + D.cache1 + ' → ' + D.cache2 + '）');
+      ok(near3(D.A.红带, '#FF4D4F', 40), '**条形表画出了红色分区**（0~15% 处是红的）' + JSON.stringify(D.A.红带));
+      ok(near3(D.A.黄带, '#FFB020', 40), '**条形表画出了黄色分区**（15~30% 处是黄的）' + JSON.stringify(D.A.黄带));
+      ok(near3(D.A.绿带, '#39D98A', 40), '**条形表画出了绿色分区**（30~100% 处是绿的）' + JSON.stringify(D.A.绿带));
+      ok(!near3(D.A.红带, '#39D98A', 40) && !near3(D.A.黄带, '#FF4D4F', 40),
+        '**分区是按比例分的，不是随便涂的**（红带不是绿、黄带不是红）');
+      ok(near3(D.A.填充, '#' + D.Aacc.map(v => v.toString(16).padStart(2, '0')).join(''), 30),
+        '**填充画在分区之上**（5% 处是主题 accent 色，不是红带色）' + JSON.stringify(D.A.填充) +
+        ' ≈ accent ' + JSON.stringify(D.Aacc));
+      ok(near3(D.B1, '#FFB020', 40), '盘面分区用的是**色带自己的颜色**（#FFB020）' + JSON.stringify(D.B1));
+      ok(near3(D.B2, '#39D98A', 40), '**只改色带颜色 → 画布像素跟着变**（#FFB020 → #39D98A）' + JSON.stringify(D.B2));
+      ok(D.cache2 >= D.cache1, '改颜色时盘面缓存有新增条目（说明签名变了 → 重建了盘面，没有命中旧缓存）');
+    }
+
     await cdp.ws.close();
   } catch (e) {
     console.log('  ❌ 执行失败: ' + e.message);

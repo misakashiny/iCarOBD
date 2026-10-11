@@ -924,6 +924,130 @@
       n.valueLabels = window.normalizeValueLabels(arr);
     }, "改数值映射", "vlabels");
   };
+
+  // ================================================================ 多段色带（v2.87.0）
+
+  /**
+   * 色带编辑的**唯一写入口**。所有改动都过 `normalizeBands`。
+   *
+   * ## 为什么必须过归一化（而不是直接改数组）
+   *
+   * 属性面板允许用户敲任何数字。不过归一化的话，内存里会出现
+   * `{from: 9000, to: 200}`（量程外 + 反向）这种"文件里非法"的状态 ——
+   * 而**存盘再读回来它会被夹/被丢**，用户看到的是
+   * "我明明设了这段，重新打开就没了"。同一个东西有两个形状，
+   * 正是本项目反复吃亏的那类问题。
+   *
+   * ## ⚠️ 三条不许破的约束
+   *
+   *  1. `bands` **只**决定画出来的分区；`warnLow`/`warnHigh` 继续管**报警判定**。
+   *     这里**绝不碰**这两个字段 —— 否则"给转速表加个红区参考"会
+   *     **静默改变存量设计的安全语义**。
+   *  2. 空 → `null`（不是 `[]`）：与 `valueLabels` 同套路，
+   *     保证"内存里的形状"和"文件里的形状"一致（序列化只在非空时写）。
+   *  3. 改完要 `commit`（进撤销栈 + 重画），不能直接赋值。
+   */
+  function bandsOf(n) {
+    return Array.isArray(n.bands) ? n.bands : [];
+  }
+  function commitBands(n, next, label) {
+    window.commit(() => {
+      n.bands = window.normalizeBands(next, n.min, n.max);
+    }, label, "bands");
+  }
+  function cloneBands(n) {
+    return bandsOf(n).map(z => ({ from: z.from, to: z.to, color: z.color, alpha: z.alpha }));
+  }
+
+  /**
+   * 改一段的某个字段。
+   *
+   * ⚠️ 面板上用的是 `onchange`（不是 `oninput`）：`commit` 会 `refreshAll()` →
+   * **重建整个属性面板**，`oninput` 每敲一个键都会把输入框连同焦点一起换掉，
+   * 数字根本敲不完（`from` 敲 "6000" 会在敲第一个 6 之后就失焦）。
+   */
+  window.setBandField = function (i, k, v) {
+    const n = sel(); if (!n || n.type !== window.NODE_GAUGE) return;
+    const list = cloneBands(n);
+    if (!list[i]) return;
+    const s = String(v === undefined || v === null ? "" : v).trim();
+    if (k === "color") {
+      list[i].color = window.isHexColor(s) ? s : null;
+    } else if (k === "alpha") {
+      list[i].alpha = s === "" ? null : Number(s);
+    } else if (k === "from" || k === "to") {
+      if (s === "" || !Number.isFinite(Number(s))) return;   // 敲空/敲字母 → 当次不改（别把段丢了）
+      list[i][k] = Number(s);
+    } else {
+      return;
+    }
+    commitBands(n, list, "改色带");
+  };
+
+  /** 加一段：接着上一段的终点往后 20% 量程（空表时就是量程最后 20%） */
+  window.addBand = function () {
+    const n = sel(); if (!n || n.type !== window.NODE_GAUGE) return;
+    const list = cloneBands(n);
+    if (list.length >= window.MAX_BANDS) {
+      alert("最多 " + window.MAX_BANDS + " 段色带。");
+      return;
+    }
+    const span = n.max - n.min;
+    if (!(span > 0)) { alert("量程非法（min ≥ max），先修量程。"); return; }
+    const step = span * 0.2;
+    const last = list.length ? list[list.length - 1].to : n.max;
+    const from = Math.max(n.min, Math.min(last, n.max - step));
+    commitBands(n, list.concat([{ from: from, to: Math.min(n.max, from + step), color: null, alpha: null }]),
+      "加一段色带");
+  };
+
+  window.delBand = function (i) {
+    const n = sel(); if (!n || n.type !== window.NODE_GAUGE) return;
+    const list = cloneBands(n);
+    if (i < 0 || i >= list.length) return;
+    list.splice(i, 1);
+    commitBands(n, list, "删一段色带");
+  };
+
+  window.clearBands = function () {
+    const n = sel(); if (!n || n.type !== window.NODE_GAUGE) return;
+    if (!bandsOf(n).length) return;
+    commitBands(n, [], "清空色带");
+  };
+
+  /**
+   * **按 `warnLow` / `warnHigh` 生成色带**（面板上的按钮）。
+   *
+   * ## 为什么这个按钮值得有
+   *
+   * `warnLow`/`warnHigh` 是**两个标量**，只能表达"低于 X"和"高于 Y"两段，
+   * 而且颜色写死。用户想说"油量绿→黄→红"就必须有色带。
+   * 这个按钮是**从旧世界到新世界的桥**：把现在画出来的红区变成可编辑的色带。
+   *
+   * ## ⚠️ 它**逐像素不改画面**
+   *
+   * 生成的段用的就是老路径的几何（`min→warnLow`、`warnHigh→max`），
+   * `color`/`alpha` 都留 `null`（绘制时回落到同一个 `#FF4D4F` + 不透明）。
+   * 所以点一下之后画面**一模一样**，只是那两段变得可编辑了 ——
+   * 这是"转换"而不是"改设计"。
+   *
+   * ## ⚠️ 它**不改** `warnLow`/`warnHigh`
+   *
+   * 报警判定还在它们身上。用户删掉色带之后，红区会**自动回到** `warnLow`/`warnHigh`
+   * 描述的样子 —— 因为那才是"报警"的权威来源。
+   */
+  window.bandsFromWarn = function () {
+    const n = sel(); if (!n || n.type !== window.NODE_GAUGE) return;
+    const out = [];
+    if (n.warnLow !== null && n.warnLow !== undefined) out.push({ from: n.min, to: n.warnLow, color: null, alpha: null });
+    if (n.warnHigh !== null && n.warnHigh !== undefined) out.push({ from: n.warnHigh, to: n.max, color: null, alpha: null });
+    if (!out.length) {
+      alert("这个表没有 warnLow / warnHigh，没有可转换的红区。\n" +
+        "可以先在上面填一个阈值，或者直接点「+ 加一段」。");
+      return;
+    }
+    commitBands(n, out, "按阈值生成色带");
+  };
   window.applyPidDefaults = function () {
     const n = sel(); if (!n || n.type !== window.NODE_GAUGE) return;
     const info = window.BUILTIN_PIDS[n.pid];

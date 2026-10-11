@@ -49,16 +49,27 @@ const PROBE = `(() => {
   const lb = Array.from(props.querySelectorAll('.prow > label')).filter(e => vis(e) && !e.classList.contains('chk'));
   R.labelClip = lb.filter(e => e.scrollWidth > e.clientWidth + 1).length;
   R.labelWidths = [...new Set(lb.map(e => Math.round(e.getBoundingClientRect().width)))];
+  // v2.87.0：**色带编辑区真的渲染出来了吗**？
+  // 必须查这一条 —— 空 bands 时面板只渲染两行提示（一个控件都没有），
+  // 那样上面那些"行高 ≤ 3 种 / 控件高一致 / 零溢出"就**根本没量到**色带那几行，
+  // 全是空头保证。判据限定在"多段色带"那一组里（字体组也有 color 输入框）。
+  // ⚠️ 本段在**模板串**里（PROBE 是反引号字符串）—— 注释里不许再出现反引号。
+  let bandBody = null;
+  props.querySelectorAll('.pgroup').forEach(g => {
+    const h = g.querySelector('.phead');
+    if (h && h.textContent.indexOf('多段色带') >= 0) bandBody = g.querySelector('.pbody');
+  });
+  R.bandColorInputs = bandBody ? bandBody.querySelectorAll('input[type=color]').length : -1;
+  R.bandDelBtns = bandBody ? bandBody.querySelectorAll('button.mini').length : -1;
+  R.bandRows = bandBody ? bandBody.querySelectorAll('.prow').length : -1;
   // 溢出
-  R.propOverflow = 0;
-  props.querySelectorAll('*').forEach(el => {
+  R.propOverflow = 0;  props.querySelectorAll('*').forEach(el => {
     if (!vis(el)) return; const p = el.parentElement; if (!p || !vis(p)) return;
     const a = el.getBoundingClientRect(), b = p.getBoundingClientRect();
     if (Math.max(0, a.right-b.right) + Math.max(0, b.left-a.left) > 4) R.propOverflow++;
   });
   // 面板内字号 / 圆角
-  const fs={}, rd={};
-  props.querySelectorAll('*').forEach(el=>{ if(!vis(el))return; const cs=getComputedStyle(el);
+  const fs={}, rd={};  props.querySelectorAll('*').forEach(el=>{ if(!vis(el))return; const cs=getComputedStyle(el);
     fs[cs.fontSize]=(fs[cs.fontSize]||0)+1;
     if(cs.borderRadius&&cs.borderRadius!=='0px') rd[cs.borderRadius]=(rd[cs.borderRadius]||0)+1; });
   R.propFontSizes = Object.keys(fs);
@@ -139,8 +150,14 @@ const PROBE = `(() => {
     await sleep(600);
     await require('./_common').stubDialogs({ eval: ev });
     // 造一个内容最满的仪表：parts + 各种字段
+    //
+    // v2.87.0：**把 `bands` 也填上**。理由：色带编辑区是"每段一行"的
+    // 动态行（`bandFields`），空表时它只渲染两行提示 —— 不填 `bands` 的话
+    // 那些真正有控件的行**根本不会被这条排版体检量到**，
+    // 于是"行高种类 ≤ 3 / 控件高一致 / 零溢出"全是空头保证。
     await ev(`(()=>{const S=window.CanvasState; window.renderAssets=function(){};
-      const n = window.createNode(window.NODE_GAUGE,{name:'排版体检',pid:'obd.rpm',style:0,min:0,max:8000,warnHigh:6500,x:40,y:40,w:200,h:200});
+      const n = window.createNode(window.NODE_GAUGE,{name:'排版体检',pid:'obd.rpm',style:0,min:0,max:8000,warnHigh:6500,x:40,y:40,w:200,h:200,
+        bands:[{from:6000,to:7000,color:'#FFB020'},{from:7000,to:8000,color:'#FF4D4F',alpha:200}]});
       n.parts=[window.normalizePart({kind:'dial',x:0,y:0,w:200,h:200}),
                window.normalizePart({kind:'needle',x:76,y:4,w:48,h:192,pivotX:0.5,pivotY:0.5,sweepFrom:135,sweepTo:405,sweepFollow:true}),
                window.normalizePart({kind:'value',x:60,y:130,w:80,h:40})];
@@ -173,6 +190,10 @@ const PROBE = `(() => {
       eq(R.labelWidths.length, 1, '标签列宽度统一（' + R.labelWidths.join('/') + 'px）');
       eq(R.labelClip, 0, '**没有被挤压的标签**');
       eq(R.propOverflow, 0, '**属性面板内零溢出**');
+      // v2.87.0 色带编辑区：本套件上面造的仪表有 **2 段** bands
+      eq(R.bandRows, 2, '**色带编辑区真的渲染了**（2 段 → 2 个 .prow 行，上面那些排版断言才不是空头保证）');
+      eq(R.bandColorInputs, 2, '  每段一个颜色输入框（2 个）');
+      eq(R.bandDelBtns, 2, '  每段一个删除按钮（2 个）');
 
       console.log('\n=== 4. 面板内的字号与圆角 ===');
       console.log('    · 字号: ' + JSON.stringify(R.propFontSizes));

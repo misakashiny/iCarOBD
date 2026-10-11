@@ -30,7 +30,7 @@
     "verify-geo": 27,
     "verify-group": 34,
     "verify-lamp-state": 54,
-    "verify-layout": 55,
+    "verify-layout": 58,
     "verify-more": 15,
     "verify-pack": 111,
     "verify-pages": 48,
@@ -38,13 +38,15 @@
     "verify-pid": 24,
     "verify-props": 11,
     "verify-rename": 32,
-    "verify-spring": 182,
+    "verify-spring": 190,
     "verify-studio2": 46,
     "verify-theme": 23,
     "verify-tokens": 251,
     "verify-tokens2": 38,
     "verify-v27": 48,
     "verify-v28": 28,
-    "verify-assets-wiring": 47
+    "verify-assets-wiring": 64,
+    "verify-asset-gen": 26,
+    "verify-bands": 129
   }
 }

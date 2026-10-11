@@ -434,12 +434,18 @@
    */
   window.dialSig = function (opts) {
     const o = Object.assign({}, DIAL_DEFAULT, opts || {});
-    const rl = window.dialRedlines(o).map(z => z.from + "-" + z.to).join(",");
+    // ⚠️ 红区签名必须**带上颜色与透明度**（v2.87.0）。
+    //    原来只算 `from-to` —— 于是"只改颜色/透明度"时签名不变，
+    //    `dialCache` 命中旧盘面，**改了颜色画布上毫无反应**（看起来像控件坏了）。
+    //    症状极隐蔽：改量程立刻生效、改颜色永远不生效，而两者走的是同一条路。
+    const rl = window.dialRedlines(o).map(z =>
+      z.from + "-" + z.to + "-" + (z.color || "") + "-" +
+      (z.alpha === null || z.alpha === undefined ? "" : z.alpha)).join(",");
     // ⚠️ `major` 为 null 是"自动"这个**模式**本身，不能落成数字 0 ——
     //    它一变，刻度步长就变，盘面必须重建。
     const majorTag = (o.major === null || o.major === undefined) ? "auto" : String(num(o.major, 8));
     return [
-      "v1",
+      "v2",
       "min" + num(o.min, 0), "max" + num(o.max, 100),
       "M" + majorTag, "m" + num(o.minor, 4), "T" + num(o.majorTarget, 8),
       "r" + num(o.r, 150), "a" + num(o.start, 135) + "x" + num(o.sweep, 270),
@@ -452,6 +458,10 @@
   /**
    * 红区归一化：`redlines` 数组优先，否则用 `redlineFrom`/`redlineTo` 拼一个。
    * 一律夹到 `[min, max]`，夹完为空（from ≥ to）的直接丢掉。
+   *
+   * ⚠️ `color` / `alpha`（v2.87.0）**原样带上**（不填默认值）：
+   * 绘制层要拿它决定这一段的颜色，`dialSig` 要拿它算签名。
+   * 没写的段就**不带这两个字段** —— 老调用点（只给 `from`/`to`）的产物逐字段不变。
    */
   window.dialRedlines = function (opts) {
     const o = Object.assign({}, DIAL_DEFAULT, opts || {});
@@ -463,7 +473,10 @@
     return list.map(function (z) {
       const a = clamp(num(z && z.from, min), min, max);
       const b = clamp(num(z && z.to, max), min, max);
-      return { from: a, to: b };
+      const out = { from: a, to: b };
+      if (z && z.color !== null && z.color !== undefined) out.color = z.color;
+      if (z && z.alpha !== null && z.alpha !== undefined) out.alpha = z.alpha;
+      return out;
     }).filter(z => z.to > z.from);
   };
 
@@ -520,7 +533,11 @@
     }
 
     const redlines = window.dialRedlines(o).map(function (z) {
-      return { from: z.from, to: z.to, angFrom: val2ang(z.from), angTo: val2ang(z.to) };
+      const out = { from: z.from, to: z.to, angFrom: val2ang(z.from), angTo: val2ang(z.to) };
+      // 颜色 / 透明度跟着进盘面对象（v2.87.0）—— 绘制层按段取色
+      if (z.color !== undefined) out.color = z.color;
+      if (z.alpha !== undefined) out.alpha = z.alpha;
+      return out;
     });
 
     return {

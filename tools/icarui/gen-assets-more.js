@@ -1088,11 +1088,14 @@ module.exports = function (ctx) {
     });
     mk("track-gradient-h", "渐变轨道（水平）", 256, 24, (c, w, h) => {
       capsule(c, 0, 0, w, h, GREY_DARK, 0.95);
-      c.fill((x, y) => (y > 2 && y < h - 2 ? [0, 216, 255, 0.10 + 0.5 * (x / w)] : null));
+      // ⚠️ alpha 单位是 0..255（见 png.js 的 color()/fill()）。v2.87.0 修：
+      // 这里原来写 `0.10 + 0.5 * (x / w)`（0..1）→ 整层渐变被除没了，
+      // track-gradient-h 渲染出来与 track-h 几乎逐像素相同。
+      c.fill((x, y) => (y > 2 && y < h - 2 ? [0, 216, 255, (0.10 + 0.5 * (x / w)) * 255] : null));
     });
     mk("track-gradient-v", "渐变轨道（垂直）", 24, 256, (c, w, h) => {
       capsule(c, 0, 0, w, h, GREY_DARK, 0.95);
-      c.fill((x, y) => (x > 2 && x < w - 2 ? [0, 216, 255, 0.10 + 0.5 * (y / h)] : null));
+      c.fill((x, y) => (x > 2 && x < w - 2 ? [0, 216, 255, (0.10 + 0.5 * (y / h)) * 255] : null));
     });
     mk("marker-h", "标记点（水平）", 12, 32, (c, w, h) => {
       c.roundRect(0, 0, w, h, 4, WHITE, 0.95);
@@ -1359,7 +1362,8 @@ module.exports = function (ctx) {
       c.fill((px, py) => {
         if (Math.abs(py - y) > 2 || px < 8 || px > 120) return null;
         const t = Math.abs(px - 64) / 56;
-        return [0, 216, 255, 0.9 * (1 - t)];
+        // alpha 0..255（v2.87.0 修：原来是 0..1 → 整张全透明）
+        return [0, 216, 255, 0.9 * (1 - t) * 255];
       });
     });
     mk("chevron", "雪佛龙箭头", (c, x, y) => {
@@ -1495,15 +1499,16 @@ module.exports = function (ctx) {
       for (let y = 8; y < 256; y += 16) for (let x = 8; x < 256; x += 16) c.circle(x, y, 2, GREY, 0.4);
     });
     mk("gradient-v", "纵向渐变", (c) => {
+      // ⚠️ alpha 单位 0..255（v2.87.0 修：原来是 `1`，按 0..1 理解 → 整张全透明）
       c.fill((x, y) => {
         const t = y / 256;
-        return [6 + t * 14, 10 + t * 20, 16 + t * 28, 1];
+        return [6 + t * 14, 10 + t * 20, 16 + t * 28, 255];
       });
     });
     mk("gradient-radial", "径向渐变", (c) => {
       c.fill((x, y) => {
         const d = Math.min(1, Math.hypot(x - 128, y - 128) / 150);
-        return [4 + d * 12, 8 + d * 18, 14 + d * 26, 1];
+        return [4 + d * 12, 8 + d * 18, 14 + d * 26, 255];
       });
     });
     mk("hex-dark", "深色六角纹", (c) => {
@@ -1547,9 +1552,13 @@ module.exports = function (ctx) {
       }
     });
     mk("vignette", "暗角", (c) => {
+      // ⚠️ 这张图**正被控件 `img_bgvign`（暗角背景）引用** —— 它全透明时
+      // 用户从控件库拖出来"什么都看不见"（v2.86.0 体检发现，v2.87.0 修）。
+      // alpha 0..255；`d*d*1.2-0.15` 最大到 1.05 → 先夹到 1 再乘 255
+      // （png.js 的 color() 也会夹，这里显式写出来是为了读代码时看得见）。
       c.fill((x, y) => {
         const d = Math.hypot(x - 128, y - 128) / 181;
-        return [0, 0, 0, Math.max(0, d * d * 1.2 - 0.15)];
+        return [0, 0, 0, Math.min(1, Math.max(0, d * d * 1.2 - 0.15)) * 255];
       });
     });
     mk("scanlines-dark", "扫描线（深）", (c) => {
@@ -1679,12 +1688,14 @@ module.exports = function (ctx) {
   //    阈值参考"没有素材可用。动态色带由 `bands` 字段算（那是 App 侧的事），
   //    静态的那条（画在轨道底下的分区参考）需要一个素材。
   //
-  // ⚠️ 这里**不使用 `c.fill()`** —— `fill` 回调的 alpha 约定是 0..255
-  //    （见 png.js 的 `color()` 与 `_blend` 的第二个参数），
-  //    `gen-assets-more.js` 里有 6 处按 0..1 写，结果是**全透明空图**
-  //    （实测：vignette / gradient-v / gradient-radial / divider-gradient
-  //    四个 0 不透明像素，track-gradient-h/v 丢了渐变层）。
-  //    那是待修的老问题，新素材不要再踩进去。
+  // ⚠️ 这里**不使用 `c.fill()`** —— 这条横幅用 rect/roundRect 就画完了，
+  //    没必要逐像素跑一遍（`fill` 是 4 倍超采样下的全画布循环，很贵）。
+  //
+  //    v2.87.0 已修好 `fill` 的 alpha 单位问题（约定 **0..255**，见 png.js 的
+  //    `color()` / `fill()`）：本文件原来有 6 处按 0..1 写，导致
+  //    vignette / gradient-v / gradient-radial / divider-gradient **四个 0 不透明像素**、
+  //    track-gradient-h/v 丢了渐变层。现在两边都钉住了 ——
+  //    `tests/verify-asset-gen.js` 里有一条"fill 回调写 0..1 会被抓出来"的断言。
   function genBandsAndAlerts() {
     const mk = (kind, name, note, w, h, draw) => {
       const c = new Canvas(w, h);

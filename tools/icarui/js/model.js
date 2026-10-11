@@ -76,6 +76,9 @@
         // 数值 → 文字 映射表（P9 方向 A）。null = 不用映射（读数按量程格式化）。
         // ⚠️ 空表要归一成 null —— 否则 `["",""]` 会让读数变成空字符串
         valueLabels: window.normalizeValueLabels(o.valueLabels),
+        // **多段色带**（v2.87.0）：只画分区，**不参与报警判定**（那是 warnLow/warnHigh）。
+        // null = 不画分区 = 完全旧行为。夹到本节点的 [min, max] 上。
+        bands: window.normalizeBands(o.bands, num(o.min, 0), num(o.max, 100)),
         // **子部件**：有它就不再走程序化绘制，而是按部件拼装（v2.12.0）。
         // 空数组 = 用 style 的程序化画法（默认），行为完全不变。
         parts: (o.parts && o.parts.length) ? o.parts.map(window.normalizePart) : null,
@@ -767,6 +770,28 @@
   }
   window.createDesign = createDesign;
 
+  /**
+   * `bands` → 可序列化的普通对象（v2.87.0）。
+   *
+   * 单独抽成一个函数（而不是内联在 `nodeToJson` 里）有两个理由：
+   *
+   *  1. **v2 与 v1 必须写同一个形状** —— `nodeToJson`（v2）与 `toV1Json`（v1）
+   *     各写一遍迟早漂（一处带 `alpha` 一处不带）。
+   *  2. `tests/verify-fields.js` 的**结构面**检查是从 `nodeToJson` 的源码里
+   *     正则抠 `o.FIELD =` 的。把对象字面量写在函数体里的话，
+   *     字面量的键（`from:` / `to:`）会被当成"`nodeToJson` 写出的字段"，
+   *     那条检查就会报出两个**假**的缺失字段（实测确实报了）。
+   *     把字面量挪到函数外面，检查看的就只剩真正的字段名。
+   */
+  function bandsJson(bands) {
+    return bands.map(function (z) {
+      const b = { from: r2(z.from), to: r2(z.to) };
+      if (z.color) b.color = z.color;
+      if (z.alpha !== null && z.alpha !== undefined) b.alpha = z.alpha;
+      return b;
+    });
+  }
+
   /** 节点 → JSON（**按 z 排序写出**，让文件顺序 = 绘制顺序，便于人读） */
   function nodeToJson(n) {
     const o = {
@@ -803,6 +828,10 @@
       if (n.cardStyle !== null && n.cardStyle !== undefined) o.cardStyle = n.cardStyle;
       // 映射表只在**有**时写出（空 = 不用映射，旧版本读到没有这个字段语义一致）
       if (window.valueLabelsUsable(n.valueLabels)) o.valueLabels = n.valueLabels.slice();
+      // 色带同理：**只在非空时写出**（空 = 不画分区 = 完全旧行为）。
+      // `color`/`alpha` 只在**非 null** 时写 —— 这样"没写颜色"往返之后还是"没写"，
+      // `bands` 的逐字段往返才成立（见 schema.js 的 normalizeBands）
+      if (window.bandsUsable(n.bands)) o.bands = bandsJson(n.bands);
       // 部件只在**有**时写出（没有 = 用 style 的程序化画法）
       if (n.parts && n.parts.length) {
   // ⚠️ **剔除空的 pid / rawPid** —— 不剔的话每个部件都会写两个空字符串，
@@ -1025,6 +1054,11 @@ function toV2Json(d) {
       if (n.cardStyle !== null && n.cardStyle !== undefined) g.cardStyle = n.cardStyle;
       // 映射表跟着走：App 侧 `GaugeItem` 与 schema 版本无关，v1 也能读
       if (window.valueLabelsUsable(n.valueLabels)) g.valueLabels = n.valueLabels.slice();
+      // 色带也写进 v1（v2.87.0）：
+      //  · 读得回来 —— v1 的导入走的是**同一个** `parseNode`（`upgradeV1` → `forceGauge`），
+      //    所以不会踩"只写不读"那个坑（`valueLabels` 曾经踩过，见 validate.js 的注释）
+      //  · 老 App 读不懂这个字段会**忽略**它（少画分区，不报错）
+      if (window.bandsUsable(n.bands)) g.bands = bandsJson(n.bands);
       gauges.push(g);
     });
 

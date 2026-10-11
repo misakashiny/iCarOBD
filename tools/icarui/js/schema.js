@@ -54,6 +54,46 @@ window.MAX_GAUGES = 32;
 window.MAX_PARTS = 64;
 
 /**
+ * ============================================================ 多段色带 `bands`（v2.87.0）
+ *
+ * ## 它是什么
+ *
+ * 仪表上的**分区参考**：转速表 6000~8000 的红区、油量表"绿→黄→红"三段。
+ * 每段是 `{ from, to, color?, alpha? }`，`from/to` 是**量程上的值**（不是比例）。
+ *
+ * ## ⚠️ 与 `warnLow` / `warnHigh` 的分工（这条是安全语义，不许混）
+ *
+ * | | 管什么 |
+ * |---|---|
+ * | `bands` | **只**管"画出来的分区"。空 = 不画任何分区 |
+ * | `warnLow` / `warnHigh` | **报警判定**（App 侧变色/闪烁/告警条全靠它） |
+ *
+ * 所以 `bands` **绝不**顺带改报警行为 —— 否则"给转速表加个红区参考"
+ * 会**静默改变存量设计的安全语义**（本来不报警的表开始报警）。
+ *
+ * ## ⚠️ 缺省 = 空 = 完全旧行为
+ *
+ * `bands` 缺省 / 空数组 / 全部非法 → 一律归一成 `null`，
+ * 绘制侧走 `warnLow`/`warnHigh` 的老路径，**行为逐像素不变**。
+ * 序列化时**只在非空才写出**（与 `invalidRaw` / `cardStyle` / `valueLabels` 同套路）。
+ *
+ * ## ⚠️ App 侧还没做（v2.87.0 只做了工具侧）
+ *
+ * App 侧 `GaugeItem` 目前只有 `warnLow`/`warnHigh` 两个标量，**读不懂 `bands`**。
+ * 在 App 侧补齐之前，带 `bands` 的设计在设备上只会**少画分区**（不会报错）。
+ * **App 侧做完后必须补一条 `verify-crosslang.js` 断言**把下面这些常量逐条钉住 ——
+ * 现在加会必红（单边常量）。见 CHANGELOG v2.87.0「App 侧待办」。
+ */
+window.MAX_BANDS = 8;
+
+/** 色带没写颜色时的兜底色 —— 与老红区**同一个红**（`#FF4D4F`） */
+window.BAND_DEFAULT_COLOR = "#FF4D4F";
+
+/** alpha 的取值范围（与节点 `alpha` / `card.alpha` 同一套口径：0..255） */
+window.BAND_ALPHA_MIN = 0;
+window.BAND_ALPHA_MAX = 255;
+
+/**
  * 会被"**非数字静默回落到默认值**"的数值字段清单。
  *
  * ## 它们用来做什么
@@ -1457,5 +1497,67 @@ window.normalizeValueLabels = function (arr) {
   }
   while (out.length && out[out.length - 1] === "") out.pop();
   return out.length ? out : null;
+};
+
+/**
+ * **多段色带归一化**（v2.87.0）。判据全部集中在这里 ——
+ * 绘制侧、属性面板、序列化、校验都走它，**不许各写一遍**。
+ *
+ * 规则（按顺序）：
+ *
+ *  1. 不是数组 / 空数组 → `null`
+ *  2. 每一项：`from`/`to` 取数字，**夹到 `[min, max]`**（量程外写多少都无所谓）
+ *  3. `to <= from` 的段**丢掉**（空段/反向段画不出来，留着只会让计数对不上）
+ *  4. `color` **只认 `#RRGGBB`**（大小写都行）；不认的 → `null`（绘制时回落到 `BAND_DEFAULT_COLOR`）
+ *  5. `alpha` 取数字夹到 `[0, 255]` 并取整；没写 → `null`（绘制时按 255 算）
+ *  6. 最多 `MAX_BANDS` 段 —— **超出的丢掉**（不是报错：文件还能用，只是尾巴没了）
+ *  7. 全丢光了 → `null`
+ *
+ * ## 为什么 `color`/`alpha` 保留 `null` 而不是填默认值
+ *
+ * 填默认值会让"没写颜色"和"写了默认色"变成同一个东西 ——
+ * 于是**序列化时必须写出 color**，文件里每个色带都多两个字段；
+ * 而且往返一次"没写"会变成"写了"，`bands` 的逐字段往返就不成立了。
+ * 保留 `null` 才能做到"写出去再读回来逐字段相同"。
+ *
+ * @param arr 原始 `bands`（可能来自设计文件，**什么都可能是**）
+ * @param min 量程下限（缺省 0）
+ * @param max 量程上限（缺省 100）
+ */
+window.normalizeBands = function (arr, min, max) {
+  if (!arr || !arr.length) return null;
+  const lo = Number.isFinite(Number(min)) ? Number(min) : 0;
+  const hi = Number.isFinite(Number(max)) ? Number(max) : 100;
+  const out = [];
+  for (let i = 0; i < arr.length && out.length < window.MAX_BANDS; i++) {
+    const z = arr[i];
+    if (!z || typeof z !== "object" || Array.isArray(z)) continue;
+    const a = Number(z.from), b = Number(z.to);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+    const from = Math.min(Math.max(a, lo), hi);
+    const to = Math.min(Math.max(b, lo), hi);
+    if (!(to > from)) continue;
+    let alpha = null;
+    if (z.alpha !== null && z.alpha !== undefined && Number.isFinite(Number(z.alpha))) {
+      alpha = Math.round(Math.min(Math.max(Number(z.alpha), window.BAND_ALPHA_MIN), window.BAND_ALPHA_MAX));
+    }
+    out.push({
+      from: from,
+      to: to,
+      // 不认的颜色 → null（**不静默改成默认色**：那样用户看不出自己写错了）
+      color: window.isHexColor(z.color) ? z.color : null,
+      alpha: alpha,
+    });
+  }
+  return out.length ? out : null;
+};
+
+/**
+ * 色带**要不要画**（`normalizeBands` 之后非空）。
+ * 单独一个函数是因为绘制侧与序列化侧都要问同一个问题，
+ * 而"空"有 `null` / `[]` 两种形态。
+ */
+window.bandsUsable = function (bands) {
+  return !!(bands && bands.length);
 };
 

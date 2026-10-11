@@ -20,11 +20,22 @@
 //
 // ## 「已知待办」而不是硬白名单
 //
-// 空图是**存量缺陷**（生成器的 `c.fill()` alpha 单位写错，见 CHANGELOG），
-// 修它要重生成素材 = 改已有素材内容，不在本次范围。
-// 所以这里照 `tools/guard-pid-probe.js` 的老办法：
+// 空图是**存量缺陷**（生成器的 `c.fill()` alpha 单位写错，见 CHANGELOG）。
+// 这里照 `tools/guard-pid-probe.js` 的老办法：
 // **把当前已知的越界项显式列出来**，断言的是"越界集合 == 已知集合" ——
 // 一旦有人接进**新的**空图素材，或者有人修好了老问题却忘了删这一行，两边都会红。
+//
+// ## v2.87.0：那份清单**清空了**
+//
+// 上一轮把 7 个空图记成"等拍板"，这一轮拍板修了 —— 于是
+// `KNOWN_BLANK_REFS` 变成空对象，断言随之变成"**一条都不许有**"，
+// 并且新增 3b 节把修好的素材**逐个钉在像素上**（修前/修后数字都写在断言里）。
+//
+// ⚠️ 为什么 3b 要单列而不是靠 3 节的"没有空图"：这一轮实测发现
+// `assets/frame/frame-corners.png` **不是空图**（415 个不透明像素，画出了 1 个角），
+// 所以"没有空图"这条守卫**根本查不出它** —— 而它正被控件 `img_corners` 引用，
+// 修前用户拖出来的"四角标"只有**一个角**。
+// 结论：空图守卫管不了"内容画错/画少"的素材，得靠"四个象限都有墨迹"这类判据。
 // ============================================================================
 const { spawn } = require('child_process');
 const http = require('http');
@@ -110,10 +121,15 @@ const eq = (a, b, m) => ok(a === b, m + (a === b ? '' : `（实际 ${JSON.string
 // 「已知引用空图」清单 —— 修好一个就删一行，接进新的就加一行（**加行会被审**）
 //
 // 每一条都要写清"为什么现在还留着"，不能只写个名字。
+//
+// v2.87.0：**唯一那条 `img_bgvign` 已删** —— `vignette.png` 修好了
+// （修前 0 个不透明像素 → 修后 48893 个）。所以现在这里是**空的**：
+// 断言变成"引用空图的控件集合必须是空集"，也就是**一条都不许有**。
+//
+// 之所以还留着这个空对象而不是删掉机制：下一个"路径在、图是空的"素材出现时，
+// 唯一合法的处理是**去修素材**；如果谁真的加了一行，评审会看到 diff。
 // ---------------------------------------------------------------------------
-const KNOWN_BLANK_REFS = {
-  'img_bgvign': 'assets/background/vignette.png —— 生成器 c.fill() 的 alpha 单位写错（0..1 vs 0..255），整张图全透明。修它要重生成素材 = 改已有素材内容，等拍板。见 CHANGELOG v2.86.0「体检结论」',
-};
+const KNOWN_BLANK_REFS = {};
 
 (async () => {
   const proc = spawn(EDGE, ['--headless=new', '--disable-gpu', '--no-first-run', `--remote-debugging-port=${PORT}`,
@@ -265,9 +281,110 @@ const KNOWN_BLANK_REFS = {
         : ''));
     eq(badKeys.join('|'), knownKeys.join('|'),
       '引用空图的控件**名单一致**（修好一个就删 KNOWN_BLANK_REFS 里的那一行，接进新的就要先修素材）');
-    // 这条单独说：空图素材本身不能悄悄变多
-    ok(blank.length <= 7,
-      `全透明素材没有变多（${blank.length} ≤ 7；存量缺陷见 CHANGELOG v2.86.0）`);
+    // v2.87.0：7 个空图全修好了 → 这条从"没有变多（≤7）"升级成"**一个都不许有**"。
+    // 强得多：以后新素材只要是空图，无论有没有控件引用它，这里都会红。
+    eq(blank.length, 0,
+      '**没有任何全透明素材**（v2.86.0 体检出的 7 个已在 v2.87.0 修完）' +
+      (blank.length ? '：' + blank.slice(0, 8).join(', ') : ''));
+
+    // ---------- 3b) v2.87.0 修好的素材：**修前/修后都钉在像素上**
+    //
+    // 这一段存在的理由：上一轮体检是**人工**跑临时脚本得出的数字
+    // （"这 7 个 0 个不透明像素"），人工结论会随文件一起漂走。
+    // 这里把"修好了"变成每轮机器核对的判据 —— 而且是**像素级**的：
+    // 不看名字、不看文件大小、不看 md5（md5 会随无关改动变）。
+    console.log('\n=== 3b. v2.87.0 修好的坏素材（像素级）===');
+    const FIXED = [
+      // [路径, 修前不透明像素数, 说明]
+      ['assets/background/gradient-radial.png', 0, '径向渐变'],
+      ['assets/background/gradient-v.png', 0, '纵向渐变'],
+      ['assets/background/vignette.png', 0, '暗角（**被控件 img_bgvign 引用**）'],
+      ['assets/decor/corner-tl.png', 0, '角标 TL'],
+      ['assets/decor/corner-tr.png', 0, '角标 TR'],
+      ['assets/decor/corner-bl.png', 0, '角标 BL'],
+      ['assets/decor/divider-gradient.png', 0, '渐变分隔线'],
+      ['assets/bar/track-gradient-h.png', 6052, '渐变轨道（水平）—— 修前渐变层被除没了'],
+      ['assets/bar/track-gradient-v.png', 6052, '渐变轨道（垂直）'],
+      // 第 10 个：**同一个负宽高根因**，但体检没列进 9 个 ——
+      // 因为它不是空图（画出了 1 个角），415 个不透明像素看着"有内容"。
+      // 它**正被控件 `img_corners`（四角标）引用** → 修前用户只看到**一个角**。
+      ['assets/frame/frame-corners.png', 415, '四角标记（**被控件 img_corners 引用**）'],
+    ];
+    const readPng = p => {
+      const f = path.join(STUDIO, p.replace(/\//g, path.sep));
+      return fs.existsSync(f) ? fs.readFileSync(f) : null;
+    };
+    FIXED.forEach(([p, before, note]) => {
+      const buf = readPng(p);
+      const n = buf ? opaquePixels(buf) : -1;
+      ok(n > 0, `${note}：**不再全透明**（修前 ${before} → 修后 ${n} 个不透明像素）`);
+    });
+    // 四个角标：各自有内容 + 四个**互不相同**（四个文件以前 md5 完全相同 —— 都是空图）
+    const cornerPaths = ['assets/decor/corner-tl.png', 'assets/decor/corner-tr.png',
+      'assets/decor/corner-bl.png', 'assets/decor/corner-br.png'];
+    const cornerMd5 = cornerPaths.map(p => {
+      const b = readPng(p);
+      return b ? crypto.createHash('md5').update(b).digest('hex') : '(缺文件)';
+    });
+    eq(cornerMd5.filter((h, i) => cornerMd5.indexOf(h) === i).length, 4,
+      '**四个角标是四张不同的图**（修前 tl/tr/bl 三张 md5 完全相同 = 同一张空图）');
+    // frame-corners 的**四个象限都要有墨迹** —— 这才是"四个角都在"的直接证据
+    const fcBuf = readPng('assets/frame/frame-corners.png');
+    const fcImg = fcBuf ? decodePng(fcBuf) : null;
+    const quad = [0, 0, 0, 0];
+    if (fcImg) {
+      for (let y = 0; y < fcImg.h; y++) for (let x = 0; x < fcImg.w; x++) {
+        if (fcImg.rgba[(y * fcImg.w + x) * 4 + 3] > 8) quad[(y < fcImg.h / 2 ? 0 : 2) + (x < fcImg.w / 2 ? 0 : 1)]++;
+      }
+    }
+    console.log('    · 四角标记四个象限的墨迹：' + quad.join(' / '));
+    eq(quad.filter(n => n > 0).length, 4,
+      '**四角标记的四个角都有墨迹**（修前只有左上那一个 —— 负宽高被静默吃掉）' +
+      (quad.filter(n => n > 0).length !== 4 ? '：' + quad.join('/') : ''));
+    // 渐变轨道 vs 普通轨道：渐变层真的回来了（修前两者几乎逐像素相同）
+    const chanDiff = (pa, pb) => {
+      const A = decodePng(readPng(pa)), B = decodePng(readPng(pb));
+      if (!A || !B || A.w !== B.w || A.h !== B.h) return null;
+      let same = 0, sum = 0;
+      const total = A.w * A.h * 4;
+      for (let i = 0; i < total; i++) { const d = Math.abs(A.rgba[i] - B.rgba[i]); if (d === 0) same++; else sum += d; }
+      return { sameRatio: same / total, meanDiff: sum / total };
+    };
+    [['assets/bar/track-gradient-h.png', 'assets/bar/track-h.png', '水平'],
+     ['assets/bar/track-gradient-v.png', 'assets/bar/track-v.png', '垂直']].forEach(([g, t, dir]) => {
+      const d = chanDiff(g, t);
+      console.log('    · ' + dir + '：渐变轨道 vs 普通轨道 —— 通道相同 ' +
+        (d ? (100 * d.sameRatio).toFixed(1) + '%' : '?') + '，平均差 ' + (d ? d.meanDiff.toFixed(2) : '?'));
+      ok(!!d && d.sameRatio < 0.6 && d.meanDiff > 6,
+        `**${dir}渐变轨道的渐变层回来了**（与普通轨道不再逐像素相同：相同 ${d ? (100 * d.sameRatio).toFixed(1) : '?'}% < 60%、平均差 ${d ? d.meanDiff.toFixed(2) : '?'} > 6）`);
+    });
+    // `img_bgvign`（暗角背景）拖出来必须**真的有东西**
+    //
+    // ⚠️ 判据取的是**控件登记出来的那份内嵌 data**，不是磁盘上的 PNG ——
+    // 用户在设计器里看到的是内嵌那份（见 2b 的说明）。
+    const vignCtrl = JSON.parse(await cdp.eval(`JSON.stringify((() => {
+      const S = window.CanvasState;
+      const savedNodes = S.design.nodes, savedAssets = S.design.assets;
+      S.design.nodes = []; S.design.assets = [];
+      const c = (window.BUILTIN_CONTROLS || []).find(x => x.key === 'img_bgvign');
+      const out = { exists: !!c, path: '', data: '' };
+      try {
+        const n = c && c.make();
+        if (n) {
+          const a = (S.design.assets || []).find(x => x.id === n.assetId);
+          out.path = a ? a.path : '(assetId 悬空)';
+          out.data = a && a.data ? a.data : '';
+        }
+      } catch (e) { out.err = String(e.message).slice(0, 60); }
+      S.design.nodes = savedNodes; S.design.assets = savedAssets;
+      return out;
+    })())`));
+    const vignOp = /^data:image\/png;base64,/.test(vignCtrl.data)
+      ? opaquePixels(Buffer.from(vignCtrl.data.slice('data:image/png;base64,'.length), 'base64')) : -1;
+    console.log('    · 控件 img_bgvign → ' + (vignCtrl.path || '(无)') + '，内嵌 data 解出不透明像素 ' + vignOp);
+    ok(vignCtrl.exists, '控件 `img_bgvign`（暗角背景）在库里');
+    eq(vignCtrl.path, 'assets/background/vignette.png', '  它引用的就是修好的 `vignette.png`');
+    ok(vignOp > 0, `  **拖出来真的看得见东西**（内嵌 data 有 ${vignOp} 个不透明像素，修前是 0）`);
 
     // ---------- 4) v2.86.0 新接的素材：非空 + 元数据对得上
     console.log('\n=== 4. v2.86.0 新增的 4 个素材 ===');

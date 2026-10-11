@@ -488,6 +488,39 @@ themeColors: (root.themeColors && typeof root.themeColors === "object" && !Array
       // 而**任何一步都不报错**。与 v1.20.16 那个 `statePid` 的坑是同一形态。
       // 判据与 `model.js` 的 `createNode` 同源（都走 `normalizeValueLabels`）。
       node.valueLabels = window.normalizeValueLabels(o.valueLabels);
+      // **多段色带**（v2.87.0）。判据与 `model.js` 的 `createNode` 同源（都走 `normalizeBands`）。
+      //
+      // ⚠️ 越界 / 段数超上限 **只给警告，不给硬错误** —— 理由与 `NUMERIC_GAUGE_FIELDS`
+      // 那条一样（见文件头）：`normalizeBands` 已经把非法项**夹住/丢掉**了，
+      // 文件照样能用（只是少了那一段）。把它改成硬错误等于**拒收存量文件**，
+      // 代价比"少画一段"大得多。但**必须出声** —— 否则用户看到的现象是
+      // "我写了 6000~9000 的红区，怎么没画出来"，而没有任何线索。
+      node.bands = window.normalizeBands(o.bands, node.min, node.max);
+      if (Array.isArray(o.bands) && o.bands.length) {
+        if (o.bands.length > window.MAX_BANDS) {
+          warnings.push(path + " 的 `bands` 有 " + o.bands.length + " 段，超过上限 " +
+            window.MAX_BANDS + " —— 只保留前 " + window.MAX_BANDS + " 段");
+        }
+        let dropped = 0, clamped = 0, badColor = 0;
+        o.bands.forEach(function (z) {
+          if (!z || typeof z !== "object" || Array.isArray(z)) { dropped++; return; }
+          const a = Number(z.from), b = Number(z.to);
+          if (!Number.isFinite(a) || !Number.isFinite(b) || !(b > a)) { dropped++; return; }
+          if (a < node.min || b > node.max) clamped++;
+          if (z.color !== null && z.color !== undefined && !window.isHexColor(z.color)) badColor++;
+        });
+        if (dropped) {
+          warnings.push(path + " 的 `bands` 有 " + dropped + " 段被丢掉（`from`/`to` 不是数字，或 `to <= from`）");
+        }
+        if (clamped) {
+          warnings.push(path + " 的 `bands` 有 " + clamped + " 段超出了量程 " +
+            trimNum(node.min) + "~" + trimNum(node.max) + " —— 已夹到量程上");
+        }
+        if (badColor) {
+          warnings.push(path + " 的 `bands` 有 " + badColor + " 段的 `color` 不是 `#RRGGBB` —— 已按默认红 `" +
+            window.BAND_DEFAULT_COLOR + "` 画");
+        }
+      }
       node.card = parseCard(o.card, path + ".card", warnings);
       node.labelFont = parseFont(o.labelFont, path + ".labelFont", warnings);
       node.showLabel = o.showLabel === undefined ? true : !!o.showLabel;

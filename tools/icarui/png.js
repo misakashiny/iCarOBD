@@ -68,14 +68,26 @@ function encodePng(w, h, rgba) {
 
 // ---------------------------------------------------------------- 颜色
 
-/** `#RRGGBB` 或 `[r,g,b]` 或 `[r,g,b,a]` → [r,g,b,a] */
+/**
+ * `#RRGGBB` 或 `[r,g,b]` 或 `[r,g,b,a]` → [r,g,b,a]
+ *
+ * ⚠️ **alpha 的单位是 0..255**（不是 0..1）。v2.87.0 起这里会把越界值**夹住**：
+ * 以前 `[0,0,0,267]` 这种会一路传进 `_blend`，`sa = 267/255 = 1.047 > 1` ——
+ * source-over 的 `sa + da*(1-sa)` 于是变成**减色**（越描越黑）。
+ * 夹到 255 是唯一合理语义："比不透明更不透明"不存在。
+ */
 function color(c) {
-  if (Array.isArray(c)) return [c[0], c[1], c[2], c.length > 3 ? c[3] : 255];
+  if (Array.isArray(c)) return [c[0], c[1], c[2], clampAlpha(c.length > 3 ? c[3] : 255)];
   if (typeof c === "string" && c[0] === "#") {
     const h = c.slice(1);
     return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16), 255];
   }
   return [255, 255, 255, 255];
+}
+
+/** alpha 夹到 0..255（见 `color()` 的说明） */
+function clampAlpha(a) {
+  return a < 0 ? 0 : (a > 255 ? 255 : a);
 }
 
 /** 线性插值两个颜色 */
@@ -123,8 +135,21 @@ class Canvas {
     this.buf[i + 3] = Math.round(oa * 255);
   }
 
-  /** 逻辑坐标画一个矩形 */
+  /**
+   * 逻辑坐标画一个矩形。
+   *
+   * ⚠️ **负宽高会被归一化**（v2.87.0 修）。原来是
+   * `for (py = y0; py < y1; py++)` —— 负高直接**空转**，
+   * 一声不响地什么都不画。实测代价：`gen-assets-more.js` 的四个角标里
+   * 三个传了负宽高，**只有 `corner-br` 因为"负负得正"画出来了**
+   * （见 CHANGELOG v2.87.0「四个角标只亮一个」）。
+   *
+   * 归一化而不是抛错：`rect(x, y, -w, -h)` 的意图是显然的（从 (x,y) 往左上画），
+   * 让它画出来比让它炸掉有用；而"静默空转"是**唯一不可接受的**那种。
+   */
   rect(x, y, w, h, c, alpha) {
+    if (w < 0) { x += w; w = -w; }
+    if (h < 0) { y += h; h = -h; }
     const col = color(c);
     const a = (alpha === undefined ? 1 : alpha) * (col[3] / 255);
     const x0 = Math.round(x * SS), y0 = Math.round(y * SS);
@@ -228,13 +253,48 @@ class Canvas {
     }
   }
 
-  /** 每个像素按回调决定颜色（做纹理/渐变用） */
+  /**
+   * 每个像素按回调决定颜色（做纹理/渐变用）。回调返回 `[r,g,b]` 或 `[r,g,b,a]`，
+   * **alpha 的刻度是 0..255**。
+   *
+   * ## ⚠️ 一个必须知道的历史行为（v2.87.0 记下，未改）
+   *
+   * 这里把 `r[3]` **又 `/255` 当倍率**传给了 `_blend`，而 `_blend` 内部还会
+   * `rgba[3]/255` 一次 —— 同一个 alpha **除了两遍**，于是有效不透明度是
+   * `(a/255)²`：
+   *
+   *   - `a = 255` → `sa = 1` ✅ —— 所以"全不透明"的素材一直是好的，**问题被掩盖了**
+   *   - `a = 1`（按 0..1 写）→ `sa ≈ 1.5e-5` → `Math.round` **归零** → **整张全透明**
+   *   - `a = 128` → `sa = 0.25`（不是 0.5）
+   *
+   * 实测代价：`gen-assets-more.js` 有 6 处按 0..1 写 → 4 个素材 **0 个不透明像素**、
+   * 2 个渐变轨道**丢了渐变层**（CHANGELOG v2.87.0）。调用点已全部改成 ×255。
+   *
+   * **为什么不在这里直接改成线性**：改了会动到 `decor/underline.png` 的渐隐曲线
+   * （平方 → 线性），而那张图**不在"已证明是坏的"名单里** ——
+   * 本轮的口径是"只修已被证明坏掉的素材"。要做那件事得单独拍板（CHANGELOG 有记录）。
+   *
+   * **但下一次不会再有"静默归零"**：这一层里**最不透明的像素**都不到 2/255 时，
+   * 这里会**大声警告**（整层几乎全透明 = 几乎只可能是按 0..1 写了）——
+   * `tests/verify-asset-gen.js` 把"生成器跑起来不许有这个警告"钉成了断言。
+   *
+   * ⚠️ 判据用"整层最大 alpha"而不是"某个像素 < 1"：渐变**合法地**会淡到接近 0
+   * （`divider-gradient` 的最后一列 alpha ≈ 0.99），逐像素判会误报。
+   */
   fill(fn) {
+    let maxA = -1;
     for (let y = 0; y < this.H; y++) {
       for (let x = 0; x < this.W; x++) {
         const r = fn(x / SS, y / SS);
-        if (r) this._blend(x, y, color(r), r.length > 3 ? r[3] / 255 : 1);
+        if (!r) continue;
+        const a = r.length > 3 ? r[3] : 255;
+        if (a > maxA) maxA = a;
+        this._blend(x, y, color(r), a / 255);
       }
+    }
+    if (maxA >= 0 && maxA < 2) {
+      console.warn('⚠️ png.js fill(): 这一层最不透明的像素 alpha 只有 ' + maxA +
+        ' —— 整层几乎全透明。alpha 的单位是 **0..255**（0..1 的写法会渲染成整张全透明）。见 CHANGELOG v2.87.0');
     }
   }
 
