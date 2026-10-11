@@ -258,7 +258,12 @@ const PROBE = `(() => {
         ok(cn.t > 0 && cn.t < 50, "中文能搜到（" + cn.t + " 个素材）");
         eq(full.t, cn.t, "**全拼与中文结果一致**（" + full.t + "）");
         eq(ini.t, cn.t, "**首字母与中文结果一致**（" + ini.t + "）");
-        eq(blank.t, 355, "清空后恢复全部素材");
+        // ⚠️ **不要写死数字**（v2.86.0）：原来是 `eq(blank.t, 355, …)`，
+        //    素材一扩充（355 → 359）这条就会红，而红的理由跟"搜索"毫无关系。
+        //    改成跟 `BUILTIN_ASSETS.length` 比 —— 语义不变（"清空后全部回来"），
+        //    但它自己跟着素材数走。顺带钉住"清单里有几个就该渲染几个缩略图"。
+        const totalAssets = Number(await ev("(window.BUILTIN_ASSETS||[]).length"));
+        eq(blank.t, totalAssets, "清空后恢复全部素材（" + totalAssets + "）");
 
         // 反例：不存在的拼音不该命中
         const none = await search("zzzzz");

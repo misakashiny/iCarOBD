@@ -989,6 +989,7 @@ more.genFrames();
 more.genDecor3();
 more.genBackgrounds3();
 more.genNumberScales();
+more.genBandsAndAlerts();
 
 // ---- 清单写成**经典脚本**（file:// 下 fetch 被挡，但 <script src> 可以）
 const js =

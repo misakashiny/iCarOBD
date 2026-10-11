@@ -1582,25 +1582,34 @@ module.exports = function (ctx) {
     });
 
     // ---- 径向数字刻度：刻度线 + 数字（刻度盘最常用的那种）
-    function arcNums(name, note, count, maxLabel, radius, numRadius, scale) {
+    //
+    // `labels` 可选：给了就用它当数字（**跳级刻度**用），没给就按 0..maxLabel 顺序。
+    // 为什么要这条：调研（docs/控件库建议.md §1.5）把「8000rpm 只标 0/2/4/6/8」
+    // 列为缺口 —— `nums-arc-9` 是 0~8 九个数（= 每 1000 一格），
+    // `nums-arc-5` 是 0~4 五个数，**都不等于**「0/2/4/6/8 跳级」。
+    // 跳级不是"少画几个数字"，是**刻度位置不变、只隔一个标一个**，
+    // 所以必须能显式给标签，不能靠 maxLabel 推。
+    function arcNums(name, note, count, maxLabel, radius, numRadius, scale, labels) {
       const S = 256, cx = 128, cy = 128;
       const c = new Canvas(S, S);
       const A0 = 135, A1 = 405;
+      const lab = labels || null;
+      const slotCount = lab ? lab.length : (maxLabel + 1);
       // 刻度线
       for (let i = 0; i < count; i++) {
         const t2 = count === 1 ? 0 : i / (count - 1);
         const ang = A0 + (A1 - A0) * t2;
-        const major = i % Math.max(1, Math.round((count - 1) / maxLabel)) === 0;
+        const major = i % Math.max(1, Math.round((count - 1) / (slotCount - 1))) === 0;
         const p0 = P(cx, cy, radius, ang);
         const p1 = P(cx, cy, radius - (major ? 20 : 10), ang);
         c.line(p0[0], p0[1], p1[0], p1[1], major ? 5 : 3, major ? CYAN : GREY, major ? 0.95 : 0.7);
       }
       // 数字
-      const step = Math.max(1, Math.round((count - 1) / maxLabel));
-      for (let i = 0; i <= maxLabel; i++) {
-        const t2 = (i * step) / (count - 1);
+      const step = Math.max(1, Math.round((count - 1) / (slotCount - 1)));
+      for (let i = 0; i < slotCount; i++) {
+        const t2 = lab ? (i / (slotCount - 1)) : ((i * step) / (count - 1));
         const ang = A0 + (A1 - A0) * t2;
-        const label = String(i);
+        const label = lab ? lab[i] : String(i);
         const tw = textWidth(label, scale);
         const p = P(cx, cy, numRadius, ang);
         // 数字要**沿弧摆正**：以数字中心为原点，把点阵逐像素画上去
@@ -1611,6 +1620,10 @@ module.exports = function (ctx) {
     arcNums("nums-arc-9", "数字刻度弧 0~8（径向）", 41, 8, 116, 92, 2);
     arcNums("nums-arc-11", "数字刻度弧 0~10（径向）", 51, 10, 116, 90, 2);
     arcNums("nums-arc-5", "数字刻度弧 0~4（大数字）", 21, 4, 116, 88, 3);
+    // **跳级刻度**：位置不变（41 根刻度），只标 0/2/4/6/8 —— 转速表的常规画法。
+    // 表盘是 0~8000 时，这 5 个数字正好落在 0 / 2000 / 4000 / 6000 / 8000。
+    arcNums("nums-arc-jump5", "数字刻度弧 0/2/4/6/8（跳级）", 41, 8, 116, 92, 2,
+      ["0", "2", "4", "6", "8"]);
 
     // ---- 横向数字行（条形表/表头用）
     [["0,1,2,3,4,5", "nums-row-6"], ["0,2,4,6,8,10", "nums-row-even"],
@@ -1653,9 +1666,75 @@ module.exports = function (ctx) {
       save("scale", pair[1], c, "单位 " + pair[0]);
     });
   }
+  // ================================================================ 告警条 + 多段色带
+  //
+  // ## 为什么补这两个（依据在 docs/控件库建议.md）
+  //
+  // 1. **告警条底板**（建议 5）：App 侧 `MonitorWarnBar.kt` 已经有"轮询暂停时压一条
+  //    非闪烁警示条"的行为，但**素材库里没有任何横幅素材** —— 控件库里也就画不出
+  //    一条和 App 同形的告警条。现有的 `frame/panel-*.png` 是 256×256 方板，
+  //    比例不对（横幅要 256×56 这种扁的）。
+  // 2. **三段色带**（建议 3 的静态版）：实测 32 个 bar 素材**没有一个是多色的**
+  //    （主色统计全部落在青/灰一档）。油量绿→黄→红、电压安全区这类"印在轨道上的
+  //    阈值参考"没有素材可用。动态色带由 `bands` 字段算（那是 App 侧的事），
+  //    静态的那条（画在轨道底下的分区参考）需要一个素材。
+  //
+  // ⚠️ 这里**不使用 `c.fill()`** —— `fill` 回调的 alpha 约定是 0..255
+  //    （见 png.js 的 `color()` 与 `_blend` 的第二个参数），
+  //    `gen-assets-more.js` 里有 6 处按 0..1 写，结果是**全透明空图**
+  //    （实测：vignette / gradient-v / gradient-radial / divider-gradient
+  //    四个 0 不透明像素，track-gradient-h/v 丢了渐变层）。
+  //    那是待修的老问题，新素材不要再踩进去。
+  function genBandsAndAlerts() {
+    const mk = (kind, name, note, w, h, draw) => {
+      const c = new Canvas(w, h);
+      draw(c, w, h);
+      save(kind, name, c, note);
+    };
+
+    // ---- 告警条底板：深色横幅 + 细描边 + 左侧图标槽（**中性配色**）
+    //
+    // 为什么刻意**不带颜色语义**：告警条要能表达"正常/警告/严重"三态，
+    // 而素材是静态的。把红/黄烤进底图就只能在控件里换三张图；
+    // 留成中性深色，颜色交给叠在上面的图标与文字（`img_icalert` 等）。
+    const BANNER = "#0D131B";
+    mk("frame", "alert-bar", "告警条底板（非闪烁，256×56）", 256, 56, (c, w, h) => {
+      c.roundRect(0, 0, w, h, 10, GREY_MID, 0.55);          // 描边（画满，内部再压深色）
+      c.roundRect(1.5, 1.5, w - 3, h - 3, 9, BANNER, 0.95); // 深色内部
+      c.roundRect(8, 10, 36, 36, 8, GREY_DARK, 0.95);       // 左侧图标槽
+      c.roundRect(9.5, 11.5, 33, 33, 7, GREY_MID, 0.28);    // 图标槽内描边
+      c.roundRect(14, 4.5, w - 28, 1.5, 1, WHITE, 0.10);    // 顶部高光
+    });
+
+    // ---- 三段色带（绿 / 黄 / 红）
+    //
+    // 方头、无缝：分区参考条要**正好接上**（圆头会在交界处露出底色，
+    // 看上去像三段分开的条，而不是一条带上的三个区）。
+    // 分界取 70% / 85% —— 与 Highcharts 那种"两端各留一段纯色区"同一思路。
+    const ZONE = [[GREEN, 0.70], [AMBER, 0.85], [RED, 1.0]];
+    mk("bar", "band-3-h", "三段色带（绿/黄/红，水平）", 256, 24, (c, w, h) => {
+      let x = 0;
+      ZONE.forEach(([col, to]) => {
+        const x2 = Math.round(w * to);
+        c.rect(x, 0, x2 - x, h, col, 0.88);
+        x = x2;
+      });
+    });
+    mk("bar", "band-3-v", "三段色带（绿/黄/红，垂直）", 24, 256, (c, w, h) => {
+      // 垂直版**红在上**（值越大越靠上），与水平版从左到右同向
+      let y = 0;
+      [[RED, 0.15], [AMBER, 0.30], [GREEN, 1.0]].forEach(([col, to]) => {
+        const y2 = Math.round(h * to);
+        c.rect(0, y, w, y2 - y, col, 0.88);
+        y = y2;
+      });
+    });
+  }
+
   return {
     genWarnings3, genIcons3, genTurn3, genNeedles3,
     genScales3, genDashboards3, genBrand3,
     genBars, genFrames, genDecor3, genBackgrounds3, genNumberScales,
+    genBandsAndAlerts,
   };
 };

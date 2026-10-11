@@ -558,6 +558,200 @@
     });
   });
 
+  // ================================================================ 闲置素材接线（v2.86.0）
+  //
+  // ## 依据
+  //
+  // `docs/控件库优化建议.md` §1.4「素材闲置」与建议 6（P1）。
+  // 实测（脚本在 `ensureBuiltinAsset` 这个**唯一收口点**上收集路径）：
+  // 359 个素材里只有 75 个被控件库引用，**284 个一个控件都没有**。
+  // 这里把其中**确实有用**的接进来，每个都写清用途。
+  //
+  // ## 什么接了、什么没接（不是"全都塞进去"）
+  //
+  // 接了（见下面四组）：阈值标记/游标、轨道/填充/分段的**纹理变体**、
+  // 单位字与数字符号的**缺口**、色带刻度、12 个常用图标、严重态灯底。
+  //
+  // 没接，以及为什么：
+  //   1. **只差尺寸的变体** —— `bar/track-thin-h/v`（细）、`bar/track-thick-h/v`（粗）。
+  //      控件拖进画布后本来就能拉伸改尺寸，为"细/粗"各加一个控件是纯噪音。
+  //   2. **已损坏的素材** —— `bar/track-gradient-h/v` 实测与 `bar/track-h/v`
+  //      逐像素几乎相同（19% 像素完全相同、最大差 13/255）：生成时
+  //      `c.fill()` 的 alpha 按 0..1 写而约定是 0..255，**渐变层整层丢了**。
+  //      接进来等于给用户一个"名字叫渐变、看起来是普通轨道"的控件。
+  //      修它要重生成素材（= 改已有素材内容），见 CHANGELOG 的"体检结论"，等拍板。
+  //   3. **刻度纹理的同类变体** —— `ticks-30f/45f/120f`、`ticks-major(-minor)`、
+  //      `ticks-arc-outer/inner`、`ticks-radial-glow`、`ticks-dot-arc`、
+  //      `ticks-bar(-h/-v)`、`ticks-vertical`、`ticks-corner`、`ticks-dual`、
+  //      `ticks-inner`、`ticks-dots`、`ticks-segment-40`、`ticks-segment-20`（已有控件）。
+  //      都是"画刻度"的纹理变体，而 style 0/7 的盘面是**程序化生成**的
+  //      （`buildDial`，任意格数），这些图只影响观感、不带来新能力。
+  //   4. **`turn/` 23 个与 `brand/` 14 个** —— `turn/` 的语义已被「指示灯」那一组
+  //      （19 个带 `states` 三态切换的控件）覆盖，再摆一堆静态箭头只会让人分不清
+  //      哪个"会亮"；`brand/` 是通用徽标（项目不做真实车标），画面上属于装饰，
+  //      素材库面板可以直接拖。
+  //   5. **`needle/` 17 个、`dashboard/` 15 个、`frame/` 19 个、`decor/` 37 个、
+  //      `background/` 20 个** —— 同 3：同类变体，且 `img_*` 已有代表。
+  //
+  // ⚠️ **任何素材本来就能直接拖到画布**（素材库面板的提示原文：
+  //    "素材从左侧素材库拖到画布即可添加新图片控件"），
+  //    所以"接进控件库"买到的其实是**在控件面板里被发现**+**默认尺寸合适**，
+  //    不是"不接就用不了"。这正是要挑、不能全塞的原因。
+  //
+  // ⚠️ 新 key 的前缀必须过 `CAT_RULES`（本文件下方），否则静默掉进「其它」——
+  //    构建守卫会抓（tools/check-build-guard.ps1「控件不能掉进其它分类」那条）。
+
+  /**
+   * 批量登记「裸图片控件」。
+   *
+   * 与上面几组用的是同一套 `make()`（`ensureBuiltinAsset(path)` + `createNode(NODE_IMAGE)`），
+   * 只是抽成一个函数 —— 这一批有 40+ 条，逐条抄 forEach 容易抄错 `w`/`h`。
+   */
+  function pushImageControls(icon, rows) {
+    rows.forEach(function (d) {
+      list.push({
+        key: d.key, name: d.name, icon: icon,
+        make: function () {
+          const id = window.ensureBuiltinAsset ? window.ensureBuiltinAsset(d.path) : "";
+          return window.createNode(window.NODE_IMAGE, {
+            name: d.name, assetId: id, x: 40, y: 40, w: d.w, h: d.h, z: 97,
+          });
+        },
+      });
+    });
+  }
+
+  // ---- ① 阈值标记 / 游标（建议 4）
+  //
+  // 用途：在条形表上**看得见阈值在哪**。条形表（style 2）只在越线后才染红，
+  // 开车时看不到"还有多远到红线"；marker 把那条线**先画出来**。
+  // `marker-*` 是静态阈值标记（对应 `warnHigh`），
+  // `marker-glow-*` 是发光游标（跟着当前值走，做"指针"用）。
+  pushImageControls("┃", [
+    { key: "bar_markerh", name: "阈值标记(水平)", path: "assets/bar/marker-h.png", w: 12, h: 32 },
+    { key: "bar_markerv", name: "阈值标记(垂直)", path: "assets/bar/marker-v.png", w: 32, h: 12 },
+    { key: "bar_markerglowh", name: "发光游标(水平)", path: "assets/bar/marker-glow-h.png", w: 16, h: 40 },
+    { key: "bar_markerglowv", name: "发光游标(垂直)", path: "assets/bar/marker-glow-v.png", w: 40, h: 16 },
+  ]);
+
+  // ---- ② 轨道 / 填充 / 分段的纹理变体
+  //
+  // 用途：条形表（油量、水温、电量）**只有一种长相**是这类库最常见的问题。
+  // 这 16 个各自对应一种真实用法，不是同一张图换名字：
+  //   发光轨道   —— 强调"这条是活的"（充电、能量流）
+  //   内凹轨道   —— 刻进面板里的凹槽，比平面轨道更像真表
+  //   带刻度轨道 —— 条上直接读数，省掉另摆一排数字
+  //   发光填充   —— 填充体本身发光，夜间可读
+  //   渐变填充   —— 填充带明暗过渡，纯色填充在大屏上偏"塑料"
+  //   5 段 / 20 段 —— 分段粒度：5 段像指针式油表，20 段像 LED 电量条
+  pushImageControls("▬", [
+    { key: "bar_trackglowh", name: "发光轨道(水平)", path: "assets/bar/track-glow-h.png", w: 240, h: 20 },
+    { key: "bar_trackglowv", name: "发光轨道(垂直)", path: "assets/bar/track-glow-v.png", w: 20, h: 240 },
+    { key: "bar_trackinseth", name: "内凹轨道(水平)", path: "assets/bar/track-inset-h.png", w: 240, h: 16 },
+    { key: "bar_trackinsetv", name: "内凹轨道(垂直)", path: "assets/bar/track-inset-v.png", w: 16, h: 240 },
+    { key: "bar_trackticksh", name: "带刻度轨道(水平)", path: "assets/bar/track-ticks-h.png", w: 240, h: 24 },
+    { key: "bar_trackticksv", name: "带刻度轨道(垂直)", path: "assets/bar/track-ticks-v.png", w: 24, h: 240 },
+    { key: "bar_fillglowh", name: "发光填充(水平)", path: "assets/bar/fill-glow-h.png", w: 240, h: 16 },
+    { key: "bar_fillglowv", name: "发光填充(垂直)", path: "assets/bar/fill-glow-v.png", w: 16, h: 240 },
+    { key: "bar_fillgradh", name: "渐变填充(水平)", path: "assets/bar/fill-gradient-h.png", w: 240, h: 16 },
+    { key: "bar_fillgradv", name: "渐变填充(垂直)", path: "assets/bar/fill-gradient-v.png", w: 16, h: 240 },
+    { key: "bar_seg5h", name: "5 段条(水平)", path: "assets/bar/segment-5-h.png", w: 240, h: 20 },
+    { key: "bar_seg5v", name: "5 段条(垂直)", path: "assets/bar/segment-5-v.png", w: 20, h: 240 },
+    { key: "bar_seg20h", name: "20 段条(水平)", path: "assets/bar/segment-20-h.png", w: 240, h: 18 },
+    { key: "bar_seg20v", name: "20 段条(垂直)", path: "assets/bar/segment-20-v.png", w: 18, h: 240 },
+    // 三段色带（绿/黄/红）：**静态的阈值参考**，铺在轨道底下当分区底色。
+    // 与建议 3 的 `bands` 不冲突 —— 那个是按量程算的动态色带（App 侧），
+    // 这个是"印在条上的刻度区"，不需要任何数据。
+    { key: "bar_band3h", name: "三段色带(水平)", path: "assets/bar/band-3-h.png", w: 240, h: 18 },
+    { key: "bar_band3v", name: "三段色带(垂直)", path: "assets/bar/band-3-v.png", w: 18, h: 240 },
+  ]);
+
+  // ---- ③ 单位字与数字符号：**补真实的缺口**，不是加变体
+  //
+  // 单位字素材有 10 种，控件库原来只暴露了 4 种（RPM / km/h / °C / V）——
+  // A（电流）、%（电量/负荷）、bar（增压）、L/100km（油耗）、km（续航）、
+  // ×1000（转速倍率）六种**没有任何入口**，用户只能手摆文字。
+  // 数字块 0~9 都有了，但 `.` / `-` / `%` 三个符号没有 —— 于是
+  // **小数、负数、百分比都拼不出来**（这恰好是电压、油耗、电量最常见的三种读数）。
+  pushImageControls("1", [
+    { key: "img_unita", name: "单位 A", path: "assets/scale/unit-a.png", w: 20, h: 20 },
+    { key: "img_unitpct", name: "单位 %", path: "assets/scale/unit-pct.png", w: 20, h: 20 },
+    { key: "img_unitbar", name: "单位 bar", path: "assets/scale/unit-bar.png", w: 44, h: 20 },
+    { key: "img_unitl100", name: "单位 L/100km", path: "assets/scale/unit-l100.png", w: 92, h: 20 },
+    { key: "img_unitkm", name: "单位 km", path: "assets/scale/unit-km.png", w: 32, h: 20 },
+    { key: "img_unitx1000", name: "单位 ×1000", path: "assets/scale/unit-x1000.png", w: 68, h: 20 },
+    { key: "img_digitdot", name: "小数点块", path: "assets/scale/digit-dot.png", w: 40, h: 56 },
+    { key: "img_digitminus", name: "负号块", path: "assets/scale/digit-minus.png", w: 40, h: 56 },
+    { key: "img_digitpct", name: "百分号块", path: "assets/scale/digit-pct.png", w: 40, h: 56 },
+  ]);
+
+  // ---- ④ 刻度数字的**量程/跳级**变体
+  //
+  // 用途：`nums-arc-9` 是 0~8、`nums-arc-11` 是 0~10，两个都只适合"每格 1 个单位"。
+  // 车上的表几乎不是这样：转速 0~8000 标 0/2/4/6/8，车速标 0/10/20/…/50，
+  // 电量标 0/25/50/75/100。这三个数字行 + 两个弧 + 一个列正好覆盖这几种。
+  pushImageControls("8", [
+    { key: "img_numsarcjump5", name: "数字弧 0/2/4/6/8", path: "assets/scale/nums-arc-jump5.png", w: 220, h: 220 },
+    { key: "img_numsarc5", name: "数字弧 0~4(大号)", path: "assets/scale/nums-arc-5.png", w: 220, h: 220 },
+    { key: "img_numsroweven", name: "数字行 0/2/4/6/8/10", path: "assets/scale/nums-row-even.png", w: 200, h: 36 },
+    { key: "img_numsrowtens", name: "数字行 0/10/…/50", path: "assets/scale/nums-row-tens.png", w: 256, h: 36 },
+    { key: "img_numscolpct", name: "数字列 0/25/…/100", path: "assets/scale/nums-col-pct.png", w: 72, h: 190 },
+  ]);
+
+  // ---- ⑤ 色带刻度（建议 3 的素材侧）
+  //
+  // 用途：**画红区**。这两个素材在仓库里躺了很久、一个控件都没有引用
+  // （`ticks-band` 是"带色带的刻度环"，`ticks-gradient` 是"渐变刻度环"）。
+  // 现在 `bands` 字段还没做（见 CHANGELOG 的评估），在那之前，
+  // 想要"转速表有红区"只能靠这两个素材 —— 接进来至少让这件事**现在就能做**。
+  pushImageControls("◔", [
+    { key: "img_ticksband", name: "色带刻度(红区)", path: "assets/scale/ticks-band.png", w: 240, h: 240 },
+    { key: "img_ticksgrad", name: "渐变刻度", path: "assets/scale/ticks-gradient.png", w: 240, h: 240 },
+  ]);
+
+  // ---- ⑥ 常用图标（建议 6 的 "icon 类小件"）
+  //
+  // 48 个图标素材**一个都没进控件库**。这里只挑 12 个：
+  // 判据是"车机上会跟一个读数/状态一起出现，而且没有更合适的现成控件"。
+  // 例如油量：`lamp_fuel` 是**告警灯**（三态会闪），语义是"该加油了"；
+  // 这里要的是**静态油量图标**（配一个 45% 的读数），两者不能互相替代。
+  //
+  // ⚠️ 剩下 36 个（导航/音乐/电话/空调/GPS/Wi-Fi/蓝牙/USB…）**没接**：
+  //    它们是"车机应用图标"，不是仪表元件；要用的话素材库面板直接拖即可。
+  pushImageControls("◈", [
+    { key: "img_icfuel", name: "图标 油量", path: "assets/icon/fuel.png", w: 44, h: 44 },
+    { key: "img_ictemp", name: "图标 温度", path: "assets/icon/temp.png", w: 44, h: 44 },
+    { key: "img_icbatt", name: "图标 电池", path: "assets/icon/battery.png", w: 44, h: 44 },
+    { key: "img_icoil", name: "图标 机油", path: "assets/icon/oil.png", w: 44, h: 44 },
+    { key: "img_icturbo", name: "图标 涡轮", path: "assets/icon/turbo.png", w: 44, h: 44 },
+    { key: "img_icgear", name: "图标 变速箱", path: "assets/icon/gear.png", w: 44, h: 44 },
+    { key: "img_icodo", name: "图标 里程", path: "assets/icon/odo.png", w: 44, h: 44 },
+    { key: "img_icrange", name: "图标 续航", path: "assets/icon/range.png", w: 44, h: 44 },
+    { key: "img_icclock", name: "图标 时钟", path: "assets/icon/clock.png", w: 44, h: 44 },
+    { key: "img_icgps", name: "图标 GPS", path: "assets/icon/gps.png", w: 44, h: 44 },
+    { key: "img_iccheck", name: "图标 正常", path: "assets/icon/check.png", w: 44, h: 44 },
+    { key: "img_iccross", name: "图标 故障", path: "assets/icon/cross.png", w: 44, h: 44 },
+  ]);
+
+  // ---- ⑦ 严重态灯底（三态灯的第三张底图）
+  //
+  // 用途：19 个指示灯控件用的底图是 `lamp-off`（暗）与 `lamp-warn`（黄），
+  // **`lamp-crit`（红）一个控件都没有**。用户想自己拼一个"严重态"的灯时，
+  // 只能拿 `lamp-warn` 凑 —— 但那是黄的，语义不对。
+  pushImageControls("⚠", [
+    { key: "img_lampcrit", name: "严重态灯底", path: "assets/warning/lamp-crit.png", w: 56, h: 56 },
+  ]);
+
+  // ---- ⑧ 告警条底板（建议 5 的素材侧）
+  //
+  // 用途：`MonitorWarnBar.kt` 在 App 侧会在"轮询暂停"时压一条**非闪烁**的警示条，
+  // 但素材库里没有任何横幅素材（`frame/panel-*.png` 都是 256×256 方板，比例不对）。
+  // 这块 256×56 的底板配一个图标 + 一段文字，就能在设计器里画出同形的告警条。
+  // ⚠️ 底板刻意**不带颜色语义**：三态的颜色交给叠在上面的图标与文字。
+  pushImageControls("▭", [
+    { key: "img_alertbar", name: "告警条底板", path: "assets/frame/alert-bar.png", w: 260, h: 56 },
+  ]);
+
   // ================================================================ 分类（v2.22.0）
   //
   // 40 → 78 个控件平铺在一个网格里已经很难找了。给每个控件定一个 `cat`，
@@ -673,7 +867,14 @@
     [/^g_/, "常用仪表"],
     [/^t_/, "文字"],
     [/^lamp_/, "指示灯"],
-    [/^img_(digit|nums|unit)/, "数字刻度"],
+    // v2.86.0：`ticks` / `seg` 补进来。原来只列了 digit/nums/unit，
+    // 于是 `img_ticks90`（90 格刻度）、`img_seg20`（20 段弧）掉进了「图片 / 底盘」——
+    // 作者本来就打算把"刻度类"分出来（这条规则的存在就是证据），只是前缀枚举漏了。
+    // 这是 `docs/控件库优化建议.md` 建议 8 的第 ② 条，顺手落地。
+    [/^img_(digit|nums|unit|ticks|seg)/, "数字刻度"],
+    // v2.86.0：图标单独一组。12 个 `assets/icon/*` 控件混在 30 多个"底盘/装饰"里
+    // 找不出来，而它们的用途完全不同（小尺寸、跟读数走）。
+    [/^img_ic/, "图标"],
     [/^img_/, "图片 / 底盘"],
     [/^bar_/, "条形轨道"],
     [/^(group|image|text|box)(_|$)/, "容器 / 基础"],
@@ -683,7 +884,7 @@
     c.cat = hitRule ? hitRule[1] : "其它";
   });
   /** 分类的展示顺序（固定，不随 push 顺序变 —— 否则每次改代码组序都会跳） */
-  window.CTRL_CATS = ["仪表样式", "常用仪表", "拼装表", "条形轨道", "文字", "指示灯", "数字刻度", "图片 / 底盘", "容器 / 基础", "其它"];
+  window.CTRL_CATS = ["仪表样式", "常用仪表", "拼装表", "条形轨道", "文字", "指示灯", "数字刻度", "图标", "图片 / 底盘", "容器 / 基础", "其它"];
 
   return list;
 })();
