@@ -69,8 +69,8 @@
 |---|---|---|
 | **主题设计系统怎么设计的** | [`12-主题设计大纲.md`](12-主题设计大纲.md) | **节点树 / 素材 / 状态 / 分辨率 / 编辑器**的架构权威（§2.x 逐条复盘） |
 | 设计文件的**字段**怎么填 | [`13-UI设计指南.md`](13-UI设计指南.md) | ⚠️ 只管 **`icar.ui/1`**（旧格式，仍支持）；**`icar.ui/2` 见大纲 §二** |
-| 工具怎么用 | [`../tools/icarui/README.md`](../tools/icarui/README.md) | 双击 `index.html` 即用，零安装 |
-| 工具改了什么 | [`../tools/icarui/CHANGELOG.md`](../tools/icarui/CHANGELOG.md) | 工具侧迭代日志（v2.89.0） |
+| 工具怎么用 | [`../tools/icarui/README.md`](../tools/icarui/README.md) | **双击 `tools/icarui/start-icarui.cmd`** 即用，零安装（`file://` 直开**已实测功能完整**，见该 README 的「怎么启动」） |
+| 工具改了什么 | [`../tools/icarui/CHANGELOG.md`](../tools/icarui/CHANGELOG.md) | 工具侧迭代日志（v2.90.0） |
 | 控件库里有什么可拖的（176 个）/ 素材多少（359 个） | [`12-主题设计大纲.md`](12-主题设计大纲.md) §2.40 · §2.44 | **数量以构建守卫输出为准** |
 | 控件库该往哪优化 | [`18-控件库优化建议.md`](18-控件库优化建议.md) | 调研报告（建议 1/2 已完成，3~12 待做） |
 | **下一轮要做什么（变量 / 组件）** | [`23-下一步-变量模式与组件变体.md`](23-下一步-变量模式与组件变体.md) | 设计规格，**待评审**；硬约束 App 侧零改动 |
@@ -314,7 +314,7 @@
 > | 项 | 当前实测 | 命令 |
 > |---|---|---|
 > | App 版本 | `1.20.21`（versionCode 90） | `Select-String app/build.gradle.kts -Pattern versionName` |
-> | ICarUI 版本 | `2.89.0` | `tools/icarui/CHANGELOG.md` 首个 `## ` |
+> | ICarUI 版本 | `2.90.0` | `tools/icarui/CHANGELOG.md` 首个 `## ` |
 > | 主源码 Kotlin | **117 文件 / 27,435 非空行** | `(Get-ChildItem app/src/main -Recurse -File -Filter *.kt).Count` |
 > | 测试 Kotlin | **60 文件 / 11,838 非空行** | `(Get-ChildItem app/src/test -Recurse -File -Filter *.kt).Count` |
 > | 素材 PNG / 控件模板 / 内置 PID | **359 / 176 / 40** | `check-build-guard.ps1` 输出 |
