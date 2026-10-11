@@ -18,17 +18,21 @@
 > ⚠️ **上面这张表以前写「文档共六份」** —— 那早就不成立了：`docs/` 下现在有 **25 份** markdown
 > （见 [`README.md`](README.md) 的完整索引）。**只有这 6 份是"主干"，其余按需查阅。**
 >
-> **规模（2026-10-11 v1.20.20 实测）**：`app/src/main` 下 **115 个 Kotlin 文件 / 31,807 非空行**；
-> `app/src/test` 下 **58 个测试文件 / 12,444 非空行**；
+> **规模（2026-10-11 v1.20.21 实测）**：`app/src/main` 下 **117 个 Kotlin 文件 / 27,433 非空行**；
+> `app/src/test` 下 **60 个测试文件 / 11,838 非空行**；
 > **25 个布局 XML**（`layout/` 25 + `layout-land/` 1，其中 `activity_main.xml` 两个方向各一份 → 去重 25）。
 > 复核命令：
 > ```powershell
-> (Get-ChildItem app/src/main -Recurse -File -Filter *.kt).Count          # 115
-> (Get-ChildItem app/src/test -Recurse -File -Filter *.kt).Count          # 58
+> (Get-ChildItem app/src/main -Recurse -File -Filter *.kt).Count          # 117
+> (Get-ChildItem app/src/test -Recurse -File -Filter *.kt).Count          # 60
+> (Get-ChildItem app/src/main -Recurse -File -Filter *.kt |
+>   Get-Content | Where-Object { $_.Trim() -ne '' }).Count                # 27433
 > ```
 > ⚠️ **这些数字会随迭代漂，改完顺手核一遍** —— 见 §4 末尾那条警告。
-> 本文以前记的是「113 个 Kotlin 文件 / 约 30,800 行 / 51 个测试文件 / 10,334 行」（v1.20.15 的数），
-> 以及更早的「112 / 114」来回改的历史，都已被上面的实测取代。
+> ⚠️ **行数一律记「非空行」**（v1.20.21 起）：本文以前记的 31,807 / 12,444 是**含空行**的
+> 数法，两套数法混在一份文档里会让人以为"行数掉了"。
+> 更早的「113 个 Kotlin 文件 / 约 30,800 行 / 51 个测试文件 / 10,334 行」（v1.20.15 的数）
+> 与「112 / 114」那几轮来回改的历史，都已被上面的实测取代。
 
 ---
 
@@ -137,13 +141,15 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `PidDedup.kt` | 186 | **PID 重复判定**（v1.20.12，纯逻辑，可单测）：请求型按 `mode+pid+公式`、监听型按 `报文 ID+位段指纹` | `Duplicate`、**`bitFingerprint(formula)`**、`isMonitor`、`isSameSignal`、`findDuplicates(all)`、`isReferenced`、`removable`、`summary`、**`confirmMessage`** | 🔴 **位段指纹**把 `bit(C,2)` / `bits(A,6,4)` / `bitsAt(18,1,0,0)` / `signed(A)` 都归一成「帧内起始位:长度:字节序:符号 + 系数/偏移」—— 设备上那条真重复（`bitsAt(18,1,0,0)` vs `bit(C,2)`）文字完全不同、指纹相同。⚠️ 认不出的公式**返回 null 并一律判"不重复"**（宁可漏报，误报会删掉真信号）。⚠️ **监听型与请求型不互判**（被动听广播 vs 主动问 ECU）；⚠️ **内置之间不判重复**（内置表是刻意设计的，且永远不给用户删）。⚠️ `confirmMessage` **必须是纯文本**：这一页的 `TextView` 不做 Markdown 渲染，写 `**粗体**` 用户看到的就是星号（v1.20.11 在知识库踩过，有单测钉着） |
 | `AppLog.kt` | 432 | 结构化日志：环形缓冲 + **重复抑制** + 批量落盘 + 有界队列 | `Level`、**`M_*` 模块常量**、**`MODULE_WIDTH`**、`log/v/d/i/w/e`、`size()`、`snapshot/clear/exportText`、`prepareTodayFile`、`Entry.format()` | 🔴 四条自我保护（去重/文件上限/队列有界/批量派发）**不可移除**，见 CHANGELOG v1.3.0。`mainHandler` 是 **lazy** 的（否则 JVM 单测里一碰就抛 `Stub!`）。✅ **v1.20.18 已做等宽对齐**：`Entry.format()` 里模块**左对齐补到 `MODULE_WIDTH = 5`**（时间戳定长 12、级别定长 1，**只有模块列宽度在跳** —— `UI` 2 字符 / `AUDIO` 5 字符，不补的话每行 `[级别]` 与正文都错位；日志行是等宽字体所以补空格真的能对齐）。⚠️ **补位必须放在 `Entry` 的体属性 `moduleCol`（构造时算一次），不许写进 `format()`** —— `format()` 是 `LogAdapter.bind` 的**每行**路径，日志页的性能红线是「**不加任何 per-bind 的分配**」（突发时 UI 派发队列只有 500 格）；放体属性还顺带不进 `equals/hashCode/copy`（既有语义零变化）。⚠️ 超 5 位的模块**不截断**（宁可那一行不对齐，也不把模块名改掉）。⚠️ 这一份**同时是落盘格式**（`appendToFile` 写的也是 `format()`）→ 改它 = 改日志文件的样子（新旧两种行会在同一个文件里并存，见 CHANGELOG v1.20.18 的实测片段）。列下标由 `AppLogFormatTest` 7 条单测钉着 |
 | `CsvRecorder.kt` | 108 | 1Hz 数值记录 | `start/stop/append/files` | 🟢 ⚠️ 表头写的是 **PID 的中文名**，所以**必须先写 `\uFEFF`**（v1.20.7 修）—— 没有 BOM，Windows Excel 会按 ANSI 打开 → 中文列名乱码、**列名认不出来**。BOM 常量在 `SignalTableCsv.BOM` |
-| `AudioPlayer.kt` | 72 | SoundPool 低延迟音效 | `play(name)`、`availableSounds()`、`sounds` 映射表 | 🟢 加音效登记一行 |
+| `SoundPresets.kt` | 99 | **预设音效清单（v1.20.21）**：9 个预设的「机器名 / 给人看的名字 / 分类 / 说明 / `R.raw` 资源」 | `SoundPreset`、`ALL`、`byId`、`labelOf`、`ids`、`grouped` | 🔴 **这张表是"有哪些音效"的唯一权威** —— `AudioPlayer.sounds` 由 `ALL` **推导**（不再手抄第二份 `linkedMapOf`）。加音效 = 改 `tools/gen_sounds.py` + 在这里加一行，**不许**只改一处。⚠️ `label` 会被拼进规则描述（"播放音效 叮咚（双音）"），必须是**能独立成句的中文**（单测扫 `sound1`/纯 ASCII 名）。⚠️ 每个 wav ≤ 20 KB（单测逐个量文件大小） |
+| `RuleAlert.kt` | 81 | **规则动作的可视出口表（v1.20.21）**：`AlertChannel` + 动作类型 → 出口的唯一映射 | `AlertChannel`、`RuleAlertRouting.channelsFor`、`usesIsland`、**`usesSystemToast`**、`islandText`、`messageOf`、`previewText`、`DEFAULT_PREVIEW` | 🔴 **一个动作恰好一个可视出口**（`channelsFor` 返回值长度 ≤ 1，有单测）。这张表是「规则提示弹了两次」的修复产物：`handleAction` 的 `"toast"` 分支原来**同时**调 `toast(msg)`（系统 Toast）与 `emitAlert`（灵动岛）。⚠️ **规则动作一律不许走系统 Toast** —— 系统 Toast 只给编辑器/设置页的"操作反馈"用；`RuleAlertRoutingTest` 里有一条**源码级**用例直接扫 `ObdController.kt` 那个分支 |
+| `AudioPlayer.kt` | 145 | SoundPool 低延迟音效 | `play(name, volume, rate, force)`、`previewSound`（在 `ObdController`）、`availableSounds()`、`sounds`（**由 `SoundPresets.ALL` 推导**） | 🟢 加音效改 `data/SoundPresets.kt`，**不要**在这里手写映射表 |
 
 ### 2.4 `obd/` — 业务核心
 
 | 文件 | 行 | 职责 | 关键符号 | 风险 |
 |---|---|---|---|---|
-| `ObdController.kt` | 442 | **进程级单例门面**，UI 操作车辆的唯一入口 | `Listener`、`init`、`buildTransport`、`setTransportKind`、`setGForceMode`、`connect/disconnect/reconnectLast`、`initializeAndStart`、`handleAction`、`CH_RULE/CH_SERVICE` | 🔴 UI 不得绕过它 |
+| `ObdController.kt` | 663 | **进程级单例门面**，UI 操作车辆的唯一入口 | `Listener`、`init`、`buildTransport`、`setTransportKind`、`setGForceMode`、`connect/disconnect/reconnectLast`、`initializeAndStart`、`handleAction`、**`emitAlert`（规则提示的唯一出口）**、**`toast`（只给编辑器用）**、**`previewSound`/`previewNotification`（▶ 预览）**、`CH_RULE/CH_SERVICE` | 🔴 UI 不得绕过它。🔴 **`handleAction` 的 `"toast"` 分支只能有一个可视出口**（灵动岛）—— v1.20.20 及以前那里同时调了 `toast(msg)` 与 `emitAlert(...)`，用户看到的就是「弹出提示的时候是两个弹出提示」。出口的选择单点在 `data/RuleAlert.kt`，有源码级单测 |
 | `ObdProtocol.kt` | 156 | 纯函数层：初始化序列、hex 解析、**响应→数据字节** | `initSequence`、`PROTOCOLS`、`extractData(raw,mode,pidHex)`、`parse(raw,pid)`、`isError`、`DANGEROUS_MODES`、`isDangerous` | 🔴 `extractData` 是解析命门 |
 | `ElmSession.kt` | 110 | 把串口语义封装成 suspend 调用 | `request(cmd,timeout)`、`initialize(protocol)`、`InitResult`、`raw()` | 🔴 Mutex 是串行化唯一保证 |
 | `ObdEngine.kt` | 157 | 轮询调度 | `activePids`、`start/stop/reload`、`onCycle`、`loop()`、`failStreak/cooldownUntil` | 🟡 不得并发请求 |
@@ -179,7 +185,7 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `RuleFragment.kt` | 96 | 规则列表 + 恢复默认 | — | 🟢 |
 | `LogFragment.kt` | 277 | 日志过滤/跟随开关/导出；UI 刷新合并到 250ms；**v1.20.17 的空态**（`tvLogEmpty`，说清"为什么空 + 下一步"） | `updateStats`、`exportLog`、`uiTick`、**`tvEmpty`/`levelTag`/`moduleFilter`**、**`setPaused`/`rowsBelowBottom`**、`AUTO_PAUSE_ROWS`/`BTN_PAUSE`/`BTN_BACK_TO_BOTTOM` | 🟡 统计必须用 `AppLog.size()`，不要用 `snapshot()`。⚠️ **空态文案一律来自 `data/LogViewText.kt`**（纯函数、可单测），**不要在这一页里拼文案** —— 三种"空"的原因（还没产生 / 级别筛掉 / 模块筛掉）要说不同的话，写死一句"暂无数据"就等于让用户自己猜。⚠️ 空态可见性**只在 `updateStats()` 里翻**（那是 250ms 合并刷新的落点），**不许**挪到 `AppLog.addListener` 里（每条日志都跑 = 撞规格 §4 的性能红线）。✅ **v1.20.18 跟随开关**：`rv` 的 `OnScrollListener` 里**滚离底部 > `AUTO_PAUSE_ROWS`(2) 行就 `paused = true`**（**复用现有 `paused`，不新增状态**），按钮文案跟着变（`暂停滚动` ↔ `回到底部`）。⚠️ **监听器里只许读、不许动**（不滚动 / 不 notify / 不 requestLayout）—— 它和 250ms 的 `uiTick` 抢同一个 RecyclerView。⚠️ **离底部多远必须用行号（`findLastVisibleItemPosition`）算，不许用 `computeVerticalScrollRange - extent - offset` 换算像素**：`LinearLayoutManager` 对长列表的 range 是**按已布局行平均高度外推**的估计值，而行高不等（正文会折行）→ 3000 行时偏差足够大，**贴着底也会被算成"还差几行"→ 一打开日志页就自动暂停、跟随直接失效** |
 | `PidEditorActivity.kt` | 677 | **核心：PID 编辑器 + 在线测试**；**能自己造监听型 PID**（v1.20.8，S3）：`source` / `header` / `invalidRaw` / `minDlc` / `ttlMs` 五个输入口 + **按来源变形**（监听型藏掉 Mode/PID/请求帧/轮询间隔/优先级/多 ECU） | `evaluate()`（→ `PidDraft.build`，**唯一**的校验入口）、**`applySourceUi()`**、`load()`（走 `PidDraft.of`）、`failIssues(r,prefix)`、`runTest()`、`save()`、`bindAutoRequest`、**`fail(row, toast)`**（校验失败：Toast + 警示色 + 滚到可见，v1.20.6） | 🔴 项目核心。⚠️ 校验失败的提示**不能只改结果行的小字** —— 那一行在表单最底下，用户看不到（P10-2 踩过两次）。⚠️ **校验逻辑一律写在 `data/PidDraft.kt`**（纯函数、可 JVM 单测）：写在这个 Activity 里的话，"CAN ID 写错 → 帧永远不命中"这类判定**一条都测不到**。⚠️ **隐藏 ≠ 清空**：切来源只改 `visibility`，输入框里的字还在 → 编辑存量条目、来回切一次、再保存**不会丢值**（有单测 + 装机 md5 证据）。⚠️ 两个测试按钮对监听型**刻意不禁用**（死按钮点不动，用户就学不到"广播帧不能主动请求"） |
-| `RuleEditorActivity.kt` | 478 | 事件规则编辑器（动态条件/动作行） | `addConditionRow`、`addActionRow`、`collect()`、`updatePreview()`、`testNow()`、**`fail(row, toast)`**（v1.20.6） | 🟡 `testNow()` 原来**不校验条件是否配全** —— 空条件时 `testRuleOnce` 返回"不成立"，用户会去怀疑车/信号（v1.20.6 已补） |
+| `RuleEditorActivity.kt` | 551 | 事件规则编辑器（动态条件/动作行）+ **动作行三个按钮（v1.20.21）**：🎵 音效库 / 📁 选文件 / ▶ 预览 | `addConditionRow`、`addActionRow`、`collect()`、`updatePreview()`、`testNow()`、**`fail(row, toast)`**（v1.20.6）、**`showSoundPicker(row)`**、**`showIslandPreview(p1)`**、**`islandPreview`** | 🟡 `testNow()` 原来**不校验条件是否配全** —— 空条件时 `testRuleOnce` 返回"不成立"，用户会去怀疑车/信号（v1.20.6 已补）。⚠️ **▶ 预览用的是本 Activity 自己的 `IslandNotice`**（`MainActivity` 那个挂在别的窗口上，这里看不见），所以 `onDestroy` **必须** `dismissNow()` —— 否则那个 50ms 节拍会一直往主线程投。⚠️ 对话框只 `setTitle` + `setItems`，**不许 `setMessage`**（列表会被整个丢掉） |
 | `ScannerActivity.kt` | 252 | 扫描器 UI + 安全确认 | `startScan`、`applyModeDefaults`、`saveHit` | 🔴 危险模式拦截 |
 | `ThemeEditorActivity.kt` | 388 | **主题编辑器**：顶部实时预览 + 声明式字段行（12 色 + 几何/指针环/辉光） | `ColorField`、`buildFields`、`applyDraft`、`pickColor`、`save/saveAs/persist/delete` | 🟡 内置主题只读，保存会自动转「另存为」 |
 | `SimulatorActivity.kt` | 428 | **模拟信号工具**：分组折叠的单行摘要 + 展开详情（波形缩略图用**真正的 `waveAt`**，预览不可能与实际输出脱节） | `periodSteps`、`noiseSteps`、`buildRows`、`toggle`、`refreshHeader`、**`rangeRow`/`rangeSide`** | 🟡 **`onDestroy` 刻意不停模拟**（它是数据源，应像 OBD 连接一样在界面之外继续跑）。🔴 **v1.20.18：量程 ± 必须走 `ch.withMin(v)` / `ch.withMax(v)` + `SignalSimulator.stepRange()`，绝不许写成 `ch.min = (value ± step).coerceIn(pidMin, pidMax)`** —— 那种写法只保证"每一端各自合法"，两端合起来可以是**空区间**，而 `valueOf` 的空 range 异常会**杀掉进程**（2026-10-11 01:31 实机就是这么崩的） |
@@ -332,7 +338,7 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `layout/dialog_gauge_edit.xml` | 168 | 添加/编辑仪表对话框（含**霓虹档位**与**卡片外框**两个单表覆盖项） | `MaxWidthScrollView` 520dp |
 | `layout/item_*.xml` (6) | 13~68 | 各列表行 | — |
 | `layout/row_condition.xml` | 47 | 规则条件行（动态插入） | — |
-| `layout/row_action.xml` | 52 | 规则动作行（动态插入） | — |
+| `layout/row_action.xml` | 111 | 规则动作行（动态插入）：`spType` + `etP1/P2/P3` + **🎵 `btnPickSound` / 📁 `btnPickAudio` / ▶ `btnPreview` / × `btnRemove`**（v1.20.21） | — |
 
 ### 3.2 值 / 图形 / 其他
 
@@ -345,7 +351,7 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 | `drawable/` (14) | `bg_*`（卡片/输入/仪表格/告警条）、`dot_*`（连接状态点）、`ic_launcher*`、`ic_nav_*`（5 个导航图标） |
 | `menu/bottom_nav.xml` | 底部/侧边导航共用菜单（5 项） |
 | `color/nav_item_color.xml` | 导航项选中/未选中色 |
-| `raw/` (4) | `tick_left.wav` `tick_right.wav` `warn.wav` `beep.wav`（由 `tools/gen_sounds.py` 生成） |
+| `raw/` (9) | 9 个预设音效 wav（**全部由 `tools/gen_sounds.py` 代码合成**，不下载任何外部音频）：`tick_left` `tick_right` `beep` `ding` `dingdong` `success` `fail` `warn` `alert`。清单的权威是 `data/SoundPresets.kt` |
 | `xml/file_paths.xml` | FileProvider 路径（日志/导出分享用） |
 
 ---
@@ -356,7 +362,7 @@ D:/icarobd/   （ASCII 联结 → D:\AI Dsh\车机项目\iCarOBD2）
 |---|---|
 | `settings.gradle.kts` | **阿里云镜像必须保留**，本机 `dl.google.com` 不可达 |
 | `app/build.gradle.kts` | `versionCode` / `versionName` 在这里改；`buildFeatures.buildConfig = true` 必需 |
-| `tools/gen_sounds.py` | 纯标准库生成 4 个 wav 音效，改音色后重跑 |
+| `tools/gen_sounds.py` | 纯标准库（正弦/方波 + 指数包络）合成 9 个 wav 音效 → `res/raw/`。**不下载任何外部音频**（版权干净 + 重跑可复现逐字节相同的文件）。约束：每个文件 ≤ 20 KB（22050Hz/16bit/单声道 = 44 字节/毫秒 → 时长 ≤ 440ms；转向灯咔嗒例外，它要 44100Hz，但只有 55ms）。改音色后重跑 `python tools/gen_sounds.py` |
 | `tools/crop_png.py` | 纯标准库最小 PNG 解码 + 裁剪放大，用于放大截图排查像素级问题（本机无 PIL） |
 | `tools/oncar-check.ps1` | **实车取证脚本**（P0-1~P0-4）：一条命令收齐设备/版本、崩溃与 ANR、GATT 表、AT 命令 TX/RX 与超时、初始化结果、轮询与规则、扫描器日志，并按 GATT 表直接给出判定 |
 | `tools/icarui/tests/verify-crosslang.js` | **跨语言一致性检查**（**159 项**）：从 Kotlin 源码解析常量，与工具逐条比对。改别名/量程/样式/校验文案后必跑。**§3b 闪烁频率红线（v1.20.16）**：两侧 `MIN_BLINK_MS` 逐字一致、`AlertPulse` 直接引用 `NodeState.MIN_BLINK_MS`（不是另写一个数）、没有 200ms 方波残留、没有 `Math.max(60, …)` 残留。**v1.20.19**：加「嵌套深度上限一致（`MAX_NODE_DEPTH`）」，并把 `MAX_NODES` 那条从 `if (常量) eq(...)` 改成"解析不到就是失败"（原来常量被改名/删掉时**整条断言会静默消失**）。**v1.20.20**：把**剩下 4 处同形态**一并修掉（`DEFAULT_SIZE`/`DEFAULT_COLOR`/`NAMES`/`MIN_SIZE` 的 `else note(...)` 分支 + `glowKt` 的静默 `return`），并新增 **`MAX_PARTS`** 与 **`NUMERIC_{NODE,PART,GAUGE}_FIELDS` 三张字段清单**的逐条比对。⚠️ **反向验证过**：临时把 `DEFAULT_SIZE`/`NAMES` 改名 → 套件从 **PASS=153 FAIL=0（绿）** 变成 **PASS=153 FAIL=4（红）**；临时给工具侧 `NUMERIC_NODE_FIELDS` 加一项 → 精确报出两边清单不一致。**v2.83.0 新增两节**：①「状态灯：阈值推断与回退链必须与 App 逐条一致」—— 危险线的「中点」系数 `0.5`、`max > warnAt` 前置条件、比较方向 `>=`、阈值优先级 `stateWarn ?? warnHigh`、**回退链 `critical → warn → normal`**、状态素材为空的兜底；②「`DIFF_NOTES` 不许与 App 源码打架」—— 差异页签的每条说法都与 App 源码绑定（App 源码变了、说法没跟上就红） |
@@ -451,8 +457,8 @@ $ADB exec-out run-as com.icar.obd cat files/log/obd-$(date +%Y%m%d).log
 | 给 PID 编辑器加一个字段（v1.20.8 起） | 三处一起改：`data/PidDraft.kt`（`Fields` + `of()` + `build()` + 校验）→ `res/layout/activity_pid_editor.xml`（控件）→ `ui/PidEditorActivity.kt`（`evaluate()` 读它、`applySourceUi()` 决定对哪一类来源可见）。**校验只写在 `PidDraft` 里**（写在 Activity 里就一条都测不到） |
 | 改"哪些字段对监听型/主动请求型适用" | `ui/PidEditorActivity.applySourceUi()`（只改 `visibility`，**不许清空输入框** —— 隐藏不等于清空，清了就会丢用户的值） |
 | 改探测页"解码显示"的规则 | `data/SignalDecode.kt`（纯函数：`decode` / `text` / `indexByHeader`）→ `ui/CanSnifferActivity.decodeLines/decodeColor/decodeSummary` 负责呈现。**"不可信"的判据必须复用 `PidModels` 的 `dlcTooShort`/`hitsInvalidRaw`**，不要在 `SignalDecode` 里另写一份 |
-| 加一个音效 | wav 放 `res/raw/` + `data/AudioPlayer.kt` 的 `sounds` 表登记一行 |
-| 加一种规则动作类型 | `obd/ObdController.handleAction` + `data/PidModels.kt` 的 `RuleAction.describe()` + `ui/RuleEditorActivity` 的 `actionTypes`/`updateActionHints` |
+| 加一个音效 | ① `tools/gen_sounds.py` 加一条合成 + 重跑（wav 落进 `res/raw/`）→ ② `data/SoundPresets.kt` 的 `ALL` 加一行。`AudioPlayer.sounds` 由 `ALL` **推导**，**不许**再手写第二份映射表（两份表分叉的表现是"编辑器里有这一条、播放器里没有"，选了不响） |
+| 加一种规则动作类型 | `obd/ObdController.handleAction` + `data/PidModels.kt` 的 `RuleAction.describe()` + `ui/RuleEditorActivity` 的 `actionTypes`/`updateActionHints` + **`data/RuleAlert.kt` 的 `channelsFor`**（有可视出口的话）。⚠️ **一个动作恰好一个可视出口** —— 想要"灵动岛 + 系统 Toast 一起弹"是**错的**（那正是 v1.20.21 修掉的故障） |
 | 改内置仪表盘布局 | `data/DashLayout.kt`（**内容**在这里；`ui/dash/DashSpec.kt` 只做"类型 → 列表"的分发） |
 | 加 / 改"一套画布"的字段 | `data/DashCanvas.kt`（字段 + `toJson`/`fromJson`）**并且**在 `Store.snapshotToActiveCanvas` 与 `Store.loadActiveCanvas` **两处都加** —— 只加一处 = 切画布时静默丢设置 |
 | 改画布页的渲染 / 就地编辑 | `ui/dash/DashCanvasPageFragment.kt`（宿主 `ui/DashFragment.kt` 只管翻页与"谁在渲染"的裁决） |

@@ -668,11 +668,16 @@
 | `etP1` | `0dp` × `40dp`（`InputEditMono`，**12sp**，hint "参数1"） | **1.4** | `marginStart 4dp` | 17-27 |
 | `etP2` | 同上，hint "参数2" | **1** | `marginStart 4dp` | 29-39 |
 | `etP3` | 同上，hint "参数3" | **1** | `marginStart 4dp` | 41-51 |
-| `btnPickAudio`（TextButton） | `wrap_content` × `40dp` | — | `paddingStart/End 6dp`；16sp；"📁"；**默认 `gone`** | 53-63 |
-| `btnPreview`（TextButton） | `wrap_content` × `40dp` | — | 同上；"♪" | 65-74 |
-| `btnRemove`（TextButton） | `wrap_content` × `40dp` | — | 同上；"×"，`@color/danger` | 76-86 |
+| `btnPickSound`（TextButton） | `wrap_content` × `40dp` | — | `paddingStart/End 6dp`；16sp；"🎵"；**默认 `gone`**（只对 `sound` 显示） | 53-68 |
+| `btnPickAudio`（TextButton） | `wrap_content` × `40dp` | — | `paddingStart/End 6dp`；16sp；"📁"；**默认 `gone`** | 70-80 |
+| `btnPreview`（TextButton） | `wrap_content` × `40dp` | — | 同上；**"▶"**（v1.20.21 起；原来是 ♪）；对 `sound`/`toast`/`notify` 显示 | 82-98 |
+| `btnRemove`（TextButton） | `wrap_content` × `40dp` | — | 同上；"×"，`@color/danger` | 100-110 |
 
-> 📌 `row_action.xml` 里有 **`etP3`** 和 **`btnPickAudio`**，[UI控件清单.md](UI控件清单.md) 的 id 列表里没有 —— 以本表为准。
+> 📌 `row_action.xml` 里有 **`etP3`**、**`btnPickAudio`**、**`btnPickSound`**、**`btnPreview`**，
+> [UI控件清单.md](UI控件清单.md) 的 id 列表里没有 —— 以本表为准。
+> 📌 **一行最多 8 个控件**（`spType` / 3 个输入框 / 4 个按钮），它们的分工见
+> [`FILE_MAP.md`](FILE_MAP.md) 的 `RuleEditorActivity.kt` 行：🎵 选预设、📁 选文件、
+> ▶ 预览（试听 / 弹一次灵动岛 / 发一条系统通知）。
 
 ---
 

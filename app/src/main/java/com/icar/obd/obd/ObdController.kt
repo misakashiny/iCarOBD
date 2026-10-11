@@ -23,6 +23,7 @@ import com.icar.obd.data.AudioPlayer
 import com.icar.obd.data.CsvRecorder
 import com.icar.obd.data.PidDefinition
 import com.icar.obd.data.RuleAction
+import com.icar.obd.data.RuleAlertRouting
 import com.icar.obd.data.Store
 import java.io.File
 import java.util.concurrent.CopyOnWriteArrayList
@@ -576,10 +577,18 @@ object ObdController {
                 rate = a.p2.toFloatOrNull() ?: 1f
             )
             "toast" -> {
-                val msg = a.p1.ifBlank { rule.name }
+                val msg = RuleAlertRouting.messageOf(a.p1, rule.name)
                 AppLog.i(AppLog.M_RULE, "提示", msg)
-                toast(msg)
-                emitAlert("⚠ $msg")
+                // ⚠️⚠️ **这里只能有一个可视出口**（v1.20.21 修）。
+                //
+                // 原来这里同时有 `toast(msg)` 与 `emitAlert(...)`，两个都真的弹 ——
+                // 用户看到的就是「弹出提示的时候是两个弹出提示」。
+                // 现在出口由 `RuleAlertRouting.channelsFor("toast")` 单点决定 = 只有灵动岛。
+                //
+                // 🔴 **不要再往这里加 `toast(msg)` / `notifyRule(...)`**：
+                //    系统 Toast 只给编辑器用（保存成功、校验失败……），那是"操作反馈"，
+                //    不是"规则提示"。回归测试见 `data/RuleAlertRoutingTest`。
+                emitAlert(RuleAlertRouting.islandText(msg))
             }
             "log" -> AppLog.i(AppLog.M_RULE, a.p1.ifBlank { rule.name })
             "gauge" -> {
@@ -613,15 +622,49 @@ object ObdController {
         }
     }
 
+    /**
+     * 规则提示的**唯一出口**：灵动岛浮层。
+     *
+     * 投递路径：`VehicleBus.emit`（给订阅总线的页面）+ [Listener.onAlert]
+     * → `MainActivity.onAlert` → `ui/view/IslandNotice.show`。
+     *
+     * ⚠️ **别在这里加系统 Toast / 通知** —— 一次规则触发只能有一处提示。
+     * 出口的选择单点在 [RuleAlertRouting]，有单测钉着。
+     */
     fun emitAlert(msg: String) {
         VehicleBus.emit(msg)
         listeners.forEach { runCatching { it.onAlert(msg) } }
     }
 
+    /**
+     * 系统 Toast。
+     *
+     * 🔴 **只给编辑器/设置页用**（保存成功、校验失败、模拟已开启……这类"操作反馈"）。
+     *
+     * **规则动作一个都不许调它** —— v1.20.20 及以前 `handleAction` 的 `"toast"`
+     * 分支同时调了它与 `emitAlert`，用户看到的就是「弹出提示的时候是两个弹出提示」。
+     * 现在这条链只剩灵动岛；回归测试见 `data/RuleAlertRoutingTest`。
+     */
     fun toast(msg: String) {
         android.os.Handler(android.os.Looper.getMainLooper()).post {
             runCatching { Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show() }
         }
+    }
+
+    /**
+     * 「▶ 预览」一条系统通知（规则编辑器的 `notify` 动作行用，v1.20.21）。
+     *
+     * 刻意复用规则真正触发时那条 [notifyRule] —— 否则"预览"与"真弹"长得不一样，
+     * 而这个按钮存在的全部意义就是让用户**当场看到真效果**。
+     *
+     * ⚠️ 只是一次演示：**不落盘、不进规则记录、不触发别的动作**。
+     * 日志用独立文案（`预览系统通知`），免得和规则触发的 `提示` 混在一起 ——
+     * 任务 1 的判据是"触发一次规则，logcat 里只有一条提示记录"。
+     */
+    fun previewNotification(text: String) {
+        val t = text.ifBlank { RuleAlertRouting.DEFAULT_PREVIEW }
+        AppLog.i(AppLog.M_UI, "预览系统通知（不落盘）", t)
+        notifyRule(t)
     }
 
     /**

@@ -19,10 +19,13 @@ import com.icar.obd.data.PidDefinition
 import com.icar.obd.data.PidMerge
 import com.icar.obd.data.Rule
 import com.icar.obd.data.RuleAction
+import com.icar.obd.data.RuleAlertRouting
 import com.icar.obd.data.RuleCondition
+import com.icar.obd.data.SoundPresets
 import com.icar.obd.data.Store
 import com.icar.obd.obd.ObdController
 import com.icar.obd.obd.RuleEngine
+import com.icar.obd.ui.view.IslandNotice
 import java.util.UUID
 
 /**
@@ -35,6 +38,18 @@ import java.util.UUID
  *
  * 「转向灯音效」就是：数据源=左转向信号，操作符=等于，阈值=1，冷却=450ms，动作=播放 tick_left。
  * 想改成「车速>100 且 水温>105 报警」，只是把这两行条件加进去而已。
+ *
+ * ## 动作行的三个按钮（v1.20.21，用户原话「后面也增加个播放键、显示弹出效果啥样」）
+ *
+ * | 按钮 | 只在哪种动作下出现 | 按下去发生什么 |
+ * |---|---|---|
+ * | 🎵 音效库 | `sound` | 打开 [SoundPresets.ALL] 列表（名字说人话），选中即试听 |
+ * | 📁 选文件 | `sound` | SAF 挑一个自己的音频文件（v1.19.18 起） |
+ * | ▶ 预览 | `sound` / `toast` / `notify` | **当场演一次**：试听 / 弹一次灵动岛 / 发一条系统通知 |
+ *
+ * ⚠️ 三个都**不落盘、不进规则记录、不触发别的动作**。
+ * ⚠️ 灵动岛预览用的是**本 Activity 自己**的 [IslandNotice]（`MainActivity` 那个
+ * 挂在别的窗口上，这里看不见），但样式与"不抢触摸"那几条约束是同一套代码。
  */
 class RuleEditorActivity : AppCompatActivity() {
 
@@ -141,6 +156,20 @@ class RuleEditorActivity : AppCompatActivity() {
         updatePreview()
     }
 
+    /**
+     * ⚠️ 必须把预览用的灵动岛收掉（v1.20.21）。
+     *
+     * `IslandNotice` 内部有一个 `Handler.postDelayed` 的节拍（50ms 一次，
+     * 用来判"该收起了"）。Activity 销毁时不摘，那个 Runnable 会**一直**往主线程
+     * 消息队列里投 —— 一个看不见的浮层 + 一条永不停止的心跳。
+     * 与 `MainActivity` 里对 `island` 的处理是同一条理由。
+     */
+    override fun onDestroy() {
+        islandPreview?.dismissNow()
+        islandPreview = null
+        super.onDestroy()
+    }
+
     // ------------------------------------------------------------ 条件行
 
     private fun addConditionRow(c: RuleCondition) {
@@ -233,6 +262,7 @@ class RuleEditorActivity : AppCompatActivity() {
         val btnRemove = row.findViewById<MaterialButton>(R.id.btnRemove)
         val btnPreview = row.findViewById<MaterialButton>(R.id.btnPreview)
         val btnPickAudio = row.findViewById<MaterialButton>(R.id.btnPickAudio)
+        val btnPickSound = row.findViewById<MaterialButton>(R.id.btnPickSound)
 
         // p4（显示名）挂在行上：p1 存的是 URI，人看不懂
         row.tag = a.p4
@@ -247,11 +277,11 @@ class RuleEditorActivity : AppCompatActivity() {
         etP1.setText(a.p1)
         etP2.setText(a.p2)
         etP3.setText(a.p3)
-        updateActionHints(spType.selectedItemPosition, etP1, etP2, etP3, btnPreview, btnPickAudio)
+        updateActionHints(spType.selectedItemPosition, etP1, etP2, etP3, btnPreview, btnPickAudio, btnPickSound)
 
         spType.setOnItemSelectedListener(object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: android.widget.AdapterView<*>?, v: android.view.View?, pos: Int, id: Long) {
-                updateActionHints(pos, etP1, etP2, etP3, btnPreview, btnPickAudio)
+                updateActionHints(pos, etP1, etP2, etP3, btnPreview, btnPickAudio, btnPickSound)
                 updatePreview()
             }
             override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
@@ -265,13 +295,25 @@ class RuleEditorActivity : AppCompatActivity() {
             pendingFileRow = row
             pickAudio.launch(arrayOf("audio/*"))
         }
-        // 试听：**不必先保存规则**，按当前的三个参数立刻播一次（含速率与音量）
+        // 音效库（v1.20.21）：从预设清单里挑，名字说人话
+        btnPickSound.setOnClickListener { showSoundPicker(row) }
+        // ▶ 预览：**不必先保存规则**，按当前这一行立刻演一次效果
+        //   · 音效 → 试听（含速率与音量）
+        //   · 弹提示 → 真的弹一次灵动岛（用当前样式 + 当前文案）
+        //   · 系统通知 → 真的发一条系统通知
+        // ⚠️ 三个都**不落盘、不进规则记录、不触发别的动作**（只是演示）
         btnPreview.setOnClickListener {
-            ObdController.previewSound(
-                etP1.text.toString(),
-                volume = etP3.text.toString().toFloatOrNull() ?: 1f,
-                rate = etP2.text.toString().toFloatOrNull() ?: 1f
-            )
+            val type = actionTypes.getOrNull(spType.selectedItemPosition)?.first ?: "sound"
+            val p1 = etP1.text.toString()
+            when (type) {
+                "sound" -> ObdController.previewSound(
+                    p1,
+                    volume = etP3.text.toString().toFloatOrNull() ?: 1f,
+                    rate = etP2.text.toString().toFloatOrNull() ?: 1f
+                )
+                "toast" -> showIslandPreview(p1)
+                "notify" -> ObdController.previewNotification(p1)
+            }
         }
         etP1.addTextChangedListener(SimpleWatcher { updatePreview() })
         etP2.addTextChangedListener(SimpleWatcher { updatePreview() })
@@ -281,27 +323,104 @@ class RuleEditorActivity : AppCompatActivity() {
         updatePreview()
     }
 
+    // ------------------------------------------------------------ 预览（v1.20.21）
+
+    /**
+     * 编辑器里的灵动岛实例。
+     *
+     * ⚠️ **是本 Activity 自己的**，不是 `MainActivity` 那个 —— 规则编辑器是独立
+     * Activity，`MainActivity` 的浮层挂在它自己的 `android.R.id.content` 上，
+     * 这里根本看不见。所以要"当场看到效果"就得自己挂一个。
+     *
+     * 复用的是**同一个** [IslandNotice]（同一套样式读取、同一套状态机、
+     * 同一个 `IslandCapsuleView`），所以看到的就是真弹出来的样子；
+     * "不抢触摸"那三条硬约束也**自动继承**（`isClickable=false` 等写在胶囊里）。
+     */
+    private var islandPreview: IslandNotice? = null
+
+    /**
+     * 弹一次灵动岛（演示）。
+     *
+     * ⚠️ 刻意**不走** `ObdController.emitAlert`：那条路会 `VehicleBus.emit` +
+     * 通知所有监听者，等于"真的触发了一次规则提示"（会进日志、会进别的页面）。
+     * 这里只动这一个浮层。
+     *
+     * ⚠️ 文案用 [RuleAlertRouting.previewText] / [RuleAlertRouting.islandText]
+     * ——与规则真正触发时**同一套**回退与前缀，否则"预览和真弹的不一样"，
+     * 而这个按钮存在的全部意义就是让用户看到真的长什么样。
+     */
+    private fun showIslandPreview(p1: String) {
+        val notice = islandPreview ?: IslandNotice(this).also { islandPreview = it }
+        findViewById<android.view.ViewGroup>(android.R.id.content)?.let { notice.attach(it) }
+        val text = RuleAlertRouting.previewText(p1, etName.text.toString().trim())
+        notice.show(RuleAlertRouting.islandText(text))
+        AppLog.i(AppLog.M_UI, "预览灵动岛提示（不落盘）", text)
+    }
+
+    /**
+     * 「🎵 音效库」：从 [SoundPresets.ALL] 里挑一个。
+     *
+     * ⚠️ 对话框只 `setTitle` + `setItems`，**不许 `setMessage`** ——
+     * `MaterialAlertDialogBuilder` 同时收到 message 与 setItems 时列表会被整个丢掉
+     * （见 `docs/FILE_MAP.md` 里 `CanvasSettingsFragment` 那条）。
+     *
+     * 选中后**立刻试听**：用户点这一下本来就是想听，再让他去按 ▶ 是多余的。
+     */
+    private fun showSoundPicker(row: View) {
+        val labels = SoundPresets.ALL.map { "${it.label}    ${it.id}\n${it.hint}" }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("选择音效（共 ${SoundPresets.ALL.size} 个预设）")
+            .setItems(labels) { _, which ->
+                val p = SoundPresets.ALL[which]
+                row.findViewById<EditText>(R.id.etP1).setText(p.id)
+                // 选预设 = 不再用自定义文件，把 p4 的显示名清掉
+                //（留着的话规则描述里会挂着上一个文件的名字）
+                row.tag = ""
+                refreshPickButton(row.findViewById(R.id.btnPickAudio), p.id, "")
+                ObdController.previewSound(p.id)
+                AppLog.i(AppLog.M_UI, "已选择预设音效", "${p.id} · ${p.label}")
+                updatePreview()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
     private fun updateActionHints(
         pos: Int,
         p1: EditText,
         p2: EditText,
         p3: EditText,
         preview: MaterialButton,
-        pick: MaterialButton
+        pick: MaterialButton,
+        pickSound: MaterialButton
     ) {
-        // ♪ 与 📁 都只在"播放音效"时有意义 —— 其他类型下显示它们只会让人误点
-        val isSound = actionTypes.getOrNull(pos)?.first == "sound"
-        preview.visibility = if (isSound) android.view.View.VISIBLE else android.view.View.GONE
+        val type = actionTypes.getOrNull(pos)?.first
+        val isSound = type == "sound"
+        // ♪ / 📁 / 🎵 都只在"播放音效"时有意义 —— 其他类型下显示它们只会让人误点
         pick.visibility = if (isSound) android.view.View.VISIBLE else android.view.View.GONE
-        when (actionTypes.getOrNull(pos)?.first) {
+        pickSound.visibility = if (isSound) android.view.View.VISIBLE else android.view.View.GONE
+
+        // ▶ 预览按钮（v1.20.21）：三类"有看得见/听得见的效果"的动作都有它。
+        // `log` / `gauge` / `vibrate` 刻意没有 —— 前两个的效果在日志页和仪表上
+        // （不在这块屏幕上），振动 adb 也验不了，给个按了"没反应"的按钮不如不给。
+        val previewable = type == "sound" || type == "toast" || type == "notify"
+        preview.visibility = if (previewable) android.view.View.VISIBLE else android.view.View.GONE
+        preview.text = "▶"
+
+        when (type) {
             "sound" -> {
                 // 点 📁 选文件后 p1 会变成 content:// URI —— 提示里说清楚两种都行
-                p1.hint = "音效名（或点 📁 选音频文件）"
+                p1.hint = "音效名（或点 🎵 选预设 / 📁 选文件）"
                 p2.hint = "速率 0.5~2"
                 p3.hint = "音量 0~1"
                 if (p1.text.isBlank()) p1.setText("warn")
             }
-            "toast", "log", "notify" -> {
+            "toast" -> {
+                p1.hint = "提示文本（空 = 用规则名）"
+                p2.hint = "(不用)"
+                p3.hint = "(不用)"
+            }
+            "log", "notify" -> {
                 p1.hint = "文本内容"
                 p2.hint = "(不用)"
                 p3.hint = "(不用)"

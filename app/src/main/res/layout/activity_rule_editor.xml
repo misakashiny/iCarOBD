@@ -157,10 +157,15 @@
                 android:layout_height="wrap_content"
                 android:text="则（动作）" />
 
+            <!--
+              v1.20.21：动作行多了 🎵（音效库）与 ▶（预览）。
+              这里必须把三个按钮的分工写清楚 —— 它们都是"点了立刻有效果"，
+              但不写清楚用户会以为 ▶ 是"保存并试跑"。
+            -->
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="动作类型：sound 音效(tick_left/tick_right/warn/beep) · toast 提示 · log 记录 · gauge 仪表变色(参数1=PID,参数2=red/green/yellow) · vibrate 振动 · notify 通知"
+                android:text="动作类型：sound 音效（🎵 选预设 · 📁 选自己的文件 · ▶ 试听） · toast 弹提示（▶ 当场看灵动岛效果） · log 记录 · gauge 仪表变色(参数1=PID,参数2=red/green/yellow) · vibrate 振动 · notify 通知（▶ 预览）"
                 android:textColor="@color/text_dim"
                 android:textSize="10sp" />
 

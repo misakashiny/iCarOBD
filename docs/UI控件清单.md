@@ -279,7 +279,7 @@ View
 | `item_scan_hit.xml` | `tvTitle` `tvRaw` `tvPreview` `btnSave` |
 | `item_log.xml` | `tvLog` |
 | `row_condition.xml` | `spSource` `spOp` `etThreshold` `btnRemove` |
-| `row_action.xml` | `spType` `etP1` `etP2` `btnRemove` |
+| `row_action.xml` | `spType` `etP1` `etP2` `etP3` `btnPickSound` `btnPickAudio` `btnPreview` `btnRemove` |
 
 > ⚠️ **两个 Activity 没有 XML 布局 —— 界面全在代码里建的**，所以它们**没有 `R.id.*` 可查**，
 > 本表（按布局文件组织）覆盖不到：

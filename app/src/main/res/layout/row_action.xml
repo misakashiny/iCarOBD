@@ -50,6 +50,23 @@
         android:minHeight="40dp"
         android:textSize="12sp" />
 
+    <!--
+      音效库（v1.20.21）：从**预设清单**里挑一个（名字说人话）。
+      与右边的 📁（挑自己的音频文件）分工明确 ——
+      之前只有 📁，用户得手打 `tick_left` 这种机器名才用得上预设。
+    -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnPickSound"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="wrap_content"
+        android:layout_height="40dp"
+        android:minWidth="0dp"
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
+        android:text="🎵"
+        android:textSize="16sp"
+        android:visibility="gone" />
+
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnPickAudio"
         style="@style/Widget.Material3.Button.TextButton"
@@ -62,6 +79,13 @@
         android:textSize="16sp"
         android:visibility="gone" />
 
+    <!--
+      ▶ 预览（v1.20.21）：
+        · 音效行 → 试听当前参数（速率/音量一起生效）
+        · 弹提示行 → **真的弹一次灵动岛**（用当前样式 + 当前文案）
+        · 系统通知行 → 真的发一条系统通知
+      文案由 RuleEditorActivity.updateActionHints 按动作类型改写。
+    -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnPreview"
         style="@style/Widget.Material3.Button.TextButton"
@@ -70,7 +94,7 @@
         android:minWidth="0dp"
         android:paddingStart="6dp"
         android:paddingEnd="6dp"
-        android:text="♪"
+        android:text="▶"
         android:textSize="16sp" />
 
     <com.google.android.material.button.MaterialButton

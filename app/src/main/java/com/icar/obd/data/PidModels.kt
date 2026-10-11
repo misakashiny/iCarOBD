@@ -330,8 +330,17 @@ data class RuleAction(
         // 只在**真的设了**的时候才显示参数：默认值（空 = 速率1.0/音量1.0）
         // 拖在每条描述后面纯属噪音，而且"播放音效 tick_left"这条断言是既有契约。
         "sound" -> buildString {
-            // 用户选了文件时显示**文件名**（p4），不显示 content:// URI
-            val shown = if (isAudioFileSpec(p1)) p4.ifBlank { "自定义音频" } else p1
+            // 用户选了文件时显示**文件名**（p4），不显示 content:// URI；
+            // 内置预设显示**给人看的名字**（"叮咚（双音）"而不是 "dingdong"，
+            // v1.20.21）。规则描述是用户读的那一行，"名字说人话"就该落在这里。
+            //
+            // ⚠️ 认不出的名字（用户手打的、或以后删掉的预设）**原样显示** ——
+            // 显示成"未知音效"会让人以为规则坏了，而它其实照样会响（回退 beep）。
+            val shown = if (isAudioFileSpec(p1)) {
+                p4.ifBlank { "自定义音频" }
+            } else {
+                SoundPresets.labelOf(p1) ?: p1
+            }
             append("播放音效 $shown")
             val extra = listOfNotNull(
                 p2.takeIf { it.isNotBlank() }?.let { "速率 $it" },

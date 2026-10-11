@@ -162,7 +162,7 @@ dist/iCarOBD-debug-v1.10.4-android.apk    6.69 MB
 | 结构化日志 | ✅ | 内存环形缓冲 + 按天落盘（保留 7 天）+ 模块/级别过滤 + 导出 |
 | 前台服务 | ✅ | 保活 BLE，通知栏显示状态与采样率 |
 | 自动重连 | ✅ | 掉线后 3s 重试，上限 3 次；用户主动断开不重连 |
-| 音效 | ✅ | SoundPool 低延迟，`tick_left/tick_right/warn/beep` 四个内置音效 |
+| 音效 | ✅ | SoundPool 低延迟，**9 个内置预设**（`tick_left` / `tick_right` / `beep` / `ding` / `dingdong` / `success` / `fail` / `warn` / `alert`），全部由 `tools/gen_sounds.py` **代码合成**；清单权威是 `data/SoundPresets.kt` |
 
 ### 尚未完成 / 未验证（**接手时请优先处理**）
 
@@ -354,8 +354,8 @@ RX: 62 12 34 3A F2                    ← 原始响应
 
 | type | p1 | p2 | 说明 |
 |---|---|---|---|
-| `sound` | 音效名 | — | `tick_left` / `tick_right` / `warn` / `beep`，未登记的名字回退 `beep` 并记日志 |
-| `toast` | 文本 | — | 系统 Toast + 仪表盘顶部告警条 |
+| `sound` | 音效名 | — | 9 个预设之一（`tick_left`/`tick_right`/`beep`/`ding`/`dingdong`/`success`/`fail`/`warn`/`alert`），也可以是 `content://` 音频文件 URI；未登记的名字回退 `beep` 并记日志 |
+| `toast` | 文本 | — | **只弹灵动岛**（v1.20.21 起；v1.20.12 去掉了页面内告警条，v1.20.21 去掉了系统 Toast —— 以前一次弹两个）。出口表在 `data/RuleAlert.kt` |
 | `log` | 文本 | — | 只写日志 |
 | `gauge` | PID id（空=条件源） | 颜色名 | 给仪表染色。颜色：`red/green/yellow/orange/blue/cyan/purple/white/reset`，也支持 `#RRGGBB` |
 | `vibrate` | 时长 ms | — | 振动 |

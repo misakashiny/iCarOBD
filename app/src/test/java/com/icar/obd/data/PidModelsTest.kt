@@ -63,13 +63,23 @@ class PidModelsTest {
 
     @Test
     fun `RuleAction describe 覆盖全部六种动作`() {
-        assertEquals("播放音效 tick_left", RuleAction("sound", "tick_left").describe())
+        // ⚠️ v1.20.21 改了音效那一条的**显示名**：内置预设现在显示给人看的名字
+        // （"左转向咔嗒"）而不是机器名（`tick_left`）—— 用户原话「让名字说人话」。
+        // 契约本身没变（仍然是"播放音效 " + 一个名字），变的是名字从哪来。
+        assertEquals("播放音效 左转向咔嗒", RuleAction("sound", "tick_left").describe())
         assertEquals("弹出提示「水温过高」", RuleAction("toast", "水温过高").describe())
         assertEquals("记录日志「x」", RuleAction("log", "x").describe())
         assertEquals("仪表 p1 变色 red", RuleAction("gauge", "p1", "red").describe())
         assertEquals("仪表 当前 变色 red", RuleAction("gauge", "", "red").describe())
         assertEquals("振动 200ms", RuleAction("vibrate", "200").describe())
         assertEquals("通知「hi」", RuleAction("notify", "hi").describe())
+    }
+
+    @Test
+    fun `音效描述对认不出的名字原样显示`() {
+        // 用户手打的、或以后删掉的预设 —— **不许**显示成"未知音效"：
+        // 它其实照样会响（AudioPlayer 回退 beep），说成未知会让人以为规则坏了。
+        assertEquals("播放音效 myCustomBlip", RuleAction("sound", "myCustomBlip").describe())
     }
 
     @Test

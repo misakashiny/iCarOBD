@@ -3,7 +3,6 @@ package com.icar.obd.data
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.SoundPool
-import com.icar.obd.R
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -12,9 +11,14 @@ import java.util.concurrent.ConcurrentHashMap
  * 转向灯「咔嗒」声对延迟敏感，MediaPlayer 每次起播有几十毫秒延迟，
  * 因此统一走 SoundPool 预加载。
  *
- * 音效名与 res/raw 文件的映射集中在这里；新增音效只需：
- *   1) 把 wav/ogg 放进 app/src/main/res/raw/
- *   2) 在 [SOUNDS] 里登记一行
+ * 音效名与 res/raw 文件的映射**不再写在这里**（v1.20.21）——它从
+ * [SoundPresets.ALL] 推导出来。新增音效只要：
+ *   1) 在 `tools/gen_sounds.py` 里加一条合成 + 重跑脚本（wav 落进 `res/raw/`）
+ *   2) 在 [SoundPresets.ALL] 里加一行
+ *
+ * ⚠️ **不要再手写第二张表**：这里原来是 `linkedMapOf(...)` 手抄一份，
+ * 而"音效清单"同时还要给编辑器的选择对话框用 —— 两份表分叉的表现是
+ * "编辑器里有这一条、播放器里没有"（选了不响），本项目因为"两份权威"栽过四次。
  */
 class AudioPlayer(context: Context) {
 
@@ -30,13 +34,14 @@ class AudioPlayer(context: Context) {
 
     private val ids = ConcurrentHashMap<String, Int>()
 
-    /** 音效名 → raw 资源 id */
-    private val sounds = linkedMapOf(
-        "tick_left" to R.raw.tick_left,
-        "tick_right" to R.raw.tick_right,
-        "warn" to R.raw.warn,
-        "beep" to R.raw.beep
-    )
+    /**
+     * 音效名 → raw 资源 id。
+     *
+     * **由 [SoundPresets.ALL] 推导**（顺序也照它）—— 见类注释。
+     * `associate` 返回的是 `LinkedHashMap`，遍历顺序 = 声明顺序。
+     */
+    private val sounds: Map<String, Int> =
+        SoundPresets.ALL.associate { it.id to it.resId }
 
     /**
      * **用户指定音频文件**的已加载缓存：URI 字符串 → SoundPool id。
