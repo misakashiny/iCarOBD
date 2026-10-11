@@ -433,6 +433,196 @@ data class Rule(
     }
 }
 
+// ---------------------------------------------------------------- 多段色带
+
+/**
+ * **一段色带**（`bands[]` 的一项）。
+ *
+ * 它表达的是"仪表上**画出来**的一段分区"：油量的绿→黄→红、转速表的黄区+红区。
+ * 在此之前只能靠 `warnLow`/`warnHigh` 两个标量表达，颜色写死、最多两段。
+ *
+ * ## ⚠️ 它**不参与报警判定**（这是安全语义，不是观感）
+ *
+ * | | 管什么 |
+ * |---|---|
+ * | [GaugeItem.bands] | **只**管"画出来的分区" |
+ * | `warnLow` / `warnHigh` | **报警判定**（变色 / 爆闪 / 告警条） |
+ *
+ * 让色带顺带改报警行为 = **静默改变存量设计的安全语义**：
+ * "给转速表加个红区参考"会变成"这张表开始报警了"。
+ *
+ * @param from 起点（**量程上的值**，不是比例）。解析时已夹到 `[min, max]`
+ * @param to   终点。恒有 `to > from`（不成立的段在解析时就被丢掉）
+ * @param color ARGB 颜色。**`null` = 没写颜色** → 绘制时回落 [GaugeBand.DEFAULT_COLOR]。
+ *   刻意保留 `null` 而不是填默认值：否则"没写"往返一次会变成"写了"
+ * @param alpha `0..255`。**`null` = 没写** → 绘制时按 [GaugeBand.ALPHA_MAX]（= 不透明）。
+ *   与老红区逐像素一致 —— 老路径不带 alpha，画出来就是不透明的
+ */
+data class GaugeBand(
+    var from: Float = 0f,
+    var to: Float = 0f,
+    var color: Int? = null,
+    var alpha: Int? = null
+) {
+    companion object {
+        /**
+         * 段数上限 / 兜底色 / alpha 范围。
+         *
+         * ⚠️ **不在这里另写一遍数值** —— 它们与 [GaugeItem] 的 `BAND_*` 常量
+         * （以及工具侧 `window.BAND_*`）必须是**同一个数**。
+         * 同一个语义写两遍就是"改一处漏一处"的温床。
+         */
+        const val MAX_BANDS = GaugeItem.MAX_BANDS
+
+        /** 见 [GaugeItem.BAND_DEFAULT_COLOR] */
+        const val DEFAULT_COLOR = GaugeItem.BAND_DEFAULT_COLOR
+
+        /** 见 [GaugeItem.BAND_ALPHA_MIN] / [GaugeItem.BAND_ALPHA_MAX] */
+        const val ALPHA_MIN = GaugeItem.BAND_ALPHA_MIN
+        const val ALPHA_MAX = GaugeItem.BAND_ALPHA_MAX
+
+        /**
+         * 取色带实际用来绘制的颜色（没写颜色 → 回落 [DEFAULT_COLOR]）。
+         *
+         * ⚠️ **不要**在解析时就把默认色填进 [color] —— 那会让"没写"与"写了默认色"
+         * 变成同一个东西，序列化时每个色带都会多出一个 `color` 字段。
+         */
+        fun colorOf(b: GaugeBand): Int = b.color ?: DEFAULT_COLOR
+
+        /** 取色带实际用来绘制的 alpha（没写 → [ALPHA_MAX]，即不透明） */
+        fun alphaOf(b: GaugeBand): Int =
+            minOf(maxOf(b.alpha ?: ALPHA_MAX, ALPHA_MIN), ALPHA_MAX)
+    }
+}
+
+/**
+ * `bands` 的**唯一入口**：解析 / 归一化 / 序列化。
+ *
+ * 规则与工具侧 `window.normalizeBands()`（`tools/icarui/js/schema.js`）**逐条对齐**：
+ *
+ *  1. 不是数组 / 空数组 → **空表**（= 没有色带 = 完全旧行为）
+ *  2. `from`/`to` 取数字，**夹到 `[min, max]`**（量程外写多少都无所谓）
+ *  3. 夹完 `to <= from` 的段**丢掉**（空段/反向段画不出来，留着只会让计数对不上）
+ *  4. `color` **只认 `#RRGGBB`**（大小写都行）；不认的 → `null`（绘制时回落兜底色）
+ *  5. `alpha` 取数字夹到 `[0, 255]` 并取整；没写 → `null`
+ *  6. 最多 [GaugeBand.MAX_BANDS] 段 —— **超出的丢掉**
+ *  7. 全丢光了 → **空表**
+ *
+ * ## 为什么归一化必须集中在这里
+ *
+ * 绘制侧、`fromJson`、`toJson` 都要问"这段画不画 / 什么颜色"。
+ * 各写一遍的结果是"内存里合法、文件里非法"这种状态真的存在过 ——
+ * 而它的症状是**只有某些路径下分区不见了**，最难查。
+ *
+ * ## 为什么缺省是空表而不是 `null`
+ *
+ * 与 [ValueLabels] 同套路：空表**不写进 JSON**，
+ * 所以"老文件再存一次不会凭空多出 `bands` 键"，缺省即完全旧行为。
+ */
+object Bands {
+
+    /** `#RRGGBB`（大小写都认）。与工具侧 `isHexColor` 同一个判据 */
+    private val HEX = Regex("^#[0-9A-Fa-f]{6}$")
+
+    /** 有没有**可用**的色带（空表 = 没有） */
+    fun isUsable(bands: List<GaugeBand>?): Boolean = !bands.isNullOrEmpty()
+
+    /**
+     * 归一化。**所有入口都走它**。
+     *
+     * @param raw 原始色带（可能来自设计文件，**什么都可能是**）
+     * @param min 量程下限
+     * @param max 量程上限
+     */
+    fun normalize(raw: List<GaugeBand>?, min: Float, max: Float): MutableList<GaugeBand> {
+        val out = mutableListOf<GaugeBand>()
+        if (raw.isNullOrEmpty()) return out
+        // ⚠️ 夹取用 `minOf(maxOf(...))` 而**不是** `coerceIn`：
+        // 量程写反了（min > max，手改文件就能造出来）时 `coerceIn` 会**抛异常**
+        // （IllegalArgumentException: Cannot coerce value to an empty range）。
+        // 导入一份坏文件不该让 App 崩 —— 与工具侧 `Math.min(Math.max(a, lo), hi)`
+        // 逐字同构，量程反了就一段都留不下，不报错。
+        for (b in raw) {
+            if (out.size >= GaugeBand.MAX_BANDS) break
+            val a = b.from
+            val z = b.to
+            if (a.isNaN() || a.isInfinite() || z.isNaN() || z.isInfinite()) continue
+            val from = minOf(maxOf(a, min), max)
+            val to = minOf(maxOf(z, min), max)
+            if (to <= from) continue
+            val alpha = b.alpha?.let { minOf(maxOf(it, GaugeBand.ALPHA_MIN), GaugeBand.ALPHA_MAX) }
+            out.add(GaugeBand(from = from, to = to, color = b.color, alpha = alpha))
+        }
+        return out
+    }
+
+    /**
+     * 解析设计文件里的 `bands` 数组。**缺字段 / 坏数据 → 空表**（绝不抛异常）。
+     *
+     * ⚠️ 与 [normalize] 分开是刻意的：解析要处理"这一项根本不是对象 / 字段是字符串"
+     * 这类脏数据，而归一化只处理**已经成形**的 [GaugeBand]。
+     */
+    fun parse(arr: JSONArray?, min: Float, max: Float): MutableList<GaugeBand> {
+        if (arr == null || arr.length() == 0) return mutableListOf()
+        val raw = mutableListOf<GaugeBand>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            // ⚠️ `optDouble` 对"字段不存在"与"值不是数字"都给 NaN ——
+            // 两种情况都该丢掉这一段（与工具侧 `Number.isFinite` 判据同源）
+            val from = o.optDouble("from", Double.NaN).toFloat()
+            val to = o.optDouble("to", Double.NaN).toFloat()
+            if (from.isNaN() || to.isNaN()) continue
+            raw.add(
+                GaugeBand(
+                    from = from,
+                    to = to,
+                    color = parseColor(o.optString("color", "")),
+                    alpha = if (o.has("alpha") && !o.isNull("alpha")) {
+                        o.optDouble("alpha", Double.NaN).takeIf { !it.isNaN() }?.toInt()
+                    } else null
+                )
+            )
+        }
+        return normalize(raw, min, max)
+    }
+
+    /**
+     * 写回 JSON。**空表返回 `null`**（调用方据此决定不写字段）——
+     * 旧版本读不到 `bands` = 没有色带，语义完全一致。
+     *
+     * `color` / `alpha` **只在非 null 时写**：否则"没写"往返一次会变成"写了"。
+     */
+    fun toJson(bands: List<GaugeBand>?): JSONArray? {
+        if (!isUsable(bands)) return null
+        val a = JSONArray()
+        bands!!.forEach { b ->
+            a.put(JSONObject().apply {
+                put("from", b.from.toDouble())
+                put("to", b.to.toDouble())
+                b.color?.let { put("color", hex(it)) }
+                b.alpha?.let { put("alpha", it) }
+            })
+        }
+        return a
+    }
+
+    /**
+     * `#RRGGBB` → ARGB `Int`；**不认的一律 `null`**。
+     *
+     * 不认的颜色**不静默改成兜底色** —— 那样用户看不出自己写错了，
+     * 症状是"我在文件里写的颜色没生效，但也没人告诉我"。
+     * 回落到兜底色是**绘制侧**的事（[GaugeBand.colorOf]）。
+     */
+    fun parseColor(s: String?): Int? {
+        if (s == null || !HEX.matches(s)) return null
+        val rgb = s.substring(1).toLong(16)
+        return (0xFF000000L or rgb).toInt()
+    }
+
+    /** ARGB `Int` → `#RRGGBB`（丢掉 alpha 通道 —— 它由 [GaugeBand.alpha] 单独表达） */
+    fun hex(argb: Int): String = String.format("#%06X", argb and 0x00FFFFFF)
+}
+
 // ---------------------------------------------------------------- 自定义仪表盘
 
 /**
@@ -514,7 +704,24 @@ data class GaugeItem(
      * ⚠️ **指针 / 弧 / 条仍然按数值走**，所以 `min~max` 照常要填对
      * （挡位 0..8 就填 0..8）。映射表只换**读数文本**，不换几何。
      */
-    var valueLabels: MutableList<String> = mutableListOf()
+    var valueLabels: MutableList<String> = mutableListOf(),
+
+    /**
+     * **多段色带**（v2.87.0 工具侧 / v1.20.22 App 侧落地）。
+     *
+     * 它决定仪表上**画出来**的分区（可多段、可带颜色与透明度）。
+     *
+     * ## ⚠️ 三条不能忘的语义
+     *
+     * 1. **它不参与报警判定**。[warnLow] / [warnHigh] 才是报警源 ——
+     *    让色带顺带改报警 = **静默改变存量设计的安全语义**。
+     * 2. **空表 = 完全旧行为**。缺省 / 空数组 / 全非法一律归一成空表，
+     *    绘制走老路径（`warnLow`/`warnHigh`），**老设计文件逐像素不变**。
+     * 3. **空表不写进 JSON** —— 所以老文件再存一次不会凭空多出 `bands` 键。
+     *
+     * 判据全部集中在 [Bands]，与工具侧 `normalizeBands` 逐条对齐。
+     */
+    var bands: MutableList<GaugeBand> = mutableListOf()
 ) {
     /**
      * 由 [fromJson] 置位：这条来自 v1.4.0 及以前「只有 span」的配置，需要跑一次布局迁移。
@@ -552,6 +759,9 @@ data class GaugeItem(
         cardStyle?.let { put("cardStyle", it) }
         // 空表不写进去（旧版本读不到 = 不用映射，语义一致）
         ValueLabels.toJson(valueLabels)?.let { put("valueLabels", it) }
+        // ⚠️ 色带**只在非空时写**（与 valueLabels / cardStyle / neonPreset 同套路）：
+        // 缺省 = 空 = 完全旧行为，老文件再存一次不会凭空多出 `bands` 键
+        Bands.toJson(bands)?.let { put("bands", it) }
     }
 
     companion object {
@@ -586,6 +796,33 @@ data class GaugeItem(
         const val RING_NONE = 0
         const val RING_TICK = 1
 
+        // ---- 多段色带（GaugeItem.bands）----
+        //
+        // ⚠️ 这四个常量与工具侧 `tools/icarui/js/schema.js` 的
+        // `window.MAX_BANDS` / `window.BAND_DEFAULT_COLOR` /
+        // `window.BAND_ALPHA_MIN` / `window.BAND_ALPHA_MAX` **必须逐条一致**，
+        // 由 `tools/icarui/tests/verify-crosslang.js` 钉着。
+        //
+        // 为什么值得单开一条跨语言断言：`bands` 是**两侧各画一遍**的东西
+        // （工具预览 / 真机渲染）。段数上限或颜色口径单边改了，症状是
+        // "工具里看着有 8 段、车上只剩 5 段"或"颜色不一样"——
+        // 两边都不报错，只能靠机器比对。
+
+        /** 最多几段（超出**丢掉**，只警告不报错）—— 与工具侧 `MAX_BANDS` 同一个数 */
+        const val MAX_BANDS = 8
+
+        /**
+         * 色带没写颜色时的兜底色 `#FF4D4F` —— 与老红区**同一个红**。
+         *
+         * ⚠️ 写成 `0xFFFF4D4F.toInt()` 而不是 `0xFFFF4D4F`：后者在 Kotlin 里是 `Long`。
+         * 工具侧写的是 `"#FF4D4F"`，`verify-crosslang.js` 比的是**同一个色**（大小写归一）。
+         */
+        const val BAND_DEFAULT_COLOR = 0xFFFF4D4F.toInt()
+
+        /** alpha 取值范围（与节点 `alpha` / `card.alpha` 同一套口径：0..255） */
+        const val BAND_ALPHA_MIN = 0
+        const val BAND_ALPHA_MAX = 255
+
         // ---- 卡片外观覆盖（GaugeItem.cardStyle）----
         /** 跟随主题（= `cardStyle` 为 null 时的行为） */
         const val CARD_THEME = 0
@@ -612,12 +849,15 @@ data class GaugeItem(
             o.optJSONArray("extraPids")?.let { a ->
                 for (i in 0 until a.length()) extras.add(a.optString(i))
             }
+            // 量程先解析：色带的夹取范围就是它（与工具侧 `normalizeBands(bands, min, max)` 同口径）
+            val minV = o.optDouble("min", 0.0).toFloat()
+            val maxV = o.optDouble("max", 100.0).toFloat()
             return GaugeItem(
                 pidId = o.optString("pid"),
                 extraPids = extras,
                 style = o.optInt("style", STYLE_CIRCLE),
-                minVal = o.optDouble("min", 0.0).toFloat(),
-                maxVal = o.optDouble("max", 100.0).toFloat(),
+                minVal = minV,
+                maxVal = maxV,
                 warnLow = if (o.has("warnLow")) o.optDouble("warnLow").toFloat() else null,
                 warnHigh = if (o.has("warnHigh")) o.optDouble("warnHigh").toFloat() else null,
                 color = o.optInt("color", -1),
@@ -633,7 +873,9 @@ data class GaugeItem(
                 // 旧文件没有这个字段 → null = 跟随主题（与旧行为完全一致，无需迁移）
                 cardStyle = if (o.has("cardStyle")) o.optInt("cardStyle", CARD_THEME) else null,
                 // 缺字段 / 空数组 → 空表 = 不用映射（旧文件行为完全不变）
-                valueLabels = ValueLabels.parse(o.optJSONArray("valueLabels"))
+                valueLabels = ValueLabels.parse(o.optJSONArray("valueLabels")),
+                // 缺字段 / 空数组 / 全非法 → 空表 = 不画分区 = 完全旧行为
+                bands = Bands.parse(o.optJSONArray("bands"), minV, maxV)
             ).also { it.legacyGrid = !hasLayout }
         }
     }

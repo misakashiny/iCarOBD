@@ -5,6 +5,8 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.util.AttributeSet
+import com.icar.obd.data.Bands
+import com.icar.obd.data.GaugeBand
 
 /**
  * 横向条形表。信息密度最高，适合「一屏放多个次要指标」的场景。
@@ -19,6 +21,14 @@ class BarGaugeView @JvmOverloads constructor(
     private val barRect = RectF()
     private val barPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val markPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+
+    /**
+     * 画色带分区用的画笔。**复用**（`onDraw` 里不许 new Paint）。
+     *
+     * 与 [markPaint] 分开：那个是描边（阈值竖线），这个是填充（色带块），
+     * 混用会让 `style` 互相打架 —— 症状是"某一帧起阈值线变成了色块"。
+     */
+    private val bandPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     private val labelPaint = newTextPaint(1f, cLabel)
     private val valuePaint = newTextPaint(1f, cValue, true)
@@ -65,6 +75,38 @@ class BarGaugeView @JvmOverloads constructor(
         val barY = h - barH - dp(8f)
         barRect.set(dp(10f), barY, w - dp(10f), barY + barH)
         neon.roundRect(canvas, barRect, barH / 2f, cTrack)
+
+        // 分区（多段色带）：**有 `bands` 就逐段画在轨道上**。
+        //
+        // ⚠️ 画在**填充之下**（与工具侧 style 2 同一个取舍）。理由：
+        // 条上的填充是**主读数**（"现在是多少"），分区是**参考**（"红线在哪"）。
+        // 分区压在填充上会把它整段盖住 —— 50% 的油量条会显示成"整条红"，
+        // 读数直接消失。压在下面则两件事同时看得见。
+        //
+        // 圆角端头靠 `clip` 保住（不裁的话方块会盖住胶囊两头，看着像被啃了）。
+        //
+        // ⚠️ 这一段**只决定画什么分区**，不参与报警判定（报警源始终是
+        // `warnLow`/`warnHigh`）。没有 `bands` 时这里**什么都不画** ——
+        // 老设计（只有两条阈值竖线）逐像素不变。
+        val bands = Bands.normalize(item.bands, item.minVal, item.maxVal)
+        if (bands.isNotEmpty()) {
+            val bspan = item.maxVal - item.minVal
+            canvas.save()
+            canvas.clipRect(barRect)
+            val bPaint = bandPaint
+            for (z in bands) {
+                val t0 = ((z.from - item.minVal) / bspan).coerceIn(0f, 1f)
+                val t1 = ((z.to - item.minVal) / bspan).coerceIn(0f, 1f)
+                val x0 = dp(10f) + (w - dp(20f)) * t0
+                val x1 = dp(10f) + (w - dp(20f)) * t1
+                if (x1 - x0 <= 0f) continue
+                bPaint.color = GaugeBand.colorOf(z)
+                bPaint.alpha = GaugeBand.alphaOf(z)
+                canvas.drawRect(x0, barY, x1, barY + barH, bPaint)
+            }
+            bPaint.alpha = 255
+            canvas.restore()
+        }
 
         // 用缓动后的显示值，避免 5Hz 数据到达时条长一跳一跳
         val r = shownRatio()

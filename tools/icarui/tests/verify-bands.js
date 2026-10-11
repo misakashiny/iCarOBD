@@ -21,9 +21,11 @@
    `schema.js` / `model.js` / `validate.js` / `spring.js` / `presets.js` 都是纯函数，
    放进 vm 沙箱就能跑。
 
-   ⚠️ **App 侧这一轮没做**。`BAND_*` 常量只有工具侧有，
-   所以 `verify-crosslang.js` 里那条"两侧逐条一致"**故意没加**（加了必红）。
-   见 CHANGELOG v2.87.0「App 侧待办」。
+   ⚠️ **App 侧 v1.20.22 已落地**（`GaugeItem.bands` / `Bands` / 两个视图按段画）。
+   落地时**同时**补上了 `verify-crosslang.js` 里那 4 个 `BAND_*` 常量的跨语言断言 ——
+   v2.87.0 当时**故意没加**（App 侧还没有这些常量，加了必红）。
+   本文件第 0 节那条断言现在**反过来**守着它：跨语言比对里**必须**有 `MAX_BANDS`，
+   谁把那 4 条删了，这里就红。
    ========================================================================== */
 "use strict";
 
@@ -110,16 +112,22 @@ const canon = o => JSON.stringify(deep(o));
 
 // ================================================================ 0. 常量
 
-console.log("=== 0. 常量（App 侧做完后要在 verify-crosslang.js 里逐条钉住）===");
+console.log("=== 0. 常量（两侧在 verify-crosslang.js 里逐条钉住）===");
 eq(W.MAX_BANDS, 8, "`MAX_BANDS` = 8（段数上限）");
 eq(W.BAND_DEFAULT_COLOR, "#FF4D4F", "`BAND_DEFAULT_COLOR` = `#FF4D4F`（与老红区同一个红）");
 eq(W.BAND_ALPHA_MIN, 0, "`BAND_ALPHA_MIN` = 0");
 eq(W.BAND_ALPHA_MAX, 255, "`BAND_ALPHA_MAX` = 255（与节点 `alpha` / `card.alpha` 同一套口径）");
-// 这三个常量**故意**还没进跨语言比对（App 侧没做，加了必红）
+// ⚠️ 这一条**反过来**守着 v2.87.0 留下的尾巴（CHANGELOG「App 侧待办」第 2 条）：
+// 工具侧当时**故意没加**跨语言断言（App 侧还没有这些常量，加了必红）。
+// App 侧落地（v1.20.22）之后，`verify-crosslang.js` **必须**补上那 4 个常量 ——
+// 所以这里从"还没有 MAX_BANDS"翻成"必须有"，防止那条断言又被谁顺手删掉。
 const crossSrc = read(path.join(STUDIO, "tests", "verify-crosslang.js"));
-ok(crossSrc.indexOf("MAX_BANDS") < 0,
-  "**跨语言比对里还没有 `MAX_BANDS`**（App 侧没做之前加它必红；做完必须补）");
-ok(/App 侧待办|App 侧做完/.test(read(path.join(STUDIO, "CHANGELOG.md"))),
+ok(crossSrc.indexOf("MAX_BANDS") >= 0,
+  "**跨语言比对里已经有 `MAX_BANDS`**（App 侧 v1.20.22 落地后必须补，不许再欠着）");
+ok(crossSrc.indexOf("BAND_DEFAULT_COLOR") >= 0 && crossSrc.indexOf("BAND_ALPHA_MIN") >= 0 &&
+  crossSrc.indexOf("BAND_ALPHA_MAX") >= 0,
+  "跨语言比对里 4 个 `BAND_*` 常量都钉住了（少一个就是新的跨语言分叉）");
+ok(/App 侧待办|App 侧做完|App 侧落地/.test(read(path.join(STUDIO, "CHANGELOG.md"))),
   "CHANGELOG 里记着「App 侧待办」（补 crosslang 断言那条尾巴没丢）");
 
 // ================================================================ 1. normalizeBands

@@ -539,6 +539,46 @@ console.log("\n=== 4b. 字体枚举（v2 新增，跨语言契约）===");
     eq(JSON.stringify(toolList), JSON.stringify(kList), `${name} 逐条一致（名字与顺序）`);
   });
 
+  // ---- 多段色带 `bands` 的 4 个常量（v1.20.22 App 侧落地时补上）---------------
+  //
+  // ⚠️ **这一节是 v2.87.0 故意留下的尾巴**（CHANGELOG「App 侧待办」第 2 条）：
+  // 工具侧 v2.87.0 就落地了 `bands`，App 侧当时没有这些常量 ——
+  // 那时候加这条断言**必红**（单边常量），所以先欠着，
+  // 由 `verify-bands.js` 反过来守着"跨语言比对里还没有 MAX_BANDS"。
+  //
+  // App 侧落地之后这条必须补上，否则就是**新的跨语言分叉**：
+  // 段数上限 / 兜底色 / alpha 口径单边改了，症状是
+  // "工具里看着有 8 段、车上只剩 5 段"或"同一个色带两边颜色不一样"——
+  // **两边都不报错**，只能靠机器比对发现。
+  //
+  // 判据与上面几张清单同一套路：先断言"解析到了"，再逐条比 ——
+  // 常量被改名/删掉时 `eq(null, null)` 会**静默通过**，那正是本仓库最恨的形态。
+  const kBands = [
+    ["MAX_BANDS", tool.MAX_BANDS, kotlinConstAny(pidModelsKt, "MAX_BANDS")],
+    ["BAND_ALPHA_MIN", tool.BAND_ALPHA_MIN, kotlinConstAny(pidModelsKt, "BAND_ALPHA_MIN")],
+    ["BAND_ALPHA_MAX", tool.BAND_ALPHA_MAX, kotlinConstAny(pidModelsKt, "BAND_ALPHA_MAX")],
+  ];
+  kBands.forEach(([name, toolVal, kVal]) => {
+    ok(toolVal !== null && toolVal !== undefined, `工具侧 ${name} 有值（${JSON.stringify(toolVal)}）`);
+    ok(kVal !== null, `从 PidModels.kt 解析到 ${name}（${kVal}）`);
+    eq(toolVal, kVal, `${name} 逐字一致（PidModels.kt vs schema.js）`);
+  });
+
+  // 兜底色：工具侧是 `"#FF4D4F"` 字符串，App 侧是 `0xFFFF4D4F.toInt()` 的 ARGB Int。
+  // **不能直接比字面量**（一个是字符串一个是数字），要归一成同一个色值再比 ——
+  // 直接比会报假失败，而"为了消红改成写死同一个字符串"就把这条断言变成摆设了。
+  const kDefaultColorRaw = /const val BAND_DEFAULT_COLOR\s*=\s*0x([0-9A-Fa-f]+)/.exec(pidModelsKt);
+  ok(kDefaultColorRaw !== null,
+    `从 PidModels.kt 解析到 BAND_DEFAULT_COLOR（${kDefaultColorRaw ? "0x" + kDefaultColorRaw[1] : "解析失败"}）`);
+  const kDefaultColor = kDefaultColorRaw
+    // 丢掉 alpha 高两位，只留 #RRGGBB —— 与工具侧的字符串同一个口径
+    ? "#" + kDefaultColorRaw[1].slice(2).toUpperCase()
+    : null;
+  ok(typeof tool.BAND_DEFAULT_COLOR === "string" && /^#[0-9A-Fa-f]{6}$/.test(tool.BAND_DEFAULT_COLOR),
+    `工具侧 BAND_DEFAULT_COLOR 是 #RRGGBB（${tool.BAND_DEFAULT_COLOR}）`);
+  eq(kDefaultColor, String(tool.BAND_DEFAULT_COLOR).toUpperCase(),
+    "BAND_DEFAULT_COLOR 是同一个色（App 的 ARGB Int 已归一成 #RRGGBB）");
+
   // 缩放模式
   const dfKt = read(path.join(KOTLIN, "data", "DesignFile.kt"));
   const kScales = ["SCALE_STRETCH", "SCALE_FIT", "SCALE_FILL"]

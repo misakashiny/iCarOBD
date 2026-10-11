@@ -5,6 +5,8 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.util.AttributeSet
+import com.icar.obd.data.Bands
+import com.icar.obd.data.GaugeBand
 import com.icar.obd.data.GaugeItem
 
 /**
@@ -78,22 +80,49 @@ class CircularGaugeView @JvmOverloads constructor(
         // ---------------------------------------------------------- 1) 底轨 + 危险区
         neon.arc(canvas, arcRect, startAngle, sweep, cTrack, stroke)
 
-        // 危险区：warnHigh 到 maxVal 那一段底轨用暗红标出来，
-        // 这样开车时能**提前**看到"还有多远到红线"，而不是超了才知道
-        val warnAt = item.warnHigh
+        // 危险区 / 色带：**有 `bands` 就逐段画，没有才走老路径**（`warnHigh`）。
+        //
+        // ⚠️ 这里画的是**分区**，与报警判定无关 —— 报警（变色 / 爆闪）由
+        // `BaseGaugeView.alertLevel` 单独判，来源始终是 `warnLow`/`warnHigh`。
+        // 让色带顺带改报警 = 静默改变存量设计的安全语义。
+        //
+        // 绘制顺序**刻意保持原样**（分区在数值弧之前）：老路径的像素一个都不动。
+        // 工具侧 v2.88.0 把顺序调成了"分区在上"（红区不被进度弧盖住），
+        // 那是**另一件事**，会动到所有存量红区的像素，需要单独一轮 + 拍板。
         val span = item.maxVal - item.minVal
-        if (warnAt != null && span > 0f && warnAt > item.minVal) {
-            val zoneStart = ((warnAt - item.minVal) / span).coerceIn(0f, 1f)
-            val zoneSweep = sweep * (1f - zoneStart)
-            if (zoneSweep > 1f) {
-                // 危险区自己也随爆闪变亮，但底色始终可见
-                val zoneColor = AlertPulse.mix(
-                    AlertPulse.alpha(cDanger, 90),
-                    AlertPulse.alpha(cDanger, 220),
+        val warnAt = item.warnHigh
+        // 一次算好：绘制与刻度取色都要用（`zoneSegments()` 每次都会归一化一遍）
+        val zones = zoneSegments()
+        for (z in zones) {
+            val zoneStart = ((z.from - item.minVal) / span).coerceIn(0f, 1f)
+            val zoneEnd = ((z.to - item.minVal) / span).coerceIn(0f, 1f)
+            val zoneSweep = sweep * (zoneEnd - zoneStart)
+            if (zoneSweep <= 1f) continue
+            // 颜色：色带自带的色（没写就回落老红区那个红）。
+            // ⚠️ 必须走 `GaugeBand.colorOf` 而不是 `z.color ?: cDanger`：
+            // 老路径那一段的 `color` 是 `null`，要回落成 `cDanger`；
+            // 而 `bands` 带来的段也允许不写颜色（同一个兜底语义）。
+            // 老路径（color = null → cDanger）仍然随爆闪变亮，底色始终可见 —— 行为不变
+            val base = GaugeBand.colorOf(z)
+            // 色带自己的 alpha 是**倍率**（0..255 / 255）—— 与工具侧 `zoneAlpha()` 同口径。
+            //
+            // ⚠️ 必须在 `AlertPulse.mix()` **之后**再上 alpha：`mix` 的返回值
+            // 把 alpha 写死成 0xFF（它只混 RGB），所以"先 alpha 再 mix"等于没上 ——
+            // 症状是"给色带写了 alpha 但车上一点不变"，而且**不报错**。
+            //
+            // 没写 alpha 的段（老路径那一段恒为 null）倍率 = 1.0，于是
+            // `alpha(mix(d90, d220, tint), 220)` 与老代码的 `mix(..., tint)` **逐位相同**
+            // —— 存量红区的像素一个都不动。
+            val zf = GaugeBand.alphaOf(z) / 255f
+            val zoneColor = AlertPulse.alpha(
+                AlertPulse.mix(
+                    AlertPulse.alpha(base, 90),
+                    AlertPulse.alpha(base, 220),
                     tint
-                )
-                neon.arc(canvas, arcRect, startAngle + sweep * zoneStart, zoneSweep, zoneColor, stroke)
-            }
+                ),
+                (220 * zf).toInt()
+            )
+            neon.arc(canvas, arcRect, startAngle + sweep * zoneStart, zoneSweep, zoneColor, stroke)
         }
 
         // ---------------------------------------------------------- 2) 数值弧
@@ -116,6 +145,12 @@ class CircularGaugeView @JvmOverloads constructor(
         }
 
         // ---------------------------------------------------------- 3) 刻度
+        //
+        // ⚠️ **这一段本版一个字没改** —— 刻度仍然只看 `warnHigh`（不看 `bands`）。
+        // 理由：它是**存量像素**的一部分，动它就会让"没有 `bands` 的老设计"
+        // 之外的东西也变；而"有 `bands` 时刻度要不要跟着分段上色"是个**观感决定**，
+        // 得单独拍板（本版的边界是"让 App 认得 `bands`"，不是重新设计盘面）。
+        // 记账见 CHANGELOG v1.20.22「遗留」。
         for (i in 0..20) {
             val major = i % 2 == 0
             val frac = i / 20f
@@ -226,6 +261,36 @@ class CircularGaugeView @JvmOverloads constructor(
         mp.textAlign = Paint.Align.RIGHT
         canvas.drawText(trim(item.maxVal), w - dp(6f), labelY, mp)
         mp.textAlign = Paint.Align.CENTER
+    }
+
+    /**
+     * 这一段分区要画哪几段色带（**按段的 from/to，不是按比例**）。
+     *
+     * ## 判据（与工具侧 `gaugeDialOpts()` 逐条对齐）
+     *
+     * | 情况 | 结果 |
+     * |---|---|
+     * | `bands` 非空 | **只用它** —— 逐段画，`warnLow`/`warnHigh` **不参与绘制** |
+     * | `bands` 空 | 回落到老路径：`warnHigh → maxVal` **一段**（老红区） |
+     *
+     * ⚠️ 老路径**刻意只有 `warnHigh` 一段**：App 侧的圆表历史上就只画这一段
+     * （`warnLow` 只影响变色，不画分区）。保持原样 = 存量设计的像素一个都不动。
+     *
+     * ⚠️ **两条路都只决定"画什么"**，谁也不改报警判定（那是 `warnLow`/`warnHigh`
+     * 在 [BaseGaugeView.updateMulti] 里的事）。
+     *
+     * ## 为什么在 onDraw 里现算而不缓存
+     *
+     * `bands` 只有 `bind()` 时才会换（换表 / 换页），而这里每帧最多分配一个
+     * 长度 ≤ [GaugeBand.MAX_BANDS] 的小列表。用 `var` 缓存就得在 `bind()` 里
+     * 记得失效 —— 那种"忘了清缓存"的 bug 症状是"改了设计但表上还是老分区"，
+     * 而它不报错。现算的代价（一个 8 元素列表）远小于那个风险。
+     */
+    private fun zoneSegments(): List<GaugeBand> {
+        val usable = Bands.normalize(item.bands, item.minVal, item.maxVal)
+        if (usable.isNotEmpty()) return usable
+        val w = item.warnHigh ?: return emptyList()
+        return listOf(GaugeBand(from = w, to = item.maxVal))
     }
 
     /**

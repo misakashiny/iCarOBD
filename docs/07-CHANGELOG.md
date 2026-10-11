@@ -142,6 +142,227 @@ powershell -ExecutionPolicy Bypass -File tools\run-all.ps1
 
 ---
 
+## v1.20.22 · 2026-10-11 · 🎨 落地 `bands`（多段色带）的 **App 侧** —— 工具侧 v2.87.0 已落地、App 侧一直不认（**静默失效**）+ 补上工具侧**故意欠下**的跨语言断言 + `11-仪表框架.md` 的 LVGL 两节加警示行
+
+> 这一版做的是 v2.87.0（工具侧）与 v1.20.21 的 CHANGELOG（格式变更登记）里**逐条写明的 App 侧待办**。
+> 工具侧细节见 [`../tools/icarui/CHANGELOG.md`](../tools/icarui/CHANGELOG.md) v2.87.0，
+> 契约见 [`12-主题设计大纲.md`](12-主题设计大纲.md) §2.116 / §2.117。
+
+**问题**：工具侧 v2.87.0 就能在设计文件里写 `bands`（任意多段色带），
+而 App 侧 `GaugeItem` 只有 `warnLow`/`warnHigh` 两个标量 —— **读不懂这个字段**。
+后果不是报错，是**设备上少画分区**：用户在工具里精心画的"转速黄区 + 红区"
+推到车上**一片都没有**，而**没有任何一条日志、任何一个警告**说这件事。
+这正是本项目最恨的形态（静默失效）。
+
+### ① 数据层：`GaugeBand` + `Bands`（`data/PidModels.kt`）
+
+| 新增 | 说明 |
+|---|---|
+| `data class GaugeBand(from, to, color?, alpha?)` | 一段色带。`color` 是 ARGB `Int?`、`alpha` 是 `Int?` —— **没写就是 `null`，不填默认值** |
+| `object Bands` | `bands` 的**唯一入口**：`normalize` / `parse` / `toJson` / `parseColor` / `hex` / `isUsable` |
+| `GaugeItem.bands` | 新字段（缺省 = 空表） |
+| `GaugeItem` 的 `BAND_*` 常量 | `MAX_BANDS` / `BAND_DEFAULT_COLOR` / `BAND_ALPHA_MIN` / `BAND_ALPHA_MAX` |
+
+**规则与工具侧 `window.normalizeBands()` 逐条对齐**（这是"两侧各画一遍"的东西，
+单边改了症状是"工具里 8 段、车上只剩 5 段"，**两边都不报错**）：
+
+| 规则 | 值 |
+|---|---|
+| 不是数组 / 空数组 | → **空表**（= 没有色带 = 完全旧行为） |
+| `from`/`to` | 取数字，**夹到 `[min, max]`**；夹完 `to <= from` 的段**丢掉** |
+| `color` | **只认 `#RRGGBB`**（大小写都行）；不认的 → `null`（绘制时回落兜底色） |
+| `alpha` | 取数字夹 `[0, 255]` 取整；没写 → `null`（绘制时按 255） |
+| 段数 | 最多 `MAX_BANDS = 8`，**超出的丢掉** |
+| 序列化 | **只在非空时写**；`color`/`alpha` **只在非 null 时写** |
+
+⚠️ **夹取用 `minOf(maxOf(…))` 而不是 `coerceIn`**：量程写反了（`min > max`，手改文件就能造出来）
+时 `coerceIn` 会**抛 `IllegalArgumentException: Cannot coerce value to an empty range`** ——
+导入一份坏文件直接崩。与工具侧 `Math.min(Math.max(a, lo), hi)` 逐字同构（有专门一条用例钉着）。
+
+### ② 绘制层：有 `bands` 就逐段画，没有走老路径
+
+| 文件 | 改了什么 |
+|---|---|
+| `ui/view/CircularGaugeView.kt` | 新增 `zoneSegments()`：**`bands` 非空 → 只用它逐段画**；空 → 回落老路径 `warnHigh → maxVal` **那一段**。按段取色 + 按段透明度 |
+| `ui/view/BarGaugeView.kt` | 新增 `bandPaint`（与描边用的 `markPaint` **分开**，混用会让 `style` 互相打架）；`bands` 非空 → 按比例画在轨道上，**画在填充之下**，圆角端头靠 `clipRect` 保住。**没有 `bands` 时这一段什么都不画** |
+
+**两处刻意的取舍**：
+
+1. **圆表的绘制顺序保持原样**（分区在数值弧**之前**）。工具侧 v2.88.0 把顺序调成了
+   "分区在上"（值进红区时红区不被进度弧盖住）—— 那是**另一件事**，会动到
+   **所有存量红区的像素**（见 §2.117），需要单独一轮 + 拍板。本版**只做"App 侧认这个字段"**，
+   不动存量像素。
+2. **条形表的分区画在填充之下**（与工具侧 style 2 同一取舍）：条上的填充是**主读数**，
+   分区压在它上面会把读数整段盖住（50% 的油量条会显示成"整条红"）。
+
+⚠️ **一个真踩到的坑**：`AlertPulse.mix()` 的返回值**把 alpha 写死成 `0xFF`**（它只混 RGB）。
+所以色带的 `alpha` 必须在 `mix()` **之后**再上 —— "先 alpha 再 mix"等于没上，
+而症状是"给色带写了 alpha 但车上一点不变"，**不报错**。
+
+### ③ 补上工具侧**故意欠下**的跨语言断言
+
+v2.87.0 的「App 侧待办」第 2 条写着：
+
+> ⚠️ **`BAND_*` 常量做完后必须补一条 `verify-crosslang.js` 断言**……
+> **这一版故意没加**（App 侧还没有这些常量，加了必红）。
+> `verify-bands.js` 里已经有一条断言**反过来**守着这件事。
+
+本版**两条都动了**（缺一条就是"守卫指着错的方向"）：
+
+| 文件 | 改动 |
+|---|---|
+| `tools/icarui/tests/verify-crosslang.js` | **+12 条断言**：`MAX_BANDS` / `BAND_ALPHA_MIN` / `BAND_ALPHA_MAX` **逐字比**（先断言"解析到了"再比 —— 常量被改名时 `eq(null,null)` 会**静默通过**）；`BAND_DEFAULT_COLOR` 因为两侧**类型不同**（工具 `"#FF4D4F"` 字符串 / App `0xFFFF4D4F.toInt()`）**归一成 `#RRGGBB` 再比** |
+| `tools/icarui/tests/verify-bands.js` | 第 0 节那条**反过来**的断言**翻面**：从"跨语言比对里**还没有** `MAX_BANDS`"（谁提前加谁红）改成"**必须有** `MAX_BANDS`，且 4 个 `BAND_*` 都在"（谁删了那 4 条谁红） |
+
+⚠️ **为什么不直接比 `BAND_DEFAULT_COLOR` 的字面量**：一个是字符串一个是 Int，
+直接比会报**假失败**；而"为了消红把它改成写死同一个字符串"就把这条断言变成摆设了。
+所以归一成同一个色值再比（`0xFFFF4D4F` → `#FF4D4F`）。
+
+### ④ `DesignNode.NUMERIC_GAUGE_FIELDS` 与工具侧**仍逐条一致**（刻意**没加** `bands`）
+
+`bands` 是**数组**，而这张清单的用途是"哪些**标量**字段写了非数字要出声"
+（`warnNonNumeric` 会对数组项报"不是数字"）—— 加进去会产出**假警报**，
+而假警报的代价是用户学会无视整个警告列表。两侧清单**本来就一致**，
+本版一个字没动（`verify-crosslang.js` 的 `NUMERIC_GAUGE_FIELDS` 那条照常比对通过）。
+
+### ⑤ 五条向后兼容（**都有断言**）
+
+1. ⚠️ **`bands` 只管"画出来的分区"，`warnLow`/`warnHigh` 继续管报警判定** ——
+   报警源始终是 `BaseGaugeView.alertLevel`（由 `warnLow`/`warnHigh` 驱动），
+   `bands` **一个字都不参与**。让色带顺带改报警 = **静默改变存量设计的安全语义**。
+2. **缺省 = 空 = 完全旧行为**：缺字段 / 空数组 / 全非法一律归一成空表，绘制走老路径。
+3. **`MAX_BANDS = 8`**（超出丢掉）· `color` 只认 `#RRGGBB` · `alpha` 夹 0..255。
+4. **丢 `from >= to`**、**夹到 `[min, max]`**。
+5. **老文件再存一次不会凭空多出 `bands` 键**（空表不写字段）。
+
+### ⑥ 单测：`data/GaugeBandsTest.kt`（19 条）
+
+| 组 | 覆盖 |
+|---|---|
+| 缺省 = 旧行为 | 缺省是空表 / **旧文件没有 `bands` 键时读成空表且回写不写这个键** / 空表与全非法都不写字段 |
+| 逐段 / 往返 | 2 段写出 2 段、`color` 是大写 `#RRGGBB`、**没写 alpha 就不写这个键**、读回来仍是 `null` 不是 255、没写颜色的段 `color == null` 且绘制时才回落兜底色 |
+| ⚠️ **不许碰报警语义** | **只加 `bands` 时 `warnLow`/`warnHigh` 仍然是 `null`** / 回写也不凭空长出阈值 / 色带边界与 `warnHigh` 可以不一致（样板 `g_rpmband` 就是黄 6000~7000 + 红 7000~8000 而 `warnHigh` 仍 6500） |
+| 边界 | 越界夹到量程 / `from >= to` 丢掉且只丢坏的那段 / 12 段截到 8 / 坏颜色一律 `null`（三位简写、八位带 alpha、缺 `#`、非十六进制）/ alpha 夹 0..255 / 没写 alpha 按 255 画 |
+| 脏数据不崩 | 段不是对象 / `from` 是字符串 / 缺字段 / **量程反了** / NaN 与无穷 / 零量程表 |
+| 颜色与常量 | `hex` 丢 alpha 通道 / 4 个 `BAND_*` 的口径 / 兜底色必须与老红区**同一个红**（`#FF4D4F`） |
+
+### ⑦ 任务 2 · `docs/11-仪表框架.md` 的 LVGL 两节加警示行
+
+**背景**：那份文档 §四「两条渲染路径」/ §六「已知问题」仍把 **LVGL 渲染路径**当**可选路径**写，
+而 LVGL 在 **v1.8.0 就已被放弃**（`Store.Settings.dashEngine` 默认 `0`），
+**但代码还在**（`app/src/main/cpp/lvgl` + `LvglDashView.kt`）。
+**用户已拍板：保留正文、不删历史**，只在**节首各加一行**：
+
+> ⚠️ **此路径已于 v1.8.0 放弃（`dashEngine` 默认 0），代码仍在但不维护** —— 正文保留以记录当时的判断依据。
+
+**只加了这两行，正文一个字没动**（那是历史记录）。`git diff` 实测就是 `+2` 行 × 2 处。
+
+### 验证
+
+```
+powershell -ExecutionPolicy Bypass -File tools\run-tests.ps1
+  → com.icar.obd.data.GaugeBandsTest   tests=19  skipped=0  failures=0  errors=0
+  → TOTAL=1097  FAILED=0  SKIPPED=0
+  → 构建守卫通过 ✅                                exit 0
+    （基线 1078 → +19，全部来自新增的 GaugeBandsTest）
+
+powershell -ExecutionPolicy Bypass -File tools\run-browser-tests.ps1 -UpdateBaseline
+  → 32 个套件 / TOTAL PASS=1867  FAIL=0
+  → ↑ verify-crosslang  157 → 169
+  → ↑ verify-bands      129 → 130
+  → 下限之和 1867（写入 expected-counts.json）
+
+node tools\check-doc-links.js
+  → 扫描 29 份文档 · 候选 745 条 → 失效 0 条 / 已豁免 84 条 ✅
+
+:app:assembleDebug → BUILD SUCCESSFUL
+  → dist/iCarOBD-debug-v1.20.22-android.apk
+    **7,427,526 B**（7.08 MB）/ 单 ABI `arm64-v8a` / `versionCode=91` / `1.20.22`
+    sha256 = 22BC08D01087BE932FCB0D7AC1FCA56E402BF439BC9FA318BC8E7F11CC69C299
+    （`aapt dump badging` 核对 `versionCode='91' versionName='1.20.22'`）
+```
+
+⚠️ **体积与 v1.20.21 逐字节相同（7,427,526 B）**，所以另外做了两道核对，
+而不是"体积一样就以为没重编"：
+
+1. 解出 `classes5.dex` / `classes6.dex`，里面**确实有** `GaugeBand` 与 `com/icar/obd/data/Bands`；
+2. `aapt dump badging` 报的是 `versionCode='91' versionName='1.20.22'`。
+
+⚠️ **又踩了一次 v1.20.21 记的"增量打包留垃圾"**（这次是**实测复现**，不是转述）：
+改完刻度那一节再 `assembleDebug`（不删旧 APK），产物变成 **7,541,130 B（+113,604 B）**；
+`rm app-debug.apk` 后重跑 → **回到 7,427,526 B**。所以**发版前必须删掉旧 APK 再打包**
+（构建守卫只查"有没有超 8 MB"，这 113 KB 它不报警）。
+⚠️ 另外：`aapt` **读不了含中文的路径**（`Illegal byte sequence` / `no AndroidManifest.xml found`），
+要核 `dist/` 里那份就**必须先拷到 ASCII 路径**，或者核 `D:\icarobd\app\build\outputs\...` 那份
+（本版两份的 sha256 逐字节相同：`22BC08D0…`）。
+
+### ⚠️ 装机实测：**未完成**（设备不在线）
+
+本版要求的"**真机上分区真的画出来**（逐段取色、与设计里写的 `color` 对上）+
+同一块表不带 `bands` 时与改前逐像素相同"**没有做**，原因是**平板不在线**：
+
+```
+adb devices -l                    → List of devices attached（空）
+Get-PnpDevice（VID_2717，小米）    → Status=Unknown, Problem=CM_PROB_PHANTOM
+                                     ProblemDescription: "Currently, this hardware device
+                                     is not connected to the computer. (Code 45)."
+```
+
+`7E7D7BB4`（Xiaomi Pad 5 Pro）的 USB 节点还在设备树里，但状态是 **Code 45 = 幽灵设备**
+（当前未连接）；同时 `REDMI K80 Pro` / `Galaxy Z Flip5` 等**全部** USB 复合设备也都是
+`Unknown` —— 看起来是**数据线掉了或集线器断了**，不是 App 或 adb 的问题
+（`adb kill-server` / `start-server` / `reconnect offline` / `mdns services` 都试过，列表始终为空）。
+
+**已经准备好的东西**（设备一上线就能直接跑，不用重做）：
+
+| 准备物 | 位置 |
+|---|---|
+| 两份**只差 `bands` 一个字段**的设计文件 | `stage/bands-verify/bands-with.json` / `bands-none.json` |
+| 生成器（可复现，不是手抄） | `stage/gen-bands-design.js`（`node stage/gen-bands-design.js`） |
+
+设计内容（每份 4 块表，**几何与量程完全相同**，右侧两块是对照）：
+
+| 位置 | 表 | `bands` | 期望看到 |
+|---|---|---|---|
+| 左上 | 圆表 `obd.rpm` 0~8000 | 黄 `6000~7000` `#FFB020` + 红 `7000~8000` `#FF4D4F` alpha 200 | 弧上**两段彩色分区** |
+| 右上 | 同一块表（对照） | **无** | **一条分区都没有**（`warnLow`/`warnHigh` 都留空） |
+| 左下 | 条形表 `obd.fuel_level` 0~100 | 红 `0~15` + 黄 `15~30` + 绿 `30~100` | 轨道上**三段彩色分区** |
+| 右下 | 同一块表（对照） | **无** | **一条分区都没有** |
+
+> 对照表刻意把 `warnLow`/`warnHigh` **都留空** —— 于是"无 `bands`"那一份
+> **一个分区都不画**（底轨纯净），像素差一眼可判；而"有 `bands`"那一份的分区
+> **只可能**来自 `bands`（没有别的字段能画出颜色）。
+
+**像素判据（拟用）**：截屏后沿圆表弧中心线按角度取样、沿条形表轨道中心线按 x 取样，
+逐点分类到"最接近哪个设计色"，并取**紧邻但没有分区的区域**做对照以排除背景干扰
+（本项目既有手法）。⚠️ **本节在设备恢复后必须补上实测数据**，否则这一版
+"App 侧认得 `bands`"这句话**只有单测支撑，没有真机证据**。
+
+### ⚠️ 遗留 / 没验到的（如实说）
+
+1. **装机实测未完成** —— 见下面的「装机实测」一节（设备当时不在线）。
+2. **工具侧 `verify-crosslang.js` 里 `BAND_DEFAULT_COLOR` 的比对是"归一后比"**，
+   不是"逐字节比字面量"：两侧类型本来就不同（字符串 vs Int），
+   所以这条断言的强度**略低于**另外三个（它挡不住"两边都是 `#FF4D4F` 但 App 侧 alpha 通道写错"
+   —— 不过 App 侧的 alpha 通道对绘制**没有影响**，`GaugeBand.colorOf` 只取 RGB）。
+3. **圆表的分区仍画在数值弧之前**（值进红区时进度弧会盖住红区）——
+   与工具侧 v2.88.0 修好的行为**不一致**。这是**已知的、刻意的**差异：
+   改它要动所有存量红区的像素，得单独一轮 + 拍板（§2.117 的遗留里也写着"换半径"这个更彻底的方案）。
+4. **`Bands.normalize` 在每次 `onDraw` 里现算**（不缓存）。代价是每帧一个 ≤8 元素的小列表；
+   换掉它要引入"缓存 + 失效"，而"忘了清缓存"的症状是"改了设计但表上还是老分区"且不报错。
+   圆表侧每帧会因此多两次小分配 —— **没有实测对帧率的影响**（性能基准页没跑）。
+5. **`BarGaugeView` 的色带是按比例铺满整条轨道的**（与工具侧 style 2 一致），
+   而**圆表的老路径**（`warnHigh`）在 App 侧只画一段 —— 条形表那边**仍然画两条阈值竖线**。
+   即：`bands` 与 `warnHigh`/`warnLow` 竖线**会同时出现**在条形表上。
+   这是刻意的（竖线是"报警阈值在哪"、色带是"参考分区"），但**观感上是否冗余没有拍板**。
+6. **圆表的刻度仍然只看 `warnHigh`，不跟着 `bands` 分段上色** ——
+   底轨（弧）已经逐段画了，刻度没有。这是刻意的：刻度属于**存量像素**，
+   动它就会让"没有 `bands` 的老设计"之外的东西也变；而"有 `bands` 时刻度要不要
+   跟着分段上色"是个**观感决定**，得单独拍板。本版的边界是"让 App 认得 `bands`"，
+   不是重新设计盘面（代码里那一节注释写明了"本版一个字没改"）。
+
+---
+
 ## v1.20.21 · 2026-10-11 · 🔴 **一次规则弹了两个提示**（系统 Toast + 灵动岛）→ 只留灵动岛 + 预设音效 **4 → 9**（名字说人话）+ 动作行加 **▶ 预览**
 
 **用户原话**：「还有弹出提示的时候是**两个弹出提示**、我只需要灵动岛的版本」、
