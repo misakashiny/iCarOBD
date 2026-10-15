@@ -199,7 +199,7 @@ const eq = (a, b, m) => ok(a === b, m + `（实际 ${JSON.stringify(a)}，期望
     ok(U.treeRows >= 5, `控件树有节点行（${U.treeRows} 行）`);
     ok(U.assets > 200, '素材库已渲染');
     // 10 个**图片**分类 + 2 个控件区（复用同一个 .akind 类），共 12 个
-    eq(U.assetKinds, 14, '素材库有 12 个图片分类 + 2 个控件区');
+    eq(U.assetKinds, 15, '素材库有 12 个图片分类 + 新库/兼容库/自定义3个控件区');
     const kindNames = await cdp.eval(`JSON.stringify(Array.from(document.querySelectorAll('#assets .akind .akname')).map(e => e.textContent.trim()))`);
     ok(JSON.parse(kindNames).filter(x => /背景|仪表盘|指针|刻度|图标|转向灯|警告灯|汽车品牌|装饰|自定义/.test(x)).length >= 10,
       '10 个图片分类都在：' + JSON.parse(kindNames).length + ' 个区');

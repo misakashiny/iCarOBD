@@ -4,6 +4,7 @@ import com.icar.obd.data.PidValue
 import com.icar.obd.data.Store
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.IdentityHashMap
 
 /**
  * 车辆数据总线。
@@ -21,6 +22,64 @@ object VehicleBus {
     private val eventListeners = CopyOnWriteArrayList<(String) -> Unit>()
 
     private val values = ConcurrentHashMap<String, PidValue>()
+    private val sourceLock = Any()
+    private val sources = IdentityHashMap<Any, Source>()
+    private val currentOwners = HashMap<String, Source>()
+    private var nextEpoch = 0L
+
+    /** 内存内的采集代际；不进入 PID/配置/设计 JSON，也不依赖 rawHex。 */
+    internal class Source internal constructor(val owner: Any, val epoch: Long) {
+        internal var closed = false
+    }
+
+    internal fun openSource(owner: Any): Source {
+        val changed = ArrayList<PidValue>()
+        val source = synchronized(sourceLock) {
+            sources[owner]?.let { closeLocked(it, changed) }
+            Source(owner, ++nextEpoch).also { sources[owner] = it }
+        }
+        notifyValues(changed)
+        return source
+    }
+
+    internal fun sourceActive(source: Source): Boolean = synchronized(sourceLock) {
+        !source.closed && sources[source.owner] === source
+    }
+
+    internal fun closeSource(source: Source) {
+        val changed = ArrayList<PidValue>()
+        synchronized(sourceLock) { closeLocked(source, changed) }
+        notifyValues(changed)
+    }
+
+    private fun closeLocked(source: Source, changed: MutableList<PidValue>) {
+        if (source.closed) return
+        source.closed = true
+        if (sources[source.owner] === source) sources.remove(source.owner)
+        val iterator = currentOwners.entries.iterator()
+        while (iterator.hasNext()) {
+            val entry = iterator.next()
+            if (entry.value !== source) continue
+            iterator.remove()
+            values[entry.key]?.takeIf { it.ok }?.let { old ->
+                old.copy(ok = false, error = "采集来源已停止").also {
+                    values[entry.key] = it
+                    changed.add(it)
+                }
+            }
+        }
+    }
+
+    /** 关闭与发布同锁；已关闭的请求不能写当前值、历史或通知。累计里程可保留。 */
+    internal fun put(source: Source, v: PidValue, retainOnClose: Boolean = false): Boolean {
+        synchronized(sourceLock) {
+            if (source.closed || sources[source.owner] !== source) return false
+            if (retainOnClose) currentOwners.remove(v.pidId) else currentOwners[v.pidId] = source
+            storeLocked(v)
+        }
+        notifyValues(listOf(v))
+        return true
+    }
 
     /** 每秒采样数，用于 UI 显示总线健康度 */
     @Volatile
@@ -30,10 +89,22 @@ object VehicleBus {
     var lastError: String = ""
 
     fun put(v: PidValue) {
+        synchronized(sourceLock) {
+            // 旧调用者已成为该 PID 的当前来源，旧轮询关闭时不能再失效它。
+            currentOwners.remove(v.pidId)
+            storeLocked(v)
+        }
+        notifyValues(listOf(v))
+    }
+
+    private fun storeLocked(v: PidValue) {
         values[v.pidId] = v
         // 只有真实到达的值才进历史：否则线型图会被失败/NaN 打断成锯齿
         if (v.ok) pushHistory(v.pidId, v.value)
-        valueListeners.forEach { runCatching { it(v) } }
+    }
+
+    private fun notifyValues(changed: List<PidValue>) {
+        changed.forEach { v -> valueListeners.forEach { runCatching { it(v) } } }
     }
 
     /**
@@ -77,8 +148,11 @@ object VehicleBus {
     }
 
     fun clear() {
-        values.clear()
-        history.clear()
+        synchronized(sourceLock) {
+            values.clear()
+            currentOwners.clear()
+            history.clear()
+        }
         sampleHz = 0f
     }
 
@@ -134,52 +208,74 @@ object VehicleBus {
         private const val GAS_DENSITY = 0.745
         private const val G_S_TO_L_H = 3.6 / GAS_DENSITY
 
+        // 累计项缺过一段数据就不能再冒充完整行程平均；只有重置可重新开始。
+        private var tripComplete = true
+
+        private fun input(readings: Map<String, PidValue>, id: String): PidValue? =
+            readings[id]?.takeIf { it.ok && it.value.isFinite() }
+
+        /** 输出不能比任一有 TTL 的输入活得更久；未知值仍通知订阅者清掉旧读数。 */
+        private fun publish(
+            put: (PidValue) -> Unit, id: String, result: Float?, now: Long,
+            dependencies: List<PidValue> = emptyList()
+        ) {
+            val remaining = dependencies.filter { it.ttlMs > 0 }.minOfOrNull {
+                it.ttlMs.toLong() - (now - it.ts).coerceAtLeast(0L)
+            }
+            val ok = result != null && result.isFinite() && (remaining == null || remaining > 0)
+            put(PidValue(id, if (ok) result!! else Float.NaN, "calc", now, ok,
+                error = if (ok) null else "派生输入无效或行程数据不完整",
+                ttlMs = if (ok) (remaining ?: 0L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt() else 0))
+        }
+
+        private fun invalidateAverage(put: (PidValue) -> Unit, now: Long) {
+            publish(put, "calc_avg_l100", null, now)
+            publish(put, "calc_range", null, now)
+        }
+
         fun computeAll(put: (PidValue) -> Unit) {
             val now = System.currentTimeMillis()
-            val maf = value("std_10")
-            val speed = value("std_0D")
-            val fuelRate = value("std_5E")
-            val map = value("std_0B")
-            val baro = value("std_33")
+            val readings = snapshot()
+            val maf = input(readings, "std_10")
+            val speed = input(readings, "std_0D")
+            val fuelRate = input(readings, "std_5E")
+            val map = input(readings, "std_0B")
+            val baro = input(readings, "std_33")
 
             // 燃油流量 L/h：优先用 015E，否则由 MAF 推算
-            val lh: Float? = when {
-                fuelRate != null && fuelRate > 0f -> fuelRate
-                maf != null && maf > 0.5f -> (maf * G_S_TO_L_H).toFloat()
-                else -> null
+            val fuelSource = fuelRate?.takeIf { it.value > 0f } ?: maf?.takeIf { it.value > 0.5f }
+            val lh = when (fuelSource) {
+                null -> null
+                fuelRate -> fuelSource.value
+                else -> (fuelSource.value * G_S_TO_L_H).toFloat()
             }
-            if (lh != null) put(PidValue("calc_lh", lh, "calc", now, true))
+            val fuelDependencies = listOfNotNull(fuelSource)
+            publish(put, "calc_lh", lh, now, fuelDependencies)
 
             // 瞬时油耗 L/100km：需要车速 > 3km/h，否则怠速油耗无意义
-            if (lh != null && speed != null) {
-                val v = if (speed < 3f) 0f else (lh / speed * 100f)
-                put(PidValue("calc_l100", v.coerceIn(0f, 99f), "calc", now, true))
-            }
+            val instantaneous = if (lh != null && lh.isFinite() && speed != null) {
+                (if (speed.value < 3f) 0f else lh / speed.value * 100f).coerceIn(0f, 99f)
+            } else null
+            publish(put, "calc_l100", instantaneous, now, fuelDependencies + listOfNotNull(speed))
 
             // 增压压力 = MAP - 大气压
-            if (map != null && baro != null) {
-                put(PidValue("calc_boost", map - baro, "calc", now, true))
-            }
+            publish(put, "calc_boost", if (map != null && baro != null) map.value - baro.value else null,
+                now, listOfNotNull(map, baro))
 
             // 续航里程 = 油量% × 油箱容量 ÷ 平均油耗 × 100
             //
             // ⚠️ **三个前提缺一不可**：油量（`std_2F`，部分车不支持）、
             // 油箱容量（用户设置）、平均油耗（要跑够 0.5km 才有）。
-            // 缺任何一个都**不出值** —— 猜一个会让续航"看起来像真的但差很多"，
+            // 缺任何一个都**明确标未知** —— 猜一个会让续航"看起来像真的但差很多"，
             // 比仪表显示 `--` 更糟（用户会按它规划加油）。
-            val fuelPct = value("std_2F")
-            val avgL100 = value("calc_avg_l100")
+            val fuelPct = input(readings, "std_2F")
+            val avgL100 = input(readings, "calc_avg_l100")
             val tank = Store.settings.tankCapacityL
-            if (fuelPct != null && avgL100 != null && avgL100 > 0.1f && tank > 0f) {
-                val liters = fuelPct.coerceIn(0f, 100f) / 100f * tank
-                put(
-                    PidValue(
-                        "calc_range",
-                        (liters / avgL100 * 100f).coerceIn(0f, 1200f),
-                        "calc", now, true
-                    )
-                )
-            }
+            val range = if (fuelPct != null && avgL100 != null && avgL100.value > 0.1f && tank.isFinite() && tank > 0f) {
+                val liters = fuelPct.value.coerceIn(0f, 100f) / 100f * tank
+                (liters / avgL100.value * 100f).coerceIn(0f, 1200f)
+            } else null
+            publish(put, "calc_range", range, now, listOfNotNull(fuelPct, avgL100))
         }
 
         /**
@@ -192,29 +288,34 @@ object VehicleBus {
          * 两边用不同的 dt，平均油耗会慢慢漂。
          */
         fun integrateDistance(dtSeconds: Float, put: (PidValue) -> Unit) {
-            val speed = value("std_0D") ?: return
-            var km = accKm
-            if (speed in 0.5f..400f) km += speed * dtSeconds / 3600f
-            accKm = km
             val now = System.currentTimeMillis()
-            put(PidValue("calc_km", km, "calc", now, true))
+            val readings = snapshot()
+            val speed = input(readings, "std_0D")
+            if (!dtSeconds.isFinite() || dtSeconds <= 0f || speed == null || speed.value !in 0f..400f) {
+                tripComplete = false
+                invalidateAverage(put, now)
+                return
+            }
+            val km = accKm + if (speed.value >= 0.5f) speed.value * dtSeconds / 3600f else 0f
+            if (!km.isFinite()) {
+                tripComplete = false
+                invalidateAverage(put, now)
+                return
+            }
+            accKm = km
+            publish(put, "calc_km", km, now)
 
             // 油量积分：L/h × 小时 = L。`calc_lh` 要么来自 015E，要么由 MAF 推算
-            value("calc_lh")?.let { lh ->
-                if (lh in 0f..100f) accLiters += lh * dtSeconds / 3600f
-            }
+            val fuel = input(readings, "calc_lh")?.takeIf { it.value in 0f..100f }
+            val liters = fuel?.let { accLiters + it.value * dtSeconds / 3600f }
+            if (liters != null && liters.isFinite()) accLiters = liters else tripComplete = false
 
             // ⚠️ **里程太短时不出值**：0.2km 上用了 0.05L 会算出 25L/100km 这种噪声，
             // 一上路就显示"25 个油"比先显示 `--` 更糟。
-            if (km >= MIN_AVG_KM) {
-                put(
-                    PidValue(
-                        "calc_avg_l100",
-                        (accLiters / km * 100f).coerceIn(0f, 99f),
-                        "calc", now, true
-                    )
-                )
-            }
+            if (tripComplete && km >= MIN_AVG_KM) {
+                publish(put, "calc_avg_l100", (accLiters / km * 100f).coerceIn(0f, 99f),
+                    now, listOfNotNull(speed, fuel))
+            } else invalidateAverage(put, now)
         }
 
         /** 累计里程（km）—— 同时就是「本次行程」的里程 */
@@ -236,6 +337,10 @@ object VehicleBus {
         fun resetTrip() {
             accKm = 0f
             accLiters = 0f
+            tripComplete = true
+            val now = System.currentTimeMillis()
+            publish(VehicleBus::put, "calc_km", 0f, now)
+            invalidateAverage(VehicleBus::put, now)
         }
 
         /** 平均油耗至少要有这么长的里程才出值（避免短里程噪声） */

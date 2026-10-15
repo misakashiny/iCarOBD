@@ -359,6 +359,7 @@ const PROBE = `(() => {
           const n = window.createNode(window.NODE_GAUGE, { name:"主题验证", pid:"obd.rpm", style:0,
             min:0, max:8000, cardStyle:0, x:60, y:60, w:260, h:260 });
           S.design.nodes = [n]; S.selection = [];
+          S.previewValues = { std_0C: 4960 }; // explicit sample: missing data has no active progress
           S.design.themeColorsOverride = null;
           S.design.themeId = "neon"; if (window.draw) window.draw(); return 1; })()`);
         await sleep(400);

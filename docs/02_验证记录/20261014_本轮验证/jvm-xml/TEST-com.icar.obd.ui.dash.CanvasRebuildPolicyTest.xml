@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.ui.dash.CanvasRebuildPolicyTest" tests="17" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:52.683Z" hostname="WIN-LI9OE82Q5LO" time="0.001">
+  <properties/>
+  <testcase name="全部正常时 0 尺寸数为 0" classname="com.icar.obd.ui.dash.CanvasRebuildPolicyTest" time="0.001"/>
+  <testcase name="一块表都没有时不补 —— 空画布不是这个 bug" classname="com.icar.obd.ui.dash.CanvasRebuildPolicyTest" time="0.0"/>
+  <testcase name="尺寸没变就不重建" classname="com.icar.obd.ui.dash.CanvasRebuildPolicyTest" time="0.0"/>
+  <testcase name="有 0 尺寸且没补过就补一次" classname="com.icar.obd.ui.dash.CanvasRebuildPolicyTest" time="0.0"/>
+  <testcase name="layout 期间 addView 的指纹 —— 全部 0x0" classname="com.icar.obd.ui.dash.CanvasRebuildPolicyTest" time="0.0"/>
+  <testcase name="没渲染过就不重建" classname="com.icar.obd.ui.dash.CanvasRebuildPolicyTest" time="0.0"/>
+  <testcase name="只有宽为 0 也算坏" classname="com.icar.obd.ui.dash.CanvasRebuildPolicyTest" time="0.0"/>
+  <testcase name="空列表是 0 而不是崩" classname="com.icar.obd.ui.dash.CanvasRebuildPolicyTest" time="0.0"/>
+  <testcase name="告警条收起时也要重建" classname="com.icar.obd.ui.dash.CanvasRebuildPolicyTest" time="0.0"/>
+  <testcase name="负尺寸也算坏" classname="com.icar.obd.ui.dash.CanvasRebuildPolicyTest" time="0.0"/>
+  <testcase name="宽度变了要重建" classname="com.icar.obd.ui.dash.CanvasRebuildPolicyTest" time="0.0"/>
+  <testcase name="没有坏块就不补" classname="com.icar.obd.ui.dash.CanvasRebuildPolicyTest" time="0.0"/>
+  <testcase name="旋转这类两轴同时变要重建" classname="com.icar.obd.ui.dash.CanvasRebuildPolicyTest" time="0.0"/>
+  <testcase name="1x1 不算坏 —— 那是配置写错，不是画布不见" classname="com.icar.obd.ui.dash.CanvasRebuildPolicyTest" time="0.0"/>
+  <testcase name="补过一次就不再补 —— 否则死循环" classname="com.icar.obd.ui.dash.CanvasRebuildPolicyTest" time="0.0"/>
+  <testcase name="只有高为 0 也算坏" classname="com.icar.obd.ui.dash.CanvasRebuildPolicyTest" time="0.0"/>
+  <testcase name="高度变了要重建 —— 这就是告警条出现时的那一次" classname="com.icar.obd.ui.dash.CanvasRebuildPolicyTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

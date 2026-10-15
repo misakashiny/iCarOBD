@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.ThemeStudioSampleTest" tests="25" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:51.078Z" hostname="WIN-LI9OE82Q5LO" time="0.03">
+  <properties/>
+  <testcase name="背景路径不存在只警告不报错" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.001"/>
+  <testcase name="每个内置 PID 都有语义别名" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.0"/>
+  <testcase name="背景段缺 path 时只警告并忽略该段" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.0"/>
+  <testcase name="背景段被解析出来" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.003"/>
+  <testcase name="背景铺法不认识时回落到铺满并警告" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.004"/>
+  <testcase name="主题为空时不写 theme 字段" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.0"/>
+  <testcase name="工具产出的 JSON 与 App 的 toJson 结构互认" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.002"/>
+  <testcase name="导出的文件不该带 legacyGrid 标记" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.002"/>
+  <testcase name="背景 JSON 往返不丢" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.001"/>
+  <testcase name="工具自带示例能被 App 解析且只有背景路径这一条警告" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.001"/>
+  <testcase name="坐标没有被再乘一次 360" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.001"/>
+  <testcase name="工具里列的 PID 别名在 App 侧都存在" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.001"/>
+  <testcase name="厂家模板刻意没有别名" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.0"/>
+  <testcase name="别名形式的主题 id 原样往返" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.001"/>
+  <testcase name="样式与霓虹档位被完整带过来" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.001"/>
+  <testcase name="空 gauges 是硬错误 —— 导出侧必须自己拦住" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.0"/>
+  <testcase name="卡片外框 JSON 往返不丢" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.002"/>
+  <testcase name="卡片外框覆盖被完整带过来" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.001"/>
+  <testcase name="所有坐标都落在 360 画布内" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.003"/>
+  <testcase name="导出再导入后卡片外框与背景铺法都还在" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.002"/>
+  <testcase name="别名数量与内置启用 PID 数量一致" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.0"/>
+  <testcase name="语义别名被解析成真实 PID id" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.001"/>
+  <testcase name="指针环与量程阈值被完整带过来" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.001"/>
+  <testcase name="App 导出的设计文件能被自己重新导入" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.001"/>
+  <testcase name="没有背景段时不产生警告" classname="com.icar.obd.data.ThemeStudioSampleTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

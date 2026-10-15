@@ -5,12 +5,14 @@ import com.icar.obd.data.PidDefinition
 import com.icar.obd.data.PidValue
 import com.icar.obd.data.Store
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.currentCoroutineContext
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -26,6 +28,7 @@ class ObdEngine(private val session: ElmSession) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
+    private var source: VehicleBus.Source? = null
 
     /** 当前生效的 PID 列表（已过滤掉 CALC 派生通道与未启用项） */
     @Volatile
@@ -95,6 +98,7 @@ class ObdEngine(private val session: ElmSession) {
 
     /** 当前生效的 CAN 模块头（`AT SH` 是粘性的，必须自己记账，见 [ObdProtocol.headerSwitch]） */
     private var currentHeader = ObdProtocol.DEFAULT_HEADER
+    internal val requestHeader: String get() = currentHeader
 
     companion object {
         /** 连续失败多少次进入冷却 */
@@ -117,8 +121,6 @@ class ObdEngine(private val session: ElmSession) {
         private const val COOLDOWN_MS = 30_000L
         /** 单条请求的最短超时 */
         private const val MIN_TIMEOUT = 600L
-        /** 轮询间隔下限（ms）。再快只会把总线打满，拿不到更多有效数据 */
-        private const val MIN_INTERVAL_MS = 30
         /** 负载保护窗口：看最近多少次请求 */
         private const val LOAD_WINDOW = 30
         /** 失败率超过这个比例就整体降频 */
@@ -220,6 +222,10 @@ class ObdEngine(private val session: ElmSession) {
         // 每次都超时 —— 既污染总线，又让「轮询汇总」的"有值 N/M"变难看。
         val all = Store.allPids().filter {
             it.enabled && !it.mode.equals("CALC", true) && !it.source.equals("monitor", true)
+        }.filter { pid ->
+            val checked = PidRequestPolicy.check(pid)
+            if (checked.error != null) rejectUnsafePid(pid, checked.error)
+            checked.request != null
         }
         activePids = all
         nextDue.keys.retainAll(all.map { it.id }.toSet())
@@ -232,7 +238,12 @@ class ObdEngine(private val session: ElmSession) {
         AppLog.i(AppLog.M_OBD, "轮询列表已刷新", "count=${all.size} ids=${all.joinToString(",") { it.id }}")
     }
 
-    fun start() {
+    private fun rejectUnsafePid(pid: PidDefinition, reason: String) {
+        VehicleBus.put(PidValue(pid.id, Float.NaN, "", System.currentTimeMillis(), false, reason))
+        AppLog.w(AppLog.M_OBD, "PID请求已阻止", "id=${pid.id} $reason")
+    }
+
+    @Synchronized fun start() {
         if (running) return
         reload()
         if (activePids.isEmpty()) {
@@ -247,25 +258,65 @@ class ObdEngine(private val session: ElmSession) {
         lastValues.clear()
         lastSummaryAt = System.currentTimeMillis()
         requestsSinceSuccess = 0
+        nextDue.clear()
         // 复位模块头记账：新一轮轮询开始时，适配器实际停在哪个头是未知的 ——
         // 记成默认广播，第一条需要别的头的 PID 就会自动切过去
         currentHeader = ObdProtocol.DEFAULT_HEADER
-        job = scope.launch { loop() }
+        val epoch = VehicleBus.openSource(this)
+        source = epoch
+        val nextJob = scope.launch(start = CoroutineStart.LAZY) {
+            try { loop(epoch) } finally { finish(epoch) }
+        }
+        job = nextJob
+        nextJob.start()
         AppLog.i(AppLog.M_OBD, "轮询启动", "interval=${Store.settings.pollIntervalMs}ms")
     }
 
     fun stop() {
-        if (!running) return
-        running = false
-        job?.cancel()
-        job = null
-        VehicleBus.sampleHz = 0f
+        val (oldSource, oldJob) = synchronized(this) {
+            val oldSource = source ?: return
+            val oldJob = job
+            running = false
+            source = null
+            job = null
+            VehicleBus.sampleHz = 0f
+            oldSource to oldJob
+        }
+        // 先摘下本次字段再通知；监听者即使重入 start，也只取消捕获的旧 job。
+        VehicleBus.closeSource(oldSource)
+        oldJob?.cancel()
         AppLog.i(AppLog.M_OBD, "轮询停止")
     }
 
-    private suspend fun loop() {
+    private fun finish(epoch: VehicleBus.Source) {
+        synchronized(this) {
+            if (source === epoch) {
+                running = false
+                source = null
+                job = null
+                VehicleBus.sampleHz = 0f
+            }
+        }
+        VehicleBus.closeSource(epoch)
+    }
+
+    private suspend fun current(epoch: VehicleBus.Source): Boolean {
+        val context = currentCoroutineContext()
+        return context.isActive && synchronized(this) {
+            running && source === epoch && context[Job] === job && VehicleBus.sourceActive(epoch)
+        }
+    }
+
+    private fun publishDerived(epoch: VehicleBus.Source, value: PidValue) {
+        // listener may cancel this job synchronously during a preceding derived publication.
+        if (source === epoch && running && job?.isActive == true) {
+            VehicleBus.put(epoch, value, retainOnClose = value.pidId == "calc_km")
+        }
+    }
+
+    private suspend fun loop(epoch: VehicleBus.Source) {
         var lastIntegrate = System.currentTimeMillis()
-        while (scope.isActive && running) {
+        while (current(epoch)) {
             val now = System.currentTimeMillis()
             val due = activePids.filter { pid ->
                 // 判定为"本车不支持"的**直接不问**（P10-1 的核心）：
@@ -279,82 +330,95 @@ class ObdEngine(private val session: ElmSession) {
             }
 
             for (pid in due) {
-                if (!running || !scope.isActive) return
-                // 单独设了间隔就以它为准；否则用「全局间隔 × 优先级倍率」，再乘负载保护倍率
-                val base = if (pid.intervalMs > 0) {
-                    pid.intervalMs
-                } else {
-                    (Store.settings.pollIntervalMs * PidDefinition.priorityScale(pid.priority)).toInt()
+                if (!current(epoch)) return
+                // Recheck mutable configuration and capture it BEFORE any module-header send.
+                val checked = PidRequestPolicy.check(pid)
+                val read = checked.request
+                if (read == null) {
+                    VehicleBus.put(epoch, PidValue(pid.id, Float.NaN, "", System.currentTimeMillis(), false,
+                        checked.error ?: "请求安全拦截"))
+                    activePids = activePids.filterNot { it.id == pid.id }
+                    continue
                 }
-                val interval = (base * backoff).toInt().coerceAtLeast(MIN_INTERVAL_MS).toLong()
+                // 单独设了间隔就以它为准；否则用「全局间隔 × 优先级倍率」，再乘负载保护倍率
+                val interval = PollFreshness.interval(pid, Store.settings.pollIntervalMs, backoff)
                 nextDue[pid.id] = System.currentTimeMillis() + interval
 
                 val timeout = (interval * 2).coerceAtLeast(MIN_TIMEOUT)
                 // 模块头切换（v1.18.2）：`AT SH` 是**粘性**的 ——
                 // 厂家 PID 切到 `7E0`/`760` 之后，**标准 PID 必须显式切回广播**，
                 // 否则它会被发到那个模块去，读到别的模块的值而**看不出来**。
-                ObdProtocol.headerSwitch(currentHeader, pid.header)?.let { cmd ->
-                    currentHeader = pid.header.trim().uppercase()
+                ObdProtocol.headerSwitch(currentHeader, read.header)?.let { cmd ->
+                    currentHeader = read.header
                         .ifBlank { ObdProtocol.DEFAULT_HEADER }
                     session.request(cmd, MIN_TIMEOUT)
                 }
-                val raw = session.request(pid.requestString(), timeout)
+                if (!current(epoch)) return
+                val raw = session.requestPid(read, timeout)
+                if (!current(epoch)) return
                 val res = ObdProtocol.parse(raw, pid)
-                noteResult(res.ok)
+                if (!current(epoch)) return
+                synchronized(this) {
+                    if (source !== epoch || !running || job?.isActive != true) return
+                    noteResult(res.ok)
 
-                // 先把值取到局部变量再判空 —— `res.value` 是**跨模块**的 `var` 属性，
-                // Kotlin 不允许对它做智能转换（`Smart cast to 'Float' is impossible`）。
-                // 这不是新问题，只是 data/ 重新编译时才会暴露出来。
-                val value = res.value
-                if (res.ok && value != null) {
-                    failStreak.remove(pid.id)
-                    // 成功一次就清掉"不支持"的连续计数 —— 判定必须是**连续**的，
-                    // 否则长期累积会把"偶发几次 NO DATA 但一直有值"的 PID 误判掉
-                    unsupportedStreak.remove(pid.id)
-                    requestsSinceSuccess = 0
-                    VehicleBus.put(PidValue(pid.id, value, res.data.toHex(), System.currentTimeMillis(), true))
-                    sampleCount++
-                    lastValues[pid.id] = value
-                    // 每条 PID 只报**第一次**成功 —— 上限就是 PID 条数（约 20 行），
-                    // 但足以回答"这条链路到底出没出过数"
-                    if (reportedFirst.add(pid.id)) {
-                        AppLog.i(
-                            AppLog.M_OBD, "首次拿到数值",
-                            "id=${pid.id} name=${pid.name} value=${fmtValue(value)}${pid.unit}"
-                        )
-                    }
-                } else {
-                    val n = (failStreak[pid.id] ?: 0) + 1
-                    failStreak[pid.id] = n
-                    requestsSinceSuccess++
-                    VehicleBus.put(
-                        PidValue(pid.id, Float.NaN, "", System.currentTimeMillis(), false, res.error)
-                    )
-                    // ---- P10-1：「本车不支持」的判定 ----
-                    //
-                    // ⚠️ 判据是 [ObdProtocol.isUnsupportedEvidence] ——
-                    // **只有 ECU 明确说"这条我没有"（NO DATA / 明确 NRC）才算**。
-                    // 超时、CAN ERROR 这些"我们没问到"的失败**不算**，
-                    // 否则一次链路抖动就会把全部 PID 判成不支持。
-                    if (ObdProtocol.isUnsupportedEvidence(raw)) {
-                        val u = (unsupportedStreak[pid.id] ?: 0) + 1
-                        unsupportedStreak[pid.id] = u
-                        if (u >= UNSUPPORTED_STREAK && unsupportedPids.add(pid.id)) {
-                            AppLog.w(
-                                AppLog.M_OBD, "PID 本车不支持，已退出轮询",
-                                "id=${pid.id} name=${pid.name} 连续 $u 次 ECU 明确回绝" +
-                                    "（列表保留，可手动重启用）| 响应=${raw.trim().take(24)}"
+                    // 先把值取到局部变量再判空 —— `res.value` 是**跨模块**的 `var` 属性，
+                    // Kotlin 不允许对它做智能转换（`Smart cast to 'Float' is impossible`）。
+                    // 这不是新问题，只是 data/ 重新编译时才会暴露出来。
+                    val value = res.value
+                    if (res.ok && value != null) {
+                        failStreak.remove(pid.id)
+                        // 成功一次就清掉"不支持"的连续计数 —— 判定必须是**连续**的，
+                        // 否则长期累积会把"偶发几次 NO DATA 但一直有值"的 PID 误判掉
+                        unsupportedStreak.remove(pid.id)
+                        requestsSinceSuccess = 0
+                        if (!VehicleBus.put(epoch, PidValue(pid.id, value, res.data.toHex(), System.currentTimeMillis(), true,
+                            ttlMs = PollFreshness.ttl(pid.ttlMs, interval)))) return
+                        if (source !== epoch) return
+                        sampleCount++
+                        lastValues[pid.id] = value
+                        // 每条 PID 只报**第一次**成功 —— 上限就是 PID 条数（约 20 行），
+                        // 但足以回答"这条链路到底出没出过数"
+                        if (reportedFirst.add(pid.id)) {
+                            AppLog.i(
+                                AppLog.M_OBD, "首次拿到数值",
+                                "id=${pid.id} name=${pid.name} value=${fmtValue(value)}${pid.unit}"
                             )
                         }
-                    }
-                    // 已判定不支持的就不再报冷却 —— 它已经被移出轮询，
-                    // 再刷"进入冷却"只是噪音（P10-1 的判据之一）
-                    if (n >= MAX_FAIL && pid.id !in unsupportedPids) {
-                        cooldownUntil[pid.id] = System.currentTimeMillis() + COOLDOWN_MS
-                        AppLog.w(
-                            AppLog.M_OBD, "PID 连续失败进入冷却",
-                            "id=${pid.id} name=${pid.name} n=$n cooldown=${COOLDOWN_MS}ms err=${res.error}"
+                    } else {
+                        val n = (failStreak[pid.id] ?: 0) + 1
+                        failStreak[pid.id] = n
+                        requestsSinceSuccess++
+                        VehicleBus.put(epoch,
+                            PidValue(pid.id, Float.NaN, "", System.currentTimeMillis(), false, res.error)
                         )
+                        if (source !== epoch) return
+                        // ---- P10-1：「本车不支持」的判定 ----
+                        //
+                        // ⚠️ 判据是 [ObdProtocol.isUnsupportedEvidence] ——
+                        // **只有 ECU 明确说"这条我没有"（NO DATA / 明确 NRC）才算**。
+                        // 超时、CAN ERROR 这些"我们没问到"的失败**不算**，
+                        // 否则一次链路抖动就会把全部 PID 判成不支持。
+                        if (ObdProtocol.isUnsupportedEvidence(raw)) {
+                            val u = (unsupportedStreak[pid.id] ?: 0) + 1
+                            unsupportedStreak[pid.id] = u
+                            if (u >= UNSUPPORTED_STREAK && unsupportedPids.add(pid.id)) {
+                                AppLog.w(
+                                    AppLog.M_OBD, "PID 本车不支持，已退出轮询",
+                                    "id=${pid.id} name=${pid.name} 连续 $u 次 ECU 明确回绝" +
+                                        "（列表保留，可手动重启用）| 响应=${raw.trim().take(24)}"
+                                )
+                            }
+                        }
+                        // 已判定不支持的就不再报冷却 —— 它已经被移出轮询，
+                        // 再刷"进入冷却"只是噪音（P10-1 的判据之一）
+                        if (n >= MAX_FAIL && pid.id !in unsupportedPids) {
+                            cooldownUntil[pid.id] = System.currentTimeMillis() + COOLDOWN_MS
+                            AppLog.w(
+                                AppLog.M_OBD, "PID 连续失败进入冷却",
+                                "id=${pid.id} name=${pid.name} n=$n cooldown=${COOLDOWN_MS}ms err=${res.error}"
+                            )
+                        }
                     }
                 }
             }
@@ -372,59 +436,65 @@ class ObdEngine(private val session: ElmSession) {
                     "链路可能不可用（适配器未上电 / 写入被拒 / 协议不对）。" +
                         "修好后重新点「初始化 ELM327」"
                 )
-                running = false
                 return
             }
 
             // 派生通道（瞬时油耗 / 燃油流量 / 增压等）每轮重算
-            VehicleBus.Derived.computeAll { VehicleBus.put(it) }
+            if (!current(epoch)) return
+            synchronized(this) {
+                if (source !== epoch || !running || job?.isActive != true) return
+                VehicleBus.Derived.computeAll { publishDerived(epoch, it) }
+                if (source !== epoch || job?.isActive != true) return
 
-            // 里程积分：用真实经过时间，避免调度抖动累积误差
-            val t = System.currentTimeMillis()
-            val dt = (t - lastIntegrate) / 1000f
-            if (dt > 0.05f) {
-                VehicleBus.Derived.integrateDistance(dt) { VehicleBus.put(it) }
-                lastIntegrate = t
-            }
-
-            // 每秒刷新一次采样率，作为「总线健康度」指标
-            if (t - windowStart >= 1000) {
-                VehicleBus.sampleHz = sampleCount * 1000f / (t - windowStart)
-                sampleCount = 0
-                windowStart = t
-            }
-
-            // 周期汇总：**有值几个 + 当前读数**。
-            //
-            // 这一行是"数据到底通没通"最直接的判据 —— 失败路径本来就一直在报，
-            // 缺的正是**成功路径的可见性**（2026-10-05 排障时卡住的地方）。
-            // 低频是刻意的，见 [SUMMARY_MS]。
-            if (t - lastSummaryAt >= SUMMARY_MS) {
-                lastSummaryAt = t
-                // 分母**只算还在轮询的**（P10-1）：判定为"本车不支持"的已经退出，
-                // 还把它们算进分母，那个数字就永远差几条 —— 正是这次要修的症状
-                // （实测 `有值 20/25` 里少的 5 就是它们）。
-                val polled = activePids.filter { it.id !in unsupportedPids }
-                val parts = polled.mapNotNull { p ->
-                    lastValues[p.id]?.let { "${p.name}=${fmtValue(it)}${p.unit}" }
+                // 里程积分：用真实经过时间，避免调度抖动累积误差
+                val t = System.currentTimeMillis()
+                val dt = (t - lastIntegrate) / 1000f
+                if (dt > 0.05f) {
+                    VehicleBus.Derived.integrateDistance(dt) { publishDerived(epoch, it) }
+                    if (source !== epoch || job?.isActive != true) return
+                    lastIntegrate = t
                 }
-                val skipped = activePids.size - polled.size
-                val tail = if (skipped > 0) "（另有 $skipped 条本车不支持，已退出轮询）" else ""
-                if (parts.isEmpty()) {
-                    AppLog.w(
-                        AppLog.M_OBD, "轮询汇总",
-                        "有值 0/${polled.size} —— 一条都没成功过（原因看上面的失败行）$tail"
-                    )
-                } else {
-                    AppLog.i(
-                        AppLog.M_OBD, "轮询汇总",
-                        "有值 ${parts.size}/${polled.size} | ${parts.joinToString(" ")}$tail"
-                    )
-                }
-            }
 
-            runCatching { onCycle?.invoke() }
-                .onFailure { AppLog.e(AppLog.M_OBD, "轮询回调异常", it.message ?: "") }
+                // 每秒刷新一次采样率，作为「总线健康度」指标
+                if (t - windowStart >= 1000) {
+                    VehicleBus.sampleHz = sampleCount * 1000f / (t - windowStart)
+                    sampleCount = 0
+                    windowStart = t
+                }
+
+                // 周期汇总：**有值几个 + 当前读数**。
+                //
+                // 这一行是"数据到底通没通"最直接的判据 —— 失败路径本来就一直在报，
+                // 缺的正是**成功路径的可见性**（2026-10-05 排障时卡住的地方）。
+                // 低频是刻意的，见 [SUMMARY_MS]。
+                if (t - lastSummaryAt >= SUMMARY_MS) {
+                    lastSummaryAt = t
+                    // 分母**只算还在轮询的**（P10-1）：判定为"本车不支持"的已经退出，
+                    // 还把它们算进分母，那个数字就永远差几条 —— 正是这次要修的症状
+                    // （实测 `有值 20/25` 里少的 5 就是它们）。
+                    val polled = activePids.filter { it.id !in unsupportedPids }
+                    val parts = polled.mapNotNull { p ->
+                        lastValues[p.id]?.let { "${p.name}=${fmtValue(it)}${p.unit}" }
+                    }
+                    val skipped = activePids.size - polled.size
+                    val tail = if (skipped > 0) "（另有 $skipped 条本车不支持，已退出轮询）" else ""
+                    if (parts.isEmpty()) {
+                        AppLog.w(
+                            AppLog.M_OBD, "轮询汇总",
+                            "有值 0/${polled.size} —— 一条都没成功过（原因看上面的失败行）$tail"
+                        )
+                    } else {
+                        AppLog.i(
+                            AppLog.M_OBD, "轮询汇总",
+                            "有值 ${parts.size}/${polled.size} | ${parts.joinToString(" ")}$tail"
+                        )
+                    }
+                }
+
+                if (source !== epoch || !running || job?.isActive != true || !VehicleBus.sourceActive(epoch)) return
+                runCatching { onCycle?.invoke() }
+                    .onFailure { AppLog.e(AppLog.M_OBD, "轮询回调异常", it.message ?: "") }
+            }
         }
     }
 

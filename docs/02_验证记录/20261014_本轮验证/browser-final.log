@@ -1,0 +1,44 @@
+
+===== 浏览器测试套件（36 个）=====
+  verify-asset-audit         PASS=35   FAIL=0
+  verify-asset-gen           PASS=27   FAIL=0
+  verify-assets              PASS=50   FAIL=0
+  verify-assets-wiring       PASS=72   FAIL=0
+  verify-bands               PASS=131  FAIL=0
+  verify-bugfix              PASS=1024 FAIL=0
+  verify-cats                PASS=20   FAIL=0
+  verify-cats2               PASS=21   FAIL=0
+  verify-control-files       PASS=1145 FAIL=0
+  verify-crosslang           PASS=174  FAIL=0
+  verify-data-bindings       PASS=217  FAIL=0
+  verify-feat2               PASS=39   FAIL=0
+  verify-features            PASS=93   FAIL=0
+  verify-fields              PASS=18   FAIL=0
+  verify-fix                 PASS=21   FAIL=0
+  verify-font                PASS=45   FAIL=0
+  verify-geo                 PASS=27   FAIL=0
+  verify-group               PASS=34   FAIL=0
+  verify-lamp-state          PASS=97   FAIL=0
+  verify-layout              PASS=58   FAIL=0
+  verify-more                PASS=15   FAIL=0
+  verify-next-library        PASS=90   FAIL=0
+  verify-pack                PASS=111  FAIL=0
+  verify-pages               PASS=48   FAIL=0
+  verify-parts               PASS=79   FAIL=0
+  verify-pid                 PASS=24   FAIL=0
+  verify-props               PASS=11   FAIL=0
+  verify-rename              PASS=32   FAIL=0
+  verify-spring              PASS=196  FAIL=0
+  verify-studio2             PASS=46   FAIL=0
+  verify-theme               PASS=23   FAIL=0
+  verify-tokens              PASS=251  FAIL=0
+  verify-tokens2             PASS=38   FAIL=0
+  verify-v27                 PASS=48   FAIL=0
+  verify-v28                 PASS=28   FAIL=0
+  verify-v291                PASS=82   FAIL=0
+-----
+TOTAL PASS=4470  FAIL=0  用时 186s
+
+===== 断言数基线核对 =====
+  36 个套件全部达到下限（实测断言 4470 条，下限合计 4470 条）✅
+全部通过 ✅

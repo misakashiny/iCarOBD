@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.obd.SegmentRotationTest" tests="22" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:52.563Z" hostname="WIN-LI9OE82Q5LO" time="0.009">
+  <properties/>
+  <testcase name="段间值不同时补记一次变化 —— 否则跨段跳动的信号会被埋掉" classname="com.icar.obd.obd.SegmentRotationTest" time="0.002"/>
+  <testcase name="段数与时长的构造参数可调（测试与小轮换用），非法值直接拒绝" classname="com.icar.obd.obd.SegmentRotationTest" time="0.001"/>
+  <testcase name="不同 ID 各归各的，不会串到一起" classname="com.icar.obd.obd.SegmentRotationTest" time="0.001"/>
+  <testcase name="段号看 ATCF 的高三位：000 100 … 700" classname="com.icar.obd.obd.SegmentRotationTest" time="0.0"/>
+  <testcase name="合并顺序按段号，传进来的顺序反了也不影响结果" classname="com.icar.obd.obd.SegmentRotationTest" time="0.001"/>
+  <testcase name="一轮跑完的判据" classname="com.icar.obd.obd.SegmentRotationTest" time="0.0"/>
+  <testcase name="合并结果能直接导出观察表（下游零改动）" classname="com.icar.obd.obd.SegmentRotationTest" time="0.0"/>
+  <testcase name="合并把各段的 count 加起来，段内重复帧不算变化" classname="com.icar.obd.obd.SegmentRotationTest" time="0.001"/>
+  <testcase name="空段不参与合并、也不会崩" classname="com.icar.obd.obd.SegmentRotationTest" time="0.0"/>
+  <testcase name="越界段号被夹住，不会生成畸形命令" classname="com.icar.obd.obd.SegmentRotationTest" time="0.0"/>
+  <testcase name="时间落在哪一段就是哪一段" classname="com.icar.obd.obd.SegmentRotationTest" time="0.0"/>
+  <testcase name="段的短标签给人看得懂" classname="com.icar.obd.obd.SegmentRotationTest" time="0.0"/>
+  <testcase name="段数是 8、每段 10 秒、一轮 80 秒" classname="com.icar.obd.obd.SegmentRotationTest" time="0.0"/>
+  <testcase name="一轮跑完后不再下发任何段" classname="com.icar.obd.obd.SegmentRotationTest" time="0.0"/>
+  <testcase name="本段剩余与整轮剩余都是倒计时" classname="com.icar.obd.obd.SegmentRotationTest" time="0.001"/>
+  <testcase name="每段覆盖 256 个 ID，且 8 段首尾相接铺满 0x000~0x7FF" classname="com.icar.obd.obd.SegmentRotationTest" time="0.001"/>
+  <testcase name="段内多次变化在合并后仍然数得出来" classname="com.icar.obd.obd.SegmentRotationTest" time="0.0"/>
+  <testcase name="一轮要下发 8 次命令：从 0 到 7" classname="com.icar.obd.obd.SegmentRotationTest" time="0.0"/>
+  <testcase name="合并结果是收尾时 acc 指向的那个累加器（下游零改动）" classname="com.icar.obd.obd.SegmentRotationTest" time="0.0"/>
+  <testcase name="同一段里反复评估只下发一次" classname="com.icar.obd.obd.SegmentRotationTest" time="0.001"/>
+  <testcase name="每段的命令是掩码 + 过滤两条，缺一不可" classname="com.icar.obd.obd.SegmentRotationTest" time="0.0"/>
+  <testcase name="被拖慢的一拍会把欠下的段补上，不跳段" classname="com.icar.obd.obd.SegmentRotationTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

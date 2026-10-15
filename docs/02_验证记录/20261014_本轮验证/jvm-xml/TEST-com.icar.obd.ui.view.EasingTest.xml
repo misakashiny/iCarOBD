@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.ui.view.EasingTest" tests="37" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:52.751Z" hostname="WIN-LI9OE82Q5LO" time="0.015">
+  <properties/>
+  <testcase name="线性曲线匀速前进" classname="com.icar.obd.ui.view.EasingTest" time="0.001"/>
+  <testcase name="进度型曲线缺总行程时也能收敛 —— 兜底路径不许空转" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="进度型曲线不传 elapsedMs 时进度从 0 起算" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="滤波时间常数越大越稳" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="滤波时间常数为 0 时原样返回" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="吸附只消除尾巴 不决定要不要继续" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="未知模式名回落到标准" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="目标真的停住后 会停止动画 不空转" classname="com.icar.obd.ui.view.EasingTest" time="0.001"/>
+  <testcase name="进度型曲线在总时长之后会到位" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="距离还远时必须继续动画" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="标准曲线一个 tau 走约 63百分之" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="未知曲线模式回落到标准而不是崩" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="5Hz 数据推送下 指针每一帧都在动 —— 不再停一下再跳" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="数据还在变时 即使已经很近也要继续动画" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="所有曲线都单调逼近 不过冲" classname="com.icar.obd.ui.view.EasingTest" time="0.004"/>
+  <testcase name="不同曲线在同一时刻给出不同结果 —— 说明真的在换曲线" classname="com.icar.obd.ui.view.EasingTest" time="0.001"/>
+  <testcase name="dt 为 0 或负数时不动" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="进度型曲线走满总时长时恰好到位 —— 绝对位置的核心保证" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="线性曲线最后一帧会因为夹取而变短 —— 不过冲的代价" classname="com.icar.obd.ui.view.EasingTest" time="0.001"/>
+  <testcase name="滤波是时间基准的 —— 帧率无关" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="线性曲线不会走过头" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="HOLD_MS 至少覆盖两个推送周期" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="所有曲线最终都收敛到目标" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="曲线名是冻结的契约" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="首帧直接采用原始值" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="目标与当前相同时原样返回" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="tau 越大越慢" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="曲线名数量与模式数量一致" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="滤波最终会追上原始值" classname="com.icar.obd.ui.view.EasingTest" time="0.001"/>
+  <testcase name="干脆曲线起步最快 之后单调变慢" classname="com.icar.obd.ui.view.EasingTest" time="0.003"/>
+  <testcase name="数据稳定下来之后才允许停止" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="所有曲线换帧率结果接近" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="滤波压掉抖动 —— 单帧尖刺只影响到一部分" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="dt 异常大时被夹住 不会瞬移" classname="com.icar.obd.ui.view.EasingTest" time="0.001"/>
+  <testcase name="进度型曲线给了总行程时曲线形状正确" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="所有曲线一帧都不跳到位 —— 要能看出动画" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <testcase name="柔和曲线中段最快 起步与收尾都慢" classname="com.icar.obd.ui.view.EasingTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

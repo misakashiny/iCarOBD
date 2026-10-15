@@ -376,7 +376,7 @@ const eq = (a, b, m) => ok(a === b, m + (a === b ? '' : `（实际 ${JSON.string
       out.角度_跟随 = window.partAngle(p1, r1.value, r1.min, r1.max);
       out.角度_绑定 = window.partAngle(p2, r2.value, r2.min, r2.max);
 
-      // 4) 没有实时数据时用 min（不悬在半空）
+      // 4) 没有实时数据时保持未知，不冒充量程下限
       const r3 = window.partValueRange(p2, rpm, {});
       out.无数据 = r3.value;
 
@@ -415,7 +415,7 @@ const eq = (a, b, m) => ok(a === b, m + (a === b ? '' : `（实际 ${JSON.string
     eq(MN.绑定后.v, 120, '用**车速的值**（120）');
     ok(MN.绑定后.max !== 8000, '量程跟着 PID 走（' + MN.绑定后.max + '，不是 8000）');
     ok(MN.角度_跟随 !== MN.角度_绑定, '两个指针角度**不同**（跟随 ' + Math.round(MN.角度_跟随) + '° vs 绑定 ' + Math.round(MN.角度_绑定) + '°）');
-    eq(MN.无数据, 0, '没有实时数据时用 min（不悬在半空）');
+    eq(MN.无数据, null, '没有实时数据时保持未知，读数显示 --');
     eq(MN.未知PID.pid, '不存在的PID', '未知 PID 原样保留');
     eq(MN.未知PID.max, 100, '未知 PID 的量程回落 0~100（不崩）');
     eq(MN.dial的pid, '', '非指针部件不解析 pid（表盘不该有绑定）');

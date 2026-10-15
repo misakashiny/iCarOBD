@@ -299,6 +299,19 @@ if (-not (Test-Path $studio)) {
     $onDisk = Get-ChildItem (Join-Path $studio "assets") -Recurse -Filter *.png -ErrorAction SilentlyContinue
     $listed = @{}
     foreach ($r in $refs) { $listed[$r] = $true }
+    # New library owns its own manifest; verify bytes/replay before recognizing its PNGs.
+    $nextManifestPath = Join-Path $studio "next-library/manifest.json"
+    if (Test-Path $nextManifestPath) {
+        $nextCheck = Join-Path $studio "next-library/check.js"
+        & node $nextCheck
+        if ($LASTEXITCODE -ne 0) {
+            Fail "新控件库生成与资源字节检查失败"
+        } else {
+            $nextManifest = Get-Content -LiteralPath $nextManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            foreach ($asset in $nextManifest.assets) { $listed[$asset.path] = $true }
+            Pass "新库5类/15变体/3张PNG独立清单与重放检查通过"
+        }
+    }
     $orphan = @()
     foreach ($f in $onDisk) {
         $rel = "assets/" + $f.FullName.Substring((Join-Path $studio "assets").Length + 1) -replace '\\', '/'
@@ -344,7 +357,7 @@ try {
     $full = Join-Path $root $d
     if (Test-Path $full) {
       $scanFiles += Get-ChildItem $full -Recurse -Include *.js,*.ps1,*.md,*.kt -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.FullName -notmatch "node_modules|\.git|archive|stage|builtin-data-" -and $_.Name -ne "check-build-guard.ps1" }
+        Where-Object { $_.FullName -notmatch "node_modules|\.git|archive|03_历史归档|stage|builtin-data-" -and $_.Name -ne "check-build-guard.ps1" }
     }
   }
   foreach ($f in $scanFiles) {

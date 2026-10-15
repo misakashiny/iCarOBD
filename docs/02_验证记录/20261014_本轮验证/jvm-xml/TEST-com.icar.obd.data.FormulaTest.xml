@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.FormulaTest" tests="61" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:50.230Z" hostname="WIN-LI9OE82Q5LO" time="0.048">
+  <properties/>
+  <testcase name="转速公式端到端" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="check 对合法表达式返回 null" classname="com.icar.obd.data.FormulaTest" time="0.001"/>
+  <testcase name="除零抛异常" classname="com.icar.obd.data.FormulaTest" time="0.001"/>
+  <testcase name="map 参数不成对时报错" classname="com.icar.obd.data.FormulaTest" time="0.001"/>
+  <testcase name="check 对非法表达式返回可读文案" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="be16 与 le16 是相反的字节序" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="bitsAt 解到帧外必须抛异常而不是补零" classname="com.icar.obd.data.FormulaTest" time="0.003"/>
+  <testcase name="check 认识全部新函数" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="无法识别的字符抛异常" classname="com.icar.obd.data.FormulaTest" time="0.001"/>
+  <testcase name="map 参数太少时报错" classname="com.icar.obd.data.FormulaTest" time="0.002"/>
+  <testcase name="单字节直读" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="多字符标识符报错" classname="com.icar.obd.data.FormulaTest" time="0.001"/>
+  <testcase name="双字节大端" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="有符号双字节大端" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="空表达式抛异常" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="以0开头的十进制仍是十进制" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="未知函数抛异常并提示可用函数" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="结果非法时抛异常" classname="com.icar.obd.data.FormulaTest" time="0.002"/>
+  <testcase name="signed 把字节当8位有符号数" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="优先级与结合性" classname="com.icar.obd.data.FormulaTest" time="0.003"/>
+  <testcase name="十六进制缺少数字时给出明确错误而不是崩溃" classname="com.icar.obd.data.FormulaTest" time="0.001"/>
+  <testcase name="bitsAt 与 bits 的区别：bits 取不到跨字节的位" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="bitsAt Motorola 跨字节是锯齿位序" classname="com.icar.obd.data.FormulaTest" time="0.001"/>
+  <testcase name="be16 等价于手写大端公式" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="双字节大端乘0_1再减40" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="rawBits 对非 bitsAt 形态返回 null" classname="com.icar.obd.data.FormulaTest" time="0.001"/>
+  <testcase name="check 用足量零数据因此不会把越界变量误报为错误" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="bitsAt Motorola 单字节内是高位在前" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="bitsAtArgs 取四个参数 顺序是 起始位 长度 字节序 符号" classname="com.icar.obd.data.FormulaTest" time="0.006"/>
+  <testcase name="bitsAt 的参数非法时给出可读错误" classname="com.icar.obd.data.FormulaTest" time="0.001"/>
+  <testcase name="map 取最接近的 key" classname="com.icar.obd.data.FormulaTest" time="0.001"/>
+  <testcase name="燃油修正以128为中心" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="空白被忽略" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="函数参数可以是表达式" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="百分比" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="取超出数据长度的变量必须抛异常而不是返回0" classname="com.icar.obd.data.FormulaTest" time="0.001"/>
+  <testcase name="s16 有符号 16 位" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="全部内置函数" classname="com.icar.obd.data.FormulaTest" time="0.001"/>
+  <testcase name="函数名大小写不敏感" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="缺右括号抛异常" classname="com.icar.obd.data.FormulaTest" time="0.001"/>
+  <testcase name="十六进制字面量" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="模零抛异常" classname="com.icar.obd.data.FormulaTest" time="0.001"/>
+  <testcase name="bitSequence 拒绝非法参数" classname="com.icar.obd.data.FormulaTest" time="0.001"/>
+  <testcase name="rawBits 支持 2 个参数的最小形态 并尊重字节序与符号" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="bits 取任意位段" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="尾部有多余内容抛异常" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="变量大小写不敏感" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="一元负号作用于幂的结果" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="bitsAtArgs 与 rawBits 认的是同一个形态" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="s16 等价于手写有符号双字节" classname="com.icar.obd.data.FormulaTest" time="0.001"/>
+  <testcase name="bitSequence 展开真实位序" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="rawBits 解到帧外时返回 null 而不是抛" classname="com.icar.obd.data.FormulaTest" time="0.001"/>
+  <testcase name="bitsAt Intel 跨字节按小端拼接" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="bitsAt signed 按补码解释" classname="com.icar.obd.data.FormulaTest" time="0.001"/>
+  <testcase name="bitsAt 因子与偏移按普通算术接在后面" classname="com.icar.obd.data.FormulaTest" time="0.001"/>
+  <testcase name="bits 在单比特上与 bit 一致" classname="com.icar.obd.data.FormulaTest" time="0.001"/>
+  <testcase name="开关量取位" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="温度减40偏置" classname="com.icar.obd.data.FormulaTest" time="0.001"/>
+  <testcase name="表达式不完整抛异常" classname="com.icar.obd.data.FormulaTest" time="0.003"/>
+  <testcase name="rawBits 取的是位段本身 不是乘完因子之后的物理值" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <testcase name="bitsAt Intel 单字节与对齐" classname="com.icar.obd.data.FormulaTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

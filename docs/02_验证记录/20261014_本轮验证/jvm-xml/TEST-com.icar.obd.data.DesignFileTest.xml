@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.DesignFileTest" tests="25" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:47.925Z" hostname="WIN-LI9OE82Q5LO" time="0.021">
+  <properties/>
+  <testcase name="空的 gauges 被拒绝" classname="com.icar.obd.data.DesignFileTest" time="0.001"/>
+  <testcase name="没有 meta 只警告" classname="com.icar.obd.data.DesignFileTest" time="0.0"/>
+  <testcase name="语义别名解析成真实 PID id" classname="com.icar.obd.data.DesignFileTest" time="0.0"/>
+  <testcase name="尺寸过小会警告" classname="com.icar.obd.data.DesignFileTest" time="0.001"/>
+  <testcase name="JSON 语法错误给出可读提示" classname="com.icar.obd.data.DesignFileTest" time="0.001"/>
+  <testcase name="v1 文件被升级成节点树 但 gauges 行为不变" classname="com.icar.obd.data.DesignFileTest" time="0.0"/>
+  <testcase name="v2 的节点树能被解析且仪表照常抽出来" classname="com.icar.obd.data.DesignFileTest" time="0.001"/>
+  <testcase name="超出画布只警告不拒绝" classname="com.icar.obd.data.DesignFileTest" time="0.0"/>
+  <testcase name="坐标为负会警告" classname="com.icar.obd.data.DesignFileTest" time="0.002"/>
+  <testcase name="直接写 PID id 也接受" classname="com.icar.obd.data.DesignFileTest" time="0.0"/>
+  <testcase name="缺少 schema 被拒绝" classname="com.icar.obd.data.DesignFileTest" time="0.001"/>
+  <testcase name="v2 里未知节点类型被拒绝" classname="com.icar.obd.data.DesignFileTest" time="0.0"/>
+  <testcase name="缺少 gauges 被拒绝" classname="com.icar.obd.data.DesignFileTest" time="0.001"/>
+  <testcase name="量程非法被拒绝" classname="com.icar.obd.data.DesignFileTest" time="0.0"/>
+  <testcase name="别名解析幂等" classname="com.icar.obd.data.DesignFileTest" time="0.001"/>
+  <testcase name="所有别名都指向真实存在的内置 PID" classname="com.icar.obd.data.DesignFileTest" time="0.0"/>
+  <testcase name="canvas unit 不对时报错并给出换算提示" classname="com.icar.obd.data.DesignFileTest" time="0.001"/>
+  <testcase name="别名表本身没有重复目标" classname="com.icar.obd.data.DesignFileTest" time="0.0"/>
+  <testcase name="不认识的 schema 被明确拒绝 —— 不能静默按旧规则画" classname="com.icar.obd.data.DesignFileTest" time="0.001"/>
+  <testcase name="JSON 往返保留字段" classname="com.icar.obd.data.DesignFileTest" time="0.0"/>
+  <testcase name="仪表过多被拒绝" classname="com.icar.obd.data.DesignFileTest" time="0.003"/>
+  <testcase name="坐标原样保留 —— 不做任何换算" classname="com.icar.obd.data.DesignFileTest" time="0.0"/>
+  <testcase name="缺少 pid 被拒绝且提示两种写法" classname="com.icar.obd.data.DesignFileTest" time="0.001"/>
+  <testcase name="未知 pid 只警告 —— 可能是用户自定义 PID" classname="com.icar.obd.data.DesignFileTest" time="0.003"/>
+  <testcase name="最小可用设计能解析" classname="com.icar.obd.data.DesignFileTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,257 @@
+{
+  "repaired": [
+    {
+      "file": "docs/03_历史归档/20261014_App版本日志.md",
+      "历史原路径": "../screenshots/11-land-dash-perf.png",
+      "new": "../04_截图示例/11-land-dash-perf.png"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_ICarUI版本日志.md",
+      "历史原路径": "../../docs/CHANGELOG.md",
+      "new": "../07_版本更新日志.md"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_ICarUI版本日志.md",
+      "历史原路径": "../../docs/下一步-变量模式与组件变体.md",
+      "new": "../01_专题/23_下一步-变量模式与组件变体.md"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_ICarUI版本日志.md",
+      "历史原路径": "../../docs/主题设计大纲.md",
+      "new": "../01_专题/12_主题设计大纲.md"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_ICarUI版本日志.md",
+      "历史原路径": "../../docs/控件库优化建议.md",
+      "new": "../01_专题/18_控件库优化建议.md"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_ICarUI版本日志.md",
+      "历史原路径": "../png.js",
+      "new": "../../tools/icarui/png.js"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_ICarUI版本日志.md",
+      "历史原路径": "docs/CHANGELOG.md",
+      "new": "../07_版本更新日志.md"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_ICarUI版本日志.md",
+      "历史原路径": "docs/FILE_MAP.md",
+      "new": "../05_目录与核心文件说明.md"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_ICarUI版本日志.md",
+      "历史原路径": "docs/README.md",
+      "new": "../00_AI接手指南.md"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_ICarUI版本日志.md",
+      "历史原路径": "docs/README.md:252",
+      "new": "../00_AI接手指南.md"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_ICarUI版本日志.md",
+      "历史原路径": "docs/UI设计指南.md",
+      "new": "../01_专题/13_UI设计指南.md"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_ICarUI版本日志.md",
+      "历史原路径": "docs/archive/主题格式参考.md",
+      "new": "../01_专题/14_主题格式参考.md"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_ICarUI版本日志.md",
+      "历史原路径": "docs/下一步-全量文档迭代.md",
+      "new": "26_下一步-全量文档迭代.md"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_ICarUI版本日志.md",
+      "历史原路径": "docs/下一步-变量模式与组件变体.md",
+      "new": "../01_专题/23_下一步-变量模式与组件变体.md"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_ICarUI版本日志.md",
+      "历史原路径": "docs/主题设计大纲.md",
+      "new": "../01_专题/12_主题设计大纲.md"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_ICarUI版本日志.md",
+      "历史原路径": "docs/控件库优化建议.md",
+      "new": "../01_专题/18_控件库优化建议.md"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_ICarUI版本日志.md",
+      "历史原路径": "docs/迭代清单.md",
+      "new": "../03_开发进度与问题清单.md"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_ICarUI版本日志.md",
+      "历史原路径": "docs/迭代清单.md:1110",
+      "new": "../03_开发进度与问题清单.md"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_ICarUI版本日志.md",
+      "历史原路径": "tools/theme-studio/index.html",
+      "new": "../../tools/icarui/index.html"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_ICarUI版本日志.md",
+      "历史原路径": "tools/theme-studio/js/schema.js",
+      "new": "../../tools/icarui/js/schema.js"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_ICarUI版本日志.md",
+      "历史原路径": "tools/theme-studio/sample.json",
+      "new": "../../tools/icarui/sample.json"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_ICarUI版本日志.md",
+      "历史原路径": "tools/theme-studio/tests/verify-crosslang.js",
+      "new": "../../tools/icarui/tests/verify-crosslang.js"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_ICarUI版本日志.md",
+      "历史原路径": "tools/verify-crosslang.js",
+      "new": "../../tools/icarui/tests/verify-crosslang.js"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_ICarUI版本日志.md",
+      "历史原路径": "tools/verify-studio.js",
+      "new": "../../tools/icarui/tests/verify-studio2.js"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_STATUS_整理前.md",
+      "历史原路径": "docs/27-…调研.md",
+      "new": "../01_专题/27_下一步-仪表控件参考调研.md"
+    },
+    {
+      "file": "docs/03_历史归档/CHANGELOG-v1.0~v1.8.md",
+      "历史原路径": "../screenshots/22-log-stress-3000.png",
+      "new": "../04_截图示例/22-log-stress-3000.png"
+    },
+    {
+      "file": "docs/04_截图示例/README.md",
+      "历史原路径": "../screenshots/06-pid-editor.png",
+      "new": "06-pid-editor.png"
+    },
+    {
+      "file": "docs/04_截图示例/README.md",
+      "历史原路径": "../screenshots/08-rule-editor.png",
+      "new": "08-rule-editor.png"
+    },
+    {
+      "file": "docs/04_截图示例/README.md",
+      "历史原路径": "../screenshots/11-land-dash-perf.png",
+      "new": "11-land-dash-perf.png"
+    },
+    {
+      "file": "docs/04_截图示例/README.md",
+      "历史原路径": "../screenshots/12-land-dash-custom.png",
+      "new": "12-land-dash-custom.png"
+    },
+    {
+      "file": "docs/04_截图示例/README.md",
+      "历史原路径": "../screenshots/13-land-connect.png",
+      "new": "13-land-connect.png"
+    },
+    {
+      "file": "docs/04_截图示例/README.md",
+      "历史原路径": "../screenshots/14-land-pid-list.png",
+      "new": "14-land-pid-list.png"
+    },
+    {
+      "file": "docs/04_截图示例/README.md",
+      "历史原路径": "../screenshots/15-land-pid-editor.png",
+      "new": "15-land-pid-editor.png"
+    },
+    {
+      "file": "docs/04_截图示例/README.md",
+      "历史原路径": "../screenshots/16-land-scanner.png",
+      "new": "16-land-scanner.png"
+    },
+    {
+      "file": "docs/04_截图示例/README.md",
+      "历史原路径": "../screenshots/17-land-rule-editor.png",
+      "new": "17-land-rule-editor.png"
+    },
+    {
+      "file": "docs/04_截图示例/README.md",
+      "历史原路径": "../screenshots/18-theme-neon.png",
+      "new": "18-theme-neon.png"
+    },
+    {
+      "file": "docs/04_截图示例/README.md",
+      "历史原路径": "../screenshots/19-theme-ice.png",
+      "new": "19-theme-ice.png"
+    },
+    {
+      "file": "docs/04_截图示例/README.md",
+      "历史原路径": "../screenshots/20-theme-classic.png",
+      "new": "20-theme-classic.png"
+    },
+    {
+      "file": "docs/04_截图示例/README.md",
+      "历史原路径": "../screenshots/21-theme-picker.png",
+      "new": "21-theme-picker.png"
+    },
+    {
+      "file": "docs/04_截图示例/README.md",
+      "历史原路径": "../screenshots/22-log-stress-3000.png",
+      "new": "22-log-stress-3000.png"
+    },
+    {
+      "file": "docs/04_截图示例/README.md",
+      "历史原路径": "../screenshots/23-log-dedup.png",
+      "new": "23-log-dedup.png"
+    },
+    {
+      "file": "docs/04_截图示例/README.md",
+      "历史原路径": "../screenshots/24-v130-portrait-dash.png",
+      "new": "24-v130-portrait-dash.png"
+    },
+    {
+      "file": "docs/04_截图示例/README.md",
+      "历史原路径": "../screenshots/25-v130-landscape-log.png",
+      "new": "25-v130-landscape-log.png"
+    },
+    {
+      "file": "docs/04_截图示例/README.md",
+      "历史原路径": "../screenshots/26-v130-connect.png",
+      "new": "26-v130-connect.png"
+    },
+    {
+      "file": "docs/04_截图示例/README.md",
+      "历史原路径": "../screenshots/27-v130-scanner.png",
+      "new": "27-v130-scanner.png"
+    }
+  ],
+  "new_exact_historical_exemptions": [
+    {
+      "file": "docs/03_历史归档/20261014_ICarUI版本日志.md",
+      "link": "docs/archive/x.md",
+      "reason": "历史工具日志演示死链守卫的虚构x.md路径，并非实际文件；迁移后首次纳入docs扫描。保留历史示例和原件ZIP，精确豁免这一条，不豁免整个归档。"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_STATUS_整理前.md",
+      "link": "app/src/test/java/com/icar/obd/obd/GForceSourceUnitTest.kt",
+      "reason": "2026-10-14迁移前STATUS的历史临时/旧名测试引用，当前工作树与备份清单均无该路径；只保留当时记录，不是当前测试入口。整理前原始字节在ZIP，现行回归为GForceSourceTest及持久测试；新增纳入docs扫描故精确登记，不能豁免新测试路径。"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_STATUS_整理前.md",
+      "link": "app/src/test/java/com/icar/obd/obd/TmpGForcePreFixProbeTest.kt",
+      "reason": "2026-10-14迁移前STATUS的历史临时/旧名测试引用，当前工作树与备份清单均无该路径；只保留当时记录，不是当前测试入口。整理前原始字节在ZIP，现行回归为GForceSourceTest及持久测试；新增纳入docs扫描故精确登记，不能豁免新测试路径。"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_STATUS_整理前.md",
+      "link": "app/src/test/java/com/icar/obd/obd/TmpT1R2ProbeTest.kt",
+      "reason": "2026-10-14迁移前STATUS的历史临时/旧名测试引用，当前工作树与备份清单均无该路径；只保留当时记录，不是当前测试入口。整理前原始字节在ZIP，现行回归为GForceSourceTest及持久测试；新增纳入docs扫描故精确登记，不能豁免新测试路径。"
+    },
+    {
+      "file": "docs/03_历史归档/20261014_STATUS_整理前.md",
+      "link": "app/src/test/java/com/icar/obd/obd/TmpT1RUnitProbeTest.kt",
+      "reason": "2026-10-14迁移前STATUS的历史临时/旧名测试引用，当前工作树与备份清单均无该路径；只保留当时记录，不是当前测试入口。整理前原始字节在ZIP，现行回归为GForceSourceTest及持久测试；新增纳入docs扫描故精确登记，不能豁免新测试路径。"
+    }
+  ],
+  "allow_count": 22
+}

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.ui.dash.DashSpecTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:52.685Z" hostname="WIN-LI9OE82Q5LO" time="0.001">
+  <properties/>
+  <testcase name="自定义有设计文件时用设计文件" classname="com.icar.obd.ui.dash.DashSpecTest" time="0.0"/>
+  <testcase name="普通与性能不受导入的设计文件影响" classname="com.icar.obd.ui.dash.DashSpecTest" time="0.0"/>
+  <testcase name="自定义没有设计文件时回落到扁平表" classname="com.icar.obd.ui.dash.DashSpecTest" time="0.0"/>
+  <testcase name="越界类型不崩溃也不误用设计文件" classname="com.icar.obd.ui.dash.DashSpecTest" time="0.0"/>
+  <testcase name="每一页按自己那一套取规格" classname="com.icar.obd.ui.dash.DashSpecTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.UiInspectorInfoTest" tests="44" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:51.117Z" hostname="WIN-LI9OE82Q5LO" time="0.019">
+  <properties/>
+  <testcase name="资源名长名字缩成 @类型-名字" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.001"/>
+  <testcase name="整数不写小数点，小数保留一位" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="操作提示里提到了清除按钮" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.001"/>
+  <testcase name="父链超长时不会死循环" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.004"/>
+  <testcase name="面板内容与规格示意图逐行一致" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.002"/>
+  <testcase name="可见性的三个值" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="正文是整体渲染去掉前两行" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="只有开着且没暂停才算接管触摸" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="剪贴板没头时不留下空行" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="声明宽高的三种形态" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="检视开关不许进 settings_json" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.002"/>
+  <testcase name="颜色不透明时不写 FF" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="四边数组缺项时兜成 0 而不是少几个数" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="像素转 dp 用 density" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="权重为零不出现" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.001"/>
+  <testcase name="wrap_content 的控件标实测并把声明值摆出来" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="宽高都声明成固定值时才写声明" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="暂停时面板本体不抢触摸" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="超长父链丢头部，只留一个省略号" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="超长类名本身会被截断" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.001"/>
+  <testcase name="密度拿不到时退回像素并标出 px" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="没有可选值时一行都不多" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="背景优先给资源名，其次类名，最后才是无" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="字号行同时给出 sp 与颜色" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="父链太长时从头部丢，尾部永远完整" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.001"/>
+  <testcase name="非法浮点不产生 NaN 字样" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="有 id 时给资源名而不是数字" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="父链从根到该控件" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="父链深了从中间省略，保留最近两层" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="面板开关的文案跟着状态走" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="父链为空时明说无" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="可选行插在层级之前" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="可选行没值就整行不出现" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="任意父链都不许死循环" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.005"/>
+  <testcase name="仪表盘自绘区必须给出提示" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.001"/>
+  <testcase name="占位态的内容与标题是唯一的，供 show 与清除共用" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="非文本控件也要出字号行，明说无" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="暂停提示不再编方位（药丸不在左上角）" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="清除按钮的文案是人话，且不是清日志" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="四边数值顺序是左上右下" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="剪贴板文本带版本头" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="像素转 sp 用 scaledDensity" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="没有 id 时明说无 id" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <testcase name="占位提示里带着下一步做什么" classname="com.icar.obd.data.UiInspectorInfoTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

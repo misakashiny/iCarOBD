@@ -146,9 +146,9 @@ class FrameRateGateTest {
         val ids = listOf(0x09A, 0x4C1, 0x7E8)
         val accept = FrameRateGate.acceptIdsOf(ids)
         listOf(
-            "09A 8 00 00 00 00 00 00 00",
-            "09a 8 00 00 00 00 00 00 00",
-            "  09A 8 00 00 00 00 00 00 00",
+            "09A 8 00 00 00 00 00 00 00 00",
+            "09a 8 00 00 00 00 00 00 00 00",
+            "  09A 8 00 00 00 00 00 00 00 00",
             "4C1 2 01 02",
             "7E8 06 41 0C 1A F8 00 00"
         ).forEach { line ->

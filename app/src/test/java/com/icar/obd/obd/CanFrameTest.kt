@@ -60,10 +60,9 @@ class CanFrameTest {
     }
 
     @Test
-    fun `非法的数据 token 被跳过但不影响其它字节`() {
+    fun `非法的数据 token 拒绝整帧而不移动后续字节`() {
         val f = CanFrame.parseLine("7E8 10 ZZ 14")
-        assertNotNull(f)
-        assertEquals(listOf(0x10, 0x14), f!!.data)
+        assertNull(f)
     }
 
     @Test

@@ -187,28 +187,29 @@ const eq = (a, b, m) => ok(a === b, m + (a === b ? '' : `（实际 ${JSON.string
     ok(D.dataKB < 1200, `清单体积 ${D.dataKB} KB（< 1200 KB，不然工具启动会变慢）`);
 
     // ---------- 3) 逐个加入画布（全量，不是抽查）
-    console.log('\n=== 3. 逐个加入画布（288 个全过）===');
-    // ⚠️ **分批跑** —— 288 次连续 addImageNode 会让页面在一次 evaluate 里跑太久，
-    // CDP 直接报 "Inspected target navigated or closed"（实测踩到）。
-    // 每批 40 个，批间让出一次事件循环。
-    const add = await cdp.eval(`(async () => {
+    console.log('\n=== 3. 逐个加入画布（全部素材）===');
+    // Each CDP request has a 12-second deadline. Yielding inside one request
+    // does not reset it, so send a separate bounded request for each batch.
+    const A = { tried: 0, failed: [], arBad: [], tiny: [] };
+    for (let start = 0; start < M.n; start += 40) {
+    const batch = JSON.parse(await cdp.eval(`(async () => {
       const S = window.CanvasState;
       const L = window.BUILTIN_ASSETS || [];
       const out = { tried: 0, failed: [], arBad: [], tiny: [] };
       const savedNodes = S.design.nodes, savedAssets = S.design.assets;
       S.design.nodes = []; S.design.assets = [];
       const BATCH = 40;
-      for (let start = 0; start < L.length; start += BATCH) {
-        L.slice(start, start + BATCH).forEach(a => {
+        L.slice(${start}, ${start} + BATCH).forEach(a => {
           out.tried++;
           try {
-            const id = "audit-" + out.tried;
+            const id = "audit-" + (${start} + out.tried);
             S.design.assets.push({ id: id, name: a.label, kind: a.kind, path: a.path, data: a.data, w: a.w, h: a.h });
             const n0 = S.design.nodes.length;
             window.addImageNode(id);
             if (S.design.nodes.length !== n0 + 1) { out.failed.push(a.path + " 没加进去"); return; }
             const n = S.design.nodes[S.design.nodes.length - 1];
-            const want = a.w / a.h, got = n.w / n.h;
+            const m = window.nodeToCanvasMatrix();
+            const want = a.w / a.h, got = n.w * m.a / (n.h * m.d);
             if (Math.abs(want - got) / want > 0.06) out.arBad.push(a.path + " " + want.toFixed(3) + "→" + got.toFixed(3));
             if (n.w < 6 || n.h < 6) out.tiny.push(a.path + " " + n.w + "x" + n.h);
             // ⚠️ **必须立刻弹掉** —— addImageNode 内部会 commit()，
@@ -220,11 +221,12 @@ const eq = (a, b, m) => ok(a === b, m + (a === b ? '' : `（实际 ${JSON.string
         });
         // 让出一次事件循环，别把主线程占死
         await new Promise(r => setTimeout(r, 0));
-      }
       S.design.nodes = savedNodes; S.design.assets = savedAssets;
       return JSON.stringify(out);
-    })()`);
-    const A = JSON.parse(add);
+    })()`));
+    A.tried += batch.tried;
+    for (const key of ['failed', 'arBad', 'tiny']) A[key].push(...batch[key]);
+    }
     console.log('    · 试了 ' + A.tried + ' 个，失败 ' + A.failed.length + '，比例异常 ' + A.arBad.length);
     eq(A.tried, M.n, `全部 ${M.n} 个都试过了`);
     eq(A.failed.length, 0, '没有一个抛错/加不进去' + (A.failed.length ? '：' + A.failed.slice(0, 5) : ''));

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.GaugeLayoutTest" tests="34" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:50.300Z" hostname="WIN-LI9OE82Q5LO" time="0.025">
+  <properties/>
+  <testcase name="预设坐标全部落在画布内且纵向铺满" classname="com.icar.obd.data.GaugeLayoutTest" time="0.005"/>
+  <testcase name="七个预设都存在且非空" classname="com.icar.obd.data.GaugeLayoutTest" time="0.0"/>
+  <testcase name="resize 不能超出画布右边界" classname="com.icar.obd.data.GaugeLayoutTest" time="0.001"/>
+  <testcase name="旧格式 JSON（归一化坐标 无 unit 字段）自动乘 360" classname="com.icar.obd.data.GaugeLayoutTest" time="0.001"/>
+  <testcase name="新格式 JSON 往返保留全部字段" classname="com.icar.obd.data.GaugeLayoutTest" time="0.0"/>
+  <testcase name="吸附开着时 moveIf 与 move 完全等价" classname="com.icar.obd.data.GaugeLayoutTest" time="0.0"/>
+  <testcase name="两条 span2 迁移为上下两个整宽" classname="com.icar.obd.data.GaugeLayoutTest" time="0.0"/>
+  <testcase name="网格步长与画布单位自洽" classname="com.icar.obd.data.GaugeLayoutTest" time="0.0"/>
+  <testcase name="空列表迁移不崩" classname="com.icar.obd.data.GaugeLayoutTest" time="0.001"/>
+  <testcase name="预设量程取自 PID 库而不是写死" classname="com.icar.obd.data.GaugeLayoutTest" time="0.0"/>
+  <testcase name="缺失的可选字段用默认值" classname="com.icar.obd.data.GaugeLayoutTest" time="0.0"/>
+  <testcase name="反复拖动后始终不出界" classname="com.icar.obd.data.GaugeLayoutTest" time="0.001"/>
+  <testcase name="关掉吸附后缩放仍受最小尺寸与边界约束" classname="com.icar.obd.data.GaugeLayoutTest" time="0.0"/>
+  <testcase name="旧格式 JSON（只有 span 没有坐标）被标记为待迁移" classname="com.icar.obd.data.GaugeLayoutTest" time="0.001"/>
+  <testcase name="关掉吸附后移动仍不能拖出画布" classname="com.icar.obd.data.GaugeLayoutTest" time="0.0"/>
+  <testcase name="allPidIds 主参数在前 副参数在后" classname="com.icar.obd.data.GaugeLayoutTest" time="0.005"/>
+  <testcase name="迁移结果始终落在画布内且铺满" classname="com.icar.obd.data.GaugeLayoutTest" time="0.001"/>
+  <testcase name="最小尺寸本身就在网格上" classname="com.icar.obd.data.GaugeLayoutTest" time="0.0"/>
+  <testcase name="snap 吸附到最近的网格" classname="com.icar.obd.data.GaugeLayoutTest" time="0.001"/>
+  <testcase name="关掉吸附后可以停在任意坐标" classname="com.icar.obd.data.GaugeLayoutTest" time="0.0"/>
+  <testcase name="多数据显示类预设确实带了副参数" classname="com.icar.obd.data.GaugeLayoutTest" time="0.0"/>
+  <testcase name="带 unit 360 的 JSON 不再二次换算" classname="com.icar.obd.data.GaugeLayoutTest" time="0.0"/>
+  <testcase name="resize 不能小于最小尺寸" classname="com.icar.obd.data.GaugeLayoutTest" time="0.0"/>
+  <testcase name="默认仪表就是普通驾驶预设" classname="com.icar.obd.data.GaugeLayoutTest" time="0.001"/>
+  <testcase name="四条 span1 迁移为 2x2 网格" classname="com.icar.obd.data.GaugeLayoutTest" time="0.0"/>
+  <testcase name="反复缩放后始终不小于最小尺寸" classname="com.icar.obd.data.GaugeLayoutTest" time="0.001"/>
+  <testcase name="行高按该行最高样式占比" classname="com.icar.obd.data.GaugeLayoutTest" time="0.0"/>
+  <testcase name="allPidIds 无副参数时只有主参数" classname="com.icar.obd.data.GaugeLayoutTest" time="0.0"/>
+  <testcase name="没有待迁移项时不做任何改动" classname="com.icar.obd.data.GaugeLayoutTest" time="0.0"/>
+  <testcase name="预设引用的 PID 都真实存在" classname="com.icar.obd.data.GaugeLayoutTest" time="0.001"/>
+  <testcase name="allPidIds 过滤空串" classname="com.icar.obd.data.GaugeLayoutTest" time="0.0"/>
+  <testcase name="move 不能拖出右边界" classname="com.icar.obd.data.GaugeLayoutTest" time="0.0"/>
+  <testcase name="move 不能拖出左边界" classname="com.icar.obd.data.GaugeLayoutTest" time="0.001"/>
+  <testcase name="未知预设 id 返回 null" classname="com.icar.obd.data.GaugeLayoutTest" time="0.002"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

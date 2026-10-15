@@ -335,6 +335,7 @@ class PidEditorActivity : AppCompatActivity() {
             etName.setText(o.optString("name"))
             etMode.setText(o.optString("mode", "22"))
             etPid.setText(o.optString("pid"))
+            etHeader.setText(o.optString("header"))
             etFormula.setText(o.optString("formula", "A"))
             etUnit.setText(o.optString("unit"))
             etMin.setText(o.optString("min", "0"))
@@ -435,7 +436,30 @@ class PidEditorActivity : AppCompatActivity() {
             r.errors.take(5).forEach { append('\n').append("· ").append(it.message) }
             if (r.errors.size > 5) append("\n… 还有 ").append(r.errors.size - 5).append(" 项")
         }
+        focusIssue(r.errors.firstOrNull()?.field)
         fail(row, head)
+    }
+
+    /**
+     * 校验失败后把用户带到第一个错误字段；结果行仍会滚到可见，保留完整错误摘要。
+     */
+    private fun focusIssue(field: PidDraft.Field?) {
+        val target = when (field) {
+            PidDraft.Field.NAME -> etName
+            PidDraft.Field.HEADER -> etHeader
+            PidDraft.Field.MODE -> etMode
+            PidDraft.Field.PID -> etPid
+            PidDraft.Field.FORMULA -> etFormula
+            PidDraft.Field.RANGE -> etMin
+            PidDraft.Field.INTERVAL -> etInterval
+            PidDraft.Field.ECU -> etEcuIndex
+            PidDraft.Field.INVALID_RAW -> etInvalidRaw
+            PidDraft.Field.MIN_DLC -> etMinDlc
+            PidDraft.Field.TTL -> etTtl
+            else -> null
+        } ?: return
+        target.requestFocus()
+        scrollRoot.post { runCatching { scrollRoot.smoothScrollTo(0, target.top) } }
     }
 
     // ------------------------------------------------------------ 测试
@@ -456,6 +480,12 @@ class PidEditorActivity : AppCompatActivity() {
             return
         }
         val p = r.pid!!
+        val checked = com.icar.obd.obd.PidRequestPolicy.check(p)
+        val read = checked.request
+        if (read == null) {
+            fail(checked.error ?: "请求安全拦截", "该PID请求已被安全策略拒绝")
+            return
+        }
         if (!ObdController.isConnected()) {
             fail("解析结果: 设备未就绪，请先到「连接」页完成初始化", "设备未就绪，请先到「连接」页完成初始化")
             return
@@ -471,7 +501,7 @@ class PidEditorActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             val out = withContext(Dispatchers.IO) {
-                val raw = ObdController.session.raw(p.requestString(), 3000)
+                val raw = ObdController.session.requestPid(read, 3000)
                 val parsed = ObdProtocol.parse(raw, p)
                 Triple(raw, parsed, p)
             }
@@ -523,6 +553,12 @@ class PidEditorActivity : AppCompatActivity() {
             return
         }
         val p = r.pid!!
+        val checked = com.icar.obd.obd.PidRequestPolicy.check(p)
+        val read = checked.request
+        if (read == null) {
+            fail(checked.error ?: "请求安全拦截", "该PID请求已被安全策略拒绝")
+            return
+        }
         if (!ObdController.isConnected()) {
             fail("采样: 设备未就绪，请先到「连接」页完成初始化", "设备未就绪，请先到「连接」页完成初始化")
             return
@@ -547,7 +583,7 @@ class PidEditorActivity : AppCompatActivity() {
             val started = System.currentTimeMillis()
             while (sampling && System.currentTimeMillis() - started < sampleDurationMs) {
                 val parsed = withContext(Dispatchers.IO) {
-                    ObdProtocol.parse(ObdController.session.raw(p.requestString(), 3000), p)
+                    ObdProtocol.parse(ObdController.session.requestPid(read, 3000), p)
                 }
                 if (parsed.ok && parsed.value != null) values.add(parsed.value!!) else fails++
                 tvResult.text = String.format(

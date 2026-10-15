@@ -1,0 +1,52 @@
+=== 1. 目录改名到位 ===
+  ✅ tools/icarui/ 存在
+  ✅ tools/theme-studio/ **不存在**（不能留一个空壳目录，否则两份权威）
+
+=== 2. 界面标题是 ICarUI ===
+  ✅ <title> 就是 ICarUI
+  ✅ <h1> 以 ICarUI 开头（实际 "ICarUI<img class=\"brandIcon\" src=\"brandi"）
+  ✅ index.html 里没有残留的旧标题「iCar OBD · 主题制作」
+
+=== 3. README / CHANGELOG 的当前称呼 ===
+  ✅ README.md 的一级标题以 ICarUI 开头
+  ✅ CHANGELOG.md 的一级标题以 ICarUI 开头
+  ✅ CHANGELOG 里写明了「原称 theme-studio」（改名可追溯）
+
+=== 4. tools/ 与 docs/ 里不再有旧路径（历史日志除外）===
+  ✅ tools/ + docs/ 里除历史日志与**改名记录行**外没有 theme-studio 字面量（剩 0 个文件）
+       ℹ️ 已放行的**引用**：docs/03_历史归档/26_下一步-全量文档迭代.md —— 收尾任务计划书，正文说的是「改名后 tools/theme-studio/ 的引用要全部更新」——旧路径在这里是被**清理的对象**，不是过期引用（app/ 那 8 处就是它要清的）。（2026-10-11 加编号前叫 docs/下一步-全量文档迭代.md）
+       ℹ️ 已放行的**引用**：tools/doc-link-allowlist.json —— v2.85.0 死链守卫的豁免清单。它的 `link` 字段必须**逐字写出旧路径**才能匹配到历史文档里那条失效链接 —— 那是**匹配用的键**，不是过期引用；每条的 `reason` 里都写明了旧目录 v2.83.0 起改名 tools/icarui/。（这份清单本身由 tools/check-doc-links.js 校验：条目缺 reason 即失败。）
+
+=== 5. 引用工具路径的脚本都指到新目录 ===
+  ✅ tools/run-browser-tests.ps1 存在
+  ✅ tools/run-browser-tests.ps1 指向 tools/icarui
+  ✅ tools/check-build-guard.ps1 存在
+  ✅ tools/check-build-guard.ps1 指向 tools/icarui
+  ✅ tools/guard-pid-probe.js 存在
+  ✅ tools/guard-pid-probe.js 指向 tools/icarui
+  ✅ tools/guard-color-probe.js 存在
+  ✅ tools/guard-color-probe.js 指向 tools/icarui
+  ✅ tools/icarui/tests/verify-crosslang.js 存在
+  ✅ tools/icarui/tests/verify-crosslang.js 指向 tools/icarui
+
+=== 6. 改名**没有**动到格式 id 与 App 侧读的字段 ===
+  ✅ 设计包格式 id 仍是 icar.pack/1（**格式 id 不是工具名**，改了会让旧包被拒收）
+  ✅ 设计文件 schema id 仍是 icar.ui/1 + icar.ui/2
+  ✅ App 侧 DesignPack.kt 里的 icar.pack/1 未被动过
+
+=== 7. 零安装形态没被破坏 ===
+  ✅ icarui 目录下没有 package.json
+  ✅ icarui 目录下没有 node_modules
+  ✅ index.html 有 17 个 <script src>
+  ✅ 每个 <script src> 都在磁盘上（改名后相对路径没断）
+  ✅ 没有一个外部脚本
+  ✅ 每个 <link href> 都在磁盘上（css/studio.css 没断）
+
+=== 8. app/ 侧旧路径台账（本次范围外，只记账不修）===
+  ✅ app/ 里没有旧路径引用（剩 0 个）
+  ✅ ThemeStudioSampleTest.kt 还在（这个类守的是跨语言契约）
+  ✅ ThemeStudioSampleTest 按 tools/icarui/sample.json 找样例
+  ✅ ThemeStudioSampleTest 的**代码**里没有 Assume 静默跳过（找不到样例文件必须失败）
+
+============================================================
+PASS=32  FAIL=0

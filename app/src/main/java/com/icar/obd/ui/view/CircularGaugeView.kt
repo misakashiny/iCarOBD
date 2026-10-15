@@ -68,7 +68,8 @@ class CircularGaugeView @JvmOverloads constructor(
         arcRect.set(cx - inner / 2f, cy - inner / 2f, cx + inner / 2f, cy + inner / 2f)
 
         val radius = inner / 2f
-        val r = shownRatio()
+        val hasReading = value?.isFinite() == true
+        val r = if (hasReading) shownRatio() else 0f
         val layers = neon.layersFor(size)
         val glowOn = palette.glow
 
@@ -202,30 +203,32 @@ class CircularGaugeView @JvmOverloads constructor(
         }
 
         // ---------------------------------------------------------- 5) 指针
-        val vAng = Math.toRadians((startAngle + sweep * r).toDouble())
-        val needleLen = radius * palette.needleLengthRatio.coerceIn(0.2f, 1f)
-        val nx = cx + Math.cos(vAng).toFloat() * needleLen
-        val ny = cy + Math.sin(vAng).toFloat() * needleLen
-        // 指针颜色由**唯一的**报警状态决定（v1.10.1 起不再判第二个 warn）：
-        //   NONE → 主题指针色；WARN/WARN_LOW → 警告色；CRITICAL → 危险色
-        // 再叠一层 alertMix，让报警时指针参与爆闪
-        val needleColor = alertMix(alertColor().let {
-            if (it == cAccent) cNeedle else it
-        })
-        if (glowOn) {
-            neon.bloomLine(canvas, cx, cy, nx, ny, needleColor, dp(3f), spread * 0.8f, layers)
-        }
-        needlePaint.color = needleColor
-        needlePaint.strokeWidth = dp(3f)
-        canvas.drawLine(cx, cy, nx, ny, needlePaint)
+        if (hasReading) {
+            val vAng = Math.toRadians((startAngle + sweep * r).toDouble())
+            val needleLen = radius * palette.needleLengthRatio.coerceIn(0.2f, 1f)
+            val nx = cx + Math.cos(vAng).toFloat() * needleLen
+            val ny = cy + Math.sin(vAng).toFloat() * needleLen
+            // 指针颜色由**唯一的**报警状态决定（v1.10.1 起不再判第二个 warn）：
+            //   NONE → 主题指针色；WARN/WARN_LOW → 警告色；CRITICAL → 危险色
+            // 再叠一层 alertMix，让报警时指针参与爆闪
+            val needleColor = alertMix(alertColor().let {
+                if (it == cAccent) cNeedle else it
+            })
+            if (glowOn) {
+                neon.bloomLine(canvas, cx, cy, nx, ny, needleColor, dp(3f), spread * 0.8f, layers)
+            }
+            needlePaint.color = needleColor
+            needlePaint.strokeWidth = dp(3f)
+            canvas.drawLine(cx, cy, nx, ny, needlePaint)
 
-        // 轴心
-        fillPaint.color = needleColor
-        canvas.drawCircle(cx, cy, dp(4f), fillPaint)
-        if (glowOn) {
-            neon.bloomCircle(canvas, cx, cy, dp(4f), alertGlowColor(120), spread * 0.5f, layers)
+            // 轴心
             fillPaint.color = needleColor
             canvas.drawCircle(cx, cy, dp(4f), fillPaint)
+            if (glowOn) {
+                neon.bloomCircle(canvas, cx, cy, dp(4f), alertGlowColor(120), spread * 0.5f, layers)
+                fillPaint.color = needleColor
+                canvas.drawCircle(cx, cy, dp(4f), fillPaint)
+            }
         }
 
         // ---------------------------------------------------------- 6) 文字

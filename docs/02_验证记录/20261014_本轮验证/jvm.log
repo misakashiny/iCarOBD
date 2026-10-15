@@ -1,0 +1,179 @@
+[=] 复用已有联接：D:\icarobd
+Picked up JAVA_TOOL_OPTIONS: -Djdk.net.unixdomain.tmpdir=D:/icarobd/stage/jvm-tmp
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.14.3/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+
+> Configure project :app
+WARNING: The option setting 'android.overridePathCheck=true' is experimental.
+The current default is 'false'.
+
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:dataBindingMergeDependencyArtifactsDebug UP-TO-DATE
+> Task :app:generateDebugResValues UP-TO-DATE
+> Task :app:generateDebugResources UP-TO-DATE
+> Task :app:mergeDebugResources UP-TO-DATE
+> Task :app:packageDebugResources UP-TO-DATE
+> Task :app:processDebugNavigationResources UP-TO-DATE
+> Task :app:parseDebugLocalResources UP-TO-DATE
+> Task :app:dataBindingGenBaseClassesDebug UP-TO-DATE
+> Task :app:generateDebugBuildConfig UP-TO-DATE
+> Task :app:checkDebugAarMetadata UP-TO-DATE
+> Task :app:compileDebugNavigationResources UP-TO-DATE
+> Task :app:mapDebugSourceSetPaths UP-TO-DATE
+> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE
+> Task :app:extractDeepLinksDebug UP-TO-DATE
+> Task :app:processDebugMainManifest UP-TO-DATE
+> Task :app:processDebugManifest UP-TO-DATE
+> Task :app:processDebugManifestForPackage UP-TO-DATE
+> Task :app:processDebugResources UP-TO-DATE
+> Task :app:compileDebugKotlin UP-TO-DATE
+> Task :app:javaPreCompileDebug UP-TO-DATE
+> Task :app:compileDebugJavaWithJavac UP-TO-DATE
+> Task :app:bundleDebugClassesToRuntimeJar UP-TO-DATE
+> Task :app:bundleDebugClassesToCompileJar UP-TO-DATE
+> Task :app:compileDebugUnitTestKotlin UP-TO-DATE
+> Task :app:preDebugUnitTestBuild UP-TO-DATE
+> Task :app:javaPreCompileDebugUnitTest UP-TO-DATE
+> Task :app:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :app:processDebugJavaRes UP-TO-DATE
+> Task :app:processDebugUnitTestJavaRes UP-TO-DATE
+> Task :app:testDebugUnitTest UP-TO-DATE
+
+BUILD SUCCESSFUL in 16s
+28 actionable tasks: 28 up-to-date
+
+  com.icar.obd.data.AppLogFormatTest           tests=7   skipped=0   failures=0   errors=0
+  com.icar.obd.data.BackgroundSizeTest         tests=8   skipped=0   failures=0   errors=0
+  com.icar.obd.data.BackupTest                 tests=10  skipped=0   failures=0   errors=0
+  com.icar.obd.data.CanFilterPresetsTest       tests=19  skipped=0   failures=0   errors=0
+  com.icar.obd.data.CanProbeRecordTest         tests=2   skipped=0   failures=0   errors=0
+  com.icar.obd.data.CanProbeUiStateTest        tests=6   skipped=0   failures=0   errors=0
+  com.icar.obd.data.CanSnifferTextTest         tests=13  skipped=0   failures=0   errors=0
+  com.icar.obd.data.DashCanvasTest             tests=25  skipped=0   failures=0   errors=0
+  com.icar.obd.data.DesignCoordUnitTest        tests=8   skipped=0   failures=0   errors=0
+  com.icar.obd.data.DesignDraftFromImageTest   tests=1   skipped=0   failures=0   errors=0
+  com.icar.obd.data.DesignFileTest             tests=25  skipped=0   failures=0   errors=0
+  com.icar.obd.data.DesignFileUserCaseTest     tests=1   skipped=0   failures=0   errors=0
+  com.icar.obd.data.DesignNodeDepthTest        tests=6   skipped=0   failures=0   errors=0
+  com.icar.obd.data.DesignNumericGuardTest     tests=14  skipped=0   failures=0   errors=0
+  com.icar.obd.data.DesignPackTest             tests=18  skipped=0   failures=0   errors=0
+  com.icar.obd.data.DesignPagesTest            tests=7   skipped=0   failures=0   errors=0
+  com.icar.obd.data.FormulaTest                tests=61  skipped=0   failures=0   errors=0
+  com.icar.obd.data.GaugeBandsTest             tests=19  skipped=0   failures=0   errors=0
+  com.icar.obd.data.GaugeLayoutTest            tests=34  skipped=0   failures=0   errors=0
+  com.icar.obd.data.GaugePartsTest             tests=23  skipped=0   failures=0   errors=0
+  com.icar.obd.data.GestureActionsTest         tests=29  skipped=0   failures=0   errors=0
+  com.icar.obd.data.IslandStyleTest            tests=17  skipped=0   failures=0   errors=0
+  com.icar.obd.data.LogViewTextTest            tests=10  skipped=0   failures=0   errors=0
+  com.icar.obd.data.NodeStateTest              tests=11  skipped=0   failures=0   errors=0
+  com.icar.obd.data.OptJsonBehaviorTest        tests=20  skipped=0   failures=0   errors=0
+  com.icar.obd.data.PidDedupTest               tests=28  skipped=0   failures=0   errors=0
+  com.icar.obd.data.PidDraftTest               tests=27  skipped=0   failures=0   errors=0
+  com.icar.obd.data.PidMergeTest               tests=13  skipped=0   failures=0   errors=0
+  com.icar.obd.data.PidModelsTest              tests=38  skipped=0   failures=0   errors=0
+  com.icar.obd.data.RuleAlertRoutingTest       tests=10  skipped=0   failures=0   errors=0
+  com.icar.obd.data.SignalDecodeTest           tests=14  skipped=0   failures=0   errors=0
+  com.icar.obd.data.SignalTableCsvTest         tests=41  skipped=0   failures=0   errors=0
+  com.icar.obd.data.SoundPresetsTest           tests=17  skipped=0   failures=0   errors=0
+  com.icar.obd.data.ThemeStudioSampleTest      tests=25  skipped=0   failures=0   errors=0
+  com.icar.obd.data.TreeWalkBudgetTest         tests=8   skipped=0   failures=0   errors=0
+  com.icar.obd.data.TurnSignalMonitorTest      tests=3   skipped=0   failures=0   errors=0
+  com.icar.obd.data.UiInspectorInfoTest        tests=44  skipped=0   failures=0   errors=0
+  com.icar.obd.data.ValueLabelsTest            tests=12  skipped=0   failures=0   errors=0
+  com.icar.obd.obd.CanAdapterGateTest          tests=1   skipped=0   failures=0   errors=0
+  com.icar.obd.obd.CanDiffTest                 tests=5   skipped=0   failures=0   errors=0
+  com.icar.obd.obd.CanFrameIntegrityTest       tests=3   skipped=0   failures=0   errors=0
+  com.icar.obd.obd.CanFrameTest                tests=23  skipped=0   failures=0   errors=0
+  com.icar.obd.obd.CanReceiveFilterTest        tests=3   skipped=0   failures=0   errors=0
+  com.icar.obd.obd.CanSnifferLifecycleTest     tests=21  skipped=0   failures=0   errors=0
+  com.icar.obd.obd.DerivedChannelsTest         tests=31  skipped=0   failures=0   errors=0
+  com.icar.obd.obd.ElmSessionCancellationTest  tests=3   skipped=0   failures=0   errors=0
+  com.icar.obd.obd.FrameRateGateTest           tests=14  skipped=0   failures=0   errors=0
+  com.icar.obd.obd.GForceSourceTest            tests=15  skipped=0   failures=0   errors=0
+  com.icar.obd.obd.ObdEngineLoggingTest        tests=7   skipped=0   failures=0   errors=0
+  com.icar.obd.obd.ObdProtocolTest             tests=58  skipped=0   failures=0   errors=0
+  com.icar.obd.obd.PidRequestImportTest        tests=3   skipped=0   failures=0   errors=0
+  com.icar.obd.obd.PidRequestPolicyTest        tests=16  skipped=0   failures=0   errors=0
+  com.icar.obd.obd.PidScannerLifecycleTest     tests=13  skipped=0   failures=0   errors=0
+  com.icar.obd.obd.PidScannerReportTest        tests=12  skipped=0   failures=0   errors=0
+  com.icar.obd.obd.PidScanResponseTest         tests=7   skipped=0   failures=0   errors=0
+  com.icar.obd.obd.PidScanRunTest              tests=9   skipped=0   failures=0   errors=0
+  com.icar.obd.obd.SegmentRotationTest         tests=22  skipped=0   failures=0   errors=0
+  com.icar.obd.obd.SignalSimulatorLifecycleTest tests=11  skipped=0   failures=0   errors=0
+  com.icar.obd.obd.SignalSimulatorTest         tests=36  skipped=0   failures=0   errors=0
+  com.icar.obd.obd.SourceLifecycleTest         tests=13  skipped=0   failures=0   errors=0
+  com.icar.obd.obd.TriggerGateTest             tests=8   skipped=0   failures=0   errors=0
+  com.icar.obd.obd.VehicleBusHistoryTest       tests=8   skipped=0   failures=0   errors=0
+  com.icar.obd.obd.VehicleBusSourceTest        tests=13  skipped=0   failures=0   errors=0
+  com.icar.obd.obd.VehicleBusTtlTest           tests=8   skipped=0   failures=0   errors=0
+  com.icar.obd.ui.dash.CanvasRebuildPolicyTest tests=17  skipped=0   failures=0   errors=0
+  com.icar.obd.ui.dash.DashboardBenchmarkTest  tests=12  skipped=0   failures=0   errors=0
+  com.icar.obd.ui.dash.DashSpecTest            tests=5   skipped=0   failures=0   errors=0
+  com.icar.obd.ui.dash.NodeStateResolverTest   tests=20  skipped=0   failures=0   errors=0
+  com.icar.obd.ui.dash.NodeTreeRendererTest    tests=6   skipped=0   failures=0   errors=0
+  com.icar.obd.ui.KnowledgeFragmentTest        tests=12  skipped=0   failures=0   errors=0
+  com.icar.obd.ui.view.AlertPulseTest          tests=41  skipped=0   failures=0   errors=0
+  com.icar.obd.ui.view.ColumnFlowLayoutTest    tests=9   skipped=0   failures=0   errors=0
+  com.icar.obd.ui.view.EasingTest              tests=37  skipped=0   failures=0   errors=0
+  com.icar.obd.ui.view.GaugeAnimatorTest       tests=19  skipped=0   failures=0   errors=0
+  com.icar.obd.ui.view.GaugeEasingTest         tests=14  skipped=0   failures=0   errors=0
+  com.icar.obd.ui.view.GaugeThemeTest          tests=36  skipped=0   failures=0   errors=0
+  com.icar.obd.ui.view.IslandStateMachineTest  tests=12  skipped=0   failures=0   errors=0
+  com.icar.obd.ui.view.NeonCoverageTest        tests=4   skipped=0   failures=0   errors=0
+  com.icar.obd.ui.view.NeonStyleTest           tests=6   skipped=0   failures=0   errors=0
+  com.icar.obd.ui.view.NewControlDataBindingTest tests=8   skipped=0   failures=0   errors=0
+-----
+TOTAL=1295  FAILED=0  SKIPPED=0
+
+===== 构建守卫 =====
+
+=== 1. build.gradle.kts ===
+  ✅ abiFilters 存在：abiFilters += "arm64-v8a"
+  ✅ build.gradle.kts 92 行（正常）
+  ✅ versionName = 1.20.22
+
+=== 2. APK 产物 ===
+  ✅ APK: iCarOBD-debug-v1.20.22-android.apk  7.08 MB
+  ✅ 体积在阈值内（≤ 8 MB）
+  ✅ 只编了一个 ABI：arm64-v8a
+  ✅ APK 文件名版本与 gradle 一致
+
+=== 3. 源码文件完整性 ===
+  ✅ canvas.js 裸色值都在白名单里（canvas.js 裸色值 17 处：draw×3, drawImageNode×3, longGrad×1, previewValueColor×1, drawGaugeNode×1, drawPartOutlines×1, drawSelection×7；白名单外 0 处）
+  ✅ 控件绑的 PID 都存在，或都在已知待办清单里（控件模板里绑 PID 的 38 个；PID 不存在的 13 个（已知待办 13 · 新问题 0））
+  已知待办 13 条（等 P9 上车逆向，**不是 bug**）—— 见 docs/迭代清单.md §P9：
+    · lamp_brake（制动灯） → obd.brakeFluid
+        原因：等 P9 上车逆向：CAN 探测跑两次（关/开目标）→「对比基准（找位）」定位变化位 →「加为监听」（转向灯已用此法确认：CAN 0x09A bit2/bit3）（下面 11 条同此原因）
+    · lamp_pad（刹车片） → obd.brakePad
+    · lamp_tpms（胎压灯） → obd.tpms
+    · lamp_airbag（气囊灯） → obd.airbag
+    · lamp_belt（安全带灯） → obd.seatbelt
+    · lamp_abs（ABS 灯） → obd.abs
+    · lamp_esp（ESP 灯） → obd.esp
+    · lamp_door（车门未关） → obd.door
+    · lamp_washer（玻璃水） → obd.washer
+    · lamp_service（保养提示） → obd.service
+    · lamp_lane（车道辅助） → obd.laneKeep
+    · lamp_collision（碰撞预警） → obd.collision
+    · g_gear（挡位） → obd.gear
+        原因：挡位是枚举（P/N/R/D）不是连续量；01 A4 的公式已反推（bit(B,4)*2+bit(D,0)-1），枚举值与映射要上车逐挡确认
+  ✅ 12 个 .ps1 文件编码都正常
+
+=== 4. 素材引用完整性 ===
+  ✅ builtin.js 里引用 416 个素材路径
+  ✅ presets.js 匹配到 127 个素材路径（合计去重后 416 个）
+  ✅ presets.js 引用的素材**都在 builtin.js 里**（登记时能拿到内嵌 data）
+  ✅ 素材路径没有重名（416 个都是唯一的）
+  ✅ 全部 416 个素材路径都能在磁盘上找到
+PASS: 5 semantics, 15 variants, 3 PNG byte/hash/dimension/replay checks
+  ✅ 新库5类/15变体/3张PNG独立清单与重放检查通过
+  ✅ 磁盘上的 419 个 PNG 都在清单里
+  ✅ 控件模板 key 没有重复
+
+  ✅ 破折号都是成对的
+
+  ✅ 200 个控件都有分类
+
+构建守卫通过 ✅

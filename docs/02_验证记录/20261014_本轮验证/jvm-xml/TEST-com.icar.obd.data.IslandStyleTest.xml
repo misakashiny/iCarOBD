@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.IslandStyleTest" tests="17" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:50.632Z" hostname="WIN-LI9OE82Q5LO" time="0.144">
+  <properties/>
+  <testcase name="默认摘要一眼能看出是出厂值" classname="com.icar.obd.data.IslandStyleTest" time="0.009"/>
+  <testcase name="摘要与说明文案里不许出现 Markdown 星号" classname="com.icar.obd.data.IslandStyleTest" time="0.009"/>
+  <testcase name="跟随主题时忽略自定义色" classname="com.icar.obd.data.IslandStyleTest" time="0.01"/>
+  <testcase name="越界档位落回默认值而不是夹到边界" classname="com.icar.obd.data.IslandStyleTest" time="0.011"/>
+  <testcase name="摘要跟着设置变" classname="com.icar.obd.data.IslandStyleTest" time="0.009"/>
+  <testcase name="自定义配色下 +N 跟正文色" classname="com.icar.obd.data.IslandStyleTest" time="0.007"/>
+  <testcase name="旧配置缺字段时取默认值" classname="com.icar.obd.data.IslandStyleTest" time="0.007"/>
+  <testcase name="手改坏的配置在读取时就被夹住" classname="com.icar.obd.data.IslandStyleTest" time="0.007"/>
+  <testcase name="色值解析与格式化" classname="com.icar.obd.data.IslandStyleTest" time="0.008"/>
+  <testcase name="改完样式能落盘再读回来" classname="com.icar.obd.data.IslandStyleTest" time="0.01"/>
+  <testcase name="停留时长的下标映射" classname="com.icar.obd.data.IslandStyleTest" time="0.008"/>
+  <testcase name="settingsToJson 里必须有这七个键" classname="com.icar.obd.data.IslandStyleTest" time="0.007"/>
+  <testcase name="全透明的颜色落回兜底值" classname="com.icar.obd.data.IslandStyleTest" time="0.01"/>
+  <testcase name="色板与色名一一对应" classname="com.icar.obd.data.IslandStyleTest" time="0.007"/>
+  <testcase name="默认样式就是 v1_20_12 的样子" classname="com.icar.obd.data.IslandStyleTest" time="0.007"/>
+  <testcase name="停留时长必须在候选里" classname="com.icar.obd.data.IslandStyleTest" time="0.009"/>
+  <testcase name="尺寸三档与档位表一一对应" classname="com.icar.obd.data.IslandStyleTest" time="0.007"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

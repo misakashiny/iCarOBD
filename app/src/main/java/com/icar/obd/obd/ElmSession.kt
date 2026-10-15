@@ -2,7 +2,9 @@ package com.icar.obd.obd
 
 import com.icar.obd.ble.ObdTransport
 import com.icar.obd.data.AppLog
+import com.icar.obd.data.PidDefinition
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -46,26 +48,45 @@ class ElmSession(private val transport: ObdTransport) {
      * @return 响应文本；超时返回空串（调用方按「无响应」处理）
      */
     suspend fun request(cmd: String, timeoutMs: Long = 2000): String = mutex.withLock {
+        // Before waiter/flush/send: even a direct raw caller cannot send an unsafe service.
+        PidRequestPolicy.sessionError(cmd)?.let { throw IllegalArgumentException("请求安全拦截：$it") }
         val d = CompletableDeferred<String>()
         waiter.set(d)
-        transport.flushRx()
         val tx = cmd.trim()
-        lastTx = tx
-        AppLog.v(AppLog.M_OBD, "TX", tx)
-        transport.send(tx + "\r")
         try {
-            val r = withTimeout(timeoutMs) { d.await() }
-            AppLog.v(AppLog.M_OBD, "RX", r)
-            r
-        } catch (e: TimeoutCancellationException) {
-            AppLog.w(AppLog.M_OBD, "超时无响应", "cmd=$tx timeout=${timeoutMs}ms")
-            ""
-        } catch (t: Throwable) {
-            AppLog.e(AppLog.M_OBD, "请求异常", "cmd=$tx ${t.message}")
-            ""
+            transport.flushRx()
+            lastTx = tx
+            AppLog.v(AppLog.M_OBD, "TX", tx)
+            transport.send(tx + "\r")
+            try {
+                val r = withTimeout(timeoutMs) { d.await() }
+                AppLog.v(AppLog.M_OBD, "RX", r)
+                r
+            } catch (e: TimeoutCancellationException) {
+                AppLog.w(AppLog.M_OBD, "超时无响应", "cmd=$tx timeout=${timeoutMs}ms")
+                ""
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Exception) {
+                AppLog.e(AppLog.M_OBD, "请求异常", "cmd=$tx ${t.message}")
+                ""
+            }
         } finally {
-            waiter.set(null)
+            waiter.compareAndSet(d, null)
         }
+    }
+
+    /** User PID input must enter here, never through the internal AT/raw path. */
+    suspend fun requestPid(pid: PidDefinition, timeoutMs: Long = 2000): String {
+        val checked = PidRequestPolicy.check(pid)
+        require(checked.request != null) { checked.error ?: "请求安全拦截" }
+        return requestPid(checked.request, timeoutMs)
+    }
+
+    suspend fun requestPid(read: PidRequestPolicy.ReadRequest, timeoutMs: Long = 2000): String {
+        // Keep this boundary read-only even if another internal caller constructs a token.
+        PidRequestPolicy.readError(read.command)?.let { throw IllegalArgumentException("请求安全拦截：$it") }
+        return request(read.command, timeoutMs)
     }
 
     /**

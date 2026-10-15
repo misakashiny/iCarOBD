@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.obd.CanSnifferLifecycleTest" tests="21" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:51.173Z" hostname="WIN-LI9OE82Q5LO" time="0.182">
+  <properties/>
+  <testcase name="partial rotation cannot claim entire round completed" classname="com.icar.obd.obd.CanSnifferLifecycleTest" time="0.135"/>
+  <testcase name="terminal result is ready when completion listener runs and archived once" classname="com.icar.obd.obd.CanSnifferLifecycleTest" time="0.004"/>
+  <testcase name="rotation interrupts changes filter and reopens monitor for every segment" classname="com.icar.obd.obd.CanSnifferLifecycleTest" time="0.006"/>
+  <testcase name="failed run retains last successful comparison baseline" classname="com.icar.obd.obd.CanSnifferLifecycleTest" time="0.004"/>
+  <testcase name="monitor preparation or cleanup blocks capture without IO" classname="com.icar.obd.obd.CanSnifferLifecycleTest" time="0.0"/>
+  <testcase name="active initialization prevents probe before any adapter send" classname="com.icar.obd.obd.CanSnifferLifecycleTest" time="0.001"/>
+  <testcase name="stop during preparation never opens monitor later" classname="com.icar.obd.obd.CanSnifferLifecycleTest" time="0.001"/>
+  <testcase name="busy cleanup refuses restart and only releases when finished" classname="com.icar.obd.obd.CanSnifferLifecycleTest" time="0.001"/>
+  <testcase name="clear during capture cannot discard active results or unlock phase" classname="com.icar.obd.obd.CanSnifferLifecycleTest" time="0.002"/>
+  <testcase name="stop before IO worker enters still finishes and releases adapter" classname="com.icar.obd.obd.CanSnifferLifecycleTest" time="0.003"/>
+  <testcase name="filter rejection prevents misleading capture" classname="com.icar.obd.obd.CanSnifferLifecycleTest" time="0.001"/>
+  <testcase name="disconnect ends capture without resuming polling or sending to lost connection" classname="com.icar.obd.obd.CanSnifferLifecycleTest" time="0.001"/>
+  <testcase name="all standard IDs preset is distinct from segment zero" classname="com.icar.obd.obd.CanSnifferLifecycleTest" time="0.001"/>
+  <testcase name="previous segment callback cannot pollute a later segment" classname="com.icar.obd.obd.CanSnifferLifecycleTest" time="0.002"/>
+  <testcase name="unhealthy cleanup stays paused and reports failure" classname="com.icar.obd.obd.CanSnifferLifecycleTest" time="0.001"/>
+  <testcase name="filter cleanup cannot start polling that was stopped before capture" classname="com.icar.obd.obd.CanSnifferLifecycleTest" time="0.001"/>
+  <testcase name="unsafe adapter input is rejected before polling or sending" classname="com.icar.obd.obd.CanSnifferLifecycleTest" time="0.0"/>
+  <testcase name="late receiver from old capture cannot feed a new run" classname="com.icar.obd.obd.CanSnifferLifecycleTest" time="0.003"/>
+  <testcase name="full rotation keeps real raw frames and marks exactly eight completed segments" classname="com.icar.obd.obd.CanSnifferLifecycleTest" time="0.011"/>
+  <testcase name="adapter ending monitor cannot remain falsely capturing" classname="com.icar.obd.obd.CanSnifferLifecycleTest" time="0.002"/>
+  <testcase name="historical turn preset really filters the ID printed on screen" classname="com.icar.obd.obd.CanSnifferLifecycleTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

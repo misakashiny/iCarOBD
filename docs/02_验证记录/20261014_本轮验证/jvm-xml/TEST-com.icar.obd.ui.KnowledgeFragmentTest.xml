@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.ui.KnowledgeFragmentTest" tests="12" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:52.662Z" hostname="WIN-LI9OE82Q5LO" time="0.02">
+  <properties/>
+  <testcase name="标签映射不指向不存在的节" classname="com.icar.obd.ui.KnowledgeFragmentTest" time="0.015"/>
+  <testcase name="正文里没有Tab缩进" classname="com.icar.obd.ui.KnowledgeFragmentTest" time="0.001"/>
+  <testcase name="手册各节都带使用手册标签" classname="com.icar.obd.ui.KnowledgeFragmentTest" time="0.002"/>
+  <testcase name="每一节都有标签且索引连续" classname="com.icar.obd.ui.KnowledgeFragmentTest" time="0.001"/>
+  <testcase name="映射里的标签都在词表里" classname="com.icar.obd.ui.KnowledgeFragmentTest" time="0.0"/>
+  <testcase name="正文里没有Markdown标记" classname="com.icar.obd.ui.KnowledgeFragmentTest" time="0.0"/>
+  <testcase name="词表里没有死标签" classname="com.icar.obd.ui.KnowledgeFragmentTest" time="0.0"/>
+  <testcase name="标签数量在上限内" classname="com.icar.obd.ui.KnowledgeFragmentTest" time="0.0"/>
+  <testcase name="知识各节不带使用手册标签" classname="com.icar.obd.ui.KnowledgeFragmentTest" time="0.001"/>
+  <testcase name="手册各节都有前置步骤判据与排障" classname="com.icar.obd.ui.KnowledgeFragmentTest" time="0.0"/>
+  <testcase name="标题与正文都非空且标题不重复" classname="com.icar.obd.ui.KnowledgeFragmentTest" time="0.0"/>
+  <testcase name="标签词表没有重复项" classname="com.icar.obd.ui.KnowledgeFragmentTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

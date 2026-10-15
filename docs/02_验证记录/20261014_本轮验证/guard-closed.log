@@ -1,0 +1,48 @@
+
+=== 1. build.gradle.kts ===
+  ✅ abiFilters 存在：abiFilters += "arm64-v8a"
+  ✅ build.gradle.kts 92 行（正常）
+  ✅ versionName = 1.20.22
+
+=== 2. APK 产物 ===
+  ✅ APK: app-debug.apk  7.16 MB
+  ✅ 体积在阈值内（≤ 8 MB）
+  ✅ 只编了一个 ABI：arm64-v8a
+
+=== 3. 源码文件完整性 ===
+  ✅ canvas.js 裸色值都在白名单里（canvas.js 裸色值 17 处：draw×3, drawImageNode×3, longGrad×1, previewValueColor×1, drawGaugeNode×1, drawPartOutlines×1, drawSelection×7；白名单外 0 处）
+  ✅ 控件绑的 PID 都存在，或都在已知待办清单里（控件模板里绑 PID 的 38 个；PID 不存在的 13 个（已知待办 13 · 新问题 0））
+  已知待办 13 条（等 P9 上车逆向，**不是 bug**）—— 见 docs/迭代清单.md §P9：
+    · lamp_brake（制动灯） → obd.brakeFluid
+        原因：等 P9 上车逆向：CAN 探测跑两次（关/开目标）→「对比基准（找位）」定位变化位 →「加为监听」（转向灯已用此法确认：CAN 0x09A bit2/bit3）（下面 11 条同此原因）
+    · lamp_pad（刹车片） → obd.brakePad
+    · lamp_tpms（胎压灯） → obd.tpms
+    · lamp_airbag（气囊灯） → obd.airbag
+    · lamp_belt（安全带灯） → obd.seatbelt
+    · lamp_abs（ABS 灯） → obd.abs
+    · lamp_esp（ESP 灯） → obd.esp
+    · lamp_door（车门未关） → obd.door
+    · lamp_washer（玻璃水） → obd.washer
+    · lamp_service（保养提示） → obd.service
+    · lamp_lane（车道辅助） → obd.laneKeep
+    · lamp_collision（碰撞预警） → obd.collision
+    · g_gear（挡位） → obd.gear
+        原因：挡位是枚举（P/N/R/D）不是连续量；01 A4 的公式已反推（bit(B,4)*2+bit(D,0)-1），枚举值与映射要上车逐挡确认
+  ✅ 12 个 .ps1 文件编码都正常
+
+=== 4. 素材引用完整性 ===
+  ✅ builtin.js 里引用 416 个素材路径
+  ✅ presets.js 匹配到 127 个素材路径（合计去重后 416 个）
+  ✅ presets.js 引用的素材**都在 builtin.js 里**（登记时能拿到内嵌 data）
+  ✅ 素材路径没有重名（416 个都是唯一的）
+  ✅ 全部 416 个素材路径都能在磁盘上找到
+PASS: 5 semantics, 15 variants, 3 PNG byte/hash/dimension/replay checks
+  ✅ 新库5类/15变体/3张PNG独立清单与重放检查通过
+  ✅ 磁盘上的 419 个 PNG 都在清单里
+  ✅ 控件模板 key 没有重复
+
+  ✅ 破折号都是成对的
+
+  ✅ 200 个控件都有分类
+
+构建守卫通过 ✅

@@ -402,7 +402,7 @@ class DashRenderer(
         // ---- v2 节点树里的仪表
         nodeRenderer.gauges.forEach { cell ->
             val values = cell.item.allPidIds().map { id ->
-                VehicleBus.get(id)?.takeIf { it.ok }?.value
+                VehicleBus.value(id)?.takeIf { it.isFinite() }
             }
             val override = RuleEngine.colorOf(cell.item.pidId)
             cell.view?.updateMulti(values, override)
@@ -415,9 +415,9 @@ class DashRenderer(
             // **一次取齐它需要的全部 PID**（多指针表可能有多个）
             val vals = HashMap<String, Float>()
             pv.neededPids().forEach { id ->
-                VehicleBus.get(id)?.takeIf { it.ok }?.value?.let { vals[id] = it }
+                VehicleBus.value(id)?.takeIf { it.isFinite() }?.let { vals[id] = it }
             }
-            if (vals.isNotEmpty()) pv.setValues(vals)
+            pv.setValues(vals)
         }
 
         // ---- 状态系统：按 PID 值换图 / 闪灯
@@ -426,7 +426,7 @@ class DashRenderer(
         // 5Hz 采样下每周期 2 个点，闪得出来；**不引入第二个动画驱动**
         if (nodeRenderer.stateCells.isNotEmpty()) {
             nodeRenderer.applyStates(
-                { id -> VehicleBus.get(id)?.takeIf { it.ok }?.value },
+                { id -> VehicleBus.value(id)?.takeIf { it.isFinite() } },
                 android.os.SystemClock.uptimeMillis()
             )
         }
@@ -434,7 +434,7 @@ class DashRenderer(
         cells.forEach { cell ->
             // 主参数 + 副参数一次取齐交给视图；视图自己不去读总线（红线 4.1.5）
             val values = cell.item.allPidIds().map { id ->
-                VehicleBus.get(id)?.takeIf { it.ok }?.value
+                VehicleBus.value(id)?.takeIf { it.isFinite() }
             }
             val override = RuleEngine.colorOf(cell.item.pidId)
             cell.view?.updateMulti(values, override)

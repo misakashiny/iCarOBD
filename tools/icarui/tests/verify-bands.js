@@ -127,7 +127,7 @@ ok(crossSrc.indexOf("MAX_BANDS") >= 0,
 ok(crossSrc.indexOf("BAND_DEFAULT_COLOR") >= 0 && crossSrc.indexOf("BAND_ALPHA_MIN") >= 0 &&
   crossSrc.indexOf("BAND_ALPHA_MAX") >= 0,
   "跨语言比对里 4 个 `BAND_*` 常量都钉住了（少一个就是新的跨语言分叉）");
-ok(/App 侧待办|App 侧做完|App 侧落地/.test(read(path.join(STUDIO, "CHANGELOG.md"))),
+ok(/App 侧待办|App 侧做完|App 侧落地/.test(read(path.join(ROOT, "docs", "03_历史归档", "20261014_ICarUI版本日志.md"))),
   "CHANGELOG 里记着「App 侧待办」（补 crosslang 断言那条尾巴没丢）");
 
 // ================================================================ 1. normalizeBands

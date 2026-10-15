@@ -1,6 +1,7 @@
 package com.icar.obd.data
 
 import com.icar.obd.obd.SegmentRotation
+import com.icar.obd.obd.CanReceiveFilter
 
 /**
  * **CAN 探测 · 过滤器预设**（v1.20.17）—— 纯数据 + 纯函数，JVM 单测覆盖。
@@ -23,7 +24,7 @@ import com.icar.obd.obd.SegmentRotation
  *    所以常用段的说明一律写「常见车身域（**未在本车实测**）」，一个灯都不点名；
  *    唯一实测确认过的是转向灯 `0x09A`（见 `docs/CAN-信号库与逆向框架.md`），
  *    那条单独一个预设，而且写明"本车实测"。
- * 3. **⚠️ `ATCF000` 是全总线、不是"第 0 段"** —— 这条必须在界面上写清
+ * 3. **过滤值必须结合掩码解释** —— 这条必须在界面上写清
  *    （[FULL_BUS_NOTE]），否则用户会以为"第 0 段 ID 特别多"。
  */
 object CanFilterPresets {
@@ -66,8 +67,8 @@ object CanFilterPresets {
     /**
      * 第 [seg] 段预设的 `value`（`ATCM700+ATCF<段>00`）。
      *
-     * 公开出来是为了**测试能逐段点名**：段 0 的 value 与"全部 11 位 ID"那条
-     * 预设逐字节相同（掩码之下的 `ATCF000` 就是第 0 段），
+     * 公开出来是为了**测试能逐段点名**：段 0 使用700掩码，全总线使用000掩码，
+     * 两条预设不得重名（掩码之下的 `ATCF000` 就是第 0 段），
      * 所以按 value 反查标签会查到错的那一条（实测踩过）。
      */
     fun segmentValue(seg: Int): String =
@@ -90,16 +91,13 @@ object CanFilterPresets {
     private fun segmentDesc(lo: Int, hi: Int): String {
         val range = "0x%03X~0x%03X".format(lo, hi)
         val common = lo == 0x200 || lo == 0x400 || lo == 0x600
-        val head = if (common) "常见车身域（未在本车实测）" else "一段 ID"
-        return "$head：$range 这 $SEGMENT_IDS 个 11 位 ID 全采样率。" +
-            "命令 ${SegmentRotation.MASK_CMD}+${SegmentRotation.segmentFilter(lo shr 8)}"
+        val note = if (common) "（常见车身域，未在本车实测）" else ""
+        return "$range，收这一段的11位ID$note。命令 ${SegmentRotation.MASK_CMD}+${SegmentRotation.segmentFilter(lo shr 8)}"
     }
 
     /** 全总线（`ATCF000`）那一条的说明 —— 规格 §2 点名要写清的一句 */
     const val FULL_BUS_NOTE =
-        "⚠️ ATCF000 = 整条总线，不是「第 0 段」。单独的 ATCF000 会放行全部 11 位 ID" +
-            "（帧数看着多，是因为它把整条总线的帧都收进来了）。" +
-            "要只看 0x000~0x0FF，请用下面那条带掩码的 ATCM700+ATCF000。"
+        "整条总线不是「第 0 段」。ATCM000+ATCF000收全部11位ID；ATCM700+ATCF000只收0x000~0x0FF。"
 
     /**
      * 转向灯那条的说明（**本项目唯一实测确认过 ID 的信号**）。
@@ -107,8 +105,7 @@ object CanFilterPresets {
      * 出处：`docs/CAN-信号库与逆向框架.md` + v1.19.8「转向灯找到了：`0x09A` 的低两位」。
      */
     const val LEFT_TURN_DESC =
-        "本车实测确认过：转向灯在 0x09A（低两位），左转 = bit2。" +
-            "单 ID 放行最省，采样率最高（实测 0.7 帧/秒 → 20 帧/秒）。命令 ATCRA228"
+        "历史本车实测记录：0x09A曾用于转向灯排查，采样率曾到20 帧/秒；新车需重新确认。只收0x09A，命令 ATCRA09A。"
 
     /**
      * 预设表：**8 个段 + 3 个常用 + 不过滤 = 12 条**。
@@ -120,21 +117,17 @@ object CanFilterPresets {
         Preset(
             value = "",
             label = "不过滤（整条总线）",
-            desc = "不看 ID、全部收下来。能看到最全的 ID 清单，代价是每个 ID 的采样率都很低" +
-                "（实测约 77 帧/秒摊到 80 个 ID 上 = 每 ID 每秒 1 帧，闪烁类信号还原不出来）。" +
-                "不下发任何过滤命令。"
+            desc = "接收整条总线的全部ID，适合首次排查；活跃ID多时采样率会下降。不下发过滤命令。"
         ),
         Preset(
-            value = "228",
+            value = "09A",
             label = "转向灯 0x09A（本车实测）",
             desc = LEFT_TURN_DESC
         ),
         Preset(
-            value = "${SegmentRotation.MASK_CMD}+ATCF000",
-            label = "全部 11 位 ID（高三位掩码）",
-            desc = "ATCM700 只看 ID 的高三位，所以 0x000~0x7FF 全部放行 —— " +
-                "等价于不过滤，但**只看 11 位 ID**（29 位 ID 会被掩码挡掉）。" +
-                "命令 ${SegmentRotation.MASK_CMD}+ATCF000"
+            value = "ATCM000+ATCF000",
+            label = "全部 11 位 ID",
+            desc = "接收全部标准ID，适合先找活跃ID。命令 ATCM000+ATCF000；29位信号请用不过滤或8位ID。"
         ),
         Preset(
             value = "7E8",
@@ -148,45 +141,16 @@ object CanFilterPresets {
     /**
      * 按 `value` 找预设（界面用它把"现在用的是哪个"标出来）；找不到返回 `null`。
      *
-     * ⚠️ 有**两个**预设的 value 是同一串（"全部 11 位 ID" 与段 0 —— 它们的命令
-     * 逐字节相同，见 [describe] 的说明），所以这里返回的是**第一个**。
+     * ⚠️ 现在预设value唯一；返回与输入匹配的第一条。
      * 要全部命中用 [findAll]。
      */
     fun find(value: String): Preset? = ALL.firstOrNull { it.value == value.trim() }
 
-    /**
-     * 按 `value` 找出**全部**命中的预设。
-     *
-     * 为什么会有多个：`ATCM700+ATCF000` 同时是"全部 11 位 ID（高三位掩码）"
-     * 和"0x000~0x0FF 段"—— **命令完全一样**（掩码之下的 `ATCF000` 就是第 0 段，
-     * 见 [SegmentRotation] 的长注释）。所以说明里两条都要写出来，
-     * 否则选中那一条时用户只看到"等价于不过滤"，会以为段 0 不见了。
-     */
+    /** 以实际输入值找到预设；段0和全部11位已经使用不同掩码。 */
     fun findAll(value: String): List<Preset> = ALL.filter { it.value == value.trim() }
 
-    /**
-     * **过滤器串 → 实际会下发的 AT 命令**。
-     *
-     * ## 为什么必须与 `CanSniffer.start()` 完全同一套规则
-     *
-     * 界面要显示"实际下发的 AT 命令"（规格 §2 判据），而真正下发的是
-     * `CanSniffer.start()` 里那一段。两处各写一份 = 迟早不一致 ——
-     * 那时界面会**自信地显示一条根本没发出去的命令**，比不显示还糟。
-     *
-     * 规则（与 `CanSniffer.start()` 逐字对应）：
-     * - 空 → 空列表（不过滤，一条命令都不发）；
-     * - 以 `AT` 开头（不分大小写）→ 按 `+` / `;` 切成多条，原样发；
-     * - 其余 → 当成单个 11 位 ID，**转大写**后发 `ATCRA<ID>`。
-     */
-    fun resolveCommands(filter: String): List<String> {
-        val f = filter.trim()
-        if (f.isEmpty()) return emptyList()
-        return if (f.startsWith("AT", ignoreCase = true)) {
-            f.split('+', ';').map { it.trim() }.filter { it.isNotEmpty() }
-        } else {
-            listOf("ATCRA${f.uppercase()}")
-        }
-    }
+    /** 共用严格接收过滤校验，非法输入返回空命令，describe明确显示原因。 */
+    fun resolveCommands(filter: String): List<String> = CanReceiveFilter.parse(filter).commands
 
     /**
      * 过滤器框下面那一行**状态说明**（规格 §2 判据："选中后状态行显示实际下发的 AT 命令"）。
@@ -197,7 +161,9 @@ object CanFilterPresets {
      * - 手打 → 只报实际命令（**不编**说明：不知道用户想干什么）。
      */
     fun describe(filter: String): String {
-        val cmds = resolveCommands(filter)
+        val checked = CanReceiveFilter.parse(filter)
+        if (checked.error != null) return checked.error
+        val cmds = checked.commands
         val presets = findAll(filter)
         val cmdText = if (cmds.isEmpty()) {
             "不下发过滤命令（整条总线）"
@@ -207,7 +173,7 @@ object CanFilterPresets {
         // 命中多个预设时**全列出来**（`ATCM700+ATCF000` 既是全总线又是段 0，
         // 命令逐字节相同）—— 只报第一个会让人以为另一条不见了
         return if (presets.isNotEmpty()) {
-            presets.joinToString("\n") { it.desc } + "\n" + cmdText
+            presets.joinToString("\n") { it.desc }
         } else {
             cmdText
         }

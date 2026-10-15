@@ -1,11 +1,8 @@
 package com.icar.obd.obd
 
-import android.os.Handler
-import android.os.Looper
 import com.icar.obd.data.AppLog
 import com.icar.obd.data.PidDefinition
 import com.icar.obd.data.PidValue
-import com.icar.obd.data.Store
 import kotlin.math.PI
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -110,40 +107,17 @@ object SignalSimulator {
         }
     }
 
-    /**
-     * 主线程派发器。**必须是 lazy** —— 与 `AppLog` 同一个理由：
-     * JVM 单测里没有 Looper，写成字段初始化会让整个 object 一碰就抛 `Stub!`，
-     * 于是 [waveAt] / [valueOf] 这些纯函数也跟着没法测了。
-     * （这个坑在本项目已经踩过两次，改代码时留意。）
-     */
-    private val main by lazy { Handler(Looper.getMainLooper()) }
-    private val channels = LinkedHashMap<String, Channel>()
-
-    @Volatile
-    var running: Boolean = false
-        private set
-
-    private var startTs = 0L
-
-    private val ticker = object : Runnable {
-        override fun run() {
-            if (!running) return
-            // ⚠️ 兜底（v1.20.18）：**任何**意外异常都不该让模拟永久停摆。
-            //
-            // 真实教训（2026-10-11 01:31:12）：`valueOf` 抛出后，
-            // 下一行的 `postDelayed` 根本执行不到 —— 模拟直接死掉，
-            // 而且异常在主线程上没人接 → 进程被系统重启。
-            // 根因已在 [valueOf] 里结构性修掉（量程归一）；
-            // 这一层只保证「将来再出别的意外，也只是少一拍，不是停摆」。
-            runCatching { tick(System.currentTimeMillis()) }.onFailure {
-                AppLog.e(
-                    AppLog.M_OBD, "模拟信号 tick 异常（已跳过本拍）",
-                    it.message ?: it.javaClass.simpleName
-                )
-            }
-            main.postDelayed(this, TICK_MS)
-        }
+    internal var runtime: SignalSimulatorRuntime=AndroidSignalSimulatorRuntime()
+    private val channels=LinkedHashMap<String,Channel>()
+    private val lock=Any()
+    internal const val DEFAULT_TTL_MS=1000
+    private class Run(val io: SignalSimulatorRuntime,val source: VehicleBus.Source,
+        @Volatile var startTs: Long,val ttl: Map<String,Int>) {
+        lateinit var ticker: Runnable
     }
+    @Volatile private var active: Run?=null
+    val running: Boolean get()=active!=null
+    private fun current(run: Run)=synchronized(lock) { active===run && VehicleBus.sourceActive(run.source) }
 
     // ================================================================ 纯函数
 
@@ -274,8 +248,8 @@ object SignalSimulator {
      * 但仪表盘上照样要显示。早期版本把它们过滤掉了，结果「G力值」预设
      * 在模拟模式下**整块是死的**。
      */
-    fun rebuildFromPids() {
-        val enabled = Store.allPids().filter { it.enabled }
+    fun rebuildFromPids() = synchronized(lock) {
+        val enabled = runtime.pids().filter { it.enabled }
         val keep = channels.toMap()
         channels.clear()
         enabled.forEach { p ->
@@ -288,18 +262,18 @@ object SignalSimulator {
 
     // ================================================================ 控制
 
-    fun channels(): List<Channel> = channels.values.toList()
+    fun channels(): List<Channel> = synchronized(lock) { channels.values.toList() }
 
-    fun channel(pidId: String): Channel? = channels[pidId]
+    fun channel(pidId: String): Channel? = synchronized(lock) { channels[pidId] }
 
-    fun update(ch: Channel) {
+    fun update(ch: Channel) = synchronized(lock) {
         // 归一后入表：进来的通道量程写反也不会把坏区间带进 tick（v1.20.18）
         channels[ch.pidId] = ch.normalized()
     }
 
     /** 把某条通道恢复成自动配置 */
-    fun resetToAuto(pidId: String) {
-        Store.findPid(pidId)?.let { channels[pidId] = autoChannel(it).normalized() }
+    fun resetToAuto(pidId: String) = synchronized(lock) {
+        runtime.pids().find { it.id==pidId }?.let { channels[pidId] = autoChannel(it).normalized() }
     }
 
     /**
@@ -316,8 +290,8 @@ object SignalSimulator {
      *
      * G 值三件套保持正弦（换成三角就不是圆了，轨迹会变成方块）。
      */
-    fun applyDemoPreset() {
-        Store.allPids().filter { it.enabled }.forEach { p ->
+    fun applyDemoPreset() = synchronized(lock) {
+        runtime.pids().filter { it.enabled }.forEach { p ->
             channels[p.id] = demoChannel(p).normalized()
         }
         AppLog.i(AppLog.M_OBD, "模拟信号已切到快速演示", "channels=${channels.size} period=${DEMO_PERIOD_SEC}s")
@@ -348,61 +322,91 @@ object SignalSimulator {
     }
 
     fun start() {
-        if (running) return
-        if (channels.isEmpty()) rebuildFromPids()
-        if (channels.isEmpty()) {
-            AppLog.w(AppLog.M_OBD, "模拟信号未启动：没有启用的 PID")
-            return
+        synchronized(lock) {
+            if(active!=null) return
+            if(channels.isEmpty()) rebuildFromPids()
+            if(channels.isEmpty()) {
+                AppLog.w(AppLog.M_OBD,"模拟信号未启动：没有启用的 PID")
+                return
+            }
+            val io=runtime
+            val ttl=io.pids().associate { it.id to if(it.ttlMs>0) it.ttlMs else DEFAULT_TTL_MS }
+            // A unique owner per run avoids callbacks from closing a previous run
+            // while holding the simulator lock. Stop closes its captured token only.
+            val run=Run(io,VehicleBus.openSource(Any()),io.now(),ttl)
+            run.ticker=Runnable {
+                if(current(run)) {
+                    runCatching { tick(run,run.io.now()) }.onFailure {
+                        AppLog.e(AppLog.M_OBD,"模拟信号 tick 异常（已跳过本拍）",it.message ?: it.javaClass.simpleName)
+                    }
+                    synchronized(lock) {
+                        if(active===run && VehicleBus.sourceActive(run.source)) run.io.post(run.ticker,TICK_MS)
+                    }
+                }
+            }
+            active=run
+            io.post(run.ticker)
+            AppLog.i(AppLog.M_OBD,"模拟信号已开启","count=${channels.size} tick=${TICK_MS}ms")
         }
-        startTs = System.currentTimeMillis()
-        running = true
-        main.post(ticker)
-        AppLog.i(AppLog.M_OBD, "模拟信号已开启", "count=${channels.size} tick=${TICK_MS}ms")
     }
 
     fun stop() {
-        if (!running) return
-        running = false
-        main.removeCallbacks(ticker)
-        AppLog.i(AppLog.M_OBD, "模拟信号已停止")
+        val old=synchronized(lock) { val run=active ?: return; active=null; run }
+        // Bus callbacks run outside this lock; a callback may start another run.
+        VehicleBus.closeSource(old.source)
+        old.io.remove(old.ticker)
+        AppLog.i(AppLog.M_OBD,"模拟信号已停止")
     }
 
     /**
      * 推一轮合成值。
      * @param now 注入时间戳（便于单测；生产环境传 `System.currentTimeMillis()`）
      */
-    fun tick(now: Long) {
+    fun tick(now: Long) { active?.let { tick(it,now) } }
+
+    private fun tick(run: Run,now: Long) {
+        val snapshot=synchronized(lock) {
+            if(active!==run) return
+            channels.mapValues { (_,ch) -> ch.copy() }
+        }
         // G 值三件套特殊处理：gx / gy 用**同周期、相位差 90°** 的正弦，
         // 轨迹画出来是一个圆 —— 这正是真车绕桩时 G-G 图的形态，比三个通道各自
         // 独立发波形有辨识度得多。而且 gforce 必须由 gx/gy 算出来，
         // 否则「圆上的点」和「大小」对不上，一眼就看出是假的。
-        val gx = channels["calc_gx"]
-        val gy = channels["calc_gy"]
-        val gf = channels["calc_gforce"]
+        val gx = snapshot["calc_gx"]
+        val gy = snapshot["calc_gy"]
+        val gf = snapshot["calc_gforce"]
         if (gx != null && gy != null && gx.enabled && gy.enabled) {
-            val p = phaseAt(now, startTs, gx.periodSec)
+            val p = phaseAt(now, run.startTs, gx.periodSec)
             val x = valueOf(gx, p)
             val y = valueOf(gy, p + 0.25f)
-            VehicleBus.put(PidValue(gx.pidId, x, SRC, now, true))
-            VehicleBus.put(PidValue(gy.pidId, y, SRC, now, true))
+            publish(run,gx.pidId,x,now)
+            publish(run,gy.pidId,y,now)
             if (gf != null && gf.enabled) {
-                VehicleBus.put(PidValue(gf.pidId, sqrt(x * x + y * y), SRC, now, true))
+                publish(run,gf.pidId,sqrt(x*x+y*y),now)
             }
         }
 
-        channels.values.forEach { ch ->
+        snapshot.values.forEach { ch ->
             if (!ch.enabled) return@forEach
             // 这三条已在上面按圆轨迹处理过，不要再用独立波形覆盖
             if (ch.pidId == "calc_gx" || ch.pidId == "calc_gy" || ch.pidId == "calc_gforce") {
                 return@forEach
             }
-            val phase = phaseAt(now, startTs, ch.periodSec)
-            VehicleBus.put(PidValue(ch.pidId, valueOf(ch, phase), SRC, now, true))
+            val phase = phaseAt(now, run.startTs, ch.periodSec)
+            publish(run,ch.pidId,valueOf(ch,phase),now)
         }
     }
 
-    /** 仅供单测：直接设起点 */
+    private fun publish(run: Run,id: String,value: Float,now: Long) {
+        if(!current(run)) return
+        val ok=value.isFinite()
+        VehicleBus.put(run.source,PidValue(id,value,SRC,now,ok,
+            error=if(ok) null else "模拟值无效",ttlMs=run.ttl[id] ?: DEFAULT_TTL_MS))
+    }
+
+    /** 仅供波形单测：设置已启动这一轮的相位起点，不另开发布通道。 */
     internal fun setStartForTest(ts: Long) {
-        startTs = ts
+        synchronized(lock) { active?.startTs=ts }
     }
 }

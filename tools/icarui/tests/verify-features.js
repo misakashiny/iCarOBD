@@ -111,12 +111,12 @@ const eq = (a, b, m) => ok(a === b, m + (a === b ? '' : `（实际 ${JSON.string
     const B = JSON.parse(btns);
     console.log('    · ' + B.join(' | '));
     ok(B.includes('新建'), '有「新建」按钮');
-    ok(B.includes('保存') && !B.includes('保存 v2'), '「保存 v2」→「保存」');
-    ok(B.includes('导出') && !B.includes('导出 v1'), '「导出 v1」→「导出」');
-    ok(B.some(x => x.includes('返回')) && !B.some(x => x.includes('重做')), '「重做」→「返回」');
-    ok(B.some(x => /暗黑|白色/.test(x)), '有主题切换按钮');
+    ok(B.includes('保存设计'), '保存操作明确为设计文件');
+    ok(B.includes('兼容导出') && B.includes('打包素材') && B.includes('导出预览图'), '兼容格式、带素材的包与预览图分开命名');
+    ok(B.some(x => x.includes('重做')) && !B.some(x => x.includes('返回')), '恢复撤销动作明确为重做');
+    ok(B.some(x => /深色|浅色/.test(x)), '有主题切换按钮');
     const redoTip = await cdp.eval(`document.getElementById('btnRedo').title`);
-    ok(/重做/.test(redoTip), '「返回」按钮的 tooltip 说明了它其实是重做：' + redoTip);
+    ok(/重做/.test(redoTip), '重做按钮提供操作与快捷键提示：' + redoTip);
 
     // ---------- 2) 主题切换 ----------
     console.log('\n=== 2. 暗黑 / 白色主题切换 ===');
@@ -140,7 +140,7 @@ const eq = (a, b, m) => ok(a === b, m + (a === b ? '' : `（实际 ${JSON.string
     console.log('    · 切换后 ' + JSON.stringify(T1));
     eq(T1.attr, 'light', '切到白色主题');
     ok(T1.bg !== T0.bg, `body 底色真的变了（${T0.bg} → ${T1.bg}）`);
-    ok(/白色/.test(T1.label), '按钮文案跟着变：' + T1.label);
+    ok(/浅色/.test(T1.label), '按钮文案跟着变：' + T1.label);
     ok(T1.cvOut && T1.cvOut !== '', '画布底色变量 --cvOut 有值：' + T1.cvOut);
 
     // 画布真的用了新底色？
@@ -550,6 +550,47 @@ const eq = (a, b, m) => ok(a === b, m + (a === b ? '' : `（实际 ${JSON.string
     ok(ND2.sel === 0, '新建后选择被清空');
     eq(ND2.asked, 1, '新建前会先确认一次（避免误清空）');
 
+    // T12-UI: exercise real responsive layout, not just CSS values.
+    console.log('\n=== T12-UI. 窗口尺寸、帮助和状态文案 ===');
+    const copy = JSON.parse(await cdp.eval(`JSON.stringify({
+      json:document.querySelector('#paneJson .hint').textContent,
+      sim:document.getElementById('btnSim').title,
+      pack:document.getElementById('btnPack').title,
+      help:document.querySelector('.editorHelp').textContent,
+      closed:!document.querySelector('.editorHelp').open
+    })`));
+    ok(/有效.*应用/.test(copy.json) && /草稿.*保留/.test(copy.json), 'JSON说明区分有效应用与草稿保留');
+    ok(/示例数据/.test(copy.sim) && /不是车辆/.test(copy.sim), '模拟预览明确数据来源');
+    ok(/App.*尚未支持/.test(copy.pack), '素材包说明保留App支持边界');
+    ok(/原厂.*指针/.test(copy.help) && /运动.*弧形/.test(copy.help) && /极简.*大数字/.test(copy.help) && /告警含义一致/.test(copy.help), '风格描述直白且告警含义一致');
+    ok(copy.closed, '操作帮助默认收起');
+    const simCopy=JSON.parse(await cdp.eval(`(()=>{toggleSim();const start={text:document.getElementById('btnSim').textContent,active:CanvasState.simSprings.active};toggleSim();return JSON.stringify({start,stop:document.getElementById('btnSim').textContent,active:CanvasState.simSprings.active});})()`));
+    ok(/停止模拟/.test(simCopy.start.text)&&simCopy.start.active, '模拟运行时可停止');
+    ok(/模拟预览/.test(simCopy.stop)&&!simCopy.active, '停止后恢复模拟预览文案和状态');
+    for(const width of [1600,1024,600,390]){
+      await cdp.send('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:false});
+      await sleep(350);
+      const layout=JSON.parse(await cdp.eval(`(()=>{
+        const rect=e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
+        const wrap=rect(document.querySelector('.canvasWrap')),cv=rect(document.getElementById('cv'));
+        const panels=[...document.querySelector('.inspectorColumn').children].map(rect);
+        const overlap=panels.some((a,i)=>panels.slice(i+1).some(b=>Math.min(a.right,b.right)-Math.max(a.left,b.left)>2&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>2));
+        const library=rect(document.querySelector('.libraryColumn')),assets=rect(document.getElementById('assets')),tree=rect(document.getElementById('tree'));
+        const buttons=[...document.querySelectorAll('header button')].map(rect);
+        const tabs=rect(document.getElementById('pageTabs'));
+        return JSON.stringify({scroll:document.documentElement.scrollWidth,viewport:document.documentElement.clientWidth,
+          canvasFits:cv.left>=wrap.left&&cv.right<=wrap.right+1&&cv.top>=tabs.bottom-1&&cv.bottom<=wrap.bottom+1,
+          overlap,libraryFits:assets.bottom<=tree.top+1&&tree.bottom<=library.bottom+1,
+          buttonsFit:buttons.every(b=>b.left>=0&&b.right<=innerWidth&&b.width>15&&b.height>=28),canvasW:cv.width});
+      })()`));
+      ok(layout.scroll<=layout.viewport+1, width+'宽没有页面横向溢出');
+      ok(layout.canvasFits, width+'宽画布完整放入面板，不盖住页签');
+      ok(!layout.overlap, width+'宽属性与设置面板不重叠');
+      ok(layout.libraryFits, width+'宽控件库与图层不互相挤压');
+      ok(layout.buttonsFit, width+'宽工具栏全部按钮可见且可点击');
+      ok(layout.canvasW>=250, width+'宽画布仍有可用编辑宽度');
+    }
+    await cdp.send('Emulation.clearDeviceMetricsOverride');
     await cdp.ws.close();
   } catch (e) {
     console.log('  ❌ 执行失败: ' + e.message);

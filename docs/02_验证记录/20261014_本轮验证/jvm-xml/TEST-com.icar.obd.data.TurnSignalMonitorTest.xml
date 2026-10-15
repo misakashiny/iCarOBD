@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.TurnSignalMonitorTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:51.113Z" hostname="WIN-LI9OE82Q5LO" time="0.001">
+  <properties/>
+  <testcase name="右转只置bit3" classname="com.icar.obd.data.TurnSignalMonitorTest" time="0.001"/>
+  <testcase name="双闪两位同时置位" classname="com.icar.obd.data.TurnSignalMonitorTest" time="0.0"/>
+  <testcase name="左转只置bit2" classname="com.icar.obd.data.TurnSignalMonitorTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

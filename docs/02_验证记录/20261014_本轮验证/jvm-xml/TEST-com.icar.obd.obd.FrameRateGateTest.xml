@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.obd.FrameRateGateTest" tests="14" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:51.454Z" hostname="WIN-LI9OE82Q5LO" time="0.01">
+  <properties/>
+  <testcase name="超过硬上限的下一秒进入过载" classname="com.icar.obd.obd.FrameRateGateTest" time="0.001"/>
+  <testcase name="跳过与丢弃分别记账" classname="com.icar.obd.obd.FrameRateGateTest" time="0.0"/>
+  <testcase name="超过软上限的下一秒进入限流" classname="com.icar.obd.obd.FrameRateGateTest" time="0.0"/>
+  <testcase name="过载时的提示必须说清怎么办" classname="com.icar.obd.obd.FrameRateGateTest" time="0.005"/>
+  <testcase name="同一个窗口内反复求值不会重复滚动" classname="com.icar.obd.obd.FrameRateGateTest" time="0.0"/>
+  <testcase name="预筛集合为空时不筛" classname="com.icar.obd.obd.FrameRateGateTest" time="0.001"/>
+  <testcase name="实车满速总线 344 帧每秒会直接进过载" classname="com.icar.obd.obd.FrameRateGateTest" time="0.0"/>
+  <testcase name="预筛集合同时收两位与三位的写法" classname="com.icar.obd.obd.FrameRateGateTest" time="0.0"/>
+  <testcase name="预筛放行所有解析后能命中的行" classname="com.icar.obd.obd.FrameRateGateTest" time="0.0"/>
+  <testcase name="正常帧率一直是 NORMAL" classname="com.icar.obd.obd.FrameRateGateTest" time="0.002"/>
+  <testcase name="预筛丢掉的是解析后也命不中的行" classname="com.icar.obd.obd.FrameRateGateTest" time="0.001"/>
+  <testcase name="reset 回到正常并清空统计" classname="com.icar.obd.obd.FrameRateGateTest" time="0.0"/>
+  <testcase name="两位十六进制的行解析器自己就不接受_预筛收它只是不让自己成为新瓶颈" classname="com.icar.obd.obd.FrameRateGateTest" time="0.0"/>
+  <testcase name="退出限流有迟滞_不会在阈值上下每秒抖动" classname="com.icar.obd.obd.FrameRateGateTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

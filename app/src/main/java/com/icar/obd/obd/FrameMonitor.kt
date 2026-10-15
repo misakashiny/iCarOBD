@@ -14,6 +14,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 /**
  * **常驻监听通道**（v1.19.9）—— 把**广播帧**变成虚拟 PID。
@@ -60,7 +64,15 @@ object FrameMonitor {
     private const val LINE_BUF_MAX = 8192
     private const val LOG_INTERVAL_MS = 5000L
 
-    private val main = Handler(Looper.getMainLooper())
+    @Volatile
+    internal lateinit var runtime: FrameMonitorRuntime
+    @Volatile
+    internal lateinit var scheduler: FrameMonitorScheduler
+
+    private fun ensureRuntime() {
+        if (!::runtime.isInitialized) runtime = AndroidFrameMonitorRuntime
+        if (!::scheduler.isInitialized) scheduler = AndroidFrameMonitorScheduler()
+    }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lineBuf = StringBuilder()
 
@@ -96,6 +108,10 @@ object FrameMonitor {
     /** 正在收尾（重新初始化）—— 期间不接受新的启动/探测 */
     @Volatile
     private var busy = false
+    val active: Boolean get() = running || busy
+    val preparing: Boolean get() = running && busy
+    private var preparation: Job? = null
+    @Volatile private var epoch = 0L
 
     @Volatile
     /**
@@ -153,7 +169,7 @@ object FrameMonitor {
         // 这里**主动说一句**，别让用户事后从"信号偶尔跳一下"去猜；
         // 真到了 344 帧/秒，[gate] 还会再介入一次（预筛 / 丢帧）。
         AppLog.w(AppLog.M_OBD, "监听信号跨多个 ID 段，本次不加过滤器", "ids=$ids")
-        ObdController.toast(
+        runtime.toast(
             "监听信号跨了 ${blocks.size} 个 ID 段，加不了 CAN 过滤器。\n" +
                 "帧率高时会自动按监听 ID 预筛；若信号断续，请拆成两次监听。"
         )
@@ -161,91 +177,143 @@ object FrameMonitor {
     }
 
     fun start() {
-        if (running) return
-        if (busy) {
-            AppLog.w(AppLog.M_OBD, "监听通道还在收尾，稍后再试", "")
-            return
-        }
-        if (CanSniffer.running) {
-            AppLog.w(AppLog.M_OBD, "单次探测正在跑，无法开启常驻监听", "")
-            return
-        }
-        if (!ObdController.isConnected()) {
-            AppLog.w(AppLog.M_OBD, "设备未就绪，无法开启常驻监听", "")
-            return
-        }
-        val sigs = signals()
-        if (sigs.isEmpty()) {
-            AppLog.e(
-                AppLog.M_OBD, "没有可用的监听信号",
-                "需要有 source=monitor、header 填 CAN ID、且已启用的 PID"
+        ensureRuntime()
+        synchronized(CanAdapterGate.lock) {
+            if (CanAdapterGate.initializing || CanAdapterGate.scanning) {
+                AppLog.w(AppLog.M_OBD, "适配器正在初始化，常驻监听没有开启", "")
+                return
+            }
+            if (running) return
+            if (busy) {
+                AppLog.w(AppLog.M_OBD, "监听通道还在收尾，稍后再试", "")
+                return
+            }
+            if (CanSniffer.busy) {
+                AppLog.w(AppLog.M_OBD, "单次探测正在跑，无法开启常驻监听", "")
+                return
+            }
+            if (!runtime.connected) {
+                AppLog.w(AppLog.M_OBD, "设备未就绪，无法开启常驻监听", "")
+                return
+            }
+            val sigs = signals()
+            if (sigs.isEmpty()) {
+                AppLog.e(
+                    AppLog.M_OBD, "没有可用的监听信号",
+                    "需要有 source=monitor、header 填 CAN ID、且已启用的 PID"
+                )
+                return
+            }
+            // 提前把 header 解析成数值（`"09A"` -> 0x09A），后面按数值比
+            cached = sigs.mapNotNull { s -> parseCanId(s.header)?.let { s to it } }
+            // 预筛集合（`09A` / `9A` 两种写法都收 —— 见 acceptIdsOf 的说明）
+            acceptIds = FrameRateGate.acceptIdsOf(cached.map { it.second })
+            idCounts.clear()
+            changeLogged.clear()
+            lastVals.clear()
+            frames = 0
+            hits = 0
+            lineBuf.setLength(0)
+            scanFrom = 0
+            gate.reset()
+            gateWarned = false
+            lastWarnMode = FrameRateGate.Mode.NORMAL
+            running = true
+            busy = true
+            val generation = ++epoch
+            engineWasRunning = runtime.engineRunning
+            if (engineWasRunning) runtime.stopPolling()
+            val plan = filterPlan(sigs)
+            AppLog.i(
+                AppLog.M_OBD, "监听通道启动",
+                "信号=${sigs.joinToString(",") { it.id }} 过滤=${plan?.joinToString("+") ?: "无"}"
             )
-            return
-        }
-        // 提前把 header 解析成数值（`"09A"` -> 0x09A），后面按数值比
-        cached = sigs.mapNotNull { s -> parseCanId(s.header)?.let { s to it } }
-        // 预筛集合（`09A` / `9A` 两种写法都收 —— 见 acceptIdsOf 的说明）
-        acceptIds = FrameRateGate.acceptIdsOf(cached.map { it.second })
-        idCounts.clear()
-        changeLogged.clear()
-        lastVals.clear()
-        frames = 0
-        hits = 0
-        lineBuf.setLength(0)
-        scanFrom = 0
-        gate.reset()
-        gateWarned = false
-        lastWarnMode = FrameRateGate.Mode.NORMAL
-        running = true
-        engineWasRunning = ObdController.engine.running
-        if (engineWasRunning) ObdController.engine.stop()
-        val plan = filterPlan(sigs)
-        AppLog.i(
-            AppLog.M_OBD, "监听通道启动",
-            "信号=${sigs.joinToString(",") { it.id }} 过滤=${plan?.joinToString("+") ?: "无"}"
-        )
-        scope.launch {
-            runCatching {
-                // 先排空上一次的残余输出：ATMA 停止后适配器还会吐一段缓冲，
-                // 不排空的话第一条 AT 的应答会读到残余（实车踩过）
-                ObdController.transport.send("\r")
-                delay(300)
-                for (c in listOf("ATH1", "ATS1", "ATL1")) {
-                    var resp = ""
-                    for (a in 1..3) {
-                        resp = runCatching { ObdController.session.raw(c, CMD_TIMEOUT) }.getOrNull() ?: ""
-                        if (resp.contains("OK")) break
-                        delay(200)
+            preparation = scope.launch {
+                runCatching {
+                    currentCoroutineContext().ensureActive()
+                    if (!running || epoch != generation) return@launch
+                    // 先排空上一次的残余输出：ATMA 停止后适配器还会吐一段缓冲，
+                    // 不排空的话第一条 AT 的应答会读到残余（实车踩过）
+                    runtime.send("\r")
+                    delay(300)
+                    for (c in listOf("ATH1", "ATS1", "ATL1")) {
+                        currentCoroutineContext().ensureActive()
+                        if (!running || epoch != generation) return@launch
+                        var resp = ""
+                        for (a in 1..3) {
+                            resp = runCatching { runtime.raw(c, CMD_TIMEOUT) }.getOrNull() ?: ""
+                            currentCoroutineContext().ensureActive()
+                            if (!running || epoch != generation) return@launch
+                            if (resp.contains("OK")) break
+                            delay(200)
+                        }
+                        AppLog.i(AppLog.M_OBD, "监听准备", "$c -> ${resp.trim().take(48)}")
+                        if (c != "ATL1" && !resp.contains("OK")) error("$c 未生效，常驻监听没有开启")
                     }
-                    AppLog.i(AppLog.M_OBD, "监听准备", "$c -> ${resp.trim().take(48)}")
+                    plan?.forEach { c ->
+                        val r = runCatching { runtime.raw(c, CMD_TIMEOUT) }.getOrNull()
+                        currentCoroutineContext().ensureActive()
+                        if (!running || epoch != generation) return@launch
+                        AppLog.i(AppLog.M_OBD, "监听准备", "$c -> ${(r ?: "<异常>").trim().take(48)}")
+                        if (r?.contains("OK") != true) error("$c 未生效，常驻监听没有开启")
+                    }
+                }.onFailure { error ->
+                    if (error !is CancellationException) {
+                        AppLog.e(AppLog.M_OBD, "常驻监听准备失败", error.message ?: "")
+                        scheduler.post(Runnable { if (running && epoch == generation) stop() })
+                    }
+                    return@launch
                 }
-                plan?.forEach { c ->
-                    val r = runCatching { ObdController.session.raw(c, CMD_TIMEOUT) }.getOrNull()
-                    AppLog.i(AppLog.M_OBD, "监听准备", "$c -> ${(r ?: "<异常>").trim().take(48)}")
+                val workerContext = currentCoroutineContext()
+                synchronized(CanAdapterGate.lock) {
+                    workerContext.ensureActive()
+                    if (!running || epoch != generation) return@launch
+                    if (!runtime.connected) {
+                        scheduler.post(Runnable { if (running && epoch == generation) stop() })
+                        return@launch
+                    }
+                    runtime.rawChunkListener = { if (running && epoch == generation) onChunk(it) }
+                    runtime.rawMode = true
+                    runCatching { runtime.send("ATMA\r") }.onFailure {
+                        scheduler.post(Runnable { if (running && epoch == generation) stop() })
+                        return@launch
+                    }
+                    busy = false
+                    scheduler.post(Runnable { if (running && epoch == generation) onStateChanged?.invoke(true) })
+                    scheduler.postDelayed(LOG_INTERVAL_MS, ticker)
                 }
             }
-            ObdController.rawChunkListener = { onChunk(it) }
-            ObdController.transport.rawMode = true
-            runCatching { ObdController.transport.send("ATMA\r") }
-            main.post { onStateChanged?.invoke(true) }
-            main.postDelayed(ticker, LOG_INTERVAL_MS)
         }
     }
 
     fun stop() {
-        if (!running) return
-        running = false
-        main.removeCallbacks(ticker)
+        if (!::runtime.isInitialized || !::scheduler.isInitialized) return
+        val stoppingEpoch = synchronized(CanAdapterGate.lock) {
+            if (!running) return
+            running = false
+            busy = true
+            preparation?.cancel()
+            preparation = null
+            ++epoch
+        }
+        scheduler.remove(ticker)
         scope.launch {
-            runCatching { ObdController.transport.send("\r") }
+            if (!runtime.connected) {
+                runtime.rawMode = false
+                runtime.rawChunkListener = null
+                busy = false
+                scheduler.post(Runnable { if (epoch == stoppingEpoch && !running) onStateChanged?.invoke(false) })
+                return@launch
+            }
+            runCatching { runtime.send("\r") }
             delay(200)
-            ObdController.transport.rawMode = false
-            ObdController.rawChunkListener = null
+            runtime.rawMode = false
+            runtime.rawChunkListener = null
             // 让 ATMA 的积压输出吐完，否则重新初始化的 AT 应答会被埋在里头
             delay(400)
             busy = true
-            val r = runCatching { ObdController.initializeAndStart() }.getOrNull()
-            busy = false
+            val r = runCatching { runtime.initializeWithoutPolling() }.getOrNull()
+
             val f = frames
             val h = hits
             val g = gate.describe()
@@ -256,7 +324,11 @@ object FrameMonitor {
                 AppLog.M_OBD, "监听通道停止",
                 "帧=$f 命中=$h 重新初始化 ok=${r?.ok} | 帧率闸：$g"
             )
-            main.post { onStateChanged?.invoke(false) }
+            synchronized(CanAdapterGate.lock) {
+                busy = false
+                scheduler.post(Runnable { if (epoch == stoppingEpoch && !running) onStateChanged?.invoke(false) })
+                if (engineWasRunning && r?.ok == true && runtime.connected) runtime.startPolling()
+            }
         }
     }
 
@@ -271,7 +343,7 @@ object FrameMonitor {
                 AppLog.M_OBD, "监听通道",
                 "帧=$frames 命中=$hits 信号=${cached.size} 各ID[$top] | ${gate.describe()}"
             )
-            main.postDelayed(this, LOG_INTERVAL_MS)
+            scheduler.postDelayed(LOG_INTERVAL_MS, this)
         }
     }
 
@@ -294,6 +366,7 @@ object FrameMonitor {
      *   （后者每行都要搬一次整个缓冲区）。
      */
     private fun onChunk(chunk: String) {
+        if (!running) return
         val now = System.currentTimeMillis()
         val m = gate.evaluate(now)
         if (m == FrameRateGate.Mode.OVERLOAD) {
@@ -365,7 +438,7 @@ object FrameMonitor {
         AppLog.w(AppLog.M_OBD, "监听帧率过高，已介入", gate.describe())
         if (gateWarned) return
         gateWarned = true
-        ObdController.toast(
+        runtime.toast(
             if (m == FrameRateGate.Mode.OVERLOAD) {
                 "监听帧率过高（信号跨多个 ID 段，加不了过滤器）——\n" +
                     "已开始丢帧。请把监听拆成两次，每次只放一个 ID 段"
@@ -450,6 +523,6 @@ object FrameMonitor {
         // ⚠️ **必须自己跑一次轮询周期**：`ATMA` 期间轮询引擎是停的，
         // `engine.onCycle` 不触发 -> `RuleEngine.evaluate()` 永远不会被调用 ->
         // `VehicleBus` 里有值但**规则一条都不响**（实车 2026-10-06：命中=114 却没声音）。
-        if (matched) ObdController.runCycleOnce()
+        if (matched) runtime.runCycleOnce()
     }
 }

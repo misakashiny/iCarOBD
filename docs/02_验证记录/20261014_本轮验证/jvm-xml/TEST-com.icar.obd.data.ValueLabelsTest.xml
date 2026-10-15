@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.ValueLabelsTest" tests="12" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:51.138Z" hostname="WIN-LI9OE82Q5LO" time="0.002">
+  <properties/>
+  <testcase name="映射表带空串项也能往返" classname="com.icar.obd.data.ValueLabelsTest" time="0.001"/>
+  <testcase name="空表不写字段" classname="com.icar.obd.data.ValueLabelsTest" time="0.0"/>
+  <testcase name="越界夹到两端而不是不显示" classname="com.icar.obd.data.ValueLabelsTest" time="0.0"/>
+  <testcase name="旧文件没有该字段时读成空表且回写不写字段" classname="com.icar.obd.data.ValueLabelsTest" time="0.0"/>
+  <testcase name="解析数组并截断到上限" classname="com.icar.obd.data.ValueLabelsTest" time="0.001"/>
+  <testcase name="GaugeItem 往返保留映射表" classname="com.icar.obd.data.ValueLabelsTest" time="0.0"/>
+  <testcase name="用 round 而不是 toInt" classname="com.icar.obd.data.ValueLabelsTest" time="0.0"/>
+  <testcase name="正常查表" classname="com.icar.obd.data.ValueLabelsTest" time="0.0"/>
+  <testcase name="单元素表对任何值都返回那一项" classname="com.icar.obd.data.ValueLabelsTest" time="0.0"/>
+  <testcase name="值是 null 或 NaN 时返回 null" classname="com.icar.obd.data.ValueLabelsTest" time="0.0"/>
+  <testcase name="没有映射表时返回 null 让调用方回落数字" classname="com.icar.obd.data.ValueLabelsTest" time="0.0"/>
+  <testcase name="isUsable 判据是至少一项非空" classname="com.icar.obd.data.ValueLabelsTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

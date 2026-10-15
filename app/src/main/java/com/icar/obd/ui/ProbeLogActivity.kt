@@ -4,6 +4,12 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.graphics.Color
+import android.view.inputmethod.InputMethodManager
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -51,6 +57,8 @@ class ProbeLogActivity : AppCompatActivity() {
     private lateinit var tvPage: TextView
     private lateinit var btnPrev: MaterialButton
     private lateinit var btnNext: MaterialButton
+    private lateinit var etSearch: EditText
+    private lateinit var tvSummary: TextView
 
     private val fmt = SimpleDateFormat("MM-dd HH:mm:ss", Locale.getDefault())
 
@@ -79,6 +87,28 @@ class ProbeLogActivity : AppCompatActivity() {
         bar.addView(btn("导出") { export() })
         bar.addView(btn("清空本页签") { confirmClear() })
         root.addView(bar)
+
+        etSearch = EditText(this).apply {
+            hint = "搜索标题或明细"
+            setSingleLine(true)
+            textSize = 14f
+            setTextColor(0xFFE6EDF3.toInt())
+            setHintTextColor(0xFF8B98A5.toInt())
+            setBackgroundColor(0xFF141A22.toInt())
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { page = 0; refresh() }
+                override fun afterTextChanged(s: android.text.Editable?) = Unit
+            })
+        }
+        root.addView(etSearch, LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(8) })
+
+        tvSummary = TextView(this).apply {
+            setTextColor(0xFF8B98A5.toInt()); textSize = 12f
+            setPadding(dp(2), dp(6), 0, dp(2))
+        }
+        root.addView(tvSummary)
 
         // ---- ② 页签（PID / CAN 各一页）----
         //
@@ -140,7 +170,16 @@ class ProbeLogActivity : AppCompatActivity() {
 
     // ---------------------------------------------------------------- 数据
 
-    private fun filtered() = ProbeLog.all().filter { it.kind == kind }
+    private fun filtered(): List<ProbeLog.Entry> {
+        val query = etSearch.text?.toString()?.trim()?.lowercase(Locale.getDefault()).orEmpty()
+        return ProbeLog.all().filter { entry ->
+            entry.kind == kind && (query.isEmpty() ||
+                entry.title.lowercase(Locale.getDefault()).contains(query) ||
+                entry.detail.lowercase(Locale.getDefault()).contains(query))
+        }
+    }
+
+    private fun kindCount(kind: String): Int = ProbeLog.all().count { it.kind == kind }
 
     private fun pageCount(): Int = max(1, (filtered().size + PER_PAGE - 1) / PER_PAGE)
 
@@ -153,7 +192,13 @@ class ProbeLogActivity : AppCompatActivity() {
         // 保证选中态和 kind 一致（点页签会触发 onTabSelected → refresh，这里只做对齐）
         val want = if (kind == ProbeLog.KIND_PID) 0 else 1
         if (tabLayout.selectedTabPosition != want) tabLayout.getTabAt(want)?.select()
-        tvCount.text = "共 ${ProbeLog.count()} 条"
+        val queryActive = etSearch.text?.toString()?.trim()?.isNotEmpty() == true
+        tvCount.text = "全部 ${ProbeLog.count()} 条"
+        tvSummary.text = if (queryActive) {
+            "当前页签 ${kindCount(kind)} 条 · 筛选后 ${filtered().size} 条"
+        } else {
+            "当前页签 ${kindCount(kind)} 条 · 按时间倒序"
+        }
 
         val all = filtered()
         val pages = pageCount()
@@ -173,19 +218,37 @@ class ProbeLogActivity : AppCompatActivity() {
             all.drop(page * PER_PAGE).take(PER_PAGE).forEach { e ->
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
-                    setPadding(dp(10), dp(8), dp(10), dp(8))
+                    setPadding(dp(12), dp(10), dp(12), dp(10))
                     setBackgroundColor(0xFF141A22.toInt())
                     setOnClickListener { showDetail(e) }
+                    isClickable = true
+                    isFocusable = true
                 }
-                row.addView(TextView(this).apply {
-                    text = fmt.format(Date(e.time)) +
-                        "   ·   ${e.detail.lineSequence().count()} 行明细"
-                    setTextColor(0xFF8B98A5.toInt()); textSize = 11f
-                })
-                row.addView(TextView(this).apply {
+                val heading = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                heading.addView(TextView(this).apply {
+                    text = if (e.kind == ProbeLog.KIND_PID) "PID" else "CAN"
+                    setTextColor(if (e.kind == ProbeLog.KIND_PID) 0xFF4DA3FF.toInt() else 0xFF7BD88F.toInt())
+                    textSize = 11f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                }, LinearLayout.LayoutParams(dp(42), ViewGroup.LayoutParams.WRAP_CONTENT))
+                heading.addView(TextView(this).apply {
                     text = e.title
-                    setTextColor(0xFFE6EDF3.toInt()); textSize = 13f
-                    setPadding(0, dp(2), 0, 0)
+                    setTextColor(0xFFE6EDF3.toInt()); textSize = 14f
+                    maxLines = 2
+                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                heading.addView(TextView(this).apply {
+                    text = "›"
+                    setTextColor(0xFF8B98A5.toInt()); textSize = 22f
+                    gravity = Gravity.CENTER
+                }, LinearLayout.LayoutParams(dp(24), ViewGroup.LayoutParams.WRAP_CONTENT))
+                row.addView(heading)
+                row.addView(TextView(this).apply {
+                    text = fmt.format(Date(e.time)) + "  ·  ${e.detail.lineSequence().count()} 行明细"
+                    setTextColor(0xFF8B98A5.toInt()); textSize = 11f
+                    setPadding(dp(42), dp(5), 0, 0)
                 })
                 list.addView(row, LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
@@ -210,8 +273,25 @@ class ProbeLogActivity : AppCompatActivity() {
         }
         val scroll = ScrollView(this).apply { addView(tv) }
         AlertDialog.Builder(this)
-            .setTitle(e.title)
+            .setTitle(if (e.kind == ProbeLog.KIND_PID) "PID 探测 · ${fmt.format(Date(e.time))}" else "CAN 探测 · ${fmt.format(Date(e.time))}")
             .setView(scroll)
+            .setNeutralButton("复制明细") { _, _ ->
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("探测记录", e.detail.ifBlank { e.title }))
+                toast("明细已复制")
+            }
+            .setNegativeButton("删除") { _, _ ->
+                AlertDialog.Builder(this)
+                    .setTitle("删除这条记录？")
+                    .setMessage(e.title)
+                    .setPositiveButton("删除") { _, _ ->
+                        ProbeLog.remove(e)
+                        page = 0
+                        refresh()
+                    }
+                    .setNegativeButton("取消", null)
+                    .show()
+            }
             .setPositiveButton("关闭", null)
             .show()
     }

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.ui.view.GaugeAnimatorTest" tests="19" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:52.769Z" hostname="WIN-LI9OE82Q5LO" time="0.009">
+  <properties/>
+  <testcase name="长时间运行不会漂移" classname="com.icar.obd.ui.view.GaugeAnimatorTest" time="0.003"/>
+  <testcase name="数据真的停住后 会停止动画" classname="com.icar.obd.ui.view.GaugeAnimatorTest" time="0.0"/>
+  <testcase name="重启后第一帧不会抽风" classname="com.icar.obd.ui.view.GaugeAnimatorTest" time="0.001"/>
+  <testcase name="滤波为 0 时不引入额外延迟" classname="com.icar.obd.ui.view.GaugeAnimatorTest" time="0.0"/>
+  <testcase name="重启会作废上一轮的总行程" classname="com.icar.obd.ui.view.GaugeAnimatorTest" time="0.0"/>
+  <testcase name="5Hz 缓慢变化的数据下 指针每一帧都在动" classname="com.icar.obd.ui.view.GaugeAnimatorTest" time="0.0"/>
+  <testcase name="输入滤波压掉单帧尖刺" classname="com.icar.obd.ui.view.GaugeAnimatorTest" time="0.0"/>
+  <testcase name="四种曲线在状态机里都能收敛到目标" classname="com.icar.obd.ui.view.GaugeAnimatorTest" time="0.001"/>
+  <testcase name="吸附阈值相对增量太大时会停一下再跳 —— 这是阈值本身的取舍" classname="com.icar.obd.ui.view.GaugeAnimatorTest" time="0.0"/>
+  <testcase name="display 在第一次 step 之前是 null" classname="com.icar.obd.ui.view.GaugeAnimatorTest" time="0.0"/>
+  <testcase name="目标不变时最终会停止 不空转" classname="com.icar.obd.ui.view.GaugeAnimatorTest" time="0.0"/>
+  <testcase name="单帧位移很小 —— 不是一帧跳到位" classname="com.icar.obd.ui.view.GaugeAnimatorTest" time="0.0"/>
+  <testcase name="snapTo 直接跳到位 不经过动画" classname="com.icar.obd.ui.view.GaugeAnimatorTest" time="0.0"/>
+  <testcase name="目标跳动后重新开始计时 —— 不会继承上一轮的稳定判定" classname="com.icar.obd.ui.view.GaugeAnimatorTest" time="0.0"/>
+  <testcase name="无数据时透传 null 与 NaN" classname="com.icar.obd.ui.view.GaugeAnimatorTest" time="0.0"/>
+  <testcase name="tau 变大后指针动的时间更长 —— 这就是顺不顺的关键" classname="com.icar.obd.ui.view.GaugeAnimatorTest" time="0.001"/>
+  <testcase name="下降方向也能收敛 —— 曾经在这里漏过" classname="com.icar.obd.ui.view.GaugeAnimatorTest" time="0.0"/>
+  <testcase name="首帧直接采用原始值 不做动画" classname="com.icar.obd.ui.view.GaugeAnimatorTest" time="0.0"/>
+  <testcase name="数据缓慢上升时 指针大部分时间都在动" classname="com.icar.obd.ui.view.GaugeAnimatorTest" time="0.003"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

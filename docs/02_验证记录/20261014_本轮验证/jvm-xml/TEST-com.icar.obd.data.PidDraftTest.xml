@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.PidDraftTest" tests="27" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:50.808Z" hostname="WIN-LI9OE82Q5LO" time="0.018">
+  <properties/>
+  <testcase name="监听型 CAN ID 非法是硬错误" classname="com.icar.obd.data.PidDraftTest" time="0.006"/>
+  <testcase name="监听型 CAN ID 会被规范化 小写与缺位都补齐" classname="com.icar.obd.data.PidDraftTest" time="0.001"/>
+  <testcase name="最小帧长为 0 时 按公式的真实位集给出建议" classname="com.icar.obd.data.PidDraftTest" time="0.001"/>
+  <testcase name="最小值最大值填了非数字要说出来 不许静默变 0" classname="com.icar.obd.data.PidDraftTest" time="0.0"/>
+  <testcase name="监听型往返 —— 字段一个都不许变" classname="com.icar.obd.data.PidDraftTest" time="0.001"/>
+  <testcase name="无效原始值边界" classname="com.icar.obd.data.PidDraftTest" time="0.001"/>
+  <testcase name="候选（未启用）原样落进 enabled" classname="com.icar.obd.data.PidDraftTest" time="0.0"/>
+  <testcase name="主动请求型 PID 含非十六进制只是软警告 免得挡住派生通道另存副本" classname="com.icar.obd.data.PidDraftTest" time="0.001"/>
+  <testcase name="公式留空按 A 处理 —— 与旧行为一致" classname="com.icar.obd.data.PidDraftTest" time="0.0"/>
+  <testcase name="ttlMs 为 0 的存量条目 编辑一次不许被改成默认值" classname="com.icar.obd.data.PidDraftTest" time="0.001"/>
+  <testcase name="最小帧长边界" classname="com.icar.obd.data.PidDraftTest" time="0.0"/>
+  <testcase name="主动请求型的 header 是模块头 留空表示广播" classname="com.icar.obd.data.PidDraftTest" time="0.0"/>
+  <testcase name="无效原始值超出位宽只是软警告 照收" classname="com.icar.obd.data.PidDraftTest" time="0.0"/>
+  <testcase name="Mode 非十六进制是硬错误 但 CALC 放行" classname="com.icar.obd.data.PidDraftTest" time="0.001"/>
+  <testcase name="名称与公式不能为空" classname="com.icar.obd.data.PidDraftTest" time="0.0"/>
+  <testcase name="主动请求型 PID 为空是硬错误" classname="com.icar.obd.data.PidDraftTest" time="0.0"/>
+  <testcase name="主动请求型往返 —— 含模块头与轮询参数" classname="com.icar.obd.data.PidDraftTest" time="0.0"/>
+  <testcase name="监听型的 pid 恒等于 CAN ID 用户填的 mode_pid 一律被忽略" classname="com.icar.obd.data.PidDraftTest" time="0.001"/>
+  <testcase name="监听型没填 CAN ID 是硬错误" classname="com.icar.obd.data.PidDraftTest" time="0.0"/>
+  <testcase name="来源下拉框的 值 与 显示文字 一一对应" classname="com.icar.obd.data.PidDraftTest" time="0.0"/>
+  <testcase name="主动请求型 PID 奇数位十六进制是硬错误" classname="com.icar.obd.data.PidDraftTest" time="0.0"/>
+  <testcase name="整数不带小数点" classname="com.icar.obd.data.PidDraftTest" time="0.0"/>
+  <testcase name="显示超时边界" classname="com.icar.obd.data.PidDraftTest" time="0.0"/>
+  <testcase name="轮询间隔与多 ECU 序号边界" classname="com.icar.obd.data.PidDraftTest" time="0.001"/>
+  <testcase name="有硬错误时不给 pid —— 调用方不可能不小心存下去" classname="com.icar.obd.data.PidDraftTest" time="0.0"/>
+  <testcase name="Motorola 的建议帧长按真实位集算 不能用线性的 起始位加长度" classname="com.icar.obd.data.PidDraftTest" time="0.0"/>
+  <testcase name="新建监听型 显示超时留空 按唯一权威的默认值 并说出来" classname="com.icar.obd.data.PidDraftTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

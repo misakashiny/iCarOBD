@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.obd.DerivedChannelsTest" tests="31" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:51.358Z" hostname="WIN-LI9OE82Q5LO" time="0.048">
+  <properties/>
+  <testcase name="integrated average carries finite input expiry but cumulative distance does not" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.002"/>
+  <testcase name="boost clears a TTL expired dependency" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.002"/>
+  <testcase name="里程按车速积分" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.0"/>
+  <testcase name="里程过短时不出平均油耗" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.0"/>
+  <testcase name="fuel flow and instantaneous output inherit selected input TTL" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.0"/>
+  <testcase name="missing speed preserves known totals but invalidates average and range" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.001"/>
+  <testcase name="故障灯是标准 PID 且阈值让它直接走成报警" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.001"/>
+  <testcase name="repeated resets are idempotent and preserve unrelated values" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.0"/>
+  <testcase name="续航里程按油量容量与平均油耗算" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.001"/>
+  <testcase name="speed loss clears instantaneous value without clearing valid fuel flow" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.0"/>
+  <testcase name="range clears invalid average and expired fuel percentage" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.0"/>
+  <testcase name="缺任何一个前提都不出续航" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.024"/>
+  <testcase name="续航里程被夹在上限内" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.001"/>
+  <testcase name="range capacity zero or negative invalidates old result and positive restores" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.001"/>
+  <testcase name="non finite dependencies cannot create valid derived readings" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.0"/>
+  <testcase name="short trip after reset does not resurrect last average" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.001"/>
+  <testcase name="range cannot outlive its fuel level dependency" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.001"/>
+  <testcase name="MIL 公式取的是字节 A 的 bit7" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.0"/>
+  <testcase name="续航里程是启用的派生通道" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.0"/>
+  <testcase name="油量不会因为车速为 0 而停止累计" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.001"/>
+  <testcase name="reset immediately publishes zero distance and clears average and range only" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.001"/>
+  <testcase name="boost expiry is no later than earliest timed input" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.0"/>
+  <testcase name="boost clears failed MAP and BARO and recovers" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.0"/>
+  <testcase name="单位换算不能少除 3600" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.001"/>
+  <testcase name="missing fuel clears fuel flow and instantaneous consumption" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.0"/>
+  <testcase name="invalid time intervals cannot alter totals or publish a valid average" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.002"/>
+  <testcase name="fuel gap cannot produce a false complete average after recovery" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.003"/>
+  <testcase name="known zero fuel remains a valid integration input" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.0"/>
+  <testcase name="平均油耗是启用的派生通道" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.0"/>
+  <testcase name="平均油耗等于累计油量除以累计里程" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.001"/>
+  <testcase name="怠速时平均油耗上升而不是乱跳" classname="com.icar.obd.obd.DerivedChannelsTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

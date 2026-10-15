@@ -420,40 +420,44 @@ object ObdController {
      * 初始化 ELM327 并在成功后启动轮询。
      * 这个方法是 suspend 的，必须由 UI 在协程里调用。
      */
-    suspend fun initializeAndStart(onStep: (String) -> Unit = {}): ElmSession.InitResult {
-        val r = session.initialize(Store.settings.protocol) { step ->
-            AppLog.d(AppLog.M_OBD, "初始化步骤", step)
-            listeners.forEach { runCatching { it.onInitStep(step) } }
-            onStep(step)
+    suspend fun initializeAndStart(startPolling: Boolean = true, onStep: (String) -> Unit = {}): ElmSession.InitResult {
+        val token = CanAdapterGate.beginInitialization { startPolling && (CanSniffer.busy || FrameMonitor.active) }
+        if (token == null) {
+            val blocked = ElmSession.InitResult(false, "", "", "", "",
+                "适配器正在初始化或监听收尾，请等当前操作结束", emptyList())
+            listeners.forEach { runCatching { it.onInitDone(blocked) } }
+            return blocked
         }
-        initResult = r
-        listeners.forEach { runCatching { it.onInitDone(r) } }
-        if (r.ok) {
-            startPolling()
-        } else {
-            AppLog.e(AppLog.M_OBD, "初始化未通过（0100 无有效响应）", "probe=${r.probeRaw.take(80)}")
-            // ⚠️ **未通过也照常启动轮询**（v1.17.6 改，之前是直接不启动）。
-            //
-            // 为什么改：v1.17.2 把 `ok` 的判据**加严**成"`0100` 真的解析出 4 字节位图"，
-            // 假阴性的概率随之变高 —— 而"ok=false 就完全不轮询"会把假阴性放大成
-            // **"明明能通却什么都不做"**。实车会话 B 就是 `ok=false` 却有真实数据。
-            //
-            // 现在照常轮询：真不通时由**总线负载保护**自动降频，
-            // 30 秒后的「轮询汇总」会明说「有值 0/N」—— 比静默不动**更容易看出问题**。
-            AppLog.w(
-                AppLog.M_OBD, "初始化未通过，但仍启动轮询",
-                "看 30 秒后的「轮询汇总 | 有值 N/M」判断链路到底通不通"
-            )
-            startPolling()
+        val initializedTransport = transport
+        val initializedSession = session
+        var completed = false
+        try {
+            val r = initializedSession.initialize(Store.settings.protocol) { step ->
+                AppLog.d(AppLog.M_OBD, "初始化步骤", step)
+                listeners.forEach { runCatching { it.onInitStep(step) } }
+                onStep(step)
+            }
+            initResult = r
+            listeners.forEach { runCatching { it.onInitDone(r) } }
+            completed = true
+            if (!r.ok) {
+                AppLog.e(AppLog.M_OBD,"初始化未通过（0100 无有效响应）","probe="+r.probeRaw.take(80))
+                if (startPolling) AppLog.w(AppLog.M_OBD,"初始化未通过，仍按既有策略尝试轮询","看30秒后的轮询汇总判断链路是否能取值")
+            }
+            return r
+        } finally {
+            if (token != null) synchronized(CanAdapterGate.lock) {
+                CanAdapterGate.endInitialization(token)
+                if (startPolling && completed && transport === initializedTransport && session === initializedSession && isConnected() && !manualDisconnect) startPolling()
+            }
         }
-        return r
     }
 
     fun startPolling() {
-        if (engine.running) return
-        engine.start()
-        if (Store.settings.csvEnabled && !csv.enabled) {
-            csv.start(engine.activePids.map { it.id })
+        synchronized(CanAdapterGate.lock) {
+            if (CanSniffer.busy || FrameMonitor.active || CanAdapterGate.initializing || CanAdapterGate.scanning || engine.running) return
+            engine.start()
+            if (Store.settings.csvEnabled && !csv.enabled) csv.start(engine.activePids.map { it.id })
         }
     }
 
@@ -466,7 +470,7 @@ object ObdController {
         val wasRunning = engine.running
         if (wasRunning) engine.stop()
         engine.reload()
-        if (wasRunning) engine.start()
+        if (wasRunning) startPolling()
     }
 
     fun reloadRules() = RuleEngine.reload()

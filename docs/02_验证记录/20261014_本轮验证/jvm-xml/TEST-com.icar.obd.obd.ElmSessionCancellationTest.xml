@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.obd.ElmSessionCancellationTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:51.409Z" hostname="WIN-LI9OE82Q5LO" time="0.042">
+  <properties/>
+  <testcase name="external cancellation stays cancellation and mutex is reusable" classname="com.icar.obd.obd.ElmSessionCancellationTest" time="0.023"/>
+  <testcase name="send failure cleans waiter and allows next request" classname="com.icar.obd.obd.ElmSessionCancellationTest" time="0.002"/>
+  <testcase name="timeout is empty rather than cancelling caller" classname="com.icar.obd.obd.ElmSessionCancellationTest" time="0.017"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

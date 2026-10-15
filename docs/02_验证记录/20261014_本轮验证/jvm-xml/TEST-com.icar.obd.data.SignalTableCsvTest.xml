@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.SignalTableCsvTest" tests="41" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:51.023Z" hostname="WIN-LI9OE82Q5LO" time="0.034">
+  <properties/>
+  <testcase name="多余的空行被跳过 不计入数据行" classname="com.icar.obd.data.SignalTableCsvTest" time="0.001"/>
+  <testcase name="splitRows 处理引号内的逗号与双引号" classname="com.icar.obd.data.SignalTableCsvTest" time="0.0"/>
+  <testcase name="模板有 25 列中文表头且带 BOM" classname="com.icar.obd.data.SignalTableCsvTest" time="0.002"/>
+  <testcase name="Motorola 起始位 60 长度 5 只占第 8 字节 不越界" classname="com.icar.obd.data.SignalTableCsvTest" time="0.001"/>
+  <testcase name="软警告 DLC 空时跳过帧长校验" classname="com.icar.obd.data.SignalTableCsvTest" time="0.001"/>
+  <testcase name="生成的公式都能被公式引擎接受" classname="com.icar.obd.data.SignalTableCsvTest" time="0.0"/>
+  <testcase name="硬错误 最小大于最大" classname="com.icar.obd.data.SignalTableCsvTest" time="0.001"/>
+  <testcase name="硬错误 报文ID 非法" classname="com.icar.obd.data.SignalTableCsvTest" time="0.0"/>
+  <testcase name="软警告 多路复用条件 单位与证据为空" classname="com.icar.obd.data.SignalTableCsvTest" time="0.001"/>
+  <testcase name="note 只写非空项 不产生噪音" classname="com.icar.obd.data.SignalTableCsvTest" time="0.0"/>
+  <testcase name="空白最小最大按编码范围兜底 而不是 0到255" classname="com.icar.obd.data.SignalTableCsvTest" time="0.001"/>
+  <testcase name="报文ID 去 0x 大写并补足 3 位" classname="com.icar.obd.data.SignalTableCsvTest" time="0.0"/>
+  <testcase name="候选条目不启用 已确认条目启用" classname="com.icar.obd.data.SignalTableCsvTest" time="0.0"/>
+  <testcase name="空文件报错而不是静默成功" classname="com.icar.obd.data.SignalTableCsvTest" time="0.0"/>
+  <testcase name="软警告 报文ID dec 与 hex 不一致" classname="com.icar.obd.data.SignalTableCsvTest" time="0.005"/>
+  <testcase name="报文名进 group 其余列进 note 的固定格式" classname="com.icar.obd.data.SignalTableCsvTest" time="0.0"/>
+  <testcase name="硬错误 解到帧外 用真实位集而不是线性的起始位加长度" classname="com.icar.obd.data.SignalTableCsvTest" time="0.003"/>
+  <testcase name="escape 只在该加引号时才加" classname="com.icar.obd.data.SignalTableCsvTest" time="0.001"/>
+  <testcase name="硬错误 字节序与符号不认识" classname="com.icar.obd.data.SignalTableCsvTest" time="0.0"/>
+  <testcase name="因子与偏移进公式 并保证是 bitsAt 形态" classname="com.icar.obd.data.SignalTableCsvTest" time="0.001"/>
+  <testcase name="硬错误 信号名为空" classname="com.icar.obd.data.SignalTableCsvTest" time="0.0"/>
+  <testcase name="字节序与符号的别名" classname="com.icar.obd.data.SignalTableCsvTest" time="0.0"/>
+  <testcase name="列顺序被打乱也能按列名读对" classname="com.icar.obd.data.SignalTableCsvTest" time="0.002"/>
+  <testcase name="硬错误 起始位不是数字或为负" classname="com.icar.obd.data.SignalTableCsvTest" time="0.0"/>
+  <testcase name="没有表头时明确报错 而不是猜列序" classname="com.icar.obd.data.SignalTableCsvTest" time="0.0"/>
+  <testcase name="模板的取值集合列含逗号时不会把行拆错" classname="com.icar.obd.data.SignalTableCsvTest" time="0.002"/>
+  <testcase name="CRLF 与 BOM 都能读" classname="com.icar.obd.data.SignalTableCsvTest" time="0.001"/>
+  <testcase name="同名信号在不同报文下是两条" classname="com.icar.obd.data.SignalTableCsvTest" time="0.0"/>
+  <testcase name="软警告 字节列与起始位不符" classname="com.icar.obd.data.SignalTableCsvTest" time="0.002"/>
+  <testcase name="硬错误 因子为零或非数" classname="com.icar.obd.data.SignalTableCsvTest" time="0.0"/>
+  <testcase name="起始位 0 是合法的" classname="com.icar.obd.data.SignalTableCsvTest" time="0.001"/>
+  <testcase name="一行最小信号能变成监听型 PID" classname="com.icar.obd.data.SignalTableCsvTest" time="0.0"/>
+  <testcase name="软警告 无效原始值超出长度能表示的范围" classname="com.icar.obd.data.SignalTableCsvTest" time="0.0"/>
+  <testcase name="软警告 同一报文内位重叠" classname="com.icar.obd.data.SignalTableCsvTest" time="0.001"/>
+  <testcase name="无效原始值与显示超时进字段" classname="com.icar.obd.data.SignalTableCsvTest" time="0.0"/>
+  <testcase name="模板每个观察到的 ID 一行 预填 ID-DLC-取值集合 其余留空" classname="com.icar.obd.data.SignalTableCsvTest" time="0.004"/>
+  <testcase name="重复导入按报文与信号名覆盖 不新增" classname="com.icar.obd.data.SignalTableCsvTest" time="0.0"/>
+  <testcase name="同一报文内不重叠时没有位重叠警告" classname="com.icar.obd.data.SignalTableCsvTest" time="0.001"/>
+  <testcase name="公式生成在因子偏移为默认值时最短" classname="com.icar.obd.data.SignalTableCsvTest" time="0.0"/>
+  <testcase name="硬错误 长度非数或越界" classname="com.icar.obd.data.SignalTableCsvTest" time="0.001"/>
+  <testcase name="Motorola 不按线性的起始位加长度判越界" classname="com.icar.obd.data.SignalTableCsvTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

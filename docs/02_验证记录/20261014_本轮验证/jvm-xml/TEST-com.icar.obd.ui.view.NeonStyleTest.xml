@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.ui.view.NeonStyleTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:53.073Z" hostname="WIN-LI9OE82Q5LO" time="0.001">
+  <properties/>
+  <testcase name="关闭档位真的不画辉光" classname="com.icar.obd.ui.view.NeonStyleTest" time="0.0"/>
+  <testcase name="档位名反查" classname="com.icar.obd.ui.view.NeonStyleTest" time="0.0"/>
+  <testcase name="层数上限被夹住" classname="com.icar.obd.ui.view.NeonStyleTest" time="0.0"/>
+  <testcase name="档位名是冻结的契约" classname="com.icar.obd.ui.view.NeonStyleTest" time="0.0"/>
+  <testcase name="未知名字回落到标准而不是崩" classname="com.icar.obd.ui.view.NeonStyleTest" time="0.0"/>
+  <testcase name="每个冻结名字都能查到对应样式" classname="com.icar.obd.ui.view.NeonStyleTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.obd.VehicleBusTtlTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:52.659Z" hostname="WIN-LI9OE82Q5LO" time="0.001">
+  <properties/>
+  <testcase name="未超时的值照常给" classname="com.icar.obd.obd.VehicleBusTtlTest" time="0.001"/>
+  <testcase name="每个通道各判各的 ttl" classname="com.icar.obd.obd.VehicleBusTtlTest" time="0.0"/>
+  <testcase name="ttl 为 0 时永不超时（旧行为）" classname="com.icar.obd.obd.VehicleBusTtlTest" time="0.0"/>
+  <testcase name="失败的值不会被 ttl 逻辑翻成成功" classname="com.icar.obd.obd.VehicleBusTtlTest" time="0.0"/>
+  <testcase name="超时判定只发生在读取时 不写回总线" classname="com.icar.obd.obd.VehicleBusTtlTest" time="0.0"/>
+  <testcase name="超时后 get 返回 ok=false 的副本 且保留原始时间戳" classname="com.icar.obd.obd.VehicleBusTtlTest" time="0.0"/>
+  <testcase name="超时后 snapshot 里也是 ok=false —— 规则不误触发 且 CSV 记空" classname="com.icar.obd.obd.VehicleBusTtlTest" time="0.0"/>
+  <testcase name="超时后 value 返回 null —— 仪表显示 --" classname="com.icar.obd.obd.VehicleBusTtlTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

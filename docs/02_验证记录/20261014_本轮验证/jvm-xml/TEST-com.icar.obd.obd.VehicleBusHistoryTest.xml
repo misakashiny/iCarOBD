@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.obd.VehicleBusHistoryTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:52.633Z" hostname="WIN-LI9OE82Q5LO" time="0.001">
+  <properties/>
+  <testcase name="失败值不进历史" classname="com.icar.obd.obd.VehicleBusHistoryTest" time="0.0"/>
+  <testcase name="没记录过的通道返回空列表而不是 null" classname="com.icar.obd.obd.VehicleBusHistoryTest" time="0.0"/>
+  <testcase name="put 会按时间顺序写入历史" classname="com.icar.obd.obd.VehicleBusHistoryTest" time="0.0"/>
+  <testcase name="返回的是快照 外部修改不影响内部" classname="com.icar.obd.obd.VehicleBusHistoryTest" time="0.0"/>
+  <testcase name="clear 会同时清掉数值与历史" classname="com.icar.obd.obd.VehicleBusHistoryTest" time="0.0"/>
+  <testcase name="NaN 与无穷即使 ok 也不进历史" classname="com.icar.obd.obd.VehicleBusHistoryTest" time="0.0"/>
+  <testcase name="历史有界 超出丢最旧" classname="com.icar.obd.obd.VehicleBusHistoryTest" time="0.001"/>
+  <testcase name="不同通道的历史互不干扰" classname="com.icar.obd.obd.VehicleBusHistoryTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

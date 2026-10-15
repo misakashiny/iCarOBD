@@ -16,7 +16,10 @@ import com.google.android.material.button.MaterialButton
 import com.icar.obd.R
 import com.icar.obd.data.AppLog
 import com.icar.obd.data.CanFilterPresets
-import com.icar.obd.data.ProbeLog
+import com.icar.obd.data.CanSnifferText
+import com.icar.obd.data.CanProbeUiState
+import com.icar.obd.obd.CanReceiveFilter
+import com.icar.obd.obd.CanAdapterGate
 import com.icar.obd.data.PidDefinition
 import com.icar.obd.data.SignalDecode
 import com.icar.obd.data.SignalTableCsv
@@ -88,11 +91,32 @@ class CanSnifferActivity : AppCompatActivity() {
      */
     private var decodeIndex: Map<Int, List<PidDefinition>> = emptyMap()
 
+    private var rangesExpanded = false
+    private var detailsExpanded = false
+    private var lastDetailPhase: CanSniffer.Phase? = null
+    private var updateListener: ((CanSniffer.Status) -> Unit)? = null
+    private var monitorListener: ((Boolean) -> Unit)? = null
+    private var lastEnvironmentState: String? = null
+    private val uiTicker = object : Runnable {
+        override fun run() {
+            val state = "${ObdController.isConnected()}/${FrameMonitor.running}/${FrameMonitor.active}/${CanAdapterGate.initializing}"
+            if (state != lastEnvironmentState) {
+                lastEnvironmentState = state
+                refreshStatus()
+            }
+            tvStatus.postDelayed(this, 1000L)
+        }
+    }
+
     private val durations = listOf(3, 5, 10, 20, 30, 60)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_can_sniffer)
+        detailsExpanded = savedInstanceState?.getBoolean("sniff.details.expanded") ?: false
+        lastDetailPhase = savedInstanceState?.getString("sniff.details.phase")?.let {
+            runCatching { CanSniffer.Phase.valueOf(it) }.getOrNull()
+        }
 
         tvStatus = findViewById(R.id.tvSniffStatus)
         tvRotate = findViewById(R.id.tvSniffRotate)
@@ -112,6 +136,7 @@ class CanSnifferActivity : AppCompatActivity() {
         btnDiff.setOnClickListener { showDiff() }
         btnMonitor.setOnClickListener { toggleMonitor() }
         setupFilterPresets()
+        setupWorkspace()
         // v1.20.17：手打过滤器时那一行说明要跟着变（"实际下发的 AT 命令"是这一页的判据之一）。
         // 加在 `setupFilterPresets()` 之后 —— 预设的点击回调自己会刷一次，两边不会打架。
         etFilter.addTextChangedListener(object : android.text.TextWatcher {
@@ -124,18 +149,11 @@ class CanSnifferActivity : AppCompatActivity() {
         // 时长与过滤都由轮换自己决定。**置灰而不是隐藏**：隐藏会让人以为
         // 那两个控件消失了；置灰能看出"它还在，只是现在不归你管"。
         cbRotate.setOnCheckedChangeListener { _, checked ->
-            spDuration.isEnabled = !checked
-            etFilter.isEnabled = !checked
+            refreshFilterStatus()
             refreshStatus()
         }
-        FrameMonitor.onStateChanged = { on ->
-            runOnUiThread {
-                btnMonitor.text = if (on) "停止常驻监听" else "开启常驻监听（转向灯）"
-                // 状态行也要跟着刷新：常驻监听开着时它显示的是**轮询已暂停**的警示
-                // （P10-3），不是"未开始" —— 否则同一屏上两个说法互相打架
-                refreshStatus()
-            }
-        }
+        monitorListener = { runOnUiThread { refreshStatus() } }
+        FrameMonitor.onStateChanged = monitorListener
 
         spDuration.adapter = ArrayAdapter(
             this, android.R.layout.simple_spinner_dropdown_item,
@@ -145,8 +163,10 @@ class CanSnifferActivity : AppCompatActivity() {
 
         btnToggle.setOnClickListener { toggle() }
         findViewById<MaterialButton>(R.id.btnSniffClear).setOnClickListener {
-            CanSniffer.reset()
+            if (!CanSniffer.reset()) ObdController.toast("请等本次探测收尾后再清空")
+            diffContainer.removeAllViews()
             buildRows()
+            refreshStatus()
         }
         findViewById<MaterialButton>(R.id.btnSniffExportAgg).setOnClickListener {
             export("can-observe-aggregate.csv", CanSniffer.aggregateCsv())
@@ -168,11 +188,9 @@ class CanSnifferActivity : AppCompatActivity() {
         // v1.19.22：探测**结束**时留档到「探测记录」。
         // 用"上一帧在跑、这一帧不跑了"来判定结束 —— 比在 toggle() 里记更可靠：
         // 探测也可能因为超时/出错自己停，那些路径同样该留档。
-        var wasRunning = false
         var lastPhase: CanSniffer.Phase? = null
-        CanSniffer.onUpdate = { st ->
+        updateListener = { st ->
             refreshStatus()
-            btnToggle.text = if (CanSniffer.running) "停止探测" else "开始探测"
             buildRows()
             // 失败要**弹出来**（v1.20.6，P10-4）：状态行是一行 11sp 的暗色小字，
             // "准备失败，请重跑一次"埋在里头等于没说 —— 用户会继续对着空结果猜
@@ -180,35 +198,9 @@ class CanSnifferActivity : AppCompatActivity() {
                 ObdController.toast(st.message.lineSequence().first())
             }
             lastPhase = st.phase
-            if (wasRunning && !CanSniffer.running) {
-                val rot = CanSniffer.status.rotation
-                val filter = if (rot != null) {
-                    // 轮换的"过滤器"不是用户填的那个 —— 它逐段下发掩码+段过滤。
-                    // 记下段数与各段范围，否则事后完全看不出这趟是全扫
-                    "分段轮换(${rot.count}段×${SegmentRotation.SEGMENT_MS / 1000}秒 " +
-                        "${SegmentRotation.segmentRange(0)}…${SegmentRotation.segmentRange(rot.count - 1)})"
-                } else {
-                    etFilter.text.toString().trim().ifBlank { "（不过滤）" }
-                }
-                // 明细 = 聚合结果（按 ID 的帧数），这正是事后要看的；
-                // 截断到 60 行，免得一次几万个 ID 把记录撑爆
-                // ⚠️ v1.19.23：原来截断到 60 行 —— 而一次探测看到几百个 ID 很正常，
-                // 用户反馈"记录得太少了"。聚合结果本身就是**蒸馏过的**（每个 ID 一行，
-                // 不是每帧一行），整份存下来不会失控；真要每帧明细，CAN 页还有「导出原始」。
-                val agg = runCatching { CanSniffer.aggregateCsv() }.getOrDefault("")
-                // S4：解码结果也一起留档。
-                // 为什么值得占这几行：**这是上车验证"解码到底对不对"的唯一物证** ——
-                // 界面上的值刷过去就没了，而探测记录能事后回看（AppLog 第二天就换文件）。
-                val dec = decodeReport()
-                ProbeLog.add(
-                    ProbeLog.KIND_CAN,
-                    "过滤器 $filter · ${describe(st)}" + if (dec.isBlank()) "" else " · 解码 ${boundIdCount()} 个 ID",
-                    agg + dec
-                )
-                if (dec.isNotBlank()) AppLog.i(AppLog.M_OBD, "CAN 解码汇总", dec.replace('\n', ' '))
-            }
-            wasRunning = CanSniffer.running
+
         }
+        CanSniffer.onUpdate = updateListener
         refreshStatus()
         buildRows()
     }
@@ -218,9 +210,15 @@ class CanSnifferActivity : AppCompatActivity() {
         refreshDecodeIndex()
         // 解码汇总挂在状态行下面：它是**整页**的结论（这一页有多少 ID 能看懂），
         // 放进结果流里会被 `ColumnFlowLayout` 分栏切成半宽，看着像某一条的附注
-        val sum = decodeSummary()
-        tvStatus.text = describe(CanSniffer.status) + if (sum.isBlank()) "" else "\n$sum"
+        tvStatus.text = describe(CanSniffer.status)
+        if (!ObdController.isConnected() && CanSniffer.status.phase == CanSniffer.Phase.IDLE) {
+            tvStatus.text = "适配器未连接。先到「连接」页完成连接与初始化，再回这里采集。"
+        }
+        findViewById<TextView>(R.id.tvSniffResultMeta).text = decodeSummary().ifBlank {
+            if (CanSniffer.aggregates().isEmpty()) "尚无采集结果" else "共 "+CanSniffer.aggregates().size+"个 ID"
+        }
         refreshRotateLine()
+        refreshActions()
     }
 
     /**
@@ -242,11 +240,15 @@ class CanSnifferActivity : AppCompatActivity() {
         }
         tvRotate.visibility = android.view.View.VISIBLE
         val seg = SegmentRotation.segmentRange(r.index)
-        tvRotate.text = if (r.done) {
+        tvRotate.text = if (CanSniffer.status.phase == CanSniffer.Phase.PREPARING) {
+            "正在设置第 ${r.index + 1}/${r.count} 段 $seg · 已收 ${CanSniffer.status.rotatedIdCount} 个 ID"
+        } else if (CanSniffer.status.phase in listOf(CanSniffer.Phase.DONE, CanSniffer.Phase.FAILED) && !r.done) {
+            "本次已结束 · 完成 ${CanSniffer.status.completedSegments}/${r.count} 段 · 已收 ${CanSniffer.status.rotatedIdCount} 个 ID"
+        } else if (r.done) {
             "轮换完成：$seg · 共 ${r.count} 段 · 已收 ${CanSniffer.status.rotatedIdCount} 个 ID"
         } else {
             "轮换中：${r.segmentLabel()} $seg · 本段还剩 ${"%.1f".format(r.remainingMs / 1000f)} 秒" +
-                " · 整轮还剩 ${"%.0f".format(r.totalRemainingMs / 1000f)} 秒" +
+                " · 剩余采集约 ${"%.0f".format(r.totalRemainingMs / 1000f)} 秒" +
                 " · 已收 ${CanSniffer.status.rotatedIdCount} 个 ID"
         }
     }
@@ -265,19 +267,13 @@ class CanSnifferActivity : AppCompatActivity() {
      *
      * 「一个都没绑定」时**必须说清楚**：否则用户看到的是一屏 hex，
      * 而他刚在 PID 页建过监听型条目 —— 两件事对不上，就会去怀疑公式写错了。
+     *
+     * 文案本体在 [CanSnifferText.decodeSummary]：这里是普通 `TextView`，
+     * Android 不解析 Markdown，所以那串字面双星号得从**文案里**去掉
+     * （不能在界面层渲染，那等于另造一个渲染器）。
      */
-    private fun decodeSummary(): String {
-        val list = CanSniffer.aggregates()
-        if (list.isEmpty()) return ""
-        val bound = boundIdCount()
-        return if (bound == 0) {
-            "解码：${list.size} 个 ID 里**没有一个**绑定了监听型 PID —— 只能显示原始 hex（不猜值）。" +
-                "要解出物理值，到「PID」页新建一条、数据来源选「监听广播帧」。"
-        } else {
-            "解码：${list.size} 个 ID 里有 $bound 个绑定了监听型 PID，下面直接显示物理值；" +
-                "其余只显示原始 hex。标「候选」的是 enabled=false，**没经过验证**。"
-        }
-    }
+    private fun decodeSummary(): String =
+        CanSnifferText.decodeSummary(CanSniffer.aggregates().size, boundIdCount())
 
     /**
      * 解码明细（给「探测记录」留档用）。空 = 一个都没绑定。
@@ -285,69 +281,44 @@ class CanSnifferActivity : AppCompatActivity() {
      * 格式刻意做成"每行一个 ID"：上车后一眼就能对着实物核对
      * （"我拨了左转，这里是不是从 0 变成 1"）。
      */
-    private fun decodeReport(): String {
-        val list = CanSniffer.aggregates()
-        val bound = list.filter { decodeIndex.containsKey(it.canId) }
-        if (bound.isEmpty()) return ""
-        val sb = StringBuilder("\n\n=== 解码（监听型 PID）===\n")
-        bound.forEach { a ->
-            val pids = decodeIndex[a.canId] ?: return@forEach
-            val last = SignalDecode.parseHexData(a.lastData)
-            sb.append(String.format("0x%03X", a.canId)).append(" → ")
-                .append(pids.joinToString(" / ") { SignalDecode.decode(last, it).text() })
-                .append('\n')
-            if (a.values.size >= 2) {
-                sb.append("    观察到的取值: ").append(a.values.joinToString(" | ")).append('\n')
-            }
-        }
-        sb.append("（未绑定的 ID 只显示原始 hex —— 不猜值）\n")
-        return sb.toString()
-    }
-
     override fun onDestroy() {
         super.onDestroy()
-        CanSniffer.onUpdate = null
+        tvStatus.removeCallbacks(uiTicker)
+        if (CanSniffer.onUpdate === updateListener) CanSniffer.onUpdate = null
+        if (FrameMonitor.onStateChanged === monitorListener) FrameMonitor.onStateChanged = null
         // 退出时不能把适配器留在监听模式 —— 那会让后续所有 AT 命令都收不到响应
-        CanSniffer.stop()
+        if (!isChangingConfigurations) CanSniffer.stop()
     }
 
-    private fun describe(s: CanSniffer.Status): String = when (s.phase) {
-        CanSniffer.Phase.IDLE ->
-            // 常驻监听开着时，这一页最该说的话是"轮询已经让位了"（P10-3）——
-            // 原来的"未开始…"会让人以为监听也没在跑（实际上正在跑，只是没在探测）
-            if (FrameMonitor.running) {
-                com.icar.obd.ui.view.MonitorWarnBar.TEXT +
-                    "\n常驻监听在跑，单次探测要等它停掉之后才能开始。"
-            } else if (cbRotate.isChecked) {
-                // 勾了轮换但还没开始 → 说清它要多久、会发生什么，
-                // 别让用户以为"和普通探测一样 10 秒"
-                "分段轮换扫描：${SegmentRotation.SEGMENT_COUNT} 段 × " +
-                    "${SegmentRotation.SEGMENT_MS / 1000} 秒 = 约 ${CanSniffer.ROTATE_DURATION_MS / 1000} 秒。\n" +
-                    "自动逐段下发 ${SegmentRotation.MASK_CMD} + ${SegmentRotation.segmentFilter(0)}…" +
-                    "${SegmentRotation.segmentFilter(SegmentRotation.SEGMENT_COUNT - 1)}，" +
-                    "汇总成「整车 ID 清单」。\n" +
-                    "⚠️ 29 位 ID 不在掩码覆盖范围内，本模式看不到。"
-            } else {
-                "未开始。探测期间会暂停轮询（转速/水温这些会冻结），并临时打开 ATH1（带 CAN 头）。\n" +
-                    "只记录**变化了的**数据，重复帧只计数 —— 防止总线流量把内存和存储撑爆。\n" +
-                    "点上面的「开始探测」开始；先点一行预设缩范围，采样率会高得多。"
-            }
-        CanSniffer.Phase.PREPARING -> s.message
-        CanSniffer.Phase.CAPTURING ->
-            if (s.rotation != null) {
-                // 轮换时**不要**在这里重复段号/剩余时间 —— 那是进度行的活
-                "轮换监听中… ${s.elapsedMs / 1000}s · ${s.frameCount} 帧（本段） / ${s.idCount} 个 ID（本段）" +
-                    if (s.dropped > 0) " · 原始流已丢弃 ${s.dropped} 条" else ""
-            } else {
-                "监听中… ${s.elapsedMs / 1000}s · ${s.frameCount} 帧 / ${s.idCount} 个 ID" +
-                    if (s.dropped > 0) " · 原始流已丢弃 ${s.dropped} 条" else ""
-            }
-        CanSniffer.Phase.FINISHING -> s.message
-        CanSniffer.Phase.DONE -> s.message +
-            "\n按出现次数排序。次数高但「变化次数」低的 ID 通常是周期性心跳。" +
-            "要对上实物（如拨一下转向灯），用下面的「对比基准（找位）」：连跑两次再点它。"
-        CanSniffer.Phase.FAILED -> s.message
-    }
+    /**
+     * 状态行文案。**只在这里做"取当前状态 + 映射"**，措辞本体在
+     * [CanSnifferText.statusLine]（纯函数、有 JVM 回归）——
+     * 这一行同样是普通 `TextView`，不带任何 Markdown 渲染。
+     *
+     * 映射成 [CanSnifferText.Status] 而不是把 `CanSniffer.Status` 传下去：
+     * 那个类所在的文件带 `android.os.Handler`，纯函数一碰就跑不了 JVM 单测。
+     */
+    private fun describe(s: CanSniffer.Status): String = CanSnifferText.statusLine(
+        CanSnifferText.Status(
+            phase = when (s.phase) {
+                CanSniffer.Phase.IDLE -> CanSnifferText.Phase.IDLE
+                CanSniffer.Phase.PREPARING -> CanSnifferText.Phase.PREPARING
+                CanSniffer.Phase.CAPTURING -> CanSnifferText.Phase.CAPTURING
+                CanSniffer.Phase.FINISHING -> CanSnifferText.Phase.FINISHING
+                CanSniffer.Phase.DONE -> CanSnifferText.Phase.DONE
+                CanSniffer.Phase.FAILED -> CanSnifferText.Phase.FAILED
+            },
+            message = s.message,
+            elapsedMs = s.elapsedMs,
+            frameCount = s.frameCount,
+            idCount = s.idCount,
+            dropped = s.dropped,
+            rotating = s.rotation != null,
+            monitorRunning = FrameMonitor.running,
+            rotateChecked = cbRotate.isChecked
+        )
+    )
+
     /**
      * 常驻监听开关。
      *
@@ -361,8 +332,8 @@ class CanSnifferActivity : AppCompatActivity() {
             refreshStatus()
             return
         }
-        if (CanSniffer.running) {
-            ObdController.toast("单次探测正在跑，先停掉它")
+        if (CanSniffer.busy || FrameMonitor.active) {
+            ObdController.toast("请等当前监听或探测收尾完成")
             return
         }
         val sigs = FrameMonitor.signals()
@@ -370,11 +341,16 @@ class CanSnifferActivity : AppCompatActivity() {
             ObdController.toast("没有可用的监听型 PID —— 到「PID」页确认「左/右转向灯」是启用状态")
             return
         }
+        if (!ObdController.isConnected()) {
+            ObdController.toast("适配器未连接，常驻监听没有开启")
+            refreshStatus()
+            return
+        }
         FrameMonitor.start()
-        btnMonitor.text = "停止常驻监听"
         refreshStatus()
+        if (!FrameMonitor.running) return
         ObdController.toast(
-            "已开启常驻监听：${sigs.joinToString("/") { it.name }}\n（轮询已暂停，退出前记得停掉它）"
+            "正在准备常驻监听：${sigs.joinToString("/") { it.name }}\n（轮询已暂停，退出前记得停掉它）"
         )
     }
 
@@ -397,7 +373,7 @@ class CanSnifferActivity : AppCompatActivity() {
             textSize = 11f
             setPadding(0, dp(8), 0, dp(2))
         }
-        diffContainer.addView(label("与「上一次探测」相比，有 ${bits.size} 处位状态变化（★ = 这次操作引起的）："))
+        diffContainer.addView(label("与「上一次探测」相比，有 ${bits.size} 处位状态变化（★ = 优先核对的候选位）："))
         bits.forEach { b ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -487,6 +463,7 @@ class CanSnifferActivity : AppCompatActivity() {
                 isChecked = current == p.value
                 contentDescription = p.label + "：" + p.desc.replace('\n', ' ')
                 setOnClickListener {
+                    if (CanSniffer.busy || FrameMonitor.active) return@setOnClickListener
                     etFilter.setText(p.value)
                     etFilter.setSelection(p.value.length)
                     // 单选语义：点了新的就取消其他（ChipGroup 的 checkable 默认允许多选）
@@ -497,6 +474,7 @@ class CanSnifferActivity : AppCompatActivity() {
                     refreshFilterStatus()
                 }
             }
+            chip.visibility = if (group.childCount >= 4) android.view.View.GONE else android.view.View.VISIBLE
             group.addView(chip)
         }
     }
@@ -514,19 +492,23 @@ class CanSnifferActivity : AppCompatActivity() {
      */
     private fun refreshFilterStatus() {
         val text = etFilter.text.toString()
-        tvFilterStatus.text = CanFilterPresets.describe(text)
+        val checked = CanReceiveFilter.parse(if (cbRotate.isChecked) "" else text)
+        etFilter.error = checked.error
+        tvFilterStatus.text = if (cbRotate.isChecked) "按8个11位ID范围依次采集；29位ID不在此模式范围内" else CanFilterPresets.describe(text)
         // ⚠️ `ATCF000` 是全总线、不是"第 0 段"（规格 §2 点名要写清）——
         // 在**可能被误读的那两种状态下**把它顶出来：不过滤、或选了全总线预设。
         // 其余状态这一行是 GONE（不占高度，也不留一行空白）。
         val f = text.trim().uppercase()
         val showNote = f.isEmpty() || f == "${SegmentRotation.MASK_CMD}+ATCF000"
         tvFilterNote.visibility = if (showNote) android.view.View.VISIBLE else android.view.View.GONE
+        refreshActions()
     }
 
     private fun toggle() {
         if (CanSniffer.running) {
             CanSniffer.stop()
         } else {
+            if (CanSniffer.busy || FrameMonitor.active) return
             if (!ObdController.isConnected()) {
                 ObdController.toast("设备未就绪，请先到「连接」页完成初始化")
                 return
@@ -570,13 +552,19 @@ class CanSnifferActivity : AppCompatActivity() {
     private fun buildRows() {
         container.removeAllViews()
         refreshDecodeIndex()
-        val list = CanSniffer.aggregates()
+        val search = findViewById<EditText>(R.id.etSniffSearch).text.toString().trim().uppercase().removePrefix("0X")
+        val matched = CanSniffer.aggregates().filter { it.idHex().contains(search) || "%03X".format(it.canId).contains(search) }
+        val list = when (findViewById<Spinner>(R.id.spSniffSort).selectedItemPosition) {
+            1 -> matched.sortedWith(compareByDescending<CanFrame.Aggregate> { it.changed }.thenBy { it.canId })
+            2 -> matched.sortedBy { it.canId }
+            else -> matched.sortedByDescending { it.count }
+        }
         if (list.isEmpty()) {
             container.addView(
                 TextView(this).apply {
-                    text = emptyHint()
+                    text = if (search.isNotEmpty()) "没有匹配这个 ID 的结果" else emptyHint()
                     setPadding(0, dp(16), 0, 0)
-                    setTextColor(resources.getColor(R.color.text_dim, theme))
+                    setTextColor(resources.getColor(R.color.text_secondary, theme))
                     textSize = 12f
                     setLineSpacing(dp(3).toFloat(), 1.15f)
                 }
@@ -588,27 +576,12 @@ class CanSnifferActivity : AppCompatActivity() {
 
     /** 空态那一行：**为什么空 + 下一步做什么**（规格 §3 的文案原则） */
     private fun emptyHint(): String {
-        val s = CanSniffer.status
         return when {
-            CanSniffer.running -> "探测进行中，还没有收到帧。\n" +
-                "车没在总线上说话（或这个过滤器把话都挡掉了）时会一直是这样。" +
-                "等本趟跑完，如果仍是空的，换成「不过滤（整条总线）」再探一次。"
-
-            s.phase == CanSniffer.Phase.FAILED ->
-                "这一趟探测失败了，所以没有结果。\n" +
-                    "原因见上面状态行；确认适配器还连着之后，点「开始探测」重来一次。"
-
-            FrameMonitor.running ->
-                "常驻监听正在跑，单次探测要等它停掉之后才能开始。\n" +
-                    "点上面的「停止常驻监听」，再点「开始探测」。"
-
-            s.phase == CanSniffer.Phase.DONE ->
-                "这一趟一个帧都没收到。\n" +
-                    "最可能的原因：过滤器太窄（这个 ID 本车根本没人发）。" +
-                    "换成「不过滤（整条总线）」再探一次，能看到全部在说话的 ID。"
-
-            else -> "还没探测过。\n" +
-                "点上面的「开始探测」；想先缩范围就点一行预设（每条都写着能看到什么）。"
+            CanSniffer.busy -> "正在等待有效广播帧，收到后会显示在这里。"
+            FrameMonitor.active -> "常驻监听占用适配器，结束后才能单次采集。"
+            CanSniffer.status.phase == CanSniffer.Phase.FAILED -> "本次未完成，原因见上方状态。处理后可以重新采集。"
+            CanSniffer.status.phase == CanSniffer.Phase.DONE -> "本次没有收到有效帧。可扩大过滤范围并检查车辆状态。"
+            else -> "这里会显示活跃ID和数据变化。先选范围，再开始采集。"
         }
     }
 
@@ -632,11 +605,15 @@ class CanSnifferActivity : AppCompatActivity() {
 
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(6), 0, dp(6))
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(resources.getColor(R.color.bg_surface2, theme)); cornerRadius=dp(12).toFloat()
+            }
             addView(
                 TextView(this@CanSnifferActivity).apply {
                     text = "${a.idHex()}${if (a.isExtended) " (29位)" else ""}   ×${a.count}$period"
-                    textSize = 13f
+                    textSize = 15f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
                     layoutParams = LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
                     )
@@ -645,7 +622,8 @@ class CanSnifferActivity : AppCompatActivity() {
             addView(
                 TextView(this@CanSnifferActivity).apply {
                     text = "数据: ${a.lastData}   变化 ${a.changed} 次$age"
-                    textSize = 11f
+                    textSize = 13f
+                    typeface = android.graphics.Typeface.MONOSPACE
                     gravity = Gravity.START
                     setTextColor(resources.getColor(R.color.text_dim, theme))
                 }
@@ -784,41 +762,145 @@ class CanSnifferActivity : AppCompatActivity() {
      *
      * ⚠️⚠️ **不要用 `setMessage` + `setItems` 的组合**（规格 §7 陷阱 4，v1.20.1 实测）：
      * 两者同时用时**列表会整个消失**，只剩一行说明。这里只放一段正文。
+     *
+     * 正文由 [CanSnifferText.importResult] 拼（纯函数、有 JVM 回归）：
+     * 对话框正文也是纯文本，原先那几处字面双星号会**原样显示给用户**。
      */
     private fun showImportResult(fileName: String, res: SignalTableCsv.Result) {
-        val sb = StringBuilder()
-        sb.append("文件：").append(fileName).append('\n')
-        sb.append("数据行 ").append(res.totalRows)
-            .append(" · 收下 ").append(res.accepted)
-            .append(" · 硬错误 ").append(res.errors.size)
-            .append(" · 软警告 ").append(res.warnings.size).append('\n')
-        if (res.accepted == 0) {
-            sb.append("\n**一条都没通过**，PID 列表没有任何变化。\n")
-        }
-        val section = { title: String, list: List<SignalTableCsv.Problem>, max: Int ->
-            if (list.isNotEmpty()) {
-                sb.append('\n').append(title).append("（").append(list.size).append("）\n")
-                list.take(max).forEach {
-                    sb.append("第 ").append(it.row).append(" 行：").append(it.message).append('\n')
-                }
-                if (list.size > max) sb.append("… 还有 ").append(list.size - max).append(" 条\n")
-            }
-        }
-        section("硬错误 · 这些行被拒绝", res.errors, 12)
-        section("软警告 · 已收下，请核对", res.warnings, 8)
-        if (res.accepted > 0) {
-            sb.append('\n').append("已写入 PID 列表（监听型）。")
-            sb.append(
-                if (res.pids.any { it.enabled })
-                    "「已确认」的条目已启用 —— 到本页开「常驻监听」就能取到值。"
-                else
-                    "这些条目都是「候选」→ **未启用**，要在「PID」页手动打开。"
-            )
-        }
         com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle("信号表导入结果")
-            .setMessage(sb.toString())
+            .setMessage(CanSnifferText.importResult(fileName, res))
             .setPositiveButton("好", null)
             .show()
     }
+    override fun onStart() {
+        super.onStart()
+        tvStatus.post(uiTicker)
+    }
+    override fun onStop() {
+        tvStatus.removeCallbacks(uiTicker)
+        super.onStop()
+    }
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean("sniff.details.expanded", detailsExpanded)
+        outState.putString("sniff.details.phase", lastDetailPhase?.name)
+    }
+    private fun renderStatusDetails() {
+        findViewById<android.view.View>(R.id.sniffStatusDetails).visibility =
+            if (detailsExpanded) android.view.View.VISIBLE else android.view.View.GONE
+        findViewById<MaterialButton>(R.id.btnSniffDetails).apply {
+            text = if (detailsExpanded) "收起" else "详情"
+            contentDescription = if (detailsExpanded) "收起采集详情" else "展开采集详情"
+        }
+    }
+    private fun setupWorkspace() {
+        val wide = resources.configuration.screenWidthDp >= 900
+        val columns = findViewById<LinearLayout>(R.id.sniffColumns)
+        columns.orientation = if (wide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+        findViewById<android.widget.ScrollView>(R.id.sniffSettingsScroll).layoutParams = LinearLayout.LayoutParams(
+            if (wide) dp(360) else ViewGroup.LayoutParams.MATCH_PARENT,
+            if (wide) ViewGroup.LayoutParams.MATCH_PARENT else dp(280))
+        findViewById<android.widget.ScrollView>(R.id.sniffResultsScroll).layoutParams = LinearLayout.LayoutParams(
+            if (wide) 0 else ViewGroup.LayoutParams.MATCH_PARENT,
+            if (wide) ViewGroup.LayoutParams.MATCH_PARENT else 0, 1f).apply {
+            if (wide) marginStart=dp(12) else topMargin=dp(12)
+        }
+        findViewById<MaterialButton>(R.id.btnSniffBack).setOnClickListener { finish() }
+        findViewById<MaterialButton>(R.id.btnSniffDetails).setOnClickListener {
+            detailsExpanded = !detailsExpanded
+            renderStatusDetails()
+        }
+        renderStatusDetails()
+        findViewById<TextView>(R.id.tvSniffHelp).text = CanSnifferText.HELP
+        fun expansion(button: Int, body: Int, closed: String, opened: String) {
+            findViewById<MaterialButton>(button).setOnClickListener {
+                val view=findViewById<android.view.View>(body)
+                val show=view.visibility!=android.view.View.VISIBLE
+                view.visibility=if(show)android.view.View.VISIBLE else android.view.View.GONE
+                (it as MaterialButton).text=if(show)opened else closed
+            }
+        }
+        expansion(R.id.btnSniffTools,R.id.sniffToolsBody,"文件与常驻监听","收起文件与监听")
+        expansion(R.id.btnSniffHelp,R.id.sniffHelpBody,"使用说明","收起说明")
+        findViewById<MaterialButton>(R.id.btnSniffRanges).setOnClickListener {
+            rangesExpanded=!rangesExpanded
+            val group=findViewById<com.google.android.material.chip.ChipGroup>(R.id.cgFilterPresets)
+            for(i in 4 until group.childCount)group.getChildAt(i).visibility=if(rangesExpanded)android.view.View.VISIBLE else android.view.View.GONE
+            (it as MaterialButton).text=if(rangesExpanded)"收起ID范围" else "更多 ID 范围"
+        }
+        findViewById<com.icar.obd.ui.view.ColumnFlowLayout>(R.id.sniffFileActions).apply { twoColumnMinWidthDp=280; rowGapDp=8; columnGapDp=8 }
+        findViewById<com.icar.obd.ui.view.ColumnFlowLayout>(R.id.sniffResults).apply { twoColumnMinWidthDp=680; rowGapDp=8 }
+        val sort=findViewById<Spinner>(R.id.spSniffSort)
+        sort.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_dropdown_item,listOf("出现最多","变化最多","按 ID"))
+        sort.onItemSelectedListener=object:android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p:android.widget.AdapterView<*>?,v:android.view.View?,pos:Int,id:Long){buildRows()}
+            override fun onNothingSelected(p:android.widget.AdapterView<*>?){}
+        }
+        findViewById<EditText>(R.id.etSniffSearch).addTextChangedListener(object:android.text.TextWatcher {
+            override fun afterTextChanged(s:android.text.Editable?){buildRows()}
+            override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){}
+            override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){}
+        })
+    }
+    private fun refreshActions() {
+        val st=CanSniffer.status
+        if (st.phase == CanSniffer.Phase.FAILED && lastDetailPhase != CanSniffer.Phase.FAILED) {
+            detailsExpanded = true
+            renderStatusDetails()
+        }
+        lastDetailPhase = st.phase
+        val phase=CanSnifferText.Phase.valueOf(st.phase.name)
+        val connected=ObdController.isConnected()
+        val hasFrames=CanSniffer.aggregates().isNotEmpty()
+        val filterValid=cbRotate.isChecked || CanReceiveFilter.parse(etFilter.text.toString()).error==null
+        val actions=CanProbeUiState.actions(phase,CanSniffer.busy,FrameMonitor.active,FrameMonitor.running,connected,filterValid,hasFrames,CanSniffer.hasBaseline,CanAdapterGate.initializing)
+        btnToggle.text=when{actions.canStop->"停止本次采集";CanSniffer.busy->"正在收尾…";else->"开始采集"}
+        btnToggle.isEnabled=actions.canStop || actions.canStart
+        spDuration.isEnabled=actions.editSettings && !cbRotate.isChecked
+        etFilter.isEnabled=actions.editSettings && !cbRotate.isChecked
+        cbRotate.isEnabled=actions.editSettings
+        val group=findViewById<com.google.android.material.chip.ChipGroup>(R.id.cgFilterPresets)
+        for(i in 0 until group.childCount)group.getChildAt(i).isEnabled=actions.editSettings && !cbRotate.isChecked
+        findViewById<MaterialButton>(R.id.btnSniffClear).isEnabled=actions.clear
+        for(id in listOf(R.id.btnSniffExportAgg,R.id.btnSniffExportRaw,R.id.btnSniffExportTemplate))findViewById<MaterialButton>(id).isEnabled=actions.export
+        findViewById<MaterialButton>(R.id.btnSniffImportSignal).isEnabled=actions.editSettings
+        btnDiff.isEnabled=actions.compare
+        btnMonitor.isEnabled=actions.monitor
+        btnMonitor.text=if(FrameMonitor.running)"停止常驻监听" else if(FrameMonitor.active)"监听收尾中…" else "开启常驻监听"
+        findViewById<TextView>(R.id.tvSniffMonitor).text=if(FrameMonitor.preparing)"正在准备常驻监听，轮询暂停" else if(FrameMonitor.active)"常驻监听占用适配器，轮询暂停" else "用已配置的广播信号更新仪表；开启时会暂停轮询"
+        findViewById<TextView>(R.id.tvSniffConnection).apply {
+            text = when (st.phase) {
+                CanSniffer.Phase.PREPARING -> "准备监听 · 轮询暂停"
+                CanSniffer.Phase.CAPTURING -> st.rotation?.let {
+                    "第${it.index + 1}/${it.count}段 · ${st.frameCount}帧 · ${st.rotatedIdCount}个ID"
+                } ?: "${st.elapsedMs / 1000}秒 · ${st.frameCount}帧 · ${st.idCount}个ID"
+                CanSniffer.Phase.FINISHING -> "退出监听并恢复适配器"
+                CanSniffer.Phase.DONE -> "${st.frameCount}帧 · ${st.idCount}个ID"
+                CanSniffer.Phase.FAILED -> st.message
+                CanSniffer.Phase.IDLE -> when {
+                    CanAdapterGate.initializing -> "正在初始化适配器"
+                    FrameMonitor.active -> "占用适配器 · 轮询暂停"
+                    connected -> "适配器已连接"
+                    else -> "适配器未连接，先到「连接」页连接"
+                }
+            }
+            contentDescription = (if (connected) "适配器已连接。" else "适配器未连接。") + tvStatus.text
+            setTextColor(resources.getColor(if(connected)R.color.ok else R.color.text_secondary,theme))
+        }
+        findViewById<TextView>(R.id.tvSniffPhase).apply {
+            text=when(st.phase){CanSniffer.Phase.IDLE->if(CanAdapterGate.initializing)"初始化中" else if(FrameMonitor.preparing)"监听准备" else if(FrameMonitor.active)"监听中/收尾" else "待开始";CanSniffer.Phase.PREPARING->"准备中";CanSniffer.Phase.CAPTURING->"采集中";CanSniffer.Phase.FINISHING->"收尾中";CanSniffer.Phase.DONE->"已结束";CanSniffer.Phase.FAILED->"需要处理"}
+            setTextColor(resources.getColor(if(st.phase==CanSniffer.Phase.FAILED)R.color.danger else R.color.text_primary,theme))
+        }
+        val progress=findViewById<com.google.android.material.progressindicator.LinearProgressIndicator>(R.id.sniffProgress)
+        progress.visibility=if(CanSniffer.busy)android.view.View.VISIBLE else android.view.View.GONE
+        progress.isIndeterminate=st.phase!=CanSniffer.Phase.CAPTURING
+        if(!progress.isIndeterminate){
+            val r=st.rotation
+            val fraction=if(r!=null)(r.index*SegmentRotation.SEGMENT_MS+SegmentRotation.SEGMENT_MS-r.remainingMs).toFloat()/SegmentRotation.ROUND_MS
+                else st.elapsedMs.toFloat()/st.durationMs.coerceAtLeast(1)
+            progress.setProgressCompat((fraction*100).toInt().coerceIn(0,100),false)
+        }
+    }
+
 }

@@ -868,28 +868,34 @@ console.log("\n=== 8. 内置主题配色（P8-5 内嵌配色的跨语言契约�
 // 下面这几条原来**没有任何守卫**（`verify-crosslang` 与 `verify-lamp-state` 都不提），
 // 但它们决定了"同一个数值，工具显示哪张图、车上显示哪张图"。
 
-console.log("\n=== 状态灯：阈值推断与回退链必须与 App 逐条一致 ===");
+console.log("\n=== 状态灯：有效读数的阈值推断与回退链必须与 App 逐条一致 ===");
 {
   const nodeKt = read(path.join(KOTLIN, "ui", "dash", "NodeTreeRenderer.kt"));
+  const stateKt = read(path.join(KOTLIN, "ui", "dash", "NodeStateResolver.kt"));
   const canvasJs = read(path.join(STUDIO, "js", "canvas.js"));
 
+  ok(/NodeStateResolver\.resolve\(c\.node, c\.states, valueOf, Store::findPid, nowMs\)/.test(nodeKt),
+    "App 渲染器实际调用被检查的生产状态解析器");
+  ok(/frame\.apply\([\s\S]{0,100}onUnknown\s*=\s*\{\s*showUnknown\(c\.node, c\.view\)/.test(nodeKt),
+    "App 解析后的未知帧实际分发到清旧皮肤路径（不只是纯函数存在）");
+
   // ---- 1) 「危险线 = 警告线与量程上限的中点」的那个系数
-  const ktMid = /warnAt\s*\+\s*\(max\s*-\s*warnAt\)\s*\*\s*([\d.]+)f/.exec(nodeKt);
+  const ktMid = /warnAt\s*\+\s*\(max\s*-\s*warnAt\)\s*\*\s*([\d.]+)f/.exec(stateKt);
   const jsMid = /warnAt\s*\+\s*\(max\s*-\s*warnAt\)\s*\*\s*([\d.]+)/.exec(canvasJs);
   ok(ktMid !== null, "App 里能找到「中点」推断（`warnAt + (max - warnAt) * X`）");
   ok(jsMid !== null, "工具里能找到「中点」推断");
   if (ktMid && jsMid) eq(jsMid[1], ktMid[1], "「危险线」的中点系数一致（改一边不改另一边 → 同一个灯两边状态不同）");
 
   // ---- 2) 中点推断的前置条件（`max > warnAt`，否则没有危险档）
-  ok(/if\s*\(max\s*>\s*warnAt\)/.test(nodeKt), "App 的中点推断带 `max > warnAt` 前置条件");
+  ok(/if\s*\(max\s*>\s*warnAt\)/.test(stateKt), "App 的中点推断带 `max > warnAt` 前置条件");
   ok(/max\s*>\s*warnAt\s*\?/.test(canvasJs), "工具的中点推断带 `max > warnAt` 前置条件");
 
   // ---- 3) 比较方向（>= 还是 >）—— 差一个等号就是"刚好压在阈值上"两边不同
-  ok(/v\s*>=\s*critAt/.test(nodeKt) && /v\s*>=\s*warnAt/.test(nodeKt), "App 用 `>=` 判危险线与警告线");
+  ok(/value\s*>=\s*criticalAt/.test(stateKt) && /value\s*>=\s*warnAt/.test(stateKt), "App 用 `>=` 判危险线与警告线");
   ok(/pv\s*>=\s*critAt/.test(canvasJs) && /pv\s*>=\s*warnAt/.test(canvasJs), "工具用 `>=` 判危险线与警告线");
 
   // ---- 4) 阈值来源优先级：显式 stateWarn 优先，否则 PID 库的 warnHigh
-  ok(/c\.node\.stateWarn\s*\?:\s*def\?\.warnHigh/.test(nodeKt),
+  ok(/node\.stateWarn\s*\?:\s*def\?\.warnHigh/.test(stateKt),
     "App 的阈值优先级：`node.stateWarn ?: pid.warnHigh`");
   ok(/n\.stateWarn\s*!==\s*null[\s\S]{0,80}?n\.stateWarn[\s\S]{0,120}?info\.warnHigh/.test(canvasJs),
     "工具的阈值优先级与 App 同源（显式 stateWarn 优先）");
@@ -899,7 +905,7 @@ console.log("\n=== 状态灯：阈值推断与回退链必须与 App 逐条一�
   // 这一条是 Round 6 实测抓到的真分歧：工具原来写 `n.states[name] || n.states.normal`，
   // 缺 `critical` 键时显示 normal 的图，而 App 显示 warn 的图
   // （`critical ?: warn ?: normal`）—— 用户会以为"危险态没接上"。
-  ok(/STATE_CRITICAL\]\s*\?:\s*c\.states\[NodeState\.STATE_WARN\]\s*\?:\s*c\.states\[NodeState\.STATE_NORMAL\]/.test(nodeKt),
+  ok(/STATE_CRITICAL\]\s*\?:\s*states\[NodeState\.STATE_WARN\]\s*\?:\s*states\[NodeState\.STATE_NORMAL\]/.test(stateKt),
     "App 的回退链是 `critical ?: warn ?: normal`");
   ok(/\[window\.STATE_CRITICAL,\s*window\.STATE_WARN,\s*window\.STATE_NORMAL\]/.test(canvasJs),
     "工具的回退链同样是 `critical → warn → normal`（少了 warn 那一级就是真分歧）");
@@ -913,8 +919,16 @@ console.log("\n=== 状态灯：阈值推断与回退链必须与 App 逐条一�
     "工具：状态素材为空 → 同样回落到节点自己的素材");
 
   // ---- 7) 闪烁下限（本轮之外的既有约定，顺带再钉一次状态侧）
-  ok(/coerceAtLeast\(NodeState\.MIN_BLINK_MS\)/.test(nodeKt),
+  ok(/coerceAtLeast\(NodeState\.MIN_BLINK_MS\)/.test(stateKt),
     "App：状态灯的闪烁周期 `coerceAtLeast(MIN_BLINK_MS)`");
+  ok(/value == null \|\| !value\.isFinite\(\)/.test(stateKt) &&
+     /typeof pv !== "number" \|\| !Number\.isFinite\(pv\) \|\| !Number\.isFinite\(Math\.fround\(pv\)\)/.test(canvasJs),
+    "两端有绑定而无有限Float值均走运行时未知（0不是缺源）");
+  ok(/const name = resolveStateName\(n\);\s*if \(name === null\) return null;/.test(canvasJs),
+    "工具皮肤解析不会把未知二次回落normal");
+  ok(/resolveStateName\(n\) === null\)[\s\S]{0,350}ctx\.fillText\("--"[\s\S]{0,80}return;/.test(canvasJs) &&
+     /UNKNOWN_TEXT = "--"/.test(stateKt),
+    "两端未知都明确占位；工具未知分支不继续贴图（真实绘制由lamp-state浏览器套件验证）");
 }
 
 // ================================================================ DIFF_NOTES 不许与 App 源码打架

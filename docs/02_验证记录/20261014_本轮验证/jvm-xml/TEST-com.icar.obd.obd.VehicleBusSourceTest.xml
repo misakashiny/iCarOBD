@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.obd.VehicleBusSourceTest" tests="13" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:52.635Z" hostname="WIN-LI9OE82Q5LO" time="0.023">
+  <properties/>
+  <testcase name="close notifications run outside source lock and permit another writer" classname="com.icar.obd.obd.VehicleBusSourceTest" time="0.002"/>
+  <testcase name="closing A leaves the current same PID from B alive" classname="com.icar.obd.obd.VehicleBusSourceTest" time="0.001"/>
+  <testcase name="closed source rejects late values before history and listeners" classname="com.icar.obd.obd.VehicleBusSourceTest" time="0.0"/>
+  <testcase name="interval and TTL cannot overflow or become unlimited" classname="com.icar.obd.obd.VehicleBusSourceTest" time="0.0"/>
+  <testcase name="non finite values never enter history and close still invalidates current" classname="com.icar.obd.obd.VehicleBusSourceTest" time="0.001"/>
+  <testcase name="priority and backoff affect effective interval and TTL" classname="com.icar.obd.obd.VehicleBusSourceTest" time="0.0"/>
+  <testcase name="finite source TTL expires through every reader and retains history" classname="com.icar.obd.obd.VehicleBusSourceTest" time="0.0"/>
+  <testcase name="same owner restart closes old epoch and old close cannot end new epoch" classname="com.icar.obd.obd.VehicleBusSourceTest" time="0.0"/>
+  <testcase name="concurrent close and put cannot leave a live value after close returns" classname="com.icar.obd.obd.VehicleBusSourceTest" time="0.017"/>
+  <testcase name="late derived publisher cannot revive closed output" classname="com.icar.obd.obd.VehicleBusSourceTest" time="0.001"/>
+  <testcase name="legacy overwrite detaches old ownership regardless of raw" classname="com.icar.obd.obd.VehicleBusSourceTest" time="0.0"/>
+  <testcase name="explicit positive TTL wins and runtime zero has finite minimum" classname="com.icar.obd.obd.VehicleBusSourceTest" time="0.0"/>
+  <testcase name="source close expires instantaneous outputs without erasing accumulated trip" classname="com.icar.obd.obd.VehicleBusSourceTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

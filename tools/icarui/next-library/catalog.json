@@ -1,0 +1,19 @@
+{
+  "schema": "icar.library/1",
+  "revision": 1,
+  "scope": "核心仪表；数据来自标准PID，设备是否支持须实测。量程和阈值取仓库PID默认值，可编辑。",
+  "controls": [
+    {"id":"speed","name":"车速","alias":"obd.speed","pid":"std_0D","unit":"km/h","decimals":0},
+    {"id":"rpm","name":"转速","alias":"obd.rpm","pid":"std_0C","unit":"rpm","decimals":0},
+    {"id":"coolant","name":"水温","alias":"obd.coolant","pid":"std_05","unit":"℃","decimals":0},
+    {"id":"voltage","name":"电压","alias":"obd.voltage","pid":"std_42","unit":"V","decimals":1},
+    {"id":"fuel","name":"油量","alias":"obd.fuel_level","pid":"std_2F","unit":"%","decimals":0}
+  ],
+  "styles": [
+    {"id":"oem","name":"原厂","gaugeStyle":0,"radius":18,"background":"#111C27","edge":"#597184"},
+    {"id":"sport","name":"运动","gaugeStyle":0,"radius":8,"background":"#111821","edge":"#527084"},
+    {"id":"minimal","name":"极简","gaugeStyle":1,"radius":24,"background":"#131C25","edge":"#384B5A"}
+  ],
+  "rangeSource":"tools/icarui/js/schema.js BUILTIN_PIDS，与App BuiltInPids默认配置对应；不是车型标定",
+  "unavailable":"不伪造读数；模拟仅为示例；无有效输入时显示--"
+}

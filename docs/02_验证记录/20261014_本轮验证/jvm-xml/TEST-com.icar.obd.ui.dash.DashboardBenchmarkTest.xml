@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.ui.dash.DashboardBenchmarkTest" tests="12" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:52.687Z" hostname="WIN-LI9OE82Q5LO" time="0.012">
+  <properties/>
+  <testcase name="各条仪表相位错开" classname="com.icar.obd.ui.dash.DashboardBenchmarkTest" time="0.001"/>
+  <testcase name="压力段 12 个格子铺满且不重叠" classname="com.icar.obd.ui.dash.DashboardBenchmarkTest" time="0.001"/>
+  <testcase name="假值始终落在量程内且不是 NaN" classname="com.icar.obd.ui.dash.DashboardBenchmarkTest" time="0.009"/>
+  <testcase name="压力段表数比常规段多 50%" classname="com.icar.obd.ui.dash.DashboardBenchmarkTest" time="0.0"/>
+  <testcase name="量程与 PID 定义一致" classname="com.icar.obd.ui.dash.DashboardBenchmarkTest" time="0.0"/>
+  <testcase name="假值确实在变而不是常量" classname="com.icar.obd.ui.dash.DashboardBenchmarkTest" time="0.0"/>
+  <testcase name="压力段表数多于 PID 数时循环取 PID 而不是越界" classname="com.icar.obd.ui.dash.DashboardBenchmarkTest" time="0.0"/>
+  <testcase name="格子尺寸完全一致" classname="com.icar.obd.ui.dash.DashboardBenchmarkTest" time="0.0"/>
+  <testcase name="非法行列数不会算出负尺寸" classname="com.icar.obd.ui.dash.DashboardBenchmarkTest" time="0.001"/>
+  <testcase name="仪表数量与 PID 数量一致且都绑定了有效 PID" classname="com.icar.obd.ui.dash.DashboardBenchmarkTest" time="0.0"/>
+  <testcase name="格子铺满画布且不重叠" classname="com.icar.obd.ui.dash.DashboardBenchmarkTest" time="0.0"/>
+  <testcase name="valuesAt 返回主参数且不含副参数" classname="com.icar.obd.ui.dash.DashboardBenchmarkTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

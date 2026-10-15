@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.CanProbeUiStateTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:47.573Z" hostname="WIN-LI9OE82Q5LO" time="0.002">
+  <properties/>
+  <testcase name="disconnected cannot claim capture or monitor started" classname="com.icar.obd.data.CanProbeUiStateTest" time="0.001"/>
+  <testcase name="preparation and capture can stop but cannot reset export or change settings" classname="com.icar.obd.data.CanProbeUiStateTest" time="0.001"/>
+  <testcase name="monitor running or finishing blocks probe and settings" classname="com.icar.obd.data.CanProbeUiStateTest" time="0.0"/>
+  <testcase name="invalid filter prevents capture without blocking editing" classname="com.icar.obd.data.CanProbeUiStateTest" time="0.0"/>
+  <testcase name="cleanup remains locked instead of enabling start too early" classname="com.icar.obd.data.CanProbeUiStateTest" time="0.0"/>
+  <testcase name="no frames or no comparable baseline disables result actions" classname="com.icar.obd.data.CanProbeUiStateTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

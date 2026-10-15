@@ -1,0 +1,206 @@
+
+=== 1. 基础常量 ===
+  ✅ v1 schema 字符串
+  ✅ 画布单位 CANVAS（PidModels.kt）
+  ✅ v1 仪表上限 MAX_GAUGES
+  ✅ 网格 GRID
+  ✅ 吸附步长 STEP = CANVAS / GRID（Kotlin 侧是表达式）
+  ✅ 最小尺寸 MIN_SIZE（Kotlin 侧 = 2 * STEP）
+  ✅ 映射表上限 VALUE_LABELS_MAX（ValueLabels.kt）
+
+=== 2. PID 别名表 ===
+  ✅ 从 DesignFile.kt 解析到 36 条别名
+  ✅ 别名条数一致
+  ✅ 没有工具独有、App 不认的别名
+  ✅ 没有 App 有、工具漏掉的别名
+  ✅ 每条别名的目标 PID 都一致
+
+=== 3. 内置 PID 量程与报警阈值 ===
+  ✅ 从 BuiltInPids.kt 解析到 40 个 PID
+  ✅ 40 个 PID 的量程 / 阈值 / 名字 / 单位全部一致
+
+=== 4. 样式 / 卡片 / 铺法 / 霓虹档位 ===
+  ✅ 仪表样式数量
+  ✅ 卡片外框选项数量（含「跟随主题」）
+  ✅ 背景铺法数量
+  ✅ 从 NeonStyle.kt 解析到 5 个档位名
+  ✅ 霓虹档位数量
+  ✅ 霓虹档位名与顺序逐字一致（这是跨层冻结契约）
+
+=== 3b. 闪烁频率红线（WCAG 2.3.1「每秒不超过三次」）===
+  ✅ 从 DesignNode.kt 解析到 MIN_BLINK_MS（400）
+  ✅ 闪烁周期下限 工具 vs App 逐字一致
+  ✅ App 侧下限 ≥ 400ms（实际 400ms = 2.50 Hz）
+  ✅ 工具侧下限换算 ≤ 3 Hz（400ms → 2.50 Hz）
+  ✅ AlertPulse 危险档周期直接引用 NodeState.MIN_BLINK_MS（不是另写一个数）
+  ✅ AlertPulse 里没有 200ms（5Hz）的方波残留
+  ✅ 工具侧没有 Math.max(60, ...) 残留（那是 16.7 Hz）
+
+=== 4b. 字体枚举（v2 新增，跨语言契约）===
+  ✅ 从 DesignNode.kt 解析到 4 个字体族
+  ✅ 字体族的**名字与顺序**逐条一致
+  ✅ 解析到 4 档字重
+  ✅ 字重档位一致
+  ✅ 解析到 3 种对齐
+  ✅ 对齐方式一致
+  ✅ 从 DesignNode.kt 解析到 DEFAULT_SIZE（6）
+  ✅ 默认字号一致
+  ✅ 从 DesignNode.kt 解析到 DEFAULT_COLOR（FFE8EEF7）
+  ✅ 默认字色一致
+  ✅ 解析到 4 种节点类型
+  ✅ 节点类型的名字与顺序一致
+  ✅ 从 DesignNode.kt 解析到 3 个状态名
+  ✅ 状态名一致
+  ✅ 从 DesignNode.kt 解析到 MAX_NODES（200）
+  ✅ 节点上限一致
+  ✅ 从 DesignNode.kt 解析到 MAX_NODE_DEPTH（32）
+  ✅ 嵌套深度上限一致（MAX_NODE_DEPTH）
+  ✅ 从 DesignNode.kt 解析到 MAX_PARTS（64）
+  ✅ 子部件条数上限一致（MAX_PARTS）
+  ✅ 工具侧 NUMERIC_NODE_FIELDS 有 8 项
+  ✅ 从 DesignNode.kt 解析到 NUMERIC_NODE_FIELDS（8 项）
+  ✅ NUMERIC_NODE_FIELDS 逐条一致（名字与顺序）
+  ✅ 工具侧 NUMERIC_PART_FIELDS 有 10 项
+  ✅ 从 DesignNode.kt 解析到 NUMERIC_PART_FIELDS（10 项）
+  ✅ NUMERIC_PART_FIELDS 逐条一致（名字与顺序）
+  ✅ 工具侧 NUMERIC_GAUGE_FIELDS 有 8 项
+  ✅ 从 DesignNode.kt 解析到 NUMERIC_GAUGE_FIELDS（8 项）
+  ✅ NUMERIC_GAUGE_FIELDS 逐条一致（名字与顺序）
+  ✅ 工具侧 MAX_BANDS 有值（8）
+  ✅ 从 PidModels.kt 解析到 MAX_BANDS（8）
+  ✅ MAX_BANDS 逐字一致（PidModels.kt vs schema.js）
+  ✅ 工具侧 BAND_ALPHA_MIN 有值（0）
+  ✅ 从 PidModels.kt 解析到 BAND_ALPHA_MIN（0）
+  ✅ BAND_ALPHA_MIN 逐字一致（PidModels.kt vs schema.js）
+  ✅ 工具侧 BAND_ALPHA_MAX 有值（255）
+  ✅ 从 PidModels.kt 解析到 BAND_ALPHA_MAX（255）
+  ✅ BAND_ALPHA_MAX 逐字一致（PidModels.kt vs schema.js）
+  ✅ 从 PidModels.kt 解析到 BAND_DEFAULT_COLOR（0xFFFF4D4F）
+  ✅ 工具侧 BAND_DEFAULT_COLOR 是 #RRGGBB（#FF4D4F）
+  ✅ BAND_DEFAULT_COLOR 是同一个色（App 的 ARGB Int 已归一成 #RRGGBB）
+  ✅ 缩放模式编号一致
+
+=== 5. v1 校验行为（错误 / 警告文案对齐）===
+  ✅ 合法 v1 文件 0 错误
+  ✅ v1 文件会提示「已自动升级成 v2」
+  ✅ v1 报错文案匹配「缺少 schema」
+  ✅ v1 报错文案匹配「schema 不认识」
+  ✅ v1 报错文案匹配「缺 gauges」
+  ✅ v1 报错文案匹配「空 gauges」
+  ✅ v1 报错文案匹配「缺 pid」
+  ✅ v1 报错文案匹配「min≥max」
+  ✅ v1 报错文案匹配「unit 不对」
+  ✅ v1 越界会警告
+  ✅ v2 子节点溢出父级**不**警告（子坐标相对父节点，这是正常设计）
+
+=== 6. v2 节点树 ===
+  ✅ 合法 v2 节点 0 错误
+  ✅ rotation 正确读入
+  ✅ locked 正确读入
+  ✅ alpha 正确读入
+  ✅ 未知节点 type 报错
+  ✅ 空 nodes 报错
+  ✅ alpha 越界给警告并夹住
+  ✅ alpha 被夹到 255
+  ✅ scale ≤ 0 报错
+  ✅ 带状态系统的节点 0 错误
+  ✅ 状态的 blink 正确读入
+  ✅ 超标的 blinkMs(150) 被抬到下限 400ms（WCAG 2.3.1）
+  ✅ 状态的 alpha 正确读入
+  ✅ 引用不存在的素材只给警告
+  ✅ 引用不存在的素材不是硬错误
+  ✅ 综合 v2 文件 0 错误
+  ✅ 往返后 0 错误
+  ✅ 往返节点数一致
+  ✅ 往返保留 scaleMode
+  ✅ 往返保留 designW
+  ✅ 往返保留 assets
+  ✅ 往返保留 group 的 rotation（按 id 查找）
+  ✅ 往返保留 group 的子节点数
+  ✅ 别名被解析成 PID id（obd.rpm → std_0C）
+  ✅ 原始别名保留在 rawPid 里（编辑器回显用）
+  ✅ 写出的节点顺序按 z 升序（= 绘制顺序，便于人读）
+
+=== 7. 示例文件必须能被自己解析 ===
+  ✅ sample.json 存在（v1，App 当前能读）
+  ✅ sample.json 解析 0 错误
+  ✅ sample.json 是 v1（App 只认 v1）
+  ✅ sample.json 有 6 块表
+  ✅ sample.json 的 name 与 Kotlin 测试期望一致
+  ✅ sample.json 的 theme 与 Kotlin 测试期望一致
+  ✅ sample.json 的背景路径与 Kotlin 测试期望一致
+  ✅ sample-v2.json 存在（v2，展示图片/状态/分组/变换）
+  ✅ sample-v2.json 解析 0 错误
+  ✅ sample-v2.json 是 v2
+  ✅ sample-v2.json 有 8 个根节点
+  ✅ 含图片节点 5 个
+  ✅ 含分组节点 3 个
+  ✅ 含仪表节点 3 个
+  ✅ 含文字节点 3 个
+  ✅ 含启用状态系统的节点 3 个
+  ✅ 含旋转/锁定/缩放等变换（旋转 2 · 锁定 1 · 缩放 1）
+  ✅ 素材清单 5 项
+  ✅ gen-sample.js 存在（示例由工具自己的代码生成，避免手抄脱节）
+
+=== 8. 已知缺口（显式报告，不假装一致）===
+  ✅ App 当前只认 v1（DesignFile.SCHEMA）
+  ✅ 工具产出 v2
+  ✅ DesignFile.kt 里有 v2 分支（App 能读节点树）
+  ✅ v2 schema 字符串一致
+
+=== 8. 内置主题配色（P8-5 内嵌配色的跨语言契约）===
+  ✅ Kotlin builtins 有 3 套主题
+  ✅ neon：Kotlin 解析到 12 个颜色
+  ✅ neon：12 个颜色字段逐条一致
+  ✅ ice：Kotlin 解析到 12 个颜色
+  ✅ ice：12 个颜色字段逐条一致
+  ✅ amber：Kotlin 解析到 12 个颜色
+  ✅ amber：12 个颜色字段逐条一致
+  ✅ 从 GaugeTheme.kt 的 builtins 里解析到 3 个 glow 标志（需要 3 个）
+  ✅ neon：glow 标志一致
+  ✅ ice：glow 标志一致
+  ✅ amber：glow 标志一致
+  ✅ 主题别名列表一致
+
+=== 状态灯：有效读数的阈值推断与回退链必须与 App 逐条一致 ===
+  ✅ App 渲染器实际调用被检查的生产状态解析器
+  ✅ App 解析后的未知帧实际分发到清旧皮肤路径（不只是纯函数存在）
+  ✅ App 里能找到「中点」推断（`warnAt + (max - warnAt) * X`）
+  ✅ 工具里能找到「中点」推断
+  ✅ 「危险线」的中点系数一致（改一边不改另一边 → 同一个灯两边状态不同）
+  ✅ App 的中点推断带 `max > warnAt` 前置条件
+  ✅ 工具的中点推断带 `max > warnAt` 前置条件
+  ✅ App 用 `>=` 判危险线与警告线
+  ✅ 工具用 `>=` 判危险线与警告线
+  ✅ App 的阈值优先级：`node.stateWarn ?: pid.warnHigh`
+  ✅ 工具的阈值优先级与 App 同源（显式 stateWarn 优先）
+  ✅ App 的回退链是 `critical ?: warn ?: normal`
+  ✅ 工具的回退链同样是 `critical → warn → normal`（少了 warn 那一级就是真分歧）
+  ✅ 工具的 warn 档回退链是 `warn → normal`
+  ✅ App：状态素材为空 → 回落到 `node.assetId`
+  ✅ 工具：状态素材为空 → 同样回落到节点自己的素材
+  ✅ App：状态灯的闪烁周期 `coerceAtLeast(MIN_BLINK_MS)`
+  ✅ 两端有绑定而无有限Float值均走运行时未知（0不是缺源）
+  ✅ 工具皮肤解析不会把未知二次回落normal
+  ✅ 两端未知都明确占位；工具未知分支不继续贴图（真实绘制由lamp-state浏览器套件验证）
+
+=== 「与 App 的差异」页签的文案不许与 App 源码打架 ===
+  ✅ App 的 `DashRenderer` 真的走节点树渲染器（`nodeRenderer.build(...)`）
+  ✅ 差异页签里**没有**「App 侧的 v2 渲染还没做」（App 从 v1.11.0/v1.12.0 起就会画）
+  ✅ 差异页签里写的是「App 侧的 v2 渲染已完成」（并指向 DashRenderer/NodeTreeRenderer）
+  ✅ App 的背景绘制真的用了 `bgW`/`bgH`
+  ✅ 差异页签里**没有**「背景图的 w/h 只有工具在用」（`DashCanvasPageFragment.kt:335` 会读）
+  ✅ 工具确实把撤销栈持久化到 localStorage（键 `icar-studio-undo`）
+  ✅ 差异页签里**没有**「撤销栈刷新页面会丢」（v2.7.0 起就持久化了）
+  ✅ App 的 `resolveState`（指示灯状态判定）里没有 AlertPulse —— 它没有迟滞
+  ✅ 差异页签没有把「迟滞」错误地安在状态判定上（迟滞属于**仪表报警的爆闪**）
+  ✅ `DesignFile.SCHEMA` 确实是 `icar.ui/1`
+  ✅ 差异页签仍然写着「App 导出仍写 v1」（这条是对的，别顺手删）
+  ✅ App 真的应用了节点的 rotation / scale
+  ✅ 差异页签里**没有**「App 侧要等阶段 2 支持 ViewGroup 变换」（已经支持了）
+
+============================================================
+备注：
+  · App 侧 v2 **解析与渲染都已完成**（v1.11.0 / v1.12.0）：节点树 / 图片 / 分组 / 文字 / 旋转 / 图层顺序 / 缩放模式 / 状态系统 / 子部件 / 多页面。见主题设计大纲 §七。
+
+PASS=174  FAIL=0

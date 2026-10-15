@@ -1,320 +1,140 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  CAN 总线被动探测。结果行代码生成（每个 CAN ID 一行）。
--->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="@color/bg"
-    android:orientation="vertical">
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:paddingStart="6dp"
-        android:paddingTop="6dp"
-        android:paddingEnd="6dp">
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnSniffToggle"
-            android:layout_width="0dp"
-            android:layout_height="40dp"
-            android:layout_weight="2"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:minWidth="0dp"
-            android:text="开始探测"
-            android:textSize="12sp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnSniffClear"
-            style="@style/Widget.Material3.Button.OutlinedButton"
-            android:layout_width="0dp"
-            android:layout_height="40dp"
-            android:layout_marginStart="4dp"
-            android:layout_weight="1"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:minWidth="0dp"
-            android:paddingStart="4dp"
-            android:paddingEnd="4dp"
-            android:text="清空"
-            android:textSize="12sp" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingStart="12dp"
-        android:paddingTop="4dp"
-        android:paddingEnd="12dp">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="采集"
-            android:textSize="11sp" />
-
-        <Spinner
-            android:id="@+id/spSniffDuration"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:paddingStart="4dp" />
-
-        <!--
-          分段轮换扫描（v1.20.10，P12-S5）：8 段 × 10 秒，自动换段，一轮约 90 秒。
-          勾上之后「采集」下拉框不起作用 —— 时长由轮换自己决定（每段 10 秒）。
-          为什么不做成下拉框里的一项「8×10 秒」：那样会让人以为可以调
-          「每段几秒」，而轮换的每段时长是规格里定死的（10 秒才能采到慢周期报文）。
-        -->
-        <CheckBox
-            android:id="@+id/cbSniffRotate"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:paddingStart="6dp"
-            android:paddingEnd="2dp"
-            android:text="分段轮换"
-            android:textSize="11sp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnSniffExportAgg"
-            style="@style/Widget.Material3.Button.OutlinedButton"
-            android:layout_width="0dp"
-            android:layout_height="36dp"
-            android:layout_weight="1.4"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:minWidth="0dp"
-            android:paddingStart="2dp"
-            android:paddingEnd="2dp"
-            android:text="导出观察表"
-            android:textSize="11sp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnSniffExportRaw"
-            style="@style/Widget.Material3.Button.OutlinedButton"
-            android:layout_width="0dp"
-            android:layout_height="36dp"
-            android:layout_marginStart="4dp"
-            android:layout_weight="1.4"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:minWidth="0dp"
-            android:paddingStart="2dp"
-            android:paddingEnd="2dp"
-            android:text="导出原始帧"
-            android:textSize="11sp" />
-    </LinearLayout>
-
-    <!--
-      信号表（v1.20.7，S1）：观察表是「原始材料」、信号表是「结论」——
-      对象不同，所以刻意做成两个文件，不混在一张表里。
-      模板 25 列、每个观察到的 CAN ID 一行，预填 ID/DLC/取值集合，在电脑上填完再导回来。
-    -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingStart="12dp"
-        android:paddingTop="4dp"
-        android:paddingEnd="12dp">
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnSniffExportTemplate"
-            style="@style/Widget.Material3.Button.OutlinedButton"
-            android:layout_width="0dp"
-            android:layout_height="36dp"
-            android:layout_weight="1.4"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:minWidth="0dp"
-            android:paddingStart="2dp"
-            android:paddingEnd="2dp"
-            android:text="导出信号表模板"
-            android:textSize="11sp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnSniffImportSignal"
-            style="@style/Widget.Material3.Button.OutlinedButton"
-            android:layout_width="0dp"
-            android:layout_height="36dp"
-            android:layout_marginStart="4dp"
-            android:layout_weight="1.4"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:minWidth="0dp"
-            android:paddingStart="2dp"
-            android:paddingEnd="2dp"
-            android:text="导入信号表"
-            android:textSize="11sp" />
-    </LinearLayout>
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingStart="12dp"
-        android:paddingTop="4dp"
-        android:paddingEnd="12dp">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="过滤器"
-            android:textSize="11sp" />
-
-        <EditText
-            android:id="@+id/etSniffFilter"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:hint="留空=全收；也可只填一个 ID（如 09A）"
-            android:importantForAutofill="no"
-            android:inputType="textCapCharacters|textNoSuggestions"
-            android:maxLength="40"
-            android:paddingStart="4dp"
-            android:textSize="11sp" />
-    </LinearLayout>
-
-    <!--
-      过滤器说明（v1.20.17）：这条预设**能看到什么** + **实际会下发的 AT 命令**。
-      规格 §2 的判据之一就是"选中后状态行显示实际下发的 AT 命令" ——
-      没有这一行，用户选完只知道输入框里多了一串看不懂的字母。
-      文本由 CanFilterPresets.describe() 算出来（纯函数，与真正下发的那段同一套规则）。
-    -->
-    <TextView
-        android:id="@+id/tvSniffFilterStatus"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingStart="12dp"
-        android:paddingTop="2dp"
-        android:paddingEnd="12dp"
-        android:textColor="@color/text_secondary"
-        android:textSize="11sp" />
-
-    <!--
-      ⚠️ ATCF000 是全总线、不是"第 0 段"（v1.20.17，规格 §2 点名要写清）。
-      只在**可能被误读的两种状态**下出现（不过滤 / 选了全总线那条），其余状态 GONE。
-    -->
-    <TextView
-        android:id="@+id/tvSniffFilterNote"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingStart="12dp"
-        android:paddingTop="2dp"
-        android:paddingEnd="12dp"
-        android:textColor="@color/text_dim"
-        android:textSize="10sp"
-        android:visibility="gone" />
-
-    <!--
-      过滤预设（v1.19.22）：点一下就把上面的输入框填好。
-
-      为什么需要：过滤器的语法（`ATCRA228` / `ATCM700+ATCF400`）**不好记**，
-      而它又是"能不能看清闪烁类信号"的前提 ——
-      实测过滤后单 ID 采样率从 0.7 帧/秒 提到 20 帧/秒。
-      让人去翻文档记语法，不如点一下。
-    -->
-    <HorizontalScrollView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        android:scrollbars="none">
-
-        <com.google.android.material.chip.ChipGroup
-            android:id="@+id/cgFilterPresets"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            app:singleLine="true"
-            app:singleSelection="false" />
-    </HorizontalScrollView>
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnSniffDiff"
-        style="@style/Widget.Material3.Button.OutlinedButton"
-        android:layout_width="match_parent"
-        android:layout_height="40dp"
-        android:layout_marginStart="12dp"
-        android:layout_marginTop="4dp"
-        android:layout_marginEnd="12dp"
-        android:insetTop="0dp"
-        android:insetBottom="0dp"
-        android:text="对比基准（找位）"
-        android:textSize="12sp" />
-
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnMonitorToggle"
-        style="@style/Widget.Material3.Button.OutlinedButton"
-        android:layout_width="match_parent"
-        android:layout_height="40dp"
-        android:layout_marginStart="12dp"
-        android:layout_marginTop="4dp"
-        android:layout_marginEnd="12dp"
-        android:insetTop="0dp"
-        android:insetBottom="0dp"
-        android:text="开启常驻监听（转向灯）"
-        android:textSize="12sp" />
-
-    <TextView
-        android:id="@+id/tvSniffStatus"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingStart="12dp"
-        android:paddingTop="6dp"
-        android:paddingEnd="12dp"
-        android:paddingBottom="4dp"
-        android:textColor="@color/text_dim"
-        android:textSize="11sp" />
-
-    <!--
-      轮换进度（v1.20.10）：第几段 / 还剩多久 / 已收多少 ID。
-      **单独一行、单独的颜色**，不能并进上面那行状态里 ——
-      轮换一轮要 80~90 秒，用户全程盯着一片空白，进度必须一眼可见。
-      不是轮换时这一行是 GONE（不占高度，也不留一行空白）。
-    -->
-    <TextView
-        android:id="@+id/tvSniffRotate"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        android:paddingBottom="4dp"
-        android:textColor="@color/text_primary"
-        android:textSize="12sp"
-        android:visibility="gone" />
-
-    <ScrollView
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical">
-
-            <com.icar.obd.ui.view.ColumnFlowLayout
-                android:id="@+id/sniffResults"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
-                android:paddingBottom="16dp" />
-
-            <LinearLayout
-                android:id="@+id/sniffDiffs"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
-                android:paddingBottom="16dp" />
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@color/bg" android:orientation="vertical" android:padding="12dp">
+    <LinearLayout android:id="@+id/sniffHeader" android:layout_width="match_parent" android:layout_height="56dp"
+        android:layout_marginBottom="8dp" android:gravity="center_vertical">
+        <LinearLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+            android:layout_marginEnd="8dp" android:orientation="vertical" android:gravity="center_vertical">
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="CAN 探测" android:textColor="@color/text_primary" android:textSize="18sp" android:textStyle="bold" />
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical">
+                <TextView android:id="@+id/tvSniffPhase" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp" android:text="待开始" android:textColor="@color/text_secondary" android:textSize="12sp" />
+                <TextView android:id="@+id/tvSniffConnection" android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:singleLine="true" android:ellipsize="end"
+                    android:text="检查连接中" android:textColor="@color/text_secondary" android:textSize="12sp" />
+            </LinearLayout>
         </LinearLayout>
-    </ScrollView>
+        <com.google.android.material.button.MaterialButton android:id="@+id/btnSniffToggle" android:layout_width="120dp" android:layout_height="48dp"
+            android:paddingStart="12dp" android:paddingEnd="12dp" android:minWidth="0dp"
+            android:text="开始采集" android:textSize="14sp" android:insetTop="0dp" android:insetBottom="0dp" />
+        <com.google.android.material.button.MaterialButton android:id="@+id/btnSniffDetails" style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="56dp" android:layout_height="48dp" android:layout_marginStart="8dp" android:minWidth="0dp"
+            android:paddingStart="8dp" android:paddingEnd="8dp" android:text="详情" android:textSize="13sp"
+            android:contentDescription="展开采集详情" android:insetTop="0dp" android:insetBottom="0dp" />
+        <com.google.android.material.button.MaterialButton android:id="@+id/btnSniffBack" style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="56dp" android:layout_height="48dp" android:layout_marginStart="4dp" android:minWidth="0dp"
+            android:paddingStart="8dp" android:paddingEnd="8dp" android:text="返回" android:textSize="13sp"
+            android:insetTop="0dp" android:insetBottom="0dp" />
+    </LinearLayout>
+    <com.google.android.material.progressindicator.LinearProgressIndicator android:id="@+id/sniffProgress"
+        android:layout_width="match_parent" android:layout_height="3dp" android:layout_marginBottom="8dp"
+        app:indicatorColor="@color/accent" app:trackColor="@color/divider" android:visibility="gone" />
+    <com.google.android.material.card.MaterialCardView android:id="@+id/sniffStatusDetails"
+        android:layout_width="match_parent" android:layout_height="wrap_content" android:visibility="gone"
+        android:layout_marginBottom="8dp" app:cardCornerRadius="12dp" app:cardElevation="0dp"
+        app:cardBackgroundColor="@color/bg_surface" app:strokeWidth="1dp" app:strokeColor="@color/divider">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="12dp">
+            <TextView android:id="@+id/tvSniffStatus" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textColor="@color/text_secondary" android:textSize="13sp" android:lineSpacingExtra="2dp" />
+            <TextView android:id="@+id/tvSniffRotate" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="6dp" android:textColor="@color/accent" android:textSize="13sp" android:visibility="gone" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+    <LinearLayout android:id="@+id/sniffColumns" android:layout_width="match_parent" android:layout_height="0dp"
+        android:layout_weight="1" android:orientation="vertical">
+        <ScrollView android:id="@+id/sniffSettingsScroll" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:scrollbars="vertical" android:fillViewport="false">
+            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content"
+                app:cardCornerRadius="16dp" app:cardElevation="0dp" app:cardBackgroundColor="@color/bg_surface">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="16dp">
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="采集设置"
+                        android:textColor="@color/text_primary" android:textSize="17sp" android:textStyle="bold" />
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:layout_marginTop="8dp">
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="采集时长" android:textSize="14sp" />
+                        <Spinner android:id="@+id/spSniffDuration" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" />
+                    </LinearLayout>
+                    <CheckBox android:id="@+id/cbSniffRotate" android:layout_width="match_parent" android:layout_height="48dp"
+                        android:text="分段扫描 · 8段，每段10秒" android:textSize="14sp" android:paddingStart="0dp" />
+                    <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox" android:hint="CAN ID 或接收过滤组合">
+                        <com.google.android.material.textfield.TextInputEditText android:id="@+id/etSniffFilter"
+                            android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp"
+                            android:inputType="textCapCharacters|textNoSuggestions" android:maxLength="40" android:textSize="14sp"
+                            android:importantForAutofill="no" android:singleLine="true" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                    <TextView android:id="@+id/tvSniffFilterStatus" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp" android:textColor="@color/text_secondary" android:textSize="13sp" android:lineSpacingExtra="2dp" />
+                    <com.google.android.material.chip.ChipGroup android:id="@+id/cgFilterPresets"
+                        android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp"
+                        app:singleLine="false" app:singleSelection="true" app:chipSpacingHorizontal="4dp" />
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnSniffRanges"
+                        style="@style/Widget.Material3.Button.TextButton" android:layout_width="match_parent" android:layout_height="48dp" android:text="更多 ID 范围" />
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnSniffTools"
+                        style="@style/Widget.Material3.Button.TextButton" android:layout_width="match_parent" android:layout_height="48dp" android:text="文件与常驻监听" />
+                    <LinearLayout android:id="@+id/sniffToolsBody" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:orientation="vertical" android:visibility="gone">
+                        <com.icar.obd.ui.view.ColumnFlowLayout android:id="@+id/sniffFileActions" android:layout_width="match_parent" android:layout_height="wrap_content">
+                            <com.google.android.material.button.MaterialButton android:id="@+id/btnSniffExportAgg"
+                                style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="48dp"
+                                android:text="导出观察表" android:textSize="13sp" android:insetTop="0dp" android:insetBottom="0dp" />
+                            <com.google.android.material.button.MaterialButton android:id="@+id/btnSniffExportRaw"
+                                style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="48dp"
+                                android:text="导出原始帧" android:textSize="13sp" android:insetTop="0dp" android:insetBottom="0dp" />
+                            <com.google.android.material.button.MaterialButton android:id="@+id/btnSniffExportTemplate"
+                                style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="48dp"
+                                android:text="导出信号模板" android:textSize="13sp" android:insetTop="0dp" android:insetBottom="0dp" />
+                            <com.google.android.material.button.MaterialButton android:id="@+id/btnSniffImportSignal"
+                                style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="48dp"
+                                android:text="导入信号表" android:textSize="13sp" android:insetTop="0dp" android:insetBottom="0dp" />
+                        </com.icar.obd.ui.view.ColumnFlowLayout>
+                        <com.google.android.material.button.MaterialButton android:id="@+id/btnMonitorToggle"
+                            style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="48dp"
+                            android:layout_marginTop="8dp" android:text="开启常驻监听" android:textSize="14sp" />
+                        <TextView android:id="@+id/tvSniffMonitor" android:layout_width="match_parent" android:layout_height="wrap_content"
+                            android:textColor="@color/text_secondary" android:textSize="13sp" android:lineSpacingExtra="2dp" />
+                    </LinearLayout>
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnSniffHelp"
+                        style="@style/Widget.Material3.Button.TextButton" android:layout_width="match_parent" android:layout_height="48dp" android:text="使用说明" />
+                    <LinearLayout android:id="@+id/sniffHelpBody" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:orientation="vertical" android:visibility="gone">
+                        <TextView android:id="@+id/tvSniffHelp" android:layout_width="match_parent" android:layout_height="wrap_content"
+                            android:textColor="@color/text_secondary" android:textSize="13sp" android:lineSpacingExtra="3dp" />
+                        <TextView android:id="@+id/tvSniffFilterNote" android:layout_width="match_parent" android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp" android:textColor="@color/text_secondary" android:textSize="13sp" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+        </ScrollView>
+        <ScrollView android:id="@+id/sniffResultsScroll" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+            android:layout_marginTop="12dp" android:fillViewport="true">
+            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content"
+                app:cardCornerRadius="16dp" app:cardElevation="0dp" app:cardBackgroundColor="@color/bg_surface">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="16dp">
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical">
+                        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                            android:text="探测结果" android:textColor="@color/text_primary" android:textSize="17sp" android:textStyle="bold" />
+                        <com.google.android.material.button.MaterialButton android:id="@+id/btnSniffClear"
+                            style="@style/Widget.Material3.Button.TextButton" android:layout_width="wrap_content" android:layout_height="48dp" android:text="清空结果" />
+                    </LinearLayout>
+                    <TextView android:id="@+id/tvSniffResultMeta" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:textColor="@color/text_secondary" android:textSize="13sp" android:layout_marginBottom="8dp" />
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnSniffDiff"
+                        style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="match_parent" android:layout_height="48dp"
+                        android:text="对比上次采集" android:textSize="14sp" />
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:layout_marginTop="8dp">
+                        <EditText android:id="@+id/etSniffSearch" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1"
+                            android:hint="查找 ID" android:inputType="textCapCharacters|textNoSuggestions" android:maxLength="10" android:textSize="14sp" android:singleLine="true" />
+                        <Spinner android:id="@+id/spSniffSort" android:layout_width="wrap_content" android:layout_height="48dp" />
+                    </LinearLayout>
+                    <com.icar.obd.ui.view.ColumnFlowLayout android:id="@+id/sniffResults"
+                        android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" />
+                    <LinearLayout android:id="@+id/sniffDiffs" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:orientation="vertical" android:layout_marginTop="8dp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+        </ScrollView>
+    </LinearLayout>
 </LinearLayout>

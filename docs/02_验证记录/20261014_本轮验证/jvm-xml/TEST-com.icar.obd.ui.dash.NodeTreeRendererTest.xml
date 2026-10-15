@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.ui.dash.NodeTreeRendererTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:52.711Z" hostname="WIN-LI9OE82Q5LO" time="0.003">
+  <properties/>
+  <testcase name="换算只依赖 缩放模式 与 容器尺寸" classname="com.icar.obd.ui.dash.NodeTreeRendererTest" time="0.002"/>
+  <testcase name="fill 等比且铺满 —— 超出部分裁掉 不留黑边" classname="com.icar.obd.ui.dash.NodeTreeRendererTest" time="0.001"/>
+  <testcase name="竖屏容器下 fit 与 fill 的选择相反" classname="com.icar.obd.ui.dash.NodeTreeRendererTest" time="0.0"/>
+  <testcase name="fit 等比且居中 —— 短边留黑边" classname="com.icar.obd.ui.dash.NodeTreeRendererTest" time="0.0"/>
+  <testcase name="未知缩放模式回落到 stretch" classname="com.icar.obd.ui.dash.NodeTreeRendererTest" time="0.0"/>
+  <testcase name="stretch 每轴独立 —— 这是 v1 的行为 不能改成等比" classname="com.icar.obd.ui.dash.NodeTreeRendererTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.obd.PidScanResponseTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:51.592Z" hostname="WIN-LI9OE82Q5LO" time="0.005">
+  <properties/>
+  <testcase name="wrong IDs echoes and negative payload containing expected sequence are ignored" classname="com.icar.obd.obd.PidScanResponseTest" time="0.001"/>
+  <testcase name="clean echo and noise do not contaminate a following positive response" classname="com.icar.obd.obd.PidScanResponseTest" time="0.001"/>
+  <testcase name="CAN multi frame reassembly requires contiguous sequences" classname="com.icar.obd.obd.PidScanResponseTest" time="0.001"/>
+  <testcase name="compact CAN11 and displayed DLC remain strict" classname="com.icar.obd.obd.PidScanResponseTest" time="0.001"/>
+  <testcase name="CAN11 and CAN29 single frames trim padding" classname="com.icar.obd.obd.PidScanResponseTest" time="0.0"/>
+  <testcase name="ELM indexed multiline verifies ID before joining data" classname="com.icar.obd.obd.PidScanResponseTest" time="0.001"/>
+  <testcase name="separate ECU responses stay separate and keep valid zero" classname="com.icar.obd.obd.PidScanResponseTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

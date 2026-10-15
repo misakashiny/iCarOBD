@@ -428,6 +428,110 @@ const eq = (a, b, m) => ok(a === b, m + (a === b ? '' : `（实际 ${JSON.string
     eq(fallback.只有normal_素材, 'A_NORMAL', '只有 normal 时退到 normal');
     eq(fallback.只有warn_素材, 'A_WARN', '只有 warn 时（过警告线）用 warn');
 
+    // ---------- 12) 真正的绘制路径：有效→缺源→恢复，不能只守返回字符串 ----------
+    console.log('\n=== 12. 图片状态未知：真实主画布/控件预览/像素与导出 ===');
+    const unknownRows = await cdp.eval(`(async () => {
+      const S = window.CanvasState, rows = [];
+      const saved = { design:S.design, selection:S.selection, preview:S.previewValues,
+        grid:S.showGrid, urls:S.assetUrls, cache:S.imgCache };
+      const proto = CanvasRenderingContext2D.prototype;
+      const drawImage = proto.drawImage, fillText = proto.fillText;
+      let calls = [];
+      function check(condition, message) { rows.push({ok:!!condition, message}); }
+      function hash(canvas) {
+        const bytes = canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
+        let h=2166136261;
+        for(let i=0;i<bytes.length;i++) h=Math.imul(h^bytes[i],16777619);
+        return h>>>0;
+      }
+      try {
+        // Work on a separate fixture design, so finally restores the original design object intact.
+        S.design=Object.assign({},S.design);
+        S.assetUrls=Object.assign({},S.assetUrls); S.imgCache=Object.assign({},S.imgCache);
+        const ids=['base','normal','warn','critical'];
+        const colors=['#3551e1','#118836','#eab117','#da2034'];
+        for(let i=0;i<ids.length;i++) {
+          const tile=document.createElement('canvas'); tile.width=tile.height=32;
+          const t=tile.getContext('2d'); t.fillStyle=colors[i]; t.fillRect(0,0,32,32);
+          const url=tile.toDataURL(); const image=new Image();
+          await new Promise((resolve,reject)=>{ image.onload=resolve; image.onerror=reject; image.src=url; });
+          image.__unknownTest=ids[i]; S.assetUrls['ui_unknown_'+ids[i]]=url; S.imgCache[url]=image;
+        }
+        const n=window.createNode(window.NODE_IMAGE,{name:'Isolated lamp',x:80,y:80,w:60,h:60,assetId:'ui_unknown_base'});
+        n.statePid='ui_unknown_signal'; n.stateWarn=50; n.stateCritical=80;
+        n.states={normal:{assetId:'ui_unknown_normal',alpha:255,blink:false,blinkMs:400},
+          warn:{assetId:'ui_unknown_warn',alpha:255,blink:false,blinkMs:400},
+          critical:{assetId:'ui_unknown_critical',alpha:255,blink:true,blinkMs:400}};
+        S.design.nodes=[n]; S.design.assets=ids.map(id=>({id:'ui_unknown_'+id,path:'fixture-'+id+'.png'}));
+        S.selection=[]; S.showGrid=false;
+        const originalJson=window.toV2Json(S.design);
+        const preview=document.createElement('canvas'); preview.width=preview.height=160;
+        proto.drawImage=function(image,...args) {
+          if(image && image.__unknownTest) calls.push({asset:image.__unknownTest});
+          return drawImage.call(this,image,...args);
+        };
+        proto.fillText=function(text,...args) { calls.push({text:String(text)}); return fillText.call(this,text,...args); };
+        function render(values,node=n) {
+          S.previewValues=values; S.design.nodes=[node];
+          calls=[]; window.draw(); const main=calls.slice();
+          const mainHash=hash(document.getElementById('cv'));
+          calls=[]; window.drawNodePreview(node,preview);
+          return {main,preview:calls.slice(),mainHash,previewHash:hash(preview)};
+        }
+        function isUnknown(frame) {
+          return [frame.main,frame.preview].every(cs=>!cs.some(c=>c.asset) && cs.some(c=>c.text==='--'));
+        }
+        function hasSkin(frame,skin) {
+          return [frame.main,frame.preview].every(cs=>cs.some(c=>c.asset===skin) && !cs.some(c=>c.text==='--'));
+        }
+        for(const [value,skin] of [[0,'normal'],[60,'warn'],[90,'critical']]) {
+          const valid=render({ui_unknown_signal:value});
+          check(hasSkin(valid,skin),'主画布及控件预览有效值选 '+skin+' 实际素材');
+          const lost=render({});
+          check(window.resolveStateName(n)===null && window.resolveState(n)===null,'从 '+skin+' 缺源解析未知、不二次回normal');
+          check(isUnknown(lost),'从 '+skin+' 缺源真实两条绘制路径都不贴旧图、画未知占位');
+          check(lost.mainHash!==valid.mainHash && lost.previewHash!==valid.previewHash,'从 '+skin+' 缺源后两张画布像素立即改变');
+          const again=render({ui_unknown_signal:value});
+          check(hasSkin(again,skin),'未知后恢复 '+skin+' 实际素材');
+          check(again.mainHash===valid.mainHash && again.previewHash===valid.previewHash,'恢复 '+skin+' 的画布像素哈希与有效基线一致');
+        }
+        for(const [name,values] of [['预览关闭',null],['空输入',{}],['null',{ui_unknown_signal:null}],
+          ['NaN',{ui_unknown_signal:NaN}],['正Infinity',{ui_unknown_signal:Infinity}],
+          ['负Infinity',{ui_unknown_signal:-Infinity}],['Float溢出',{ui_unknown_signal:1e100}],
+          ['字符串',{ui_unknown_signal:'0'}]]) {
+          const frame=render(values);
+          check(window.resolveStateName(n)===null && window.resolveState(n)===null,name+' 明确运行时未知');
+          check(isUnknown(frame),name+' 两条生产绘制路径显示占位而不贴正常/基础图');
+        }
+        check(hasSkin(render({ui_unknown_signal:0}),'normal'),'合法0值不是缺源');
+        const staticNode=Object.assign({},n,{statePid:''});
+        const staticA=render({},staticNode), staticB=render({ui_unknown_signal:90},staticNode);
+        check(hasSkin(staticA,'normal') && hasSkin(staticB,'normal'),'无绑定静态状态图保留normal，不依赖预览数据');
+        check(staticA.mainHash===staticB.mainHash && staticA.previewHash===staticB.previewHash,'无绑定静态图像素不被缺源/恢复影响');
+        const plain=Object.assign({},n,{states:null});
+        check(hasSkin(render({},plain),'base'),'无状态系统的普通图片仍画基础素材');
+        const noNormal=Object.assign({},n,{states:{warn:n.states.warn}});
+        check(hasSkin(render({ui_unknown_signal:0},noNormal),'base'),'有效值无匹配皮肤时回基础图，不当成未知');
+        const withoutCritical=Object.assign({},n,{states:{normal:n.states.normal,warn:n.states.warn}});
+        check(hasSkin(render({ui_unknown_signal:90},withoutCritical),'warn'),'有效严重值缺critical图仍逐级退warn');
+        n.locked=true; n.rotation=25; n.scale=1.2;
+        S.selection=[n.id];
+        const transformed=render({});
+        check(isUnknown(transformed),'选中/锁定/旋转/缩放后未知仍不贴旧图');
+        n.locked=false; n.rotation=0; n.scale=1; S.selection=[];
+        render({ui_unknown_signal:0});
+        check(window.toV2Json(S.design)===originalJson,'未知与恢复不改节点/素材/状态导出字节');
+        check(window.STATE_NAMES.map(x=>x.v).join(',')==='normal,warn,critical','运行时未知不增加第四个共享状态');
+        return rows;
+      } finally {
+        proto.drawImage=drawImage; proto.fillText=fillText;
+        S.design=saved.design; S.selection=saved.selection; S.previewValues=saved.preview;
+        S.showGrid=saved.grid; S.assetUrls=saved.urls; S.imgCache=saved.cache;
+        window.draw();
+      }
+    })()`);
+    unknownRows.forEach(r=>ok(r.ok,r.message));
+
     await cdp.ws.close();
   } catch (e) {
     console.log('  ❌ 执行失败: ' + e.message);

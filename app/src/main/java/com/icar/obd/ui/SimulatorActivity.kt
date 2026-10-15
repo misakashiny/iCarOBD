@@ -68,7 +68,11 @@ class SimulatorActivity : AppCompatActivity() {
     /** 收起的组 */
     private val collapsedGroups = HashSet<String>()
 
-    private var engineWasRunning = false
+    companion object {
+        // Simulation continues across page recreation, so its restoration flag
+        // must continue with it. It is consumed only by explicit stop/failure.
+        private var engineWasRunning = false
+    }
 
     /** 周期档位。**离散**而不是连续滑块 —— 常用的 3/6/12/20 秒在 1–119 线性映射里挤在最左边 */
     private val periodSteps = floatArrayOf(1f, 2f, 3f, 5f, 8f, 12f, 20f, 30f, 60f, 120f)
@@ -126,7 +130,7 @@ class SimulatorActivity : AppCompatActivity() {
         if (SignalSimulator.running) {
             AppLog.i(AppLog.M_UI, "离开模拟器界面，模拟信号继续运行")
         } else if (engineWasRunning) {
-            ObdController.engine.start()
+            restorePolling()
         }
     }
 
@@ -139,16 +143,20 @@ class SimulatorActivity : AppCompatActivity() {
     private fun toggle() {
         if (SignalSimulator.running) {
             SignalSimulator.stop()
-            if (engineWasRunning) {
-                ObdController.engine.start()
-                engineWasRunning = false
-            }
+            restorePolling()
         } else {
             engineWasRunning = ObdController.engine.running
             if (engineWasRunning) ObdController.engine.stop()
             SignalSimulator.start()
+            if (!SignalSimulator.running) restorePolling()
         }
         refreshHeader()
+    }
+
+    private fun restorePolling() {
+        val restore = engineWasRunning
+        engineWasRunning = false
+        if (restore && ObdController.isConnected()) ObdController.startPolling()
     }
 
     private fun refreshHeader() {

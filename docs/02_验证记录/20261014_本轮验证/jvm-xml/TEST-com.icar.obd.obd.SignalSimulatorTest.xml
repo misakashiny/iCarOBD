@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.obd.SignalSimulatorTest" tests="36" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:52.585Z" hostname="WIN-LI9OE82Q5LO" time="0.013">
+  <properties/>
+  <testcase name="温度类周期不至于长到看不出变化" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.001"/>
+  <testcase name="电压摆幅足够大 不至于看起来像固定值" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="归一化把写反的量程摆正 已经正的返回自身" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="正弦在 0 与 1 2 处取中点 1 4 处到顶" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="锯齿线性上升" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="快速演示去掉噪声 便于看清刻度" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="极端量程不抛 也不产生 NaN" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.006"/>
+  <testcase name="相位超过 1 会回绕 负数也能处理" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="快速演示里 G 合力从 0 起 不是负的" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="量程写反与写正产出同一个区间" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="量程写反时不再抛空 range" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="快速演示在三秒内扫完全程" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.001"/>
+  <testcase name="随机波形始终落在 0 到 1" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="UI 档位不可能把最小推过最大" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.001"/>
+  <testcase name="G 值走圆轨迹 且 gforce 由 gx gy 算出" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.001"/>
+  <testcase name="转速用锯齿且区间落在怠速到红线内" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="未知 PID 回落到它自己量程的中段" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="tick 遇到反向量程的通道也不抛" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.001"/>
+  <testcase name="派生 PID 也能生成自动通道" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="三角在中点到达峰值" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="方波前半个周期为高" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="零量程的 PID 也不会算出 NaN" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="每条自动通道的 min 都小于 max" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="噪声不会让值跑出 min 到 max" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.001"/>
+  <testcase name="快速演示周期很短" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="快速演示里 G 值保持正弦 否则圆轨迹会变方块" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="快速演示用满量程" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="无噪声时输出是确定的" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="相等量程不抛 且恒等于该点" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="相位按周期推进" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="PID 量程写反时 演示通道与档位都不反" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="普通通道照常独立发波形" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="车速用正弦 水温用斜坡" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="恒定波形始终为 1" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="取值线性映射到 min 到 max" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <testcase name="周期为 0 时被夹住 不产生 NaN 或 Inf" classname="com.icar.obd.obd.SignalSimulatorTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

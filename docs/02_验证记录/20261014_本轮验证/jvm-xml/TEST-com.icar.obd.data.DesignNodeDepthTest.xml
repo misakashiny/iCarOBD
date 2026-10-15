@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.DesignNodeDepthTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:47.954Z" hostname="WIN-LI9OE82Q5LO" time="0.019">
+  <properties/>
+  <testcase name="33 层以内照常解析 —— 上限不误伤正常设计" classname="com.icar.obd.data.DesignNodeDepthTest" time="0.002"/>
+  <testcase name="34 层触发上限 —— 报友好错误而不是崩" classname="com.icar.obd.data.DesignNodeDepthTest" time="0.001"/>
+  <testcase name="20000 层的 JSON 文本不崩 —— 真实导入路径" classname="com.icar.obd.data.DesignNodeDepthTest" time="0.008"/>
+  <testcase name="上限是 32，与工具侧同一个数" classname="com.icar.obd.data.DesignNodeDepthTest" time="0.0"/>
+  <testcase name="20000 层嵌套 —— 不爆栈，只报一条看得懂的错误" classname="com.icar.obd.data.DesignNodeDepthTest" time="0.006"/>
+  <testcase name="合法设计仍然解析成功 —— 闸门不能把正常文件也拦下" classname="com.icar.obd.data.DesignNodeDepthTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

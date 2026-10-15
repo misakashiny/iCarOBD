@@ -6,6 +6,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.Before
+import org.junit.After
 import kotlin.math.sqrt
 
 /**
@@ -17,6 +19,13 @@ import kotlin.math.sqrt
 class SignalSimulatorTest {
 
     private val sim = SignalSimulator
+    private lateinit var previous: SignalSimulatorRuntime
+    private var base=0L
+    @Before fun lifecycleSetup() {
+        previous=sim.runtime; sim.runtime=FakeSimulatorRuntime(); sim.stop(); sim.rebuildFromPids(); base=System.currentTimeMillis()
+    }
+    @After fun lifecycleCleanup() { sim.stop(); sim.rebuildFromPids(); sim.runtime=previous }
+    private fun startAtBase() { sim.start(); sim.setStartForTest(base) }
 
     // ================================================================ 波形
 
@@ -188,13 +197,13 @@ class SignalSimulatorTest {
         sim.update(sim.autoChannel(PidDefinition(id = "calc_gx")).copy(noise = 0f))
         sim.update(sim.autoChannel(PidDefinition(id = "calc_gy")).copy(noise = 0f))
         sim.update(sim.autoChannel(PidDefinition(id = "calc_gforce")).copy(noise = 0f))
-        sim.setStartForTest(0L)
+        startAtBase()
 
         // gx = 1.2·sin(2πp)，gy = 1.2·cos(2πp) → 半径恒定的圆
         val radius = 1.2f
         var bothPositive = false
         for (t in 0L..7000L step 1000L) {
-            sim.tick(t)
+            sim.tick(base+t)
             val x = VehicleBus.value("calc_gx")!!
             val y = VehicleBus.value("calc_gy")!!
             val g = VehicleBus.value("calc_gforce")!!
@@ -209,10 +218,10 @@ class SignalSimulatorTest {
     fun `普通通道照常独立发波形`() {
         VehicleBus.clear()
         sim.update(sim.autoChannel(PidDefinition(id = "std_0C")).copy(noise = 0f))
-        sim.setStartForTest(0L)
-        sim.tick(0L)
+        startAtBase()
+        sim.tick(base)
         val v0 = VehicleBus.value("std_0C")!!
-        sim.tick(3000L)
+        sim.tick(base+3000L)
         val v1 = VehicleBus.value("std_0C")!!
         assertTrue("转速应在变：$v0 → $v1", v0 != v1)
     }
@@ -256,10 +265,10 @@ class SignalSimulatorTest {
     fun `快速演示在三秒内扫完全程`() {
         VehicleBus.clear()
         sim.update(sim.demoChannel(PidDefinition(id = "std_0C", minVal = 0f, maxVal = 8000f)))
-        sim.setStartForTest(0L)
+        startAtBase()
         val seen = HashSet<Int>()
         for (t in 0L..3000L step 250L) {
-            sim.tick(t)
+            sim.tick(base+t)
             seen.add((VehicleBus.value("std_0C")!! / 500f).toInt())
         }
         assertTrue("3 秒内应扫过多个区段，实际 ${seen.size} 段", seen.size >= 5)
@@ -353,8 +362,8 @@ class SignalSimulatorTest {
 
         // 端到端：这一拍不能再抛（旧代码在这里必抛，且会打断 ticker）
         sim.update(ch)
-        sim.setStartForTest(0L)
-        sim.tick(1000L)
+        startAtBase()
+        sim.tick(base+1000L)
         val v = VehicleBus.value("std_05")!!
         assertTrue("模拟值 $v 应落在 ${ch.min}~${ch.max}", v in ch.min..ch.max)
     }
@@ -363,8 +372,8 @@ class SignalSimulatorTest {
     fun `tick 遇到反向量程的通道也不抛`() {
         VehicleBus.clear()
         sim.update(reversedPair())
-        sim.setStartForTest(0L)
-        repeat(5) { i -> sim.tick(1000L + i * 300L) }
+        startAtBase()
+        repeat(5) { i -> sim.tick(base+1000L + i * 300L) }
         val v = VehicleBus.value("rev")!!
         assertTrue("v=$v 应落在 120.5~122", v in 120.5f..122f)
     }

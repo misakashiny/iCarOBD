@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.PidMergeTest" tests="13" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:50.829Z" hostname="WIN-LI9OE82Q5LO" time="0.157">
+  <properties/>
+  <testcase name="keep 里的 id 一律保留" classname="com.icar.obd.data.PidMergeTest" time="0.013"/>
+  <testcase name="设计文件的两个别名都还能解析" classname="com.icar.obd.data.PidMergeTest" time="0.008"/>
+  <testcase name="编辑器里当前绑定的 std_5E 不会被静默改成 0 号" classname="com.icar.obd.data.PidMergeTest" time="0.007"/>
+  <testcase name="被引用的 id 仍然能查到" classname="com.icar.obd.data.PidMergeTest" time="0.008"/>
+  <testcase name="没有可折叠条目时原样返回同一个实例" classname="com.icar.obd.data.PidMergeTest" time="0.009"/>
+  <testcase name="两条是输入与派生输出的关系" classname="com.icar.obd.data.PidMergeTest" time="0.01"/>
+  <testcase name="平均油耗与续航读的还是 calc_lh" classname="com.icar.obd.data.PidMergeTest" time="0.021"/>
+  <testcase name="calc_lh 是超集通道" classname="com.icar.obd.data.PidMergeTest" time="0.012"/>
+  <testcase name="filterForList 把 std_5E 收起来" classname="com.icar.obd.data.PidMergeTest" time="0.026"/>
+  <testcase name="说明文案是纯文本且说清了另一条去哪了" classname="com.icar.obd.data.PidMergeTest" time="0.008"/>
+  <testcase name="合并只动显示层：allPids 里两条都还在" classname="com.icar.obd.data.PidMergeTest" time="0.01"/>
+  <testcase name="合并不会被当成重复去清掉" classname="com.icar.obd.data.PidMergeTest" time="0.011"/>
+  <testcase name="isFolded 的边界" classname="com.icar.obd.data.PidMergeTest" time="0.014"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,8 +1,7 @@
 package com.icar.obd.obd
 
 import com.icar.obd.data.AppLog
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.*
 import kotlin.coroutines.coroutineContext
 
 /**
@@ -17,14 +16,14 @@ import kotlin.coroutines.coroutineContext
  *  - **单条超时**（timeoutMs）
  *  - **重试次数**（retry，默认 1，避免偶发丢包被误判为不支持）
  *  - **黑名单**（blacklist，命中的 PID 直接跳过）
- *  - **危险模式拦截**（Mode 02/03/04/06/08 等会改变 ECU 状态，默认拒绝）
+ *  - **危险模式拦截**（本工具仅允许 01/09/21/22，其他服务拒绝）
  *  - **总量上限**（maxRequests，防止参数填错时跑出天文数字）
  *  - **Mode 01/09 先用支持位图**：只扫车厂声明支持的 PID，请求量可下降一个数量级
  *  - **主动取消**：随时 stop()，不会留下悬挂请求
  *
  * 使用前必须由 UI 收集用户确认（见 ScannerActivity）。
  */
-class PidScanner(private val session: ElmSession) {
+class PidScanner(private val session: ElmSession, private val beforeRequest: () -> Unit = {}) {
 
     companion object {
         /**
@@ -39,14 +38,15 @@ class PidScanner(private val session: ElmSession) {
             cfg: Config?,
             hits: List<Hit>,
             logLines: List<String>,
-            timestamp: String
+            timestamp: String,
+            summary: Summary? = null
         ): String {
             val sb = StringBuilder()
             sb.append("iCar OBD · PID 扫描结果\n")
             sb.append("时间: $timestamp\n")
             if (cfg != null) {
-                val width = if (cfg.mode == "01" || cfg.mode == "02" || cfg.mode == "09") 2 else 4
-                sb.append("模式: ${cfg.mode}\n")
+                val width = width(cfg.mode)
+                sb.append("模式: ${cfg.mode}  ECU: ${cfg.header}\n")
                 sb.append("范围: ${hex(cfg.from, width)} ~ ${hex(cfg.to, width)}\n")
                 sb.append("参数: 间隔=${cfg.intervalMs}ms 超时=${cfg.timeoutMs}ms 重试=${cfg.retry}")
                     .append(" 上限=${cfg.maxRequests} 学习采样=${cfg.learnSamples}")
@@ -55,6 +55,7 @@ class PidScanner(private val session: ElmSession) {
                     sb.append("黑名单: ${cfg.blacklist.joinToString(",")}\n")
                 }
             }
+            summary?.let { sb.append("状态: ${it.state} 请求=${it.requests}/${cfg?.maxRequests} PID=${it.done}/${it.total} 未探明位图块=${it.unknownBlocks}\n") }
             sb.append("命中: ${hits.size} 条\n\n")
             sb.append("── 命中明细 ──\n")
             hits.forEachIndexed { i, h ->
@@ -65,13 +66,26 @@ class PidScanner(private val session: ElmSession) {
                 h.previewValue?.let { sb.append("  （预览值 $it，仅供参考）") }
                 sb.append("\n")
                 if (h.learnedMin != null || h.learnedMax != null) {
-                    sb.append("    学习量程: ${h.learnedMin ?: "-"} ~ ${h.learnedMax ?: "-"}\n")
+                    sb.append("    学习量程: ${h.learnedMin ?: "-"} ~ ${h.learnedMax ?: "-"}（仅采样参考，不是物理量程）\n")
                 }
                 sb.append("    原始: ${h.raw.take(120)}\n")
             }
             sb.append("\n── 界面日志（${logLines.size} 条）──\n")
             logLines.forEach { sb.append(it).append("\n") }
             return sb.toString()
+        }
+
+        fun width(mode: String): Int = if(mode.trim().uppercase()=="22") 4 else 2
+        fun validate(cfg: Config) {
+            val mode=cfg.mode.trim().uppercase()
+            require(mode in setOf("01","09","21","22")) { "本工具不允许 Mode $mode" }
+            val max=if(mode=="22") 65535 else 255
+            require(cfg.from in 0..max && cfg.to in cfg.from..max) { "PID范围应为 0..${max.toString(16).uppercase()}，起点不能大于终点" }
+            require(cfg.intervalMs in 30..10_000 && cfg.timeoutMs in 200..10_000) { "间隔30–10000ms，超时200–10000ms" }
+            require(cfg.retry in 0..3 && cfg.maxRequests in 1..2000 && cfg.learnSamples in 0..20 && cfg.learnIntervalMs in 30..10_000) { "重试0–3，请求上限1–2000，额外采样0–20" }
+            val header=cfg.header.trim().uppercase()
+            require(header.matches(Regex("[0-9A-F]{3}|[0-9A-F]{8}")) && header.toLong(16) <= if(header.length==3) 0x7FF else 0x1FFFFFFF) { "ECU请求头需为3位或8位合法CAN ID" }
+            require(cfg.blacklist.all { it.trim().uppercase().matches(Regex("$mode:[0-9A-F]{${width(mode)}}")) }) { "排除项需用 $mode:PID 格式，与当前模式一致" }
         }
 
         private fun hex(v: Int, w: Int) = v.toString(16).uppercase().padStart(w, '0')
@@ -153,7 +167,9 @@ class PidScanner(private val session: ElmSession) {
         /** 命中后额外采样次数，用于学习 min/max（0 = 关闭，默认关闭以省总线） */
         val learnSamples: Int = 0,
         /** 学习采样的间隔 */
-        val learnIntervalMs: Long = 300
+        val learnIntervalMs: Long = 300,
+        /** CAN request target; scanner restores the previous adapter header on exit. */
+        val header: String = "7DF"
     )
 
     data class Hit(
@@ -168,245 +184,127 @@ class PidScanner(private val session: ElmSession) {
         val previewValue: Float?,
         /** 学习采样得到的最小值（learnSamples > 0 时有效） */
         val learnedMin: Float? = null,
-        val learnedMax: Float? = null
+        val learnedMax: Float? = null,
+        val header: String = "7DF"
     )
 
-    @Volatile
-    private var cancelled = false
+    enum class State { READY, SCANNING, DONE, STOPPED, LIMIT, FAILED }
+    data class Summary(val state: State, val requests: Int = 0, val done: Int = 0,
+        val total: Int = 0, val unknownBlocks: Int = 0)
+    @Volatile var summary = Summary(State.READY)
+        private set
+    @Volatile private var job: Job? = null
+    private val lock = Any()
+    private class BudgetReached : RuntimeException()
 
-    fun cancel() {
-        cancelled = true
-        AppLog.i(AppLog.M_SCAN, "扫描被取消")
-    }
+    fun cancel() { synchronized(lock) { job?.cancel() } }
 
-    /**
-     * 执行扫描。
-     * @param onProgress (已完成数, 总数, 最新命中) —— 在调用协程里回调
-     */
-    suspend fun scan(
-        cfg: Config,
-        onProgress: suspend (done: Int, total: Int, hit: Hit?) -> Unit
-    ): List<Hit> {
-        cancelled = false
-        val mode = cfg.mode.trim().uppercase()
-
-        if (ObdProtocol.isDangerous(mode)) {
-            AppLog.e(AppLog.M_SCAN, "拒绝扫描危险模式", "mode=$mode")
-            throw IllegalArgumentException("模式 $mode 会改变 ECU 状态，已拒绝扫描")
+    suspend fun scan(cfg: Config, onProgress: suspend (Int, Int, Hit?) -> Unit): List<Hit> {
+        validate(cfg)
+        val owner = coroutineContext[Job] ?: error("扫描需要协程任务")
+        synchronized(lock) { check(job == null) { "已有探测正在运行" }; job=owner }
+        summary=Summary(State.SCANNING)
+        val hits=ArrayList<Hit>()
+        val mode=cfg.mode.trim().uppercase()
+        val width=width(mode)
+        val blacklist=cfg.blacklist.map { it.trim().uppercase() }.toSet()
+        var lastRequestEnd: Long? = null
+        fun publishCount(requests: Int = summary.requests, done: Int = summary.done,
+            total: Int = summary.total, unknown: Int = summary.unknownBlocks) {
+            summary=summary.copy(requests=requests,done=done,total=total,unknownBlocks=unknown)
         }
-
-        val width = if (mode == "01" || mode == "02" || mode == "09") 2 else 4
-        val base = if (mode == "01" || mode == "09") mode else "22"
-
-        // ---- 1) 候选集合 ----
-        var candidates: List<Int> = (cfg.from..cfg.to).toList()
-
-        if (cfg.useSupportedBitmap && (mode == "01" || mode == "09")) {
-            val supported = querySupportedPids(mode, cfg)
-            if (supported.isNotEmpty()) {
-                val inRange = supported.filter { it in cfg.from..cfg.to }
-                AppLog.i(
-                    AppLog.M_SCAN, "支持位图收敛扫描范围",
-                    "mode=$mode supported=${supported.size} inRange=${inRange.size}"
-                )
-                candidates = inRange
-            } else {
-                AppLog.w(AppLog.M_SCAN, "支持位图无结果，退回范围扫描", "mode=$mode")
+        suspend fun request(pid: String, spacing: Long=cfg.intervalMs): Pair<String,List<ByteArray>> {
+            var raw=""
+            repeat(cfg.retry+1) {
+                coroutineContext.ensureActive()
+                if (summary.requests >= cfg.maxRequests) throw BudgetReached()
+                lastRequestEnd?.let { last ->
+                    val remaining=spacing-(System.nanoTime()-last)/1_000_000
+                    if(remaining>0) delay(remaining)
+                }
+                coroutineContext.ensureActive()
+                beforeRequest()
+                publishCount(requests=summary.requests+1)
+                raw=session.requestPid(PidRequestPolicy.ReadRequest("$mode $pid",cfg.header),cfg.timeoutMs)
+                lastRequestEnd=System.nanoTime()
+                coroutineContext.ensureActive()
+                val data=PidScanResponse.data(raw,mode,pid)
+                if(data.isNotEmpty()) return raw to data
             }
+            return raw to emptyList()
         }
-
-        // 黑名单过滤
-        val filtered = candidates.filter { pid ->
-            val key = "$base:${pid.toString(16).uppercase().padStart(width, '0')}"
-            key !in cfg.blacklist
-        }
-        val skipped = candidates.size - filtered.size
-        if (skipped > 0) AppLog.i(AppLog.M_SCAN, "黑名单跳过", "count=$skipped")
-
-        val total = filtered.size.coerceAtMost(cfg.maxRequests)
-        if (filtered.size > cfg.maxRequests) {
-            AppLog.w(
-                AppLog.M_SCAN, "候选数超过上限，已截断",
-                "candidates=${filtered.size} max=${cfg.maxRequests}"
-            )
-        }
-
-        AppLog.i(
-            AppLog.M_SCAN, "开始扫描",
-            "mode=$mode from=${hex(cfg.from, width)} to=${hex(cfg.to, width)} total=$total " +
-                "interval=${cfg.intervalMs}ms timeout=${cfg.timeoutMs}ms retry=${cfg.retry}"
-        )
-
-        val hits = ArrayList<Hit>()
-        var done = 0
-
-        for (pid in filtered.take(total)) {
-            if (cancelled || !coroutineContext.isActive) break
-
-            val pidHex = pid.toString(16).uppercase().padStart(width, '0')
-            val req = "$base $pidHex"
-            val key = "$base:$pidHex"
-
-            val raw = requestWithRetry(req, cfg)
-            done++
-
-            val hit = parseHit(mode, pidHex, req, raw)
-            if (hit != null) {
-                val learned = if (cfg.learnSamples > 0) learnRange(req, hit, cfg) else null
-                val finalHit = if (learned != null) {
-                    hit.copy(learnedMin = learned.first, learnedMax = learned.second)
-                } else hit
-                hits.add(finalHit)
-                AppLog.i(
-                    AppLog.M_SCAN, "命中",
-                    "req=$req raw=${raw.take(60)} data=${finalHit.dataHex} " +
-                        (if (learned != null) "min=${learned.first} max=${learned.second}" else "")
-                )
-                onProgress(done, total, finalHit)
-            } else {
-                onProgress(done, total, null)
+        try {
+            var candidates=(cfg.from..cfg.to).toList()
+            if(cfg.useSupportedBitmap && mode in setOf("01","09")) {
+                val supported=sortedSetOf<Int>()
+                // Query every relevant block. Never let one ECU's continuation bit
+                // hide another ECU, or turn a missing block into "not supported".
+                val lastBlock=maxOf(maxSupportBlock(mode),((cfg.to.coerceAtLeast(1)-1)/32)*32)
+                for(block in 0..lastBlock step 32) {
+                    val (_, replies)=request(hex(block,2))
+                    val valid=replies.filter { it.size == 4 }
+                    if(valid.isEmpty()) publishCount(unknown=summary.unknownBlocks+1)
+                    valid.forEach { supported.addAll(decodeSupportBitmap(block,it)) }
+                }
+                candidates=supported.filter { it in cfg.from..cfg.to }
             }
-
-            // 限流：这里是整个扫描器「不伤总线」的核心
-            delay(cfg.intervalMs)
+            candidates=candidates.filter { "$mode:${hex(it,width)}" !in blacklist }
+            publishCount(total=candidates.size)
+            onProgress(0,candidates.size,null)
+            for(pid in candidates) {
+                val pidHex=hex(pid,width)
+                val (raw,replies)=request(pidHex)
+                coroutineContext.ensureActive()
+                val data=replies.firstOrNull()
+                var hit=data?.let { parseHit(mode,pidHex,raw,it,cfg.header) }
+                // Keep the initial sample and earlier hits even if learning exhausts
+                // the budget. No extra callback or request is allowed after stop.
+                if(hit != null) {
+                    hits.add(hit)
+                    publishCount(done=summary.done+1)
+                    onProgress(summary.done,summary.total,hit)
+                    val values=mutableListOf<Float>()
+                    hit.previewValue?.takeIf { it.isFinite() }?.let(values::add)
+                    repeat(cfg.learnSamples) {
+                        val (_,sample)=request(pidHex,maxOf(cfg.intervalMs,cfg.learnIntervalMs))
+                        sample.firstOrNull()?.let { bytes ->
+                            runCatching { com.icar.obd.data.Formula.eval(hit!!.suggestedFormula,bytes).toFloat() }
+                                .getOrNull()?.takeIf { it.isFinite() }?.let(values::add)
+                        }
+                    }
+                    if(cfg.learnSamples>0 && values.isNotEmpty()) {
+                        hit=hit.copy(learnedMin=values.minOrNull(),learnedMax=values.maxOrNull())
+                        hits[hits.lastIndex]=hit
+                        onProgress(summary.done,summary.total,hit)
+                    }
+                } else {
+                    publishCount(done=summary.done+1)
+                    onProgress(summary.done,summary.total,null)
+                }
+            }
+            summary=summary.copy(state=State.DONE)
+        } catch (_: BudgetReached) {
+            summary=summary.copy(state=State.LIMIT)
+        } catch (e: CancellationException) {
+            summary=summary.copy(state=State.STOPPED)
+            throw e
+        } catch (e: Exception) {
+            summary=summary.copy(state=State.FAILED)
+            throw e
+        } finally {
+            synchronized(lock) { if(job === owner) job=null }
         }
-
-        AppLog.i(AppLog.M_SCAN, "扫描结束", "mode=$mode done=$done hits=${hits.size} cancelled=$cancelled")
         return hits
     }
 
-    // ---------------------------------------------------------------- 内部
-
-    private suspend fun requestWithRetry(req: String, cfg: Config): String {
-        var last = ""
-        repeat(cfg.retry + 1) { attempt ->
-            last = session.raw(req, cfg.timeoutMs)
-            if (!ObdProtocol.isError(last) && ObdProtocol.hexBytes(ObdProtocol.stripNoise(last)).isNotEmpty()) {
-                return last
-            }
-            if (attempt < cfg.retry) delay(cfg.intervalMs)
-        }
-        return last
+    private fun parseHit(mode: String, pid: String, raw: String, data: ByteArray, header: String): Hit {
+        val formula=when(data.size) { 1->"A"; 2->"(A*256)+B"; 3->"(A*65536)+(B*256)+C"; else->"(A*256)+B" }
+        val value=runCatching { com.icar.obd.data.Formula.eval(formula,data).toFloat() }
+            .getOrNull()?.takeIf { it.isFinite() }
+        return Hit(mode,pid,"$mode $pid",raw.trim(),data.joinToString(" ") { "%02X".format(it.toInt() and 255) },formula,value,header=header)
     }
 
-    private fun parseHit(mode: String, pidHex: String, req: String, raw: String): Hit? {
-        if (ObdProtocol.isError(raw)) return null
-        val modeInt = mode.toIntOrNull(16) ?: return null
-        val data = ObdProtocol.extractData(raw, modeInt, pidHex) ?: return null
-        if (data.isEmpty()) return null
-
-        val hex = data.joinToString(" ") { String.format("%02X", it.toInt() and 0xFF) }
-        val formula = suggestFormula(data.size)
-        val preview = runCatching {
-            com.icar.obd.data.Formula.eval(formula, data).toFloat()
-        }.getOrNull()
-
-        return Hit(mode, pidHex, req, raw.trim(), hex, formula, preview)
-    }
-
-    /** 依据数据字节数给一个「最可能」的骨架公式，用户必须自行判断物理含义 */
-    private fun suggestFormula(n: Int): String = when (n) {
-        0 -> ""
-        1 -> "A"
-        2 -> "(A*256)+B"
-        3 -> "(A*65536)+(B*256)+C"
-        else -> "(A*256)+B"
-    }
-
-    private suspend fun learnRange(req: String, hit: Hit, cfg: Config): Pair<Float, Float>? {
-        var min = Float.MAX_VALUE
-        var max = -Float.MAX_VALUE
-        var ok = 0
-        repeat(cfg.learnSamples) {
-            if (cancelled) return@repeat
-            delay(cfg.learnIntervalMs)
-            val raw = requestWithRetry(req, cfg)
-            val data = ObdProtocol.extractData(
-                raw, hit.mode.toIntOrNull(16) ?: return@repeat, hit.pid
-            ) ?: return@repeat
-            if (data.isEmpty()) return@repeat
-            val v = runCatching { com.icar.obd.data.Formula.eval(hit.suggestedFormula, data).toFloat() }
-                .getOrNull() ?: return@repeat
-            min = kotlin.math.min(min, v); max = kotlin.math.max(max, v); ok++
-        }
-        return if (ok > 0) min to max else null
-    }
-
-    /**
-     * Mode 01/09 支持位图：0100/0120/0140/0160 各返回 4 字节 = 32 个 PID 的支持位。
-     * 只在位为 1 时继续扫描，这是把请求量从 ~96 次降到 ~30 次的关键。
-     */
-    private suspend fun querySupportedPids(mode: String, cfg: Config): Set<Int> {
-        val out = HashSet<Int>()
-        // ⚠️ **必须走到 `01 C0`，不能停在 `01 60`**（v1.18.0 修）。
-        //
-        // 位图链是 `01 00 → 01 20 → 01 40 → 01 60 → 01 80 → 01 A0 → 01 C0`。
-        // 原来 `maxBlock = 0x60`，于是**永远枚举不到 A1~C0 段** ——
-        // 而**挡位 `01 A4` 和总里程 `01 A6` 恰好就在那一层**。
-        //
-        // 这条是从一个独立验证过的马自达项目学到的（drewid74/2024-nd3-mazda-obdii），
-        // 它的原话值得抄在这里：
-        //   "A Mode 22 NACK means that module address is dead, **not** that the
-        //    signal is unavailable... Always probe 01 00 → … → 01 C0 and enumerate
-        //    what the car actually advertises **before** concluding anything is out of scope."
-        // 那个项目自己也栽过：挡位被当成"Mode 22 才有"，其实一直在 `01 A4` 里。
-        val maxBlock = maxSupportBlock(mode)
-        val modeInt = mode.toIntOrNull(16) ?: return out
-        var block = 0
-        while (block <= maxBlock) {
-            if (cancelled) break
-            val baseHex = block.toString(16).uppercase().padStart(2, '0')
-            val req = "$mode $baseHex"
-            val raw = requestWithRetry(req, cfg.copy(retry = 1, timeoutMs = 2500))
-            delay(cfg.intervalMs)
-
-            // ⚠️⚠️ **必须取所有 ECU 的应答取并集，且不能用某一家的下一块位提前退出。**
-            //
-            // 2026-10-06 实车抓到（阿特兹 · 小米平板 5）：
-            // 这台车对每个位图块回**两份应答**（两个模块），而它们对
-            // 「还有下一块」（byte3 的 bit0）**判断是相反的**：
-            //
-            //     01 40 -> 41 40 FE D0 8C 81   ← 模块1：0x81，bit0=1，「还有」
-            //              41 40 C0 80 00 00   ← 模块2：0x00，bit0=0，「没有了」
-            //
-            // 而这两份的**先后顺序会在两次运行之间变**：
-            //
-            //     11:56  01 40 -> FE D0 8C 81 先到 → 继续 → supported=57（含 A1~C0）
-            //     12:34  01 40 -> C0 80 00 00 先到 → 断在 0x40 → supported=16
-            //
-            // 于是「这台车支持什么」**取决于哪个模块的应答先到**。12:34 那次
-            // `0x61`~`0xC0` 整段不可见 —— 而**挡位 `A4`、总里程 `A6` 就在那一段**。
-            // v1.18.0 把 `maxBlock` 从 `0x60` 提到 `0xC0` 只治了「上限」，没治这个提前退出。
-            //
-            // 代价极小：mode 01 全链只有 7 个请求（00/20/40/60/80/A0/C0）。
-            // **确定性比省两三个请求重要。**
-            var anyResponded = false
-            val seen = HashSet<Int>()
-            var ecu = 0
-            // 实车见过 2 个模块应答；给到 4 留余量。不足时 extractData 返回 null，循环即止
-            while (ecu < 4) {
-                val data = ObdProtocol.extractData(raw, modeInt, baseHex, ecu) ?: break
-                // 只有前 4 字节是这一块的位图；别把后一个模块的字节也算进来
-                if (data.size < 4) break
-                anyResponded = true
-                // ⚠️ 走纯函数解位图：块内第 i 位对应 PID `block + 1 + i`
-                //（原来这里写 `block + i`，整条链少加 1 —— 见 decodeSupportBitmap 的说明）
-                seen.addAll(decodeSupportBitmap(block, data.copyOf(4)))
-                ecu++
-            }
-            val added = seen.size
-            out.addAll(seen)
-            // 这一块**一个应答都没有** → 后面几块也不会有
-            if (!anyResponded) break
-            if (added > 0) {
-                AppLog.d(AppLog.M_SCAN, "位图块", "block=$baseHex ecu=${ecu} PIDs=$added")
-            }
-            block += 0x20
-        }
-        return out
-    }
-
-    private fun hex(v: Int, width: Int) = v.toString(16).uppercase().padStart(width, '0')
+    private fun hex(v: Int,w: Int)=v.toString(16).uppercase().padStart(w,'0')
 
     /** 生成扫描用黑名单默认值：已知会返回大量数据但无意义的地址段 */
     fun defaultBlacklist(mode: String): Set<String> {

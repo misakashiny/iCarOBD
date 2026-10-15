@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.obd.SignalSimulatorLifecycleTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:52.576Z" hostname="WIN-LI9OE82Q5LO" time="0.006">
+  <properties/>
+  <testcase name="all G channels belong to the same stopped simulator" classname="com.icar.obd.obd.SignalSimulatorLifecycleTest" time="0.003"/>
+  <testcase name="stopping and restarting inside notification rejects the old remainder" classname="com.icar.obd.obd.SignalSimulatorLifecycleTest" time="0.001"/>
+  <testcase name="nonfinite samples are unknown and never enter history" classname="com.icar.obd.obd.SignalSimulatorLifecycleTest" time="0.0"/>
+  <testcase name="old ticker cannot borrow a new running flag or reschedule itself" classname="com.icar.obd.obd.SignalSimulatorLifecycleTest" time="0.0"/>
+  <testcase name="stop from value callback prevents remainder of the current tick" classname="com.icar.obd.obd.SignalSimulatorLifecycleTest" time="0.0"/>
+  <testcase name="positive configured TTL wins over simulator default" classname="com.icar.obd.obd.SignalSimulatorLifecycleTest" time="0.001"/>
+  <testcase name="simulation stop leaves accumulated trip and unrelated history intact" classname="com.icar.obd.obd.SignalSimulatorLifecycleTest" time="0.0"/>
+  <testcase name="active but silent simulation has a finite expiry" classname="com.icar.obd.obd.SignalSimulatorLifecycleTest" time="0.001"/>
+  <testcase name="same raw text from another source survives simulation stop" classname="com.icar.obd.obd.SignalSimulatorLifecycleTest" time="0.0"/>
+  <testcase name="actual stop invalidates current zero and preserves history" classname="com.icar.obd.obd.SignalSimulatorLifecycleTest" time="0.0"/>
+  <testcase name="pending ticker after stop cannot publish or extend history" classname="com.icar.obd.obd.SignalSimulatorLifecycleTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

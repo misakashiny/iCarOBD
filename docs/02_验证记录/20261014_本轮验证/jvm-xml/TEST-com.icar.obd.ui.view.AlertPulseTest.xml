@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.ui.view.AlertPulseTest" tests="41" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:52.718Z" hostname="WIN-LI9OE82Q5LO" time="0.016">
+  <properties/>
+  <testcase name="方波按时序开关" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.001"/>
+  <testcase name="零或负阈值直接不报警" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="null 与 NaN 在有下限时也不报警" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="危险档闪烁频率不得超过每秒三次 —— WCAG 2_3_1 红线" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.003"/>
+  <testcase name="混合比例被夹住" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="危险档也有迟滞" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="正常值不报警" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="下限也有迟滞" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="两档用不同节奏 —— 一眼能看出严重程度" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.001"/>
+  <testcase name="达到危险阈值进入 CRITICAL" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="透明度被夹在合法范围内" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="没有警告阈值时永不报警" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="下限在阈值附近抖动不会来回跳" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="脉冲值域始终落在 0 到 1 之间" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.003"/>
+  <testcase name="不报警时强度恒为 0" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="上限报警仍然爆闪 —— 反证" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="颜色混合中点正确" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="颜色混合两端正确" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="染色与爆闪的相位必须一致" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.003"/>
+  <testcase name="方波是硬开关 不是渐变" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="达到警告阈值进入 WARN" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.001"/>
+  <testcase name="只有一档时也能工作" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="未达阈值不报警" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="迟滞 进入用原阈值 退出用降下来的阈值" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="null 与 NaN 都不报警" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="换透明度保留 RGB" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="没有迟滞会怎样 —— 反证" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="在阈值附近抖动不会来回跳" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="从下限切到上限时迟滞不会互相解锁" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="脉冲平滑且首尾归零" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="闪烁周期下限常量与数据层同源且合规" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="下限报警不参与爆闪" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="低于下限进入 WARN_LOW" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="不同比例给出不同颜色" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="上限优先于下限" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="警告档闪烁频率也不得超过每秒三次" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.001"/>
+  <testcase name="周期为 0 时不崩且不闪" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="下限为 null 或 0 时不生效" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="混合后的颜色始终不透明" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="阈值很小时绝对兜底生效" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.0"/>
+  <testcase name="危险档整体比警告档更醒目" classname="com.icar.obd.ui.view.AlertPulseTest" time="0.002"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

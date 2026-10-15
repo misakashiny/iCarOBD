@@ -343,33 +343,40 @@ if ($UpdateBaseline) {
     # 手写 JSON —— 不用 ConvertTo-Json：PS 5.1 的输出格式不受控，
     # 而且这里的**说明文字就是守卫的一部分**（告诉下一个人怎么更新），
     # 放在脚本里当唯一来源，才不会和守卫本身漂开。
+    #
+    # ⚠️ **换行必须显式写 LF（v2.85.0 补，2026-10-12）**：`StringBuilder.AppendLine()`
+    # 用的是 `Environment.NewLine`（Windows 上就是 CRLF），而这个文件是**纯 LF** 的
+    # （仓库其它 .json 也是）。用 CRLF 写出来的后果不是"格式不好看"——
+    # `git diff --check` 会把**每一行新增**判成 `trailing whitespace` 而 exit=1，
+    # 于是"更新基线"这个合法动作会把仓库留在一个**脏检查**状态里。
     function Esc-Json([string]$s) { return $s.Replace('\', '\\').Replace('"', '\"') }
+    $NL = [string][char]10
     $sb = New-Object System.Text.StringBuilder
-    [void]$sb.AppendLine('{')
-    [void]$sb.AppendLine('  "version": 1,')
-    [void]$sb.AppendLine('  "what": "' + (Esc-Json '浏览器套件的**最少断言数**基线（每个套件名 → 实际执行的断言条数下限，即 PASS+FAIL）。由 tools/run-browser-tests.ps1 在每轮全量跑完后逐个核对。') + '",')
-    [void]$sb.AppendLine('  "why": [')
-    [void]$sb.AppendLine('    "' + (Esc-Json '这些套件里的断言可以**静默消失**：断言被 `if (某个常量) eq(...)` 包住，常量一改名整条断言就不执行了，而套件照样打印 PASS=<n> FAIL=0 —— 绿得看不出来。') + '",')
-    [void]$sb.AppendLine('    "' + (Esc-Json 'v2.84.0 人工体检 29 个套件时扫出 6 处这种形态（已修）。人工扫只能做一次；这份基线把它变成每轮机器核对。') + '",')
-    [void]$sb.AppendLine('    "' + (Esc-Json 'TOTAL 也拦不住：断言少几条不影响 FAIL=0，TOTAL 只是跟着变小。') + '",')
-    [void]$sb.AppendLine('    "' + (Esc-Json '⚠️ 数的是 PASS+FAIL（= 执行了几条），不是 PASS：用 PASS 的话，一条断言**失败**会被报成"断言少了一条" —— 同一个问题说两遍，而且第二遍是错的。') + '"')
-    [void]$sb.AppendLine('  ],')
-    [void]$sb.AppendLine('  "howToUpdate": [')
-    [void]$sb.AppendLine('    "' + (Esc-Json '**合法地删/改断言**（某个功能下线了、某条断言被合并了）→ 用下面这条命令重建，它会打印每个套件的增减：') + '",')
-    [void]$sb.AppendLine('    "' + (Esc-Json '  powershell -ExecutionPolicy Bypass -File tools\run-browser-tests.ps1 -UpdateBaseline') + '",')
-    [void]$sb.AppendLine('    "' + (Esc-Json '⚠️ 不许手改本文件来绕过守卫 —— 手改没有 diff 输出，下一个人查不到是谁、为什么放低了基线。') + '",')
-    [void]$sb.AppendLine('    "' + (Esc-Json '⚠️ 有套件 FAIL 时 -UpdateBaseline 拒绝写入；它也不接受 -Filter（过滤跑会误删其他套件的基线）。') + '",')
-    [void]$sb.AppendLine('    "' + (Esc-Json '**新增套件**：必须同时更新基线（不自动加入）。理由：自动加入等于让新套件的下限 = 它第一次跑出来的数，而那个数本身可能就是“断言被包住了”的结果 —— 强制人工看一眼“这个套件怎么只有 3 条断言”，正是这道守卫想让人做的事。') + '",')
-    [void]$sb.AppendLine('    "' + (Esc-Json '**删除/改名套件**：同样必须更新基线。基线里有、本轮没跑的名字 = 红（否则套件被悄悄改名 = 覆盖静默蒸发）。') + '"')
-    [void]$sb.AppendLine('  ],')
-    [void]$sb.AppendLine('  "minAssertions": {')
+    [void]$sb.Append('{').Append($NL)
+    [void]$sb.Append('  "version": 1,').Append($NL)
+    [void]$sb.Append('  "what": "' + (Esc-Json '浏览器套件的**最少断言数**基线（每个套件名 → 实际执行的断言条数下限，即 PASS+FAIL）。由 tools/run-browser-tests.ps1 在每轮全量跑完后逐个核对。') + '",').Append($NL)
+    [void]$sb.Append('  "why": [').Append($NL)
+    [void]$sb.Append('    "' + (Esc-Json '这些套件里的断言可以**静默消失**：断言被 `if (某个常量) eq(...)` 包住，常量一改名整条断言就不执行了，而套件照样打印 PASS=<n> FAIL=0 —— 绿得看不出来。') + '",').Append($NL)
+    [void]$sb.Append('    "' + (Esc-Json 'v2.84.0 人工体检 29 个套件时扫出 6 处这种形态（已修）。人工扫只能做一次；这份基线把它变成每轮机器核对。') + '",').Append($NL)
+    [void]$sb.Append('    "' + (Esc-Json 'TOTAL 也拦不住：断言少几条不影响 FAIL=0，TOTAL 只是跟着变小。') + '",').Append($NL)
+    [void]$sb.Append('    "' + (Esc-Json '⚠️ 数的是 PASS+FAIL（= 执行了几条），不是 PASS：用 PASS 的话，一条断言**失败**会被报成"断言少了一条" —— 同一个问题说两遍，而且第二遍是错的。') + '"').Append($NL)
+    [void]$sb.Append('  ],').Append($NL)
+    [void]$sb.Append('  "howToUpdate": [').Append($NL)
+    [void]$sb.Append('    "' + (Esc-Json '**合法地删/改断言**（某个功能下线了、某条断言被合并了）→ 用下面这条命令重建，它会打印每个套件的增减：') + '",').Append($NL)
+    [void]$sb.Append('    "' + (Esc-Json '  powershell -ExecutionPolicy Bypass -File tools\run-browser-tests.ps1 -UpdateBaseline') + '",').Append($NL)
+    [void]$sb.Append('    "' + (Esc-Json '⚠️ 不许手改本文件来绕过守卫 —— 手改没有 diff 输出，下一个人查不到是谁、为什么放低了基线。') + '",').Append($NL)
+    [void]$sb.Append('    "' + (Esc-Json '⚠️ 有套件 FAIL 时 -UpdateBaseline 拒绝写入；它也不接受 -Filter（过滤跑会误删其他套件的基线）。') + '",').Append($NL)
+    [void]$sb.Append('    "' + (Esc-Json '**新增套件**：必须同时更新基线（不自动加入）。理由：自动加入等于让新套件的下限 = 它第一次跑出来的数，而那个数本身可能就是“断言被包住了”的结果 —— 强制人工看一眼“这个套件怎么只有 3 条断言”，正是这道守卫想让人做的事。') + '",').Append($NL)
+    [void]$sb.Append('    "' + (Esc-Json '**删除/改名套件**：同样必须更新基线。基线里有、本轮没跑的名字 = 红（否则套件被悄悄改名 = 覆盖静默蒸发）。') + '"').Append($NL)
+    [void]$sb.Append('  ],').Append($NL)
+    [void]$sb.Append('  "minAssertions": {').Append($NL)
     $keys = @($newMin.Keys)
     for ($i = 0; $i -lt $keys.Count; $i++) {
         $comma = if ($i -lt $keys.Count - 1) { ',' } else { '' }
-        [void]$sb.AppendLine('    "' + (Esc-Json $keys[$i]) + '": ' + $newMin[$keys[$i]] + $comma)
+        [void]$sb.Append('    "' + (Esc-Json $keys[$i]) + '": ' + $newMin[$keys[$i]] + $comma).Append($NL)
     }
-    [void]$sb.AppendLine('  }')
-    [void]$sb.AppendLine('}')
+    [void]$sb.Append('  }').Append($NL)
+    [void]$sb.Append('}').Append($NL)
     # 无 BOM 的 UTF-8（与仓库其它 .json 一致；Node / PS 都能读）
     [System.IO.File]::WriteAllText($baselinePath, $sb.ToString(), (New-Object System.Text.UTF8Encoding($false)))
     Write-Host "  已写入：$baselinePath" -ForegroundColor Green

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.GestureActionsTest" tests="29" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:50.349Z" hostname="WIN-LI9OE82Q5LO" time="0.28">
+  <properties/>
+  <testcase name="下一个 tab 依次走完六个页并回到第一个" classname="com.icar.obd.data.GestureActionsTest" time="0.012"/>
+  <testcase name="摘要文案认得出两个新动作" classname="com.icar.obd.data.GestureActionsTest" time="0.009"/>
+  <testcase name="默认值保持升级前的手感：右滑呼出 左滑收起 上下翻画布" classname="com.icar.obd.data.GestureActionsTest" time="0.009"/>
+  <testcase name="四个都是无时给出另一句，并提醒双击兜底还在" classname="com.icar.obd.data.GestureActionsTest" time="0.008"/>
+  <testcase name="旧配置缺这四个键时取默认值" classname="com.icar.obd.data.GestureActionsTest" time="0.009"/>
+  <testcase name="上一个 tab 依次倒着走完六个页并回到最后一个" classname="com.icar.obd.data.GestureActionsTest" time="0.01"/>
+  <testcase name="循环边界：最后一个的下一个是第一个、第一个的上一个是最后一个" classname="com.icar.obd.data.GestureActionsTest" time="0.011"/>
+  <testcase name="isTabAction 只认那两个，其余一律 false" classname="com.icar.obd.data.GestureActionsTest" time="0.012"/>
+  <testcase name="切 tab 两个动作能被写进配置并原样读回来" classname="com.icar.obd.data.GestureActionsTest" time="0.01"/>
+  <testcase name="设置页那一行的文案由 Settings 一处给出" classname="com.icar.obd.data.GestureActionsTest" time="0.011"/>
+  <testcase name="存下来的映射读回来一模一样，并且真的写进了 JSON" classname="com.icar.obd.data.GestureActionsTest" time="0.01"/>
+  <testcase name="两个新动作的默认值是「无」—— 升级不改变现有手感" classname="com.icar.obd.data.GestureActionsTest" time="0.012"/>
+  <testcase name="动作 id 与动作名一一对应，数量一致" classname="com.icar.obd.data.GestureActionsTest" time="0.013"/>
+  <testcase name="摘要文案与需求给的例子一致" classname="com.icar.obd.data.GestureActionsTest" time="0.014"/>
+  <testcase name="7 个动作全部往返：normalize 认得、actionName 有名、actionIndex 指得回自己" classname="com.icar.obd.data.GestureActionsTest" time="0.009"/>
+  <testcase name="斜着划按主轴判，不会因为横向先到阈值就当成横滑" classname="com.icar.obd.data.GestureActionsTest" time="0.009"/>
+  <testcase name="四个都配上时不补其余无" classname="com.icar.obd.data.GestureActionsTest" time="0.008"/>
+  <testcase name="旧配置缺新键时取默认值（仍然是旧的五个动作，不会是切 tab）" classname="com.icar.obd.data.GestureActionsTest" time="0.01"/>
+  <testcase name="认不得的当前页与非法位移都返回 null，不落回第一个" classname="com.icar.obd.data.GestureActionsTest" time="0.009"/>
+  <testcase name="没到阈值不触发 —— 返回 -1 而不是某个槽位" classname="com.icar.obd.data.GestureActionsTest" time="0.01"/>
+  <testcase name="认得的值原样保留" classname="com.icar.obd.data.GestureActionsTest" time="0.007"/>
+  <testcase name="可选动作是 7 个，且 id 与名都不重复" classname="com.icar.obd.data.GestureActionsTest" time="0.007"/>
+  <testcase name="认不得的值落回该槽位的默认值，而不是落回无" classname="com.icar.obd.data.GestureActionsTest" time="0.008"/>
+  <testcase name="六个 tab 各走一步都落在表内，且不会原地不动" classname="com.icar.obd.data.GestureActionsTest" time="0.008"/>
+  <testcase name="手改坏的映射落回默认，不会让手势失效" classname="com.icar.obd.data.GestureActionsTest" time="0.01"/>
+  <testcase name="setGestureAt 写进去的一定是合法 id" classname="com.icar.obd.data.GestureActionsTest" time="0.008"/>
+  <testcase name="四个方向各自判到正确的槽位" classname="com.icar.obd.data.GestureActionsTest" time="0.009"/>
+  <testcase name="循环顺序是仪表盘 连接 PID 规则 日志 知识库" classname="com.icar.obd.data.GestureActionsTest" time="0.007"/>
+  <testcase name="动作名与下标：认不得的当无" classname="com.icar.obd.data.GestureActionsTest" time="0.009"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.ui.view.NewControlDataBindingTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:53.076Z" hostname="WIN-LI9OE82Q5LO" time="0.02">
+  <properties/>
+  <testcase name="stale bus snapshot actually clears the composed value state and recovery works" classname="com.icar.obd.ui.view.NewControlDataBindingTest" time="0.004"/>
+  <testcase name="part snapshots include sources inside nested parts" classname="com.icar.obd.ui.view.NewControlDataBindingTest" time="0.0"/>
+  <testcase name="nested new gauges read their own bus values and clear failed or stale sources" classname="com.icar.obd.ui.view.NewControlDataBindingTest" time="0.005"/>
+  <testcase name="changed semantic source reaches the App using the changed id" classname="com.icar.obd.ui.view.NewControlDataBindingTest" time="0.003"/>
+  <testcase name="all fifteen factory exports resolve to enabled real data sources" classname="com.icar.obd.ui.view.NewControlDataBindingTest" time="0.004"/>
+  <testcase name="App save and parse preserves every nested binding" classname="com.icar.obd.ui.view.NewControlDataBindingTest" time="0.003"/>
+  <testcase name="complete snapshots remove disappeared sources instead of keeping last values" classname="com.icar.obd.ui.view.NewControlDataBindingTest" time="0.0"/>
+  <testcase name="invalid or unrelated samples cannot revive a composed readout" classname="com.icar.obd.ui.view.NewControlDataBindingTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

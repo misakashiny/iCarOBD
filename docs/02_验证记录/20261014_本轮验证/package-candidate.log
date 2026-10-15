@@ -1,0 +1,6 @@
+D:/AI Dsh/车机项目/iCarOBD2-交接备份/20261014-整理后交接包/候选检查/history.bundle is okay
+Traceback (most recent call last):
+  File "D:\AI Dsh\������Ŀ\iCarOBD2\stage\handoff-20261014\package.py", line 38, in <module>
+    assert result.returncode==0,name+' failed: '+str(out/(name+'.log'))
+           ^^^^^^^^^^^^^^^^^^^^
+AssertionError: doc-links failed: D:\AI Dsh\������Ŀ\iCarOBD2-���ӱ���\20261014-�����󽻽Ӱ�\��ѡ���\doc-links.log

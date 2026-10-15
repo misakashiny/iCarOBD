@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.PidModelsTest" tests="38" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:50.988Z" hostname="WIN-LI9OE82Q5LO" time="0.012">
+  <properties/>
+  <testcase name="优先级名称" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="优先级倍率：高更快 低更慢 未知按中" classname="com.icar.obd.data.PidModelsTest" time="0.001"/>
+  <testcase name="默认值不写出 JSON" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="RuleAction 未知类型原样返回" classname="com.icar.obd.data.PidModelsTest" time="0.001"/>
+  <testcase name="用户选的音频文件算音频文件" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="三个新字段 JSON 往返" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="modeInt 按十六进制解析" classname="com.icar.obd.data.PidModelsTest" time="0.001"/>
+  <testcase name="normalize 压空白并大写" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="内置音效名不算音频文件" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="gauge 的 p3 表示 N 秒后自动恢复" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="invalidRaw 的 null 与 0 必须区分" classname="com.icar.obd.data.PidModelsTest" time="0.001"/>
+  <testcase name="requestString 由 mode 与 pid 拼成" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="Rule 默认值与转向灯规则依赖的语义一致" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="customRequest 覆盖自动请求并同样规范化" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="选了文件但没存显示名时有兜底文案" classname="com.icar.obd.data.PidModelsTest" time="0.001"/>
+  <testcase name="requestString 也享受补零" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="dlcTooShort 只在配了 minDlc 时才判" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="hitsInvalidRaw 优先比位段原始值" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="旧 JSON 缺这三个字段时取默认值" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="三个新字段默认值都等于旧行为" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="pidBytes 计算 PID 占几个字节" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="PidDefinition JSON 往返保留 ecuIndex 与 priority" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="GaugeItem 默认半宽与圆形样式" classname="com.icar.obd.data.PidModelsTest" time="0.001"/>
+  <testcase name="PidValue 默认不判超时" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="RuleAction describe 覆盖全部六种动作" classname="com.icar.obd.data.PidModelsTest" time="0.001"/>
+  <testcase name="normalize 给单个十六进制字符补零" classname="com.icar.obd.data.PidModelsTest" time="0.001"/>
+  <testcase name="CHANGED 是边沿语义 没有上一帧时不触发" classname="com.icar.obd.data.PidModelsTest" time="0.001"/>
+  <testcase name="hitsInvalidRaw 在非 bitsAt 公式上退到物理值" classname="com.icar.obd.data.PidModelsTest" time="0.001"/>
+  <testcase name="空白 customRequest 视为未设置" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="音效描述对认不出的名字原样显示" classname="com.icar.obd.data.PidModelsTest" time="0.001"/>
+  <testcase name="p4 能过 JSON 往返，且为空时不写出" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="没配 invalidRaw 时永远不命中" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="六种比较操作符" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="fromSymbol 解析已知符号 未知符号回落 GT" classname="com.icar.obd.data.PidModelsTest" time="0.001"/>
+  <testcase name="选了文件时描述显示文件名而不是 URI" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="PidDefinition 默认值稳定" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="ecuIndex 默认 0 且优先级默认中" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <testcase name="normalize 不碰 AT 命令也不碰三位地址" classname="com.icar.obd.data.PidModelsTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

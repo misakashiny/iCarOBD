@@ -166,6 +166,8 @@ const ok = (c, m) => { c ? (pass++, console.log('  ✅ ' + m)) : (fail++, consol
   const lock = await cdp.eval(`(() => {
     const S = window.CanvasState;
     const out = {};
+    const m = window.nodeToCanvasMatrix();
+    const pixelRatio = n => n.w * m.a / (n.h * m.d);
     out.默认开 = S.aspectLock !== false;
     out.有函数 = typeof window.setAspectLock === 'function' && typeof window.fitNodeAspect === 'function';
 
@@ -180,7 +182,7 @@ const ok = (c, m) => { c ? (pass++, console.log('  ✅ ' + m)) : (fail++, consol
     n.x = 40; n.y = 40;
     out.素材比 = +(a.w / a.h).toFixed(3);
     out.初始 = n.w + 'x' + n.h;
-    out.初始比 = +(n.w / n.h).toFixed(3);
+    out.初始比 = +pixelRatio(n).toFixed(3);
 
     // 拖右下角：横向 +60，纵向 +60（自由拉伸会明显改变比例）
     //
@@ -213,29 +215,29 @@ const ok = (c, m) => { c ? (pass++, console.log('  ✅ ' + m)) : (fail++, consol
     // 1) 锁开（默认）：比例应当保持，而且**尺寸必须真的变了**
     out.拖拽模式 = dragCorner(2, 60, 60, false);
     out.锁开_尺寸 = n.w + "x" + n.h;
-    out.锁开_比 = +(n.w / n.h).toFixed(3);
+    out.锁开_比 = +pixelRatio(n).toFixed(3);
     out.锁开_确实变了 = (n.w !== 90);
 
     // 2) Alt 临时解锁：应当自由拉伸
-    n.w = 90; n.h = 90 / (a.w / a.h);
+    n.w = 90; n.h = 90 / (a.w / a.h) * m.a / m.d;
     dragCorner(2, 60, 60, true);
     out.Alt_尺寸 = n.w + "x" + n.h;
-    out.Alt_比 = +(n.w / n.h).toFixed(3);
+    out.Alt_比 = +pixelRatio(n).toFixed(3);
 
     // 3) 关掉锁：应当自由拉伸
     window.setAspectLock(false);
     out.关后_状态 = S.aspectLock;
-    n.w = 90; n.h = 90 / (a.w / a.h);
+    n.w = 90; n.h = 90 / (a.w / a.h) * m.a / m.d;
     dragCorner(2, 60, 60, false);
     out.关_尺寸 = n.w + "x" + n.h;
-    out.关_比 = +(n.w / n.h).toFixed(3);
+    out.关_比 = +pixelRatio(n).toFixed(3);
     window.setAspectLock(true);
     // 4) 恢复素材比例
     n.w = 200; n.h = 50;   // 故意压扁成 4:1（素材是别的比例）
     S.selection = [n.id];
     window.fitNodeAspect();
     out.恢复_尺寸 = n.w + 'x' + n.h;
-    out.恢复_比 = +(n.w / n.h).toFixed(3);
+    out.恢复_比 = +pixelRatio(n).toFixed(3);
 
     // 5) 属性面板里有开关
     window.renderProps();

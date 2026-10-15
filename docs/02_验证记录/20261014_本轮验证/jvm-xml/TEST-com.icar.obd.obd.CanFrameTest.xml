@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.obd.CanFrameTest" tests="23" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:51.160Z" hostname="WIN-LI9OE82Q5LO" time="0.004">
+  <properties/>
+  <testcase name="feedRepeated 的首次出现也算一次变化（与 feed 的判据一致）" classname="com.icar.obd.obd.CanFrameTest" time="0.0"/>
+  <testcase name="噪声行解析为 null" classname="com.icar.obd.obd.CanFrameTest" time="0.0"/>
+  <testcase name="原始帧 CSV 有中文表头且行数与原始帧数一致" classname="com.icar.obd.obd.CanFrameTest" time="0.001"/>
+  <testcase name="29 位 ID 在 CSV 里标记为 extended" classname="com.icar.obd.obd.CanFrameTest" time="0.0"/>
+  <testcase name="ID 长度不合法时返回 null" classname="com.icar.obd.obd.CanFrameTest" time="0.0"/>
+  <testcase name="feedLine 解析失败返回 false 且不改变状态" classname="com.icar.obd.obd.CanFrameTest" time="0.0"/>
+  <testcase name="聚合 CSV 有中文表头且行数与 ID 数一致" classname="com.icar.obd.obd.CanFrameTest" time="0.0"/>
+  <testcase name="数据变化会累加 changed" classname="com.icar.obd.obd.CanFrameTest" time="0.001"/>
+  <testcase name="clear 清空全部状态" classname="com.icar.obd.obd.CanFrameTest" time="0.0"/>
+  <testcase name="观察表 CSV 带 UTF-8 BOM" classname="com.icar.obd.obd.CanFrameTest" time="0.0"/>
+  <testcase name="聚合记录最长帧长度 供模板预填 DLC" classname="com.icar.obd.obd.CanFrameTest" time="0.0"/>
+  <testcase name="解析 29 位 ID 的帧" classname="com.icar.obd.obd.CanFrameTest" time="0.001"/>
+  <testcase name="feedRepeated 与重复调 feed 的结果逐字段相同" classname="com.icar.obd.obd.CanFrameTest" time="0.0"/>
+  <testcase name="原始流有界 超出丢最旧并计数" classname="com.icar.obd.obd.CanFrameTest" time="0.0"/>
+  <testcase name="不同 ID 分开聚合 并按次数从多到少排序" classname="com.icar.obd.obd.CanFrameTest" time="0.0"/>
+  <testcase name="大小写与多余空白都能容忍" classname="com.icar.obd.obd.CanFrameTest" time="0.0"/>
+  <testcase name="只有 ID 没有数据时返回 null" classname="com.icar.obd.obd.CanFrameTest" time="0.0"/>
+  <testcase name="时间戳记录首末" classname="com.icar.obd.obd.CanFrameTest" time="0.001"/>
+  <testcase name="feedRepeated 的 times 为 0 或负数时什么都不做" classname="com.icar.obd.obd.CanFrameTest" time="0.0"/>
+  <testcase name="解析 11 位 ID 的帧" classname="com.icar.obd.obd.CanFrameTest" time="0.0"/>
+  <testcase name="相同 ID 累加计数 数据不变时 changed 不涨" classname="com.icar.obd.obd.CanFrameTest" time="0.0"/>
+  <testcase name="非法的数据 token 拒绝整帧而不移动后续字节" classname="com.icar.obd.obd.CanFrameTest" time="0.0"/>
+  <testcase name="feedRepeated 不追加原始帧流（与 feed 不同，这是刻意的）" classname="com.icar.obd.obd.CanFrameTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

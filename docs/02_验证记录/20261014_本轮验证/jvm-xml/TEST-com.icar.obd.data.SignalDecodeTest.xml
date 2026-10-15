@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.SignalDecodeTest" tests="14" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:51.016Z" hostname="WIN-LI9OE82Q5LO" time="0.003">
+  <properties/>
+  <testcase name="十六进制串还原成字节" classname="com.icar.obd.data.SignalDecodeTest" time="0.001"/>
+  <testcase name="信号表生成的 bitsAt 形态也能解" classname="com.icar.obd.data.SignalDecodeTest" time="0.0"/>
+  <testcase name="单位为空时不留下多余空格" classname="com.icar.obd.data.SignalDecodeTest" time="0.0"/>
+  <testcase name="无效原始值比的是位段本身 不是物理值" classname="com.icar.obd.data.SignalDecodeTest" time="0.001"/>
+  <testcase name="text 的格式 —— 值加单位 候选单独标出" classname="com.icar.obd.data.SignalDecodeTest" time="0.0"/>
+  <testcase name="decodeAll 保留全部结论 包括候选与解不出的" classname="com.icar.obd.data.SignalDecodeTest" time="0.0"/>
+  <testcase name="DLC 不足 —— 不给值 说得出原因" classname="com.icar.obd.data.SignalDecodeTest" time="0.0"/>
+  <testcase name="读数格式 —— 整数不带小数点 小数最多 3 位且去尾零" classname="com.icar.obd.data.SignalDecodeTest" time="0.0"/>
+  <testcase name="命中无效原始值 —— 不给值 而不是解出一个像真的数字" classname="com.icar.obd.data.SignalDecodeTest" time="0.001"/>
+  <testcase name="公式解到帧外 —— 不给值 也不抛" classname="com.icar.obd.data.SignalDecodeTest" time="0.0"/>
+  <testcase name="按 CAN ID 建索引 —— 只收监听型 候选也要进来" classname="com.icar.obd.data.SignalDecodeTest" time="0.0"/>
+  <testcase name="header 为空时退到 pid —— 存量配置里有只填了 pid 的" classname="com.icar.obd.data.SignalDecodeTest" time="0.0"/>
+  <testcase name="候选 + 不可信 两种标记都要在" classname="com.icar.obd.data.SignalDecodeTest" time="0.0"/>
+  <testcase name="转向灯 —— 实车三帧解出 关 左 右" classname="com.icar.obd.data.SignalDecodeTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

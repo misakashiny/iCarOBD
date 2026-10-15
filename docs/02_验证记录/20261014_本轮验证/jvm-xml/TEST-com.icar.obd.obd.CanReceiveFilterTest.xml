@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.obd.CanReceiveFilterTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:51.166Z" hostname="WIN-LI9OE82Q5LO" time="0.001">
+  <properties/>
+  <testcase name="arbitrary adapter operations incomplete pairs and multiple commands are denied" classname="com.icar.obd.obd.CanReceiveFilterTest" time="0.001"/>
+  <testcase name="empty only means unfiltered and unsafe input has explicit error" classname="com.icar.obd.obd.CanReceiveFilterTest" time="0.0"/>
+  <testcase name="valid standard extended and complete mask pairs normalize to same commands" classname="com.icar.obd.obd.CanReceiveFilterTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

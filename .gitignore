@@ -35,3 +35,6 @@ dist/
 # ---- 签名材料（仓库里目前没有，但别哪天误提交）----
 *.jks
 *.keystore
+
+# Local iteration snapshot (contains embedded project documents)
+tools/iteration-board/index.html

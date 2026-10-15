@@ -12,6 +12,22 @@
 (function () {
   const S = window.CanvasState;
 
+  // Built-in image templates describe their visual aspect, unlike saved canvas geometry.
+  window.prepareBuiltinImages = function (node, nested) {
+    const cv = S.design.canvas;
+    if (node.type === window.NODE_IMAGE && cv.scaleMode !== window.SCALE_FIT && cv.scaleMode !== window.SCALE_FILL) {
+      const previous = node.w;
+      node.w = previous * cv.designH / cv.designW;
+      if (nested) node.x += (previous - node.w) / 2;
+    }
+    (node.children || []).forEach(child => window.prepareBuiltinImages(child, true));
+    return node;
+  };
+  window.BUILTIN_CONTROLS.forEach(control => {
+    const make = control.make;
+    control.make = () => window.prepareBuiltinImages(make(), false);
+  });
+
   function el(id) { return document.getElementById(id); }
   function esc(s) {
     return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -61,7 +77,7 @@
     head.innerHTML =
       '<span class="pbCaret" onclick="togglePanelCollapse(\'tree\')">' +
       (panelCollapsed.tree ? "▸" : "▾") + '</span>' +
-      '<span class="pbTitle" onclick="togglePanelCollapse(\'tree\')">控件树</span>' +
+      '<span class="pbTitle" onclick="togglePanelCollapse(\'tree\')">图层与控件</span>' +
       '<span class="pbCount">' + window.flatten(d.nodes).length + '</span>' +
       '<span class="pbBtn" onclick="event.stopPropagation();treeExpandAll(true)" title="展开全部节点">⊞</span>' +
       '<span class="pbBtn" onclick="event.stopPropagation();treeExpandAll(false)" title="折叠全部节点">⊟</span>';
@@ -336,6 +352,8 @@
     // ---- 名称
     out.push(row("名称", '<input value="' + attr(n.name) + '" oninput="setNodeStr(\'name\',this.value)">'));
 
+    if (n.type === window.NODE_GROUP) out.push(group("binding", "数据绑定", window.controlBindingFields(n, "setControlBinding")));
+
     // ---- 变换
     out.push(group("tf", "变换", [
       row("位置 x / y", numIn("x", n.x) + numIn("y", n.y)),
@@ -503,38 +521,11 @@
   }
 
   function gaugeFields(n) {
-    const pidOptions = (function () {
-      const groups = new Map();
-      Object.entries(window.PID_ALIASES).forEach(([alias, id]) => {
-        const info = window.BUILTIN_PIDS[id];
-        const g = info ? info.g : "其他";
-        if (!groups.has(g)) groups.set(g, []);
-        groups.get(g).push({ v: alias, l: alias + "  →  " + id + (info ? "  " + info.name : "") });
-      });
-      const tpl = Object.keys(window.BUILTIN_PIDS).filter(id => id.startsWith("tpl_"));
-      if (tpl.length) {
-        groups.set("厂家模板（未验证，直接写 id）",
-          tpl.map(id => ({ v: id, l: id + "  " + window.BUILTIN_PIDS[id].name })));
-      }
-      // ⚠️ 兜底项：当前 PID 既不是别名也不是模板（比如手填的厂家 PID），
-      // 否则 <select> 找不到匹配项会**显示空白**，看起来像没绑定。
-      const cur = n.rawPid || n.pid;
-      const known = Array.from(groups.values()).some(items => items.some(it => it.v === cur));
-      if (cur && !known) {
-        groups.set("当前（不在内置库）", [{ v: cur, l: cur + "  ⚠️ 不在内置 PID 库" }]);
-      }
-      let h = "";
-      groups.forEach((items, g) => {
-        h += '<optgroup label="' + attr(g) + '">';
-        items.forEach(it => { h += '<option value="' + attr(it.v) + '">' + esc(it.l) + '</option>'; });
-        h += '</optgroup>';
-      });
-      return h;
-    })();
+    const pidOptions = window.bindingPidOptions(n.rawPid, n.pid);
 
     return [
       row("PID", '<select onchange="setNodePid(this.value)">' + pidOptions + '</select>'),
-      row("PID id", '<input value="' + attr(n.rawPid || n.pid) + '" oninput="setNodePid(this.value)">'),
+      row("PID id", '<input value="' + attr(n.rawPid || n.pid) + '" onchange="setNodePid(this.value)">'),
       row("样式", '<select onchange="setNodeNum(\'style\',this.value)">' +
         window.STYLES.map(s => '<option value="' + s.v + '"' +
           (n.style === s.v ? " selected" : "") + '>' + s.v + ' · ' + s.n + '</option>').join("") +
@@ -1071,6 +1062,8 @@
     const d = S.design;
     if (!d || !d.assets) return;
     d.assets.forEach(a => {
+      const original = window.NEXT_LIBRARY && window.NEXT_LIBRARY.assets.find(b => b.path === a.path);
+      if (!a.data && original) a.data = original.data;
       if (S.assetUrls[a.id]) return;                 // 已有（导入的 objectURL / 缩略图）
       const url = a.data || a.path;
       if (url) window.loadAssetImage(a.id, url);
@@ -1314,6 +1307,9 @@
   };
 
   function renderAssets() {
+    const previousBody = el("assetsBody");
+    const scrollTop = previousBody ? previousBody.scrollTop : 0;
+    const scrollLeft = previousBody ? previousBody.scrollLeft : 0;
     const box = el("assets");
     if (!box) return;
     const d = S.design;
@@ -1349,26 +1345,32 @@ const hit = s => !q
     const head = '<div class="panelBar">' +
       '<span class="pbCaret" onclick="togglePanelCollapse(\'assets\')">' +
       (panelCollapsed.assets ? "▸" : "▾") + '</span>' +
-      '<span class="pbTitle" onclick="togglePanelCollapse(\'assets\')">素材库</span>' +
+      '<span class="pbTitle" onclick="togglePanelCollapse(\'assets\')">控件与素材</span>' +
       '<span class="pbCount">' + mine.length + (builtin.length ? " + " + builtin.length : "") + '</span>' +
       '<span class="pbBtn" onclick="event.stopPropagation();assetsExpandAll(true)" title="展开全部分类">⊞</span>' +
       '<span class="pbBtn" onclick="event.stopPropagation();assetsExpandAll(false)" title="折叠全部分类">⊟</span>' +
         // 分类的新建 / 排序 / 恢复（v2.19.0）。
         // 排序用 ↑↓ 而不是真拖动：分类标题是整行可点的折叠头，
         // 在它上面做 drag 会与"点一下折叠"打架（实测很容易误触发）。
-        '<span class="pbBtn" onclick="event.stopPropagation();addAssetKind()" title="新建分类">＋分类</span>' +
+        '<span class="pbBtn" onclick="event.stopPropagation();addAssetKind()" title="新建素材分类" aria-label="新建素材分类">＋</span>' +
         '<span class="pbBtn" onclick="event.stopPropagation();resetAssetKinds()" title="恢复出厂分类顺序">⟲</span>' +
       '</div>';
 
     let h = head + '<div class="panelScroll" id="assetsBody">' +
       '<div class="assetSearchWrap">' +
-      '<input id="assetSearch" placeholder="搜索控件 / 素材…" value="' + attr(assetQuery) + '"' +
+      '<input id="assetSearch" aria-label="搜索控件或素材" placeholder="搜索名称、拼音或首字母" value="' + attr(assetQuery) + '"' +
       ' oninput="setAssetQuery(this.value)">' +
       (q ? '<span class="tbtn" onclick="setAssetQuery(\'\')" title="清空">✕</span>' : '') +
       '</div>';
 
     // ================================================================ 控件库
-    const ctrls = window.BUILTIN_CONTROLS.filter(c => hit(c.name));
+    const fresh = window.BUILTIN_CONTROLS.filter(c => c.next && hit(c.name));
+    const ctrls = window.BUILTIN_CONTROLS.filter(c => !c.next && hit(c.name));
+    if (!q || fresh.length) {
+      h += '<div class="asection" id="nextLibrary">新控件 · 首批 5 类 / 3 种风格</div>';
+      h += assetFolder({key:"__next",icon:"◉",title:"原厂 / 运动 / 极简",count:fresh.length,
+        autoOpen:true,forceOpen:!!q,body:ctrlChipsHTML(fresh)});
+    }
     const saved = (d.controls || []).filter(c => hit(c.name));
     const ctrlTotal = ctrls.length + saved.length;
     if (!q || ctrlTotal) {
@@ -1470,8 +1472,7 @@ const hit = s => !q
     });
     if (q && !anyKind) h += '<div class="akempty">没有匹配的素材</div>';
 
-    h += '<div class="hint">内置示例是<b>几何图形</b>（不含任何车标），可直接用。' +
-      '导入自己的图请点分类上的 ＋。整个 <code>assets/</code> 要和设计文件一起拷贝。</div>';
+    h += '<details class="helpDetails"><summary>添加与导入说明</summary><div class="hint">拖到画布直接添加，点击控件先编辑。分类旁的 ＋ 可导入图片。保存设计后，请一起保存 <code>assets/</code>，或使用“打包素材”。</div></details>';
 
     h += '</div>';   // 关掉 panelScroll
     // 底部的拖拽手柄：调整素材库高度（否则展开会把控件树挤出去）
@@ -1479,6 +1480,8 @@ const hit = s => !q
 
     box.innerHTML = h;
     applyPanelCollapse("assets");
+    const nextBody = el("assetsBody");
+    if (nextBody) { nextBody.scrollTop = scrollTop; nextBody.scrollLeft = scrollLeft; }
   }
 
   // ================================================================ 面板折叠 / 高度
@@ -1711,6 +1714,7 @@ window.useBuiltinAsset = function (path) {
     });
     if (!open || (d && (d.controls || []).length)) collapsed["ak:__myctrl"] = !open;
     collapsed["ak:__ctrl"] = !open;         // 内置控件永远有内容
+    collapsed["ak:__next"] = !open;
     saveCollapsed();
     renderAssets();
     const skipped = open ? window.assetKindList().filter(k => !has(k.v)).length : 0;
@@ -1805,94 +1809,56 @@ window.useBuiltinAsset = function (path) {
     addImageNode(assetId);
   };
 
+  // 图像比例是像素比例；stretch 的横纵节点单位对应不同像素长度。
+  function imageNodeAspect(nat) {
+    const c = S.design.canvas;
+    const ar = nat[0] / nat[1];
+    return c.scaleMode === window.SCALE_FIT || c.scaleMode === window.SCALE_FILL
+      ? ar : ar * c.designH / c.designW;
+  }
+  window.imageNodeAspect = imageNodeAspect;
+
+  function imageNodeSize(nat) {
+    const ar = imageNodeAspect(nat);
+    let w = ar >= 1 ? 90 : 90 * ar;
+    let h = ar >= 1 ? 90 / ar : 90;
+    // 整体缩放，长边上限优先于可点击短边，不分别夹取尺寸。
+    const grow = Math.max(1, 12 / Math.min(w, h));
+    w *= grow; h *= grow;
+    const shrink = Math.min(1, 355 / Math.max(w, h));
+    return { w: Number((w * shrink).toFixed(4)), h: Number((h * shrink).toFixed(4)) };
+  }
+
   window.addImageNode = function (assetId) {
     const a = assetId ? (S.design.assets || []).find(x => x.id === assetId) : null;
-    // ⚠️ **必须按比例缩放**（用户报的"添加进去全都是扁的"就是这个）。
-    //
-    // 原来的写法是 w 与 h **各自独立夹取**：
-    //   w = clamp(a.w / a.h * 90, 40, 200)
-    //   h = clamp(90, 40, 200)   // 恒等于 90
-    // 于是任何宽高比超出 40/90 ~ 200/90 的素材都被压扁 ——
-    // 256×64 的横条（比例 4.0）会变成 200×90（比例 2.2）。
-    //
-    // 正确做法：先定"最长边 = 90"，另一边按比例算；
-    // 夹取时**两边一起乘同一个系数**，比例才不会被破坏。
-    let w = 90, h = 90;
     const nat = naturalSizeOf(a, assetId);
-    if (nat) {
-      const ar = nat[0] / nat[1];
-      const LONG = 90;
-      // 这里不用 MIN/MAX 直接夹 w、h —— 那会**各自独立**夹，比例就废了。
-      // 全程只算一个**整体缩放系数 k**。
-      if (ar >= 1) { w = LONG; h = LONG / ar; }
-      else { h = LONG; w = LONG * ar; }
-
-      // ① 短边不能小于 MIN：太细的素材（比如 1×256 的分隔线）会窄到点不中。
-      const MIN = 12;
-      if (w < MIN) { const k = MIN / w; w *= k; h *= k; }
-      if (h < MIN) { const k = MIN / h; w *= k; h *= k; }
-
-      // ② ⚠️ **长边不能超过画布**（v2.48.0 修）。
-      //
-      // 上面那条 MIN 是"整体放大"，比例越极端放得越大：
-      //   256×8 的分隔线（比 32）→ 90×2.8 → 撑短边到 12 → **384×12**
-      //   而画布只有 **360** 宽 —— 加进去就比整个画布还宽，直接被裁掉。
-      //
-      // **这条优先于 MIN**：宁可短边略低于 12，也不能让节点超出画布。
-      // （比 29.6 更极端的比例下两条约束无法同时满足，必须选一个。）
-      const CAP = 355;   // 留 5 个单位的余量
-      const longSide = Math.max(w, h);
-      if (longSide > CAP) { const k = CAP / longSide; w *= k; h *= k; }
-
-      w = Math.round(w); h = Math.round(h);
-      // 取整后可能又超一点点，再夹一次（比例已经定型，这次只影响 1 个单位以内）
-      if (Math.max(w, h) > CAP) { if (w >= h) w = CAP; else h = CAP; }
-    }
-    // else：素材既没有 w/h、位图也没加载 —— 只能先用正方形兜底。
-    // 这不是"正确"的尺寸，所以补一次**异步重算**（见下面的 refitImageNode）。
+    const size = imageNodeSize(nat || [1, 1]);
+    let node;
     window.commit(() => {
-      const n = window.createNode(window.NODE_IMAGE, {
+      node = window.createNode(window.NODE_IMAGE, {
         name: a ? a.name.replace(/\.[^.]+$/, "") : "图片",
-        assetId: assetId || "",
-        x: 20, y: 20, w: w, h: h,
-        z: nextTopZ(),
+        assetId: assetId || "", x: 20, y: 20, w: size.w, h: size.h, z: nextTopZ(),
       });
-      S.design.nodes.push(n);
-      S.selection = [n.id];
+      S.design.nodes.push(node);
+      S.selection = [node.id];
     }, "添加图片控件");
-
-    // ⚠️ **没有自然尺寸时，靠位图异步补算**（v2.48.0）。
-    //
-    // 上面 `nat` 为 null 时只能给 90×90 正方形 —— 而正方形对一张
-    // 256×8 的分隔线来说就是"扁掉"（用户报的就是这个）。
-    // 素材的位图是**异步加载**的，等它到了再按真实比例修一次。
-    if (!nat && assetId) refitImageNodeWhenBitmapReady(assetId);
+    if (!nat && assetId) refitImageNodeWhenBitmapReady(assetId, node);
   };
 
-  /**
-   * 位图到位后，把刚加进画布的节点按**真实比例**重修一次。
-   *
-   * 只在 `addImageNode` 拿不到自然尺寸时才会走到这里。
-   * 最多等 3 秒（位图可能在设计文件里，加载更慢）。
-   */
-  function refitImageNodeWhenBitmapReady(assetId) {
+  // 延迟补算只作用于本次新增且尚未手动改变几何的节点，不找同素材的第一张方图。
+  function refitImageNodeWhenBitmapReady(assetId, node) {
+    const design = S.design;
+    const initial = [node.x, node.y, node.w, node.h, node.rotation, node.scale];
     let tries = 0;
     const tick = () => {
+      if (S.design !== design || !design.nodes.includes(node) || node.assetId !== assetId ||
+          [node.x, node.y, node.w, node.h, node.rotation, node.scale].some((v, i) => v !== initial[i])) return;
       tries++;
-      const bmp = window.assetBitmap ? window.assetBitmap(assetId) : null;
-      if (bmp && bmp.naturalWidth > 0 && bmp.naturalHeight > 0) {
-        const n = S.design.nodes.find(x => x.assetId === assetId && x.w === x.h);
-        if (n) {
-          const ar = bmp.naturalWidth / bmp.naturalHeight;
-          const LONG = 90, MIN = 12, CAP = 355;
-          let w, h;
-          if (ar >= 1) { w = LONG; h = LONG / ar; } else { h = LONG; w = LONG * ar; }
-          if (w < MIN) { const k = MIN / w; w *= k; h *= k; }
-          if (h < MIN) { const k = MIN / h; w *= k; h *= k; }
-          const longSide = Math.max(w, h);
-          if (longSide > CAP) { const k = CAP / longSide; w *= k; h *= k; }
-          window.commit(() => { n.w = Math.round(w); n.h = Math.round(h); }, "按真实比例修正素材尺寸");
-        }
+      const nat = naturalSizeOf(null, assetId);
+      if (nat) {
+        const size = imageNodeSize(nat);
+        if (size.w !== node.w || size.h !== node.h)
+          window.commit(() => { node.w = size.w; node.h = size.h; }, "按真实比例修正素材尺寸");
         return;
       }
       if (tries < 30) setTimeout(tick, 100);
@@ -1911,6 +1877,11 @@ window.useBuiltinAsset = function (path) {
    */
   function naturalSizeOf(a, assetId) {
     if (a && a.w > 0 && a.h > 0) return [a.w, a.h];
+    // 导入图片用 objectURL，重开后用缩略图 URL；不能只查磁盘 path。
+    const loaded = assetId && S.imgCache[S.assetUrls[assetId]];
+    if (loaded && loaded.complete && loaded.naturalWidth > 0 && loaded.naturalHeight > 0) {
+      return [loaded.naturalWidth, loaded.naturalHeight];
+    }
     const bmp = assetId && window.assetBitmap ? window.assetBitmap(assetId) : null;
     if (bmp && bmp.naturalWidth > 0 && bmp.naturalHeight > 0) {
       return [bmp.naturalWidth, bmp.naturalHeight];

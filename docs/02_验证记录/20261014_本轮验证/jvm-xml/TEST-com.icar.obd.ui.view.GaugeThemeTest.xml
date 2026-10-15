@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.ui.view.GaugeThemeTest" tests="36" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:52.789Z" hostname="WIN-LI9OE82Q5LO" time="0.268">
+  <properties/>
+  <testcase name="未知 id 回落到内置第一套" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.012"/>
+  <testcase name="asCustom 只改 id 标题与标记 颜色不动" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.008"/>
+  <testcase name="跟随主题时返回自身不做任何改动" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.006"/>
+  <testcase name="themeColors 里字段类型不对 —— 不崩，且拿到一个可用主题" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.008"/>
+  <testcase name="自建主题会出现在 all 与 of 里" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.008"/>
+  <testcase name="别名能反查回同一个主题" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.012"/>
+  <testcase name="nextCustomId 从 CUSTOM_ID_BASE 起且不重复" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.006"/>
+  <testcase name="设计文件没有 themeColors —— 用设置里的主题" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.008"/>
+  <testcase name="未知别名返回 null 而不是崩" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.007"/>
+  <testcase name="自建主题没有别名" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.009"/>
+  <testcase name="有 themeColors —— 内嵌配色优先于设置里的主题" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.006"/>
+  <testcase name="不画卡片的判定不需要 Android 桩" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.006"/>
+  <testcase name="asCustom 会带上无边框设置" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.007"/>
+  <testcase name="未知覆盖值回落到跟随主题而不是崩" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.007"/>
+  <testcase name="损坏的自建主题 JSON 被跳过而不是崩" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.009"/>
+  <testcase name="别名与内置主题一一对应" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.007"/>
+  <testcase name="parse 能把 themeColors 读出来（优先级的前提）" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.008"/>
+  <testcase name="旧主题缺新字段时保持有边框不透明" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.009"/>
+  <testcase name="十六进制颜色解析正确" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.007"/>
+  <testcase name="无边框只去描边保留底色" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.007"/>
+  <testcase name="内置三套主题 id 与顺序稳定" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.007"/>
+  <testcase name="settingsId 越界且没有内嵌配色 —— 退回内置第一个（霓虹）" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.007"/>
+  <testcase name="JSON 往返保留全部字段" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.008"/>
+  <testcase name="覆盖不会改动原主题对象" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.007"/>
+  <testcase name="设计文件为空 —— 用设置里的主题" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.006"/>
+  <testcase name="缺字段的 JSON 用兜底值而不是崩" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.006"/>
+  <testcase name="完全透明同时去描边和底色" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.007"/>
+  <testcase name="自建主题的 id 写进设计文件会被判定为主题不存在" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.007"/>
+  <testcase name="内置主题的别名是冻结的契约" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.007"/>
+  <testcase name="内嵌配色与&quot;不存在的主题 id&quot;共存 —— 内嵌仍然优先" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.007"/>
+  <testcase name="themeColors 是字符串 —— 当成没有，退回设置主题" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.006"/>
+  <testcase name="设计文件是坏 JSON —— 退回设置主题，不抛异常" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.006"/>
+  <testcase name="themeColors 只给一个字段 —— 那一个生效，其余退回内置霓虹" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.008"/>
+  <testcase name="别名能写进设计文件并原样往返" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.008"/>
+  <testcase name="themeColors 是数组 —— 也当成没有" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.006"/>
+  <testcase name="无边框与透明卡片参数能 JSON 往返" classname="com.icar.obd.ui.view.GaugeThemeTest" time="0.006"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

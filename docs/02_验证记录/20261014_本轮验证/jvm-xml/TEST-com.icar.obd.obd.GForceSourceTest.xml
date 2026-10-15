@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.obd.GForceSourceTest" tests="15" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:51.467Z" hostname="WIN-LI9OE82Q5LO" time="0.044">
+  <properties/>
+  <testcase name="正限幅首拍应为 0_6 G 且原始输入确实超限" classname="com.icar.obd.obd.GForceSourceTest" time="0.015"/>
+  <testcase name="首拍 零初态 正 36 kmh 1 s 应为 0_30591485 G" classname="com.icar.obd.obd.GForceSourceTest" time="0.001"/>
+  <testcase name="无参 onCycle 的生产调用应保持默认时钟行为" classname="com.icar.obd.obd.GForceSourceTest" time="0.014"/>
+  <testcase name="单次跳变后恒速 应逐拍按 0_7 衰减" classname="com.icar.obd.obd.GForceSourceTest" time="0.001"/>
+  <testcase name="gforce 应非负且等于纯纵向路径的 abs gy" classname="com.icar.obd.obd.GForceSourceTest" time="0.0"/>
+  <testcase name="负限幅首拍应为 负 0_6 G" classname="com.icar.obd.obd.GForceSourceTest" time="0.0"/>
+  <testcase name="持续限幅输入稳态应到 2 G 而不是 0_6 G" classname="com.icar.obd.obd.GForceSourceTest" time="0.005"/>
+  <testcase name="首拍 零初态 负 36 kmh 1 s 应为 负 0_30591485 G" classname="com.icar.obd.obd.GForceSourceTest" time="0.001"/>
+  <testcase name="持续负向限幅输入稳态应到 负 2 G 而不是 负 0_6 G" classname="com.icar.obd.obd.GForceSourceTest" time="0.002"/>
+  <testcase name="非车速模式 不应写入任何派生通道" classname="com.icar.obd.obd.GForceSourceTest" time="0.0"/>
+  <testcase name="车速路径的 gx 应随残留 fx 衰减并最终收敛到 0" classname="com.icar.obd.obd.GForceSourceTest" time="0.003"/>
+  <testcase name="首次采样 无历史车速 应不产生任何派生通道" classname="com.icar.obd.obd.GForceSourceTest" time="0.0"/>
+  <testcase name="车速路径零初态时 gx 应恒为 0" classname="com.icar.obd.obd.GForceSourceTest" time="0.0"/>
+  <testcase name="dt 超出 0_05 到 5 秒窗口时 应跳过输出但照常写回时间戳" classname="com.icar.obd.obd.GForceSourceTest" time="0.0"/>
+  <testcase name="变化 dt 下应按各拍实际 dt 逐拍递推" classname="com.icar.obd.obd.GForceSourceTest" time="0.002"/>
+  <system-out><![CDATA[[T2-noarg] before=1791962091483 after=1791962091486 writtenTs=1791962091486 gy=0.3049999
+]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

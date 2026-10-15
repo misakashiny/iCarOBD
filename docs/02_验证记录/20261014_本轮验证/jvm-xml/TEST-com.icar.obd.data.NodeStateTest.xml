@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.NodeStateTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:50.782Z" hostname="WIN-LI9OE82Q5LO" time="0.002">
+  <properties/>
+  <testcase name="引用了不在清单里的素材只给警告" classname="com.icar.obd.data.NodeStateTest" time="0.001"/>
+  <testcase name="文件里写了低于下限的闪烁周期 也必须抬到 400ms" classname="com.icar.obd.data.NodeStateTest" time="0.0"/>
+  <testcase name="素材清单为空时不报缺失警告 —— 无法判断就不乱说" classname="com.icar.obd.data.NodeStateTest" time="0.0"/>
+  <testcase name="60ms 这个老下限不能再生效 —— 反证" classname="com.icar.obd.data.NodeStateTest" time="0.0"/>
+  <testcase name="MIN_BLINK_MS 换算成频率不超过每秒三次 —— WCAG 2_3_1" classname="com.icar.obd.data.NodeStateTest" time="0.0"/>
+  <testcase name="合规的闪烁周期原样保留 —— 只抬下限 不改上限" classname="com.icar.obd.data.NodeStateTest" time="0.001"/>
+  <testcase name="三个状态都受下限约束" classname="com.icar.obd.data.NodeStateTest" time="0.0"/>
+  <testcase name="缺省 blinkMs 落在下限上 而不是 200" classname="com.icar.obd.data.NodeStateTest" time="0.0"/>
+  <testcase name="没有 states 时返回 null 而不是空表" classname="com.icar.obd.data.NodeStateTest" time="0.0"/>
+  <testcase name="alpha 被夹在 0 到 255" classname="com.icar.obd.data.NodeStateTest" time="0.0"/>
+  <testcase name="三个状态都读进来" classname="com.icar.obd.data.NodeStateTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

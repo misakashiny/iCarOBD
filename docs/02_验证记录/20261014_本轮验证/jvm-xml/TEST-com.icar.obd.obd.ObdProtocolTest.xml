@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.obd.ObdProtocolTest" tests="58" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:51.516Z" hostname="WIN-LI9OE82Q5LO" time="0.01">
+  <properties/>
+  <testcase name="切到厂家模块要发 ATSH" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="否定响应被识别成可读原因" classname="com.icar.obd.obd.ObdProtocolTest" time="0.001"/>
+  <testcase name="NRC 按码判断而不是按中文名" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="parse NO DATA 时 ok 为 false 并给出原因" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="清故障码 mode 04 必须被拦下" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="ELM327 已重组的单帧 VIN 响应" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="空白响应返回 null" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="ISO-TP 多帧重组 带 29 位 CAN 头" classname="com.icar.obd.obd.ObdProtocolTest" time="0.001"/>
+  <testcase name="NO DATA 是「本车不支持」的证据" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="scanCandidates 宽度按模式决定" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="响应模式与 PID 都对但后面没有数据字节时返回空数组" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="响应模式匹配但 PID 对不上时走兜底分支" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="负数 ecuIndex 视为第一个" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="默认广播头不发切换命令" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="明确的 NRC 算不支持，暂时性的 NRC 不算" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="肯定响应与无数据串都不算否定响应" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="标准响应 ATH0" classname="com.icar.obd.obd.ObdProtocolTest" time="0.001"/>
+  <testcase name="ISO-TP 多帧重组 ATH0 带空格" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="modeInt 按十六进制解析且非法值回落 01" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="超时不是「本车不支持」的证据" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="切回广播必须显式发命令" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="ISO-TP 多帧重组 ATS0 无空格" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="安全模式放行" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="要第 N 个但不够 N 个时返回 null 而不是退回第一个" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="parse 响应无数据字节" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="带 CAN 头的响应 ATH1 也能解析" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="请求串构造" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="ISO-TP 序号不连续时不重组出完整载荷" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="响应里完全没有响应模式时返回 null" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="各种 ELM327 错误关键字都返回 null" classname="com.icar.obd.obd.ObdProtocolTest" time="0.001"/>
+  <testcase name="冒号与换行分隔也能解析" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="reassembleIsoTp 对缺续帧返回 null" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="isError 判定大小写不敏感" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="带帧序号前缀的响应不走 ISO-TP 重组" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="parse 把否定响应写进 error 而不是笼统的无有效响应" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="parse 公式取不到数据字节时报公式错误而不是崩溃" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="多 ECU 响应可以按序号选择" classname="com.icar.obd.obd.ObdProtocolTest" time="0.001"/>
+  <testcase name="parse 冷却液温度" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="危险模式判定兼容前导零与空白" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="总线与连接错误不是「本车不支持」的证据" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="NO DATA 返回 null" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="ecuIndex 不影响单 ECU 的正常解析" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="数据里的 0x7F 不误报" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="正常的十六进制响应不是不支持" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="parse 对 NO DATA 仍然报无有效响应" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="parse 车速" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="parse 转速" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="危险模式全部被拦截" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="reassembleIsoTp 空列表返回 null" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="parse 公式错误时 ok 为 false 并回传公式错误文案" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="协议 0 表示自动协商" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="初始化不得关闭 CAN 自动格式化" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="SEARCHING 噪声行不会被误当成多帧" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="Mode 22 四字节 PID 也能匹配" classname="com.icar.obd.obd.ObdProtocolTest" time="0.001"/>
+  <testcase name="SEARCHING 噪声被剔除且不会污染字节" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="初始化序列以 CR 结尾并包含协议选择" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="reassembleIsoTp 对单帧返回 null" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <testcase name="未知 NRC 如实报十六进制而不是编一个说明" classname="com.icar.obd.obd.ObdProtocolTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

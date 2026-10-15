@@ -18,18 +18,18 @@
   "minAssertions": {
     "verify-asset-audit": 35,
     "verify-assets": 50,
-    "verify-bugfix": 37,
+    "verify-bugfix": 1024,
     "verify-cats": 20,
     "verify-cats2": 21,
-    "verify-crosslang": 169,
+    "verify-crosslang": 174,
     "verify-feat2": 39,
-    "verify-features": 62,
+    "verify-features": 93,
     "verify-fields": 18,
     "verify-fix": 21,
     "verify-font": 45,
     "verify-geo": 27,
     "verify-group": 34,
-    "verify-lamp-state": 54,
+    "verify-lamp-state": 97,
     "verify-layout": 58,
     "verify-more": 15,
     "verify-pack": 111,
@@ -38,7 +38,7 @@
     "verify-pid": 24,
     "verify-props": 11,
     "verify-rename": 32,
-    "verify-spring": 195,
+    "verify-spring": 196,
     "verify-studio2": 46,
     "verify-theme": 23,
     "verify-tokens": 251,
@@ -48,6 +48,9 @@
     "verify-assets-wiring": 72,
     "verify-asset-gen": 27,
     "verify-bands": 131,
-    "verify-v291": 82
+    "verify-v291": 82,
+    "verify-next-library": 90,
+    "verify-control-files": 1145,
+    "verify-data-bindings": 217
   }
 }

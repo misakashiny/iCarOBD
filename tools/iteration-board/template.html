@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iCarOBD · 迭代看板</title>
+<style>
+:root{color-scheme:dark;--bg:#0d141c;--panel:#151f2b;--line:#29384a;--text:#e5edf7;--muted:#99abc0;--green:#8edeb9;--amber:#ffc77b;--blue:#96c9ff}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Microsoft YaHei",system-ui,sans-serif}header{padding:32px max(24px,calc((100vw - 1200px)/2));border-bottom:1px solid var(--line);background:linear-gradient(120deg,#172c3c,#101925)}h1{font-size:30px;letter-spacing:-1px;margin:5px 0}h2{font-size:20px;margin:0 0 18px}h3{font-size:16px;margin:0 0 8px}p{margin:6px 0 12px}.eyebrow{color:var(--green);font-size:12px;letter-spacing:2px}.muted,small{color:var(--muted)}main{max-width:1250px;margin:auto;padding:24px}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.card{padding:22px;background:var(--panel);border:1px solid var(--line);border-radius:14px}.wide{grid-column:1/-1}.label{font-size:12px;color:var(--muted);margin-bottom:10px}.tag{display:inline-block;padding:3px 12px;border-radius:20px;border:1px solid #735734;color:var(--amber);background:#352a1b;font-size:13px}.tag.pass{color:var(--green);background:#183c30;border-color:#335e4c}button,input,select{font:inherit}button{color:var(--blue);background:#1d3043;border:1px solid #36536e;border-radius:8px;padding:6px 12px;cursor:pointer}button:hover{background:#294561}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--green);outline-offset:3px}nav{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:22px}nav button.active{color:#0e1b21;background:var(--green)}.section{margin-top:26px}.step,.verify,.release{border-top:1px solid var(--line);padding:15px 0}.step:first-child,.verify:first-child,.release:first-child{border-top:0}.row{display:flex;align-items:center;justify-content:space-between;gap:16px}.step p,.verify p{color:var(--muted);margin:5px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#0f1822;padding:16px;border-radius:8px;font:13px/1.7 Consolas,"Microsoft YaHei",monospace}.filters{display:flex;gap:12px;margin-bottom:16px}input,select{color:var(--text);background:#111b27;border:1px solid var(--line);border-radius:8px;padding:10px;width:100%}.docs{display:grid;grid-template-columns:290px 1fr;gap:18px}.doclist{max-height:650px;overflow:auto}.doclist button{display:block;width:100%;text-align:left;margin:0 0 6px;overflow-wrap:anywhere}.reader{min-height:350px}.reader pre{max-height:700px;overflow:auto}.empty{color:var(--muted);padding:20px}footer{color:var(--muted);font-size:12px;margin:26px 0}.view[hidden]{display:none}details summary{cursor:pointer;color:var(--blue)}@media(max-width:800px){.grid{grid-template-columns:1fr}.docs{grid-template-columns:1fr}.doclist{max-height:240px}main{padding:16px}header{padding:24px}.row{align-items:flex-start}h1{font-size:26px}}
+</style>
+<style>@media(max-width:800px){#validation{grid-column:1/-1!important}}.source-note{font-size:12px;color:var(--muted)}details p{font-size:14px}</style>
+</head>
+<body>
+<header><div class="eyebrow">ICAROBD / ITERATION</div><h1>这轮改进了什么</h1><div id="snapshot" class="muted"></div><small>文档与 Git 的本地快照 · 修改后重新双击“打开迭代看板.cmd”获取最新内容</small></header>
+<main><nav aria-label="看板导航"><button class="active" data-view="overview">本轮改进</button><button data-view="roadmap">后续计划</button><button data-view="history">版本记录</button><button data-view="documents">文档与证据</button><button data-view="changes">工作区改动</button></nav>
+<section id="overview" class="view"><div class="card wide"><div class="row"><div><div id="taskid" class="eyebrow"></div><h2 id="title"></h2></div><span id="review" class="tag"></span></div><button data-doc="TASK.md">查看当前任务</button> <button data-doc="STATUS.md">查看审查与执行证据</button></div><div class="grid section"><article class="card"><div class="label">01 / 改进前</div><p id="before"></p></article><article class="card"><div class="label">02 / 当前变化</div><p id="after"></p></article><article class="card"><div class="label">03 / 还差什么</div><p id="remaining"></p></article></div><div class="grid section"><article class="card" style="grid-column:span 2" id="validation"><h2>验证与审查</h2><div id="verification"></div></article><article class="card"><h2>文档同步</h2><div id="docchanges"></div></article></div></section>
+<section id="roadmap" class="view" hidden><article class="card"><h2>协作计划</h2><p class="muted">未显式标注完成的里程碑保持待安排，具体前置与验收以原文为准。</p><div id="milestones"></div><button data-doc="docs/03-迭代清单.md">项目完整迭代清单</button></article></section>
+<section id="history" class="view" hidden><article class="card"><h2>近期版本变化</h2><p class="muted">历史版本事实独立于当前任务的验证结果；标题和详情直接来自两份 CHANGELOG。</p><div id="releases"></div></article></section>
+<section id="documents" class="view" hidden><div class="filters"><input id="search" type="search" aria-label="搜索文档" placeholder="搜索文档名称或内容，例如 G 值、上车、主题"><select id="scope" aria-label="文档分组"><option value="all">所有文档</option><option value="root">协作文件</option><option value="docs/">项目文档</option><option value="tools/">工具文档</option></select></div><div class="docs"><aside class="doclist" id="doclist"></aside><article class="card reader"><h2 id="docname">选择一份文档</h2><p class="muted">保留原始内容，便于核对证据。无需另外打开文件。</p><pre id="doctext"></pre></article></div></section>
+<section id="changes" class="view" hidden><article class="card"><h2>当前工作区</h2><p class="muted">包含本轮与既有改动，不自动归因于当前任务。统计只含已跟踪的未暂存差异；未跟踪文件另列。条目多寡不代表功能完成度。</p><h3>文件状态（M 修改 / ?? 未跟踪）</h3><pre id="gitstatus"></pre><h3>差异统计</h3><pre id="diffstat"></pre><h3>最近提交</h3><pre id="commits"></pre></article></section>
+<footer>阅读辅助摘要以 STATUS.md 为来源；TASK.md、PLAN.md 与专题文档保留原有权威。此页面不会运行测试或改变项目文件。</footer></main>
+<script>
+'use strict';
+const DATA = /* SNAPSHOT_DATA */;
+const $ = id => document.getElementById(id);
+const put = (id, value) => { $(id).textContent = value; };
+function element(tag, text, className) { const el = document.createElement(tag); if(text !== undefined)el.textContent = text;if(className)el.className=className;return el; }
+function show(view) { document.querySelectorAll('.view').forEach(el => el.hidden = el.id !== view);document.querySelectorAll('nav button').forEach(el => el.classList.toggle('active',el.dataset.view===view)); }
+function openDoc(file, text) { show('documents');put('docname',file);put('doctext',text ?? DATA.sources[file] ?? '该文档未包含在快照中。'); }
+function docButton(label,file,text) { const b=element('button',label);b.addEventListener('click',()=>openDoc(file,text));return b; }
+const s=DATA.summary;
+put('snapshot','快照：'+new Date(DATA.generated).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})+'（北京时间） · 摘要登记：'+(s.updated || '未记录'));
+['title','before','after','remaining','review'].forEach(key=>put(key,s[key]));put('taskid',s.taskId);
+['before','after','remaining'].forEach(key=>{if(s[key].length>150){put(key,s[key].slice(0,150)+'…');const d=element('details');d.append(element('summary','展开完整摘要'),element('p',s[key]));$(key).after(d);}});
+$('verification').before(element('p','以下状态来自 STATUS.md 摘要登记；执行端报告仍需规划端复核。','source-note'));
+$('review').classList.toggle('pass',s.review==='审查通过');
+s.verification.forEach(v=>{const row=element('div',undefined,'verify');const head=element('div',undefined,'row');head.append(element('h3',v.name),element('span',v.state,'tag'));row.append(head,element('p',v.detail));$('verification').append(row);});
+s.docs.forEach(d=>{const row=element('div',undefined,'step');row.append(docButton(d.file,d.file),element('p',d.change));$('docchanges').append(row);});
+DATA.milestones.forEach(m=>{const row=element('div',undefined,'step');row.append(element('h3',m.title),element('p',m.status),docButton('查看判据','PLAN.md',m.text));$('milestones').append(row);});
+DATA.releases.forEach(r=>{const row=element('div',undefined,'release');row.append(element('small',r.file.startsWith('tools/')?'ICarUI 工具':'Android App'),element('h3',r.title),docButton('展开该版本原文',r.file,r.text));$('releases').append(row);});
+function renderDocs(){const q=$('search').value.toLocaleLowerCase();const scope=$('scope').value;const list=$('doclist');list.replaceChildren();Object.entries(DATA.sources).filter(([file,text])=>(scope==='all'||(scope==='root'?!file.includes('/'):file.startsWith(scope)))&&(!q||(file+'\n'+text).toLocaleLowerCase().includes(q))).forEach(([file])=>list.append(docButton(file,file)));if(!list.children.length)list.append(element('p','没有匹配的文档','empty'));}
+$('search').addEventListener('input',renderDocs);$('scope').addEventListener('change',renderDocs);renderDocs();
+['gitstatus','diffstat','commits'].forEach((id,i)=>put(id,DATA[['gitStatus','diffStat','commits'][i]]||'无'));
+document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>show(b.dataset.view)));
+document.querySelectorAll('[data-doc]').forEach(b=>b.addEventListener('click',()=>openDoc(b.dataset.doc)));
+</script>
+</body></html>

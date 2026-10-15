@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.obd.CanDiffTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:51.147Z" hostname="WIN-LI9OE82Q5LO" time="0.006">
+  <properties/>
+  <testcase name="两趟都没动就没有差异" classname="com.icar.obd.obd.CanDiffTest" time="0.003"/>
+  <testcase name="关灯到左转只报bit2" classname="com.icar.obd.obd.CanDiffTest" time="0.002"/>
+  <testcase name="位状态表按字节和位展开" classname="com.icar.obd.obd.CanDiffTest" time="0.001"/>
+  <testcase name="关灯到右转只报bit3" classname="com.icar.obd.obd.CanDiffTest" time="0.0"/>
+  <testcase name="只在一次里出现的ID不报" classname="com.icar.obd.obd.CanDiffTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

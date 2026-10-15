@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.DesignPagesTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:50.223Z" hostname="WIN-LI9OE82Q5LO" time="0.002">
+  <properties/>
+  <testcase name="copy 换页后渲染层看到的节点确实换了" classname="com.icar.obd.data.DesignPagesTest" time="0.0"/>
+  <testcase name="pages 是空数组时明确报错" classname="com.icar.obd.data.DesignPagesTest" time="0.001"/>
+  <testcase name="pages 里的 gauge 照常被抽进 gauges —— v1 兼容路径不断" classname="com.icar.obd.data.DesignPagesTest" time="0.0"/>
+  <testcase name="pages 被完整解析 —— 每一页各自的节点数都对" classname="com.icar.obd.data.DesignPagesTest" time="0.001"/>
+  <testcase name="v1 文件升级后也有 pages" classname="com.icar.obd.data.DesignPagesTest" time="0.0"/>
+  <testcase name="没有 pages 的老文件兜成单页 —— 行为完全不变" classname="com.icar.obd.data.DesignPagesTest" time="0.0"/>
+  <testcase name="pages 里节点非法时报错并带上页路径" classname="com.icar.obd.data.DesignPagesTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

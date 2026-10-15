@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.BackupTest" tests="10" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:47.327Z" hostname="WIN-LI9OE82Q5LO" time="0.191">
+  <properties/>
+  <testcase name="拒绝导入不会破坏现有配置" classname="com.icar.obd.data.BackupTest" time="0.042"/>
+  <testcase name="拒绝非本 App 的备份" classname="com.icar.obd.data.BackupTest" time="0.008"/>
+  <testcase name="导出后导入应还原全部配置" classname="com.icar.obd.data.BackupTest" time="0.034"/>
+  <testcase name="摘要统计与实际条数一致" classname="com.icar.obd.data.BackupTest" time="0.011"/>
+  <testcase name="导入旧版只有 span 的布局会自动迁移成画布坐标" classname="com.icar.obd.data.BackupTest" time="0.024"/>
+  <testcase name="拒绝非法 JSON" classname="com.icar.obd.data.BackupTest" time="0.012"/>
+  <testcase name="拒绝来自更新版本的备份" classname="com.icar.obd.data.BackupTest" time="0.008"/>
+  <testcase name="导出的备份带 app 与 format 标记且包含全部区段" classname="com.icar.obd.data.BackupTest" time="0.011"/>
+  <testcase name="导入是整体替换而不是合并" classname="com.icar.obd.data.BackupTest" time="0.02"/>
+  <testcase name="缺省区段时按空处理而不是报错" classname="com.icar.obd.data.BackupTest" time="0.02"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

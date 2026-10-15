@@ -100,6 +100,6 @@ class MonitorWarnBar(private val ctx: Context) {
          * 警示文案。**跨页面共用一句**（MainActivity 的浮条与 CAN 探测页的状态行都用它），
          * 两处各写一遍必然会分叉成"一处说了、一处没说"。
          */
-        const val TEXT = "监听中 · 轮询已暂停（转速/水温冻结）"
+        const val TEXT = com.icar.obd.data.CanSnifferText.MONITOR_PAUSED_TEXT
     }
 }

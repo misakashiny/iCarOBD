@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.GaugePartsTest" tests="23" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:50.329Z" hostname="WIN-LI9OE82Q5LO" time="0.016">
+  <properties/>
+  <testcase name="与工具侧常量一致 —— 5 种部件" classname="com.icar.obd.data.GaugePartsTest" time="0.001"/>
+  <testcase name="指针角度 中点正好扫过一半" classname="com.icar.obd.data.GaugePartsTest" time="0.0"/>
+  <testcase name="没有 parts 时是 null —— 走程序化画法" classname="com.icar.obd.data.GaugePartsTest" time="0.0"/>
+  <testcase name="非指针部件不解析 PID —— 表盘绑 PID 没有意义" classname="com.icar.obd.data.GaugePartsTest" time="0.002"/>
+  <testcase name="没有 children 字段时是空表 —— 老文件行为不变" classname="com.icar.obd.data.GaugePartsTest" time="0.0"/>
+  <testcase name="静态 rotation 叠加在扫描角上" classname="com.icar.obd.data.GaugePartsTest" time="0.001"/>
+  <testcase name="部件没选素材时给警告 —— 否则用户对着空白猜" classname="com.icar.obd.data.GaugePartsTest" time="0.0"/>
+  <testcase name="引用不存在的素材时给警告" classname="com.icar.obd.data.GaugePartsTest" time="0.001"/>
+  <testcase name="子部件嵌套解析 —— 二层也能读到" classname="com.icar.obd.data.GaugePartsTest" time="0.0"/>
+  <testcase name="空 parts 数组也是 null" classname="com.icar.obd.data.GaugePartsTest" time="0.0"/>
+  <testcase name="指针可以各绑一个 PID" classname="com.icar.obd.data.GaugePartsTest" time="0.0"/>
+  <testcase name="反向扫描也支持" classname="com.icar.obd.data.GaugePartsTest" time="0.001"/>
+  <testcase name="非法尺寸被夹住" classname="com.icar.obd.data.GaugePartsTest" time="0.0"/>
+  <testcase name="指针角度 值等于上限时在结束角" classname="com.icar.obd.data.GaugePartsTest" time="0.0"/>
+  <testcase name="超范围的值被夹住 —— 不会转过头" classname="com.icar.obd.data.GaugePartsTest" time="0.0"/>
+  <testcase name="量程为 0 不产生 NaN" classname="com.icar.obd.data.GaugePartsTest" time="0.0"/>
+  <testcase name="双针表的角度各自按自己的量程算" classname="com.icar.obd.data.GaugePartsTest" time="0.002"/>
+  <testcase name="指针角度 值等于下限时在起始角" classname="com.icar.obd.data.GaugePartsTest" time="0.0"/>
+  <testcase name="超深嵌套被夹住 —— 不爆栈" classname="com.icar.obd.data.GaugePartsTest" time="0.001"/>
+  <testcase name="没绑 PID 的指针回落成空 —— 用仪表自己的" classname="com.icar.obd.data.GaugePartsTest" time="0.001"/>
+  <testcase name="value 部件不需要素材 不给警告" classname="com.icar.obd.data.GaugePartsTest" time="0.0"/>
+  <testcase name="parts 被完整解析" classname="com.icar.obd.data.GaugePartsTest" time="0.001"/>
+  <testcase name="未知部件种类回落到 decor 并给警告" classname="com.icar.obd.data.GaugePartsTest" time="0.004"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

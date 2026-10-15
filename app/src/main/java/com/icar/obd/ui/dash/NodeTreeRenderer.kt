@@ -2,6 +2,8 @@ package com.icar.obd.ui.dash
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.graphics.Typeface
 import android.util.TypedValue
 import android.view.Gravity
@@ -63,6 +65,31 @@ class NodeTreeRenderer(private val context: Context) {
 
     /** 一个带状态系统的图片（5Hz 换图 / 闪灯要用） */
     class StateCell(val node: DesignNode, val view: ImageView, val states: Map<String, NodeState>)
+
+    /** Runtime-only unknown indicator; no extra skin or field is added to the design file. */
+    private class StateImageView(context: Context, private val colorOf: () -> Int) : ImageView(context) {
+        var unknown = false
+            set(value) {
+                if (field == value) return
+                field = value
+                invalidate()
+            }
+        private val unknownPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.MONOSPACE
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            if (!unknown) {
+                super.onDraw(canvas)
+                return
+            }
+            unknownPaint.color = colorOf()
+            unknownPaint.textSize = (min(width, height) * 0.5f).coerceAtLeast(1f)
+            val baseline = height / 2f - (unknownPaint.ascent() + unknownPaint.descent()) / 2f
+            canvas.drawText(NodeStateResolver.UNKNOWN_TEXT, width / 2f, baseline, unknownPaint)
+        }
+    }
 
     val gauges = ArrayList<GaugeCell>()
     val stateCells = ArrayList<StateCell>()
@@ -235,14 +262,18 @@ class NodeTreeRenderer(private val context: Context) {
     }
 
     private fun buildImage(node: DesignNode): View {
-        val iv = ImageView(context)
+        val iv = StateImageView(context) { lastTheme.dim }
         iv.scaleType = ImageView.ScaleType.FIT_XY
         iv.setImageBitmap(loadAsset(assetPathOf(node, null)))
         // 有状态系统：5Hz 时按 PID 值换图（见 applyStates）
         // ⚠️ 先取到局部变量：`node.states` 是**跨模块**的 public 属性，
         // Kotlin 不给它做 smart cast（编译报 "Smart cast is impossible"）
         val st = node.states
-        if (st != null) stateCells.add(StateCell(node, iv, st))
+        if (st != null) {
+            stateCells.add(StateCell(node, iv, st))
+            // Before the first tick, a bound image must not briefly display its normal/base skin.
+            if (node.statePid.isNotBlank()) showUnknown(node, iv)
+        }
         return iv
     }
 
@@ -296,7 +327,7 @@ class NodeTreeRenderer(private val context: Context) {
                 node.labelFont,
                 { id: String -> loadAsset(assetPathOfAsset(id)) }
             )
-            pv.setValues(pv.neededPids().associateWith { currentValueOf(it) })
+            pv.setValues(pv.neededPids().mapNotNull { id -> currentValueOf(id)?.let { id to it } }.toMap())
             partsViews.add(pv)
             host.addView(
                 pv,
@@ -397,10 +428,8 @@ class NodeTreeRenderer(private val context: Context) {
     }
 
     /** 一个 PID 的当前值。**必须走总线**（红线 4.1.5：视图不自己去读） */
-    private fun currentValueOf(pid: String): Float {
-        val def = Store.findPid(pid) ?: return 0f
-        return VehicleBus.get(pid)?.takeIf { it.ok }?.value ?: def.minVal
-    }
+    private fun currentValueOf(pid: String): Float? =
+        VehicleBus.value(pid)?.takeIf { it.isFinite() }
 
     private var lastDesign: DesignFile? = null
 
@@ -448,10 +477,8 @@ class NodeTreeRenderer(private val context: Context) {
     /**
      * 按 PID 值决定图片节点显示哪个状态。
      *
-     * ## 迟滞（**必须与 [com.icar.obd.ui.view.AlertPulse] 同一套语义**）
-     *
-     * 数值在阈值附近抖动时不能让灯乱闪。这里复用仪表报警的那套迟滞：
-     * 升档要超过阈值 + 回差，降档要低于阈值 − 回差。
+     * 阈值仍按既有显式值/库值选择；本轮不新增迟滞或改变报警含义。
+     * 有绑定但缺源时必须替换旧皮肤；不能仅跳过更新留下旧正常/告警图。
      *
      * ## 闪烁
      *
@@ -464,50 +491,31 @@ class NodeTreeRenderer(private val context: Context) {
      */
     fun applyStates(valueOf: (String) -> Float?, nowMs: Long) {
         for (c in stateCells) {
-            val st = resolveState(c, valueOf) ?: continue
-            val bmp = loadAsset(assetPathOf(c.node, st.assetId))
-            if (c.view.drawable == null || c.view.tag != bmp) {
-                c.view.setImageBitmap(bmp)
-                c.view.tag = bmp
-            }
-            val blinkOn = if (st.blink) {
-                // ⚠️ 下限是 **NodeState.MIN_BLINK_MS = 400ms（2.5Hz）**，不是 60ms。
-                //
-                // WCAG 2.3.1 Three Flashes or Below Threshold："not ... more than
-                // three times in any one second period" —— 60ms 一轮是 **16.7Hz**，
-                // 比红线高 5 倍多。设计文件里写了更小的值也**不能照闪**。
-                val period = st.blinkMs.coerceAtLeast(NodeState.MIN_BLINK_MS).toLong()
-                (nowMs / period) % 2L == 0L
-            } else true
-            c.view.alpha = if (blinkOn) (st.alpha / 255f).coerceIn(0f, 1f) else 0f
+            val frame = NodeStateResolver.resolve(c.node, c.states, valueOf, Store::findPid, nowMs)
+            frame.apply(
+                onUnknown = { showUnknown(c.node, c.view) },
+                onKnown = { st, alpha ->
+                    (c.view as? StateImageView)?.unknown = false
+                    val bmp = loadAsset(assetPathOf(c.node, st?.assetId))
+                    if (c.view.drawable == null || c.view.tag != bmp) {
+                        c.view.setImageBitmap(bmp)
+                        c.view.tag = bmp
+                    }
+                    c.view.alpha = alpha
+                    c.view.contentDescription = c.node.name.ifBlank { c.node.id }
+                }
+            )
         }
     }
 
-    /**
-     * 解析当前状态。阈值来源按优先级：
-     *  1. PID 库里的 `warnHigh`（与仪表报警**同一套阈值**，避免"表红了灯还绿"）
-     *  2. 没有阈值就恒定 normal
-     */
-    private fun resolveState(c: StateCell, valueOf: (String) -> Float?): NodeState? {
-        val pid = c.node.statePid
-        if (pid.isBlank()) return c.states[NodeState.STATE_NORMAL]
-        val v = valueOf(pid) ?: return c.states[NodeState.STATE_NORMAL]
-        val def = Store.findPid(pid)
-        // **显式阈值优先**，没设才从 PID 库推断 ——
-        // 不同车/不同传感器的报警线本来就不一样，写死在库里不合理
-        val warnAt = c.node.stateWarn ?: def?.warnHigh
-        if (warnAt == null) return c.states[NodeState.STATE_NORMAL]
-        val max = def?.maxVal ?: 100f
-        // "严重"取警告线与量程上限的中点 —— 没单独配置时的合理默认
-        val critAt = c.node.stateCritical
-            ?: (if (max > warnAt) warnAt + (max - warnAt) * 0.5f else null)
-
-        val cur = c.view.tag as? String ?: NodeState.STATE_NORMAL
-        return when {
-            critAt != null && v >= critAt -> c.states[NodeState.STATE_CRITICAL]
-                ?: c.states[NodeState.STATE_WARN] ?: c.states[NodeState.STATE_NORMAL]
-            v >= warnAt -> c.states[NodeState.STATE_WARN] ?: c.states[NodeState.STATE_NORMAL]
-            else -> c.states[NodeState.STATE_NORMAL]
+    private fun showUnknown(node: DesignNode, view: ImageView) {
+        (view as? StateImageView)?.unknown = true
+        if (view.drawable != null || view.tag != null) {
+            view.setImageDrawable(null)
+            view.tag = null
         }
+        view.alpha = 1f
+        view.contentDescription = NodeStateResolver.unknownDescription(node.name.ifBlank { node.id })
     }
+
 }

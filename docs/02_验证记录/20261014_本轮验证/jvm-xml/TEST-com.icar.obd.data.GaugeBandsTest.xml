@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.GaugeBandsTest" tests="19" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:50.287Z" hostname="WIN-LI9OE82Q5LO" time="0.01">
+  <properties/>
+  <testcase name="BAND 常量与工具侧同一套口径" classname="com.icar.obd.data.GaugeBandsTest" time="0.004"/>
+  <testcase name="色带边界与报警阈值可以不一致" classname="com.icar.obd.data.GaugeBandsTest" time="0.002"/>
+  <testcase name="空表不写字段" classname="com.icar.obd.data.GaugeBandsTest" time="0.0"/>
+  <testcase name="色带 JSON 往返逐字段相同" classname="com.icar.obd.data.GaugeBandsTest" time="0.0"/>
+  <testcase name="from 大于等于 to 的段丢掉" classname="com.icar.obd.data.GaugeBandsTest" time="0.0"/>
+  <testcase name="颜色序列化成大写六位" classname="com.icar.obd.data.GaugeBandsTest" time="0.001"/>
+  <testcase name="alpha 夹到 0 到 255 并取整" classname="com.icar.obd.data.GaugeBandsTest" time="0.0"/>
+  <testcase name="NaN 与无穷的段丢掉" classname="com.icar.obd.data.GaugeBandsTest" time="0.0"/>
+  <testcase name="没写颜色的段读回来是 null 绘制时才回落兜底色" classname="com.icar.obd.data.GaugeBandsTest" time="0.0"/>
+  <testcase name="量程反了不抛异常" classname="com.icar.obd.data.GaugeBandsTest" time="0.0"/>
+  <testcase name="没写 alpha 按 255 画" classname="com.icar.obd.data.GaugeBandsTest" time="0.0"/>
+  <testcase name="超过 MAX_BANDS 的段丢掉尾巴" classname="com.icar.obd.data.GaugeBandsTest" time="0.0"/>
+  <testcase name="坏颜色读成 null 不崩" classname="com.icar.obd.data.GaugeBandsTest" time="0.0"/>
+  <testcase name="零量程表上色带全被丢掉" classname="com.icar.obd.data.GaugeBandsTest" time="0.0"/>
+  <testcase name="旧文件没有 bands 键时读成空表且回写不写字段" classname="com.icar.obd.data.GaugeBandsTest" time="0.0"/>
+  <testcase name="缺省是空表" classname="com.icar.obd.data.GaugeBandsTest" time="0.0"/>
+  <testcase name="脏数据不崩且坏段被丢掉" classname="com.icar.obd.data.GaugeBandsTest" time="0.0"/>
+  <testcase name="越界的段夹到量程" classname="com.icar.obd.data.GaugeBandsTest" time="0.001"/>
+  <testcase name="只加 bands 时 warnLow 和 warnHigh 仍然是 null" classname="com.icar.obd.data.GaugeBandsTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

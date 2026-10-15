@@ -61,13 +61,13 @@ class CanFilterPresetsTest {
     }
 
     @Test
-    fun `段 0 与全总线那条命令相同，所以说明里两条都要写出来`() {
+    fun `段0不再与全总线重名，描述只对应实际范围`() {
         // ⚠️ `ATCM700+ATCF000` 同时是"全部 11 位 ID"和"0x000~0x0FF 段"：
         // 掩码之下的 ATCF000 就是第 0 段（见 SegmentRotation 的长注释），
         // 命令逐字节相同。只报第一条的话，用户选中它只看到"等价于不过滤"，
         // 会以为段 0 不见了。
         val hits = CanFilterPresets.findAll("ATCM700+ATCF000")
-        assertEquals(2, hits.size)
+        assertEquals(1, hits.size)
         val s = CanFilterPresets.describe("ATCM700+ATCF000")
         hits.forEach { assertTrue("说明里少了「${it.label}」", s.contains(it.label) || s.contains(it.desc)) }
         assertTrue(s.contains("0x000~0x0FF"))
@@ -121,10 +121,10 @@ class CanFilterPresetsTest {
     @Test
     fun `转向灯那条写明是本车实测，并给出实测出处里的数字`() {
         // 唯一被实测确认过的信号（docs/CAN-信号库与逆向框架.md + v1.19.8）
-        val p = CanFilterPresets.ALL.first { it.value == "228" }
+        val p = CanFilterPresets.ALL.first { it.value == "09A" }
         assertTrue(p.label.contains("本车实测"))
         assertTrue(p.desc.contains("0x09A"))
-        assertTrue(p.desc.contains("ATCRA228"))
+        assertTrue(p.desc.contains("ATCRA09A"))
         // 采样率提升是"为什么要过滤"的唯一实测数字，留着
         assertTrue(p.desc.contains("20 帧/秒"))
     }
@@ -143,8 +143,8 @@ class CanFilterPresetsTest {
     }
 
     @Test
-    fun `全总线预设存在且用的就是那条带掩码的命令`() {
-        val p = CanFilterPresets.ALL.first { it.value == "ATCM700+ATCF000" }
+    fun `全总线预设使用零掩码，和700掩码的第0段不同`() {
+        val p = CanFilterPresets.ALL.first { it.value == "ATCM000+ATCF000" }
         assertTrue(p.label.contains("11 位 ID"))
     }
 
@@ -179,12 +179,12 @@ class CanFilterPresetsTest {
         // （那边 `filt.split('+', ';')` 原样发，不做 uppercase）。
         // 实测踩过：第一版这里断言会变成 `[ATCM700, ATCF400]`，是错的。
         assertEquals(
-            listOf("atcm700", "atcf400"),
+            listOf("ATCM700", "ATCF400"),
             CanFilterPresets.resolveCommands("atcm700+atcf400")
         )
         // 空白项被丢掉（`ATCM700++` 不该发一条空命令）
         assertEquals(
-            listOf("ATCM700", "ATCF400"),
+            emptyList<String>(),
             CanFilterPresets.resolveCommands("ATCM700+ +ATCF400")
         )
     }
@@ -208,8 +208,8 @@ class CanFilterPresetsTest {
 
     @Test
     fun `状态行里带着实际下发的命令`() {
-        val s = CanFilterPresets.describe("228")
-        assertTrue(s.contains("ATCRA228"))
+        val s = CanFilterPresets.describe("09A")
+        assertTrue(s.contains("ATCRA09A"))
         // 命中预设时也要把"能看到什么"带上
         assertTrue(s.contains("0x09A"))
     }

@@ -465,8 +465,10 @@
       ctx.fillStyle = C2.out;
       ctx.fillRect(0, 0, W, H);
       const pad = 8;
-      const k = Math.min((W - pad * 2) / Math.max(1, node.w), (H - pad * 2) / Math.max(1, node.h));
-      const m = { a: k, b: 0, c: 0, d: k, e: (W - node.w * k) / 2, f: (H - node.h * k) / 2 };
+      const C = window.nodeToCanvasMatrix();
+      const ax = Math.hypot(C.a, C.b), ay = Math.hypot(C.c, C.d);
+      const k = Math.min((W - pad * 2) / Math.max(1, node.w * ax), (H - pad * 2) / Math.max(1, node.h * ay));
+      const m = { a: k * ax, b: 0, c: 0, d: k * ay, e: (W - node.w * k * ax) / 2, f: (H - node.h * k * ay) / 2 };
       const dm = withDeviceRotation(m, node);
       drawNode(node, dm, m);
       if (node.children && node.children.length) drawList(node.children, dm);
@@ -740,7 +742,16 @@ function uniformMatrix(m, w, h) {
     // 用户报的正是"贴图放大就糊"。所以只要它在，位图那条路整个不走
     //（连状态系统也不走：轨道不是状态灯）。
     if (window.trackUsable(n.trackStyle)) { drawTrackNode(n); return; }
-    // 状态系统：先解析当前该显示哪个状态（预览用模拟值，没有就用 normal）
+    // 有绑定但缺源是运行时未知；不能再由 resolveState 的皮肤回退贴上 normal。
+    if (n.states && n.statePid && resolveStateName(n) === null) {
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = themeColors().dim || C.textDim;
+      ctx.font = fontFor(n, 0.5, 1, Infinity) + "px monospace";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("--", n.w / 2, n.h / 2);
+      return;
+    }
+    // 有效值或无绑定静态图仍按原皮肤/基础素材路径绘制。
     const st = resolveState(n);
     const assetId = st && st.assetId ? st.assetId : n.assetId;
     const url = S.assetUrls[assetId] || S.thumbs[assetId];
@@ -1124,11 +1135,13 @@ function uniformMatrix(m, w, h) {
   function needleValue(pid, raw) {
     if (S.anim && !S.anim.allows("sim")) {
       const tv = S.tweenValues || {};
-      if (pid && tv[pid] !== undefined) return tv[pid];
+      if (pid && typeof tv[pid] === "number" && Number.isFinite(tv[pid]) && Number.isFinite(Math.fround(tv[pid]))) return tv[pid];
     }
+    if (typeof raw !== "number" || !Number.isFinite(raw) || !Number.isFinite(Math.fround(raw))) return null;
     const b = S.simSprings;
     if (!b || !b.active) return raw;
-    return b.peek(pid, raw);
+    const value = b.peek(pid, raw);
+    return Number.isFinite(value) && Number.isFinite(Math.fround(value)) ? value : raw;
   }
   window.needleValue = needleValue;
 
@@ -1247,7 +1260,7 @@ function uniformMatrix(m, w, h) {
       ctx.fillStyle = f.color;
       ctx.font = window.fontShort(f, f.size);
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(window.r2(vr.value), part.x + part.w / 2, part.y + part.h / 2);
+      ctx.fillText(vr.value === null ? "--" : window.r2(vr.value), part.x + part.w / 2, part.y + part.h / 2);
       ctx.globalAlpha = prevAlpha;
       return;
     }
@@ -1262,6 +1275,7 @@ function uniformMatrix(m, w, h) {
     const needleV = part.kind === "needle"
       ? needleValue(part.pid || n.pid, vr.value)
       : vr.value;
+    if (part.kind === "needle" && !Number.isFinite(needleV)) { ctx.globalAlpha = prevAlpha; return; }
     const ang = part.kind === "needle"
       ? window.partAngle(Object.assign({}, part, { sweepFrom: sw[0], sweepTo: sw[1] }),
           needleV, vr.min, vr.max)
@@ -1362,6 +1376,42 @@ function uniformMatrix(m, w, h) {
   window.drawDigitDrum = drawDigitDrum;
   window.digitCountFor = digitCountFor;
 
+  window.formatGaugePreview = function (n, value) {
+    if (typeof value !== "number" || !Number.isFinite(value)) return "--";
+    // App values and ranges are Float, including half-step rounding boundaries.
+    value = Math.fround(value);
+    if (!Number.isFinite(value)) return "--";
+    const label = window.valueLabelFor(n.valueLabels, value);
+    if (label !== null) return label;
+    const span = Math.fround(Math.fround(n.max) - Math.fround(n.min));
+    if (span >= 1000) return String(Math.max(-2147483648, Math.min(2147483647, Math.trunc(value))));
+    const text = value.toFixed(span >= 100 ? 0 : span >= 10 ? 1 : 2);
+    return Object.is(value, -0) ? "-" + text : text;
+  };
+
+  // Mirrors AlertPulse.levelWithLow and BaseGaugeView.criticalOf; readouts do not flash.
+  window.gaugePreviewAlertLevel = function (n, value, previous) {
+    if (typeof value !== "number" || !Number.isFinite(value) || !Number.isFinite(Math.fround(value))) return 0;
+    const release = t => t - Math.max(t * .03, .5);
+    const high = n.warnHigh, low = n.warnLow;
+    if (Number.isFinite(high) && high > 0) {
+      const critical = n.max > high ? high + (n.max - high) * .5 : null;
+      if (critical !== null && value >= (previous === 2 ? release(critical) : critical)) return 2;
+      if (value >= (previous !== 0 ? release(high) : high)) return 1;
+    }
+    if (Number.isFinite(low) && low > 0 && value <= (previous === 3 ? low + Math.max(low * .03, .5) : low)) return 3;
+    return 0;
+  };
+  const previewAlerts = new Map();
+  function previewValueColor(n, value, normal) {
+    const signature = [n.pid, n.min, n.max, n.warnLow, n.warnHigh].join("/");
+    const last = previewAlerts.get(n.id);
+    const level = window.gaugePreviewAlertLevel(n, value, last && last.signature === signature ? last.level : 0);
+    if (previewAlerts.size > 4096) previewAlerts.clear();
+    previewAlerts.set(n.id, { signature, level });
+    return level === 2 ? "#FF4D4F" : level === 1 || level === 3 ? "#FFB020" : normal;
+  }
+
   function drawGaugeNode(n) {
     // ⚠️ 主题色必须**在这里取一次**（v2.49.0）。
     // 之前这里全是硬编码 `#00D8FF`，所以切主题画布毫无反应。
@@ -1405,10 +1455,11 @@ function uniformMatrix(m, w, h) {
     const cx = n.w / 2, cy = n.h / 2;
 
     // 预览值：实时模拟开着就用它，否则用一个固定示意值
-    const pv = S.previewValues && S.previewValues[n.pid] !== undefined
-      ? S.previewValues[n.pid] : null;
+    const rawPreview = S.previewValues && S.previewValues[n.pid];
+    const pv = typeof rawPreview === "number" && Number.isFinite(rawPreview) && Number.isFinite(Math.fround(rawPreview)) ? rawPreview : null;
+    const valueColor = previewValueColor(n, pv, T.value);
     const ratio = pv !== null && n.max > n.min
-      ? clamp((pv - n.min) / (n.max - n.min), 0, 1) : 0.62;
+      ? clamp((pv - n.min) / (n.max - n.min), 0, 1) : 0;
     /**
      * **机械值**（v2.81.0）：会动的东西（指针 / 盘面进度弧 / 数字鼓）用它。
      *
@@ -1521,8 +1572,16 @@ function uniformMatrix(m, w, h) {
       const a = a0 + (a1 - a0) * ratioMech;
       ctx.strokeStyle = "#FF4D4F";
       ctx.lineWidth = Math.max(1, r * 0.05);
-      ctx.beginPath(); ctx.moveTo(cx, cy);
-      ctx.lineTo(cx + Math.cos(a) * r * 0.85, cy + Math.sin(a) * r * 0.85); ctx.stroke();
+      if (Number.isFinite(mech)) {
+        ctx.beginPath(); ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(a) * r * 0.85, cy + Math.sin(a) * r * 0.85); ctx.stroke();
+      }
+      ctx.fillStyle = valueColor;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.font = "bold " + Math.max(8, Math.min(n.w, n.h) * .15) + "px " + window.fontCss("mono");
+      ctx.fillText(window.formatGaugePreview(n, pv), cx, cy + r * .52);
+      ctx.font = Math.max(5, Math.min(n.w, n.h) * .055) + "px " + window.fontCss("sans");
+      ctx.fillText(unit, cx, cy + r * .78);
       if (n.ringStyle === 1) {
         ctx.strokeStyle = T.dim; ctx.lineWidth = 1;
         const seg = Math.max(8, Math.min(120, n.ringSegments || 40));
@@ -1535,24 +1594,17 @@ function uniformMatrix(m, w, h) {
         }
       }
     } else if (n.style === 1) {
-      ctx.fillStyle = T.value;
+      ctx.fillStyle = valueColor;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       const fsNum = Math.max(8, Math.min(n.h * 0.44, n.w * 0.30));
       ctx.font = "bold " + fsNum + "px Consolas, monospace";
-      // 有映射表就显示名字（挡位 P/R/N/1..6），否则显示数字。
-      // ⚠️ 判定走 window.valueLabelFor —— 与 Kotlin 侧 ValueLabels 同一套语义，
-      // 工具里看到的就是设备上会看到的（不要在这里另写一遍取整逻辑）
-      const lbl = window.valueLabelFor(n.valueLabels, pv);
-      if (lbl !== null) {
-        // 映射表里的每个状态是一个**词**（P / R / N / 1…6），数字鼓对它没有意义
-        ctx.fillText(lbl, cx, cy);
-      } else if (mech === null || mech === undefined) {
-        ctx.fillText("123", cx, cy);
-      } else {
-        // **数字鼓**（v2.81.0）：每位一条竖排条带，最低位跟着小数滚。
-        // 三个坑（行数变了步长就变 / 位置必须现算 / 只向前滚）见 spring.js 的 drumSlot
-        drawDigitDrum(n, mech, cx, cy, fsNum);
-      }
+      // Readouts use the current value; springs only move needles/arcs.
+      // An explicitly owned self-test may show its authored tween value.
+      const displayValue = pv !== null ? pv : (S.anim && !S.anim.allows("sim") ? mech : null);
+      ctx.fillText(window.formatGaugePreview(n, displayValue), cx, cy);
+      ctx.fillStyle = T.label;
+      ctx.font = Math.max(5, Math.min(n.w, n.h) * .065) + "px " + window.fontCss("sans");
+      ctx.fillText(unit, cx, cy + fsNum * .72);
     } else if (n.style === 2) {
       const bh = Math.max(3, n.h * 0.20);
       const bx = n.w * 0.06, bw = n.w * 0.88, by = n.h * 0.62;
@@ -1655,22 +1707,20 @@ function uniformMatrix(m, w, h) {
   }
 
   /**
-   * 状态解析（大纲 §4.2）。预览用模拟值；没有就回落 normal。
-   *
-   * ⚠️ App 侧用 `AlertPulse` 的**迟滞**判定；工具里只做无迟滞的简单比较
-   * （预览不需要迟滞，而且迟滞会让"改阈值立刻看到效果"变难）。
-   * 这条差异记在「与 App 规则的差异」页里。
+   * 状态解析（大纲 §4.2）。与 App NodeStateResolver 一样：有绑定却无有限值
+   * 明确未知；有效值按既有阈值直接比较，不新增迟滞规则或共享状态名。
    */
   /**
-   * 当前状态**名**（normal / warn / critical）。
+   * 当前状态**名**（normal / warn / critical）；null 是运行时未知或无状态系统。
    *
    * 与 [resolveState] 分开是为了让"可视化调试"能拿到名字 ——
    * 只返回对象的话调用方还得反查是哪个键。
    */
   function resolveStateName(n) {
     if (!n.states) return null;
-    const pv = S.previewValues && n.statePid ? S.previewValues[n.statePid] : null;
-    if (pv === null || pv === undefined || !n.statePid) return window.STATE_NORMAL;
+    if (!n.statePid || (typeof n.statePid === "string" && !n.statePid.trim())) return window.STATE_NORMAL;
+    const pv = S.previewValues ? S.previewValues[n.statePid] : null;
+    if (typeof pv !== "number" || !Number.isFinite(pv) || !Number.isFinite(Math.fround(pv))) return null;
     const info = window.BUILTIN_PIDS[n.statePid];
     // **显式阈值优先**，没设才从 PID 库推断 ——
     // 不同车/不同传感器的报警线本来就不一样，写死在库里不合理
@@ -1711,7 +1761,8 @@ function uniformMatrix(m, w, h) {
   function resolveState(n) {
     if (!n.states) return null;
     // 阈值判定统一走 resolveStateName —— 两处各写一遍迟早分叉
-    const name = resolveStateName(n) || window.STATE_NORMAL;
+    const name = resolveStateName(n);
+    if (name === null) return null;
     const order = name === window.STATE_CRITICAL
       ? [window.STATE_CRITICAL, window.STATE_WARN, window.STATE_NORMAL]
       : (name === window.STATE_WARN
@@ -2621,8 +2672,18 @@ function uniformMatrix(m, w, h) {
   function applyCanvasSize() {
     if (!S.design) return;
     const wrap = cv.parentElement;
-    const availW = Math.max(0, wrap.clientWidth - 16);
-    const availH = Math.max(0, wrap.clientHeight - 16);
+    const style = getComputedStyle(wrap);
+    const px = value => parseFloat(value) || 0;
+    const availW = Math.max(0, wrap.clientWidth - px(style.paddingLeft) - px(style.paddingRight));
+    // Tabs and breadcrumbs share the vertical space with the canvas.
+    // Include their current height so wrapping page tabs also stays inside the panel.
+    let chromeH = 0;
+    [document.getElementById("pageTabs"), document.getElementById("breadcrumb")].forEach(item => {
+      if (!item || item.parentElement !== wrap) return;
+      const itemStyle = getComputedStyle(item);
+      chromeH += item.getBoundingClientRect().height + px(itemStyle.marginTop) + px(itemStyle.marginBottom);
+    });
+    const availH = Math.max(0, wrap.clientHeight - px(style.paddingTop) - px(style.paddingBottom) - chromeH);
     const ar = S.design.canvas.designW / S.design.canvas.designH;
 
     let w = availW, h = w / ar;

@@ -132,25 +132,11 @@
     const out = [];
     out.push(row("名称", '<input value="' + attr(n.name) + '" oninput="ceSetStr(\'name\',this.value)">'));
 
+    if (n.type === window.NODE_GROUP) out.push(group("数据绑定", window.controlBindingFields(n, "ceSetControlBinding"), "binding"));
+
     // ---- 类型专属
     if (n.type === window.NODE_GAUGE) {
-      const opts = (function () {
-        const groups = new Map();
-        Object.entries(window.PID_ALIASES).forEach(([alias, id]) => {
-          const info = window.BUILTIN_PIDS[id];
-          const g = info ? info.g : "其他";
-          if (!groups.has(g)) groups.set(g, []);
-          groups.get(g).push({ v: alias, l: alias + "  →  " + id + (info ? "  " + info.name : "") });
-        });
-        let h = "";
-        groups.forEach((items, g) => {
-          h += '<optgroup label="' + attr(g) + '">';
-          items.forEach(it => { h += '<option value="' + attr(it.v) + '"' +
-            ((n.rawPid || n.pid) === it.v ? " selected" : "") + '>' + esc(it.l) + '</option>'; });
-          h += '</optgroup>';
-        });
-        return h;
-      })();
+      const opts = window.bindingPidOptions(n.rawPid, n.pid);
       out.push(group("数据", [
         row("PID", '<select onchange="ceSetPid(this.value)">' + opts + '</select>'),
         row("样式", '<select onchange="ceSetNum(\'style\',this.value)">' +
@@ -341,16 +327,15 @@
   };
   window.ceSetNeon = function (v) { if (draft) { draft.neonPreset = v || null; after(); } };
   window.ceSetPid = function (v) {
-    if (!draft) return;
-    const raw = String(v || "").trim();
-    draft.rawPid = raw;
-    draft.pid = window.resolvePid(raw);
-    const info = window.BUILTIN_PIDS[draft.pid];
-    if (info) {
-      draft.min = info.min; draft.max = info.max;
-      draft.warnLow = info.warnLow === undefined ? null : info.warnLow;
-      draft.warnHigh = info.warnHigh === undefined ? null : info.warnHigh;
-    }
+    if (!draft || draft.type !== window.NODE_GAUGE) return;
+    window.assignControlBinding(draft, v);
+    after();
+  };
+  window.ceSetControlBinding = function (id, value) {
+    if (!draft || draft.type !== window.NODE_GROUP) return;
+    const n = window.controlDataBindings(draft).find(n => n.id === id);
+    if (!n) return;
+    window.assignControlBinding(n, value);
     after();
   };
   window.ceApplyPidDefaults = function () {
@@ -442,12 +427,9 @@
   /** 导出成独立 JSON（可以给别人 / 给别的设计文件用） */
   window.exportControlJson = function () {
     if (!draft) return;
-    const payload = {
-      schema: window.SCHEMA_V2,
-      kind: "icar.control/1",
-      name: draft.name,
-      node: window.nodeToJson(draft),
-    };
+    let payload;
+    try { payload = window.makeControlFile(draft, S.design); }
+    catch (e) { window.toast("无法导出控件：" + e.message); return; }
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -465,26 +447,23 @@
     inp.onchange = function () {
       const f = inp.files[0];
       if (!f) return;
+      if (f.size > 48 * 1024 * 1024) { window.toast("控件文件超过48MB，无法导入"); return; }
       const r = new FileReader();
-      r.onload = function () {
+      r.onload = async function () {
         let obj;
         try { obj = JSON.parse(String(r.result)); } catch (e) {
           window.toast("不是合法的 JSON：" + e.message); return;
         }
         if (!obj || !obj.node) { window.toast("缺少 `node` 字段 —— 不是控件文件？"); return; }
-        // 用解析器校验这个节点（借 controls 段走一遍完整校验）
-        const probe = window.parseDesign(JSON.stringify({
-          schema: window.SCHEMA_V2,
-          canvas: { unit: 360 },
-          controls: [{ id: "probe", name: obj.name || "导入的控件", node: obj.node }],
-          nodes: [{ id: "x", type: "gauge", name: "占位", pid: "obd.rpm", min: 0, max: 100, x: 0, y: 0, w: 10, h: 10 }],
-        }));
-        if (probe.errors.length) {
-          window.toast("导入失败：" + probe.errors[0]); return;
-        }
-        const c = probe.design.controls[0];
+        let prepared;
+        const destination = S.design;
+        try { prepared = await window.prepareControlFile(obj, destination); }
+        catch (e) { window.toast("导入失败：" + e.message); return; }
+        if (S.design !== destination) { window.toast("设计已切换，请在当前设计重新导入控件"); return; }
+        const c = prepared.control;
         window.commit(() => {
           if (!S.design.controls) S.design.controls = [];
+          S.design.assets.push(...prepared.assets);
           S.design.controls.push({ id: window.newId("ct"), name: c.name, node: c.node });
         }, "导入控件：" + c.name);
         window.renderAssets && window.renderAssets();

@@ -27,6 +27,10 @@ class ScanHitAdapter(
     }
 
     fun all(): List<PidScanner.Hit> = items.toList()
+    fun replace(hits: List<PidScanner.Hit>) {
+        if(items==hits) return
+        items.clear(); items.addAll(hits); notifyDataSetChanged()
+    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
         val v = LayoutInflater.from(parent.context).inflate(R.layout.item_scan_hit, parent, false)
@@ -44,14 +48,14 @@ class ScanHitAdapter(
         private val btn: MaterialButton = v.findViewById(R.id.btnSave)
 
         fun bind(h: PidScanner.Hit) {
-            tvTitle.text = "Mode ${h.mode} · PID ${h.pid}"
+            tvTitle.text = "Mode ${h.mode} · PID ${h.pid} · ECU ${h.header}"
             tvRaw.text = "TX: ${h.request}\nRX: ${h.raw.take(70)}"
             val preview = buildString {
                 append("数据: ").append(h.dataHex.ifBlank { "-" })
-                append("\n建议公式: ").append(h.suggestedFormula.ifBlank { "-" })
+                append("\n参考公式: ").append(h.suggestedFormula.ifBlank { "-" })
                 h.previewValue?.let { append("  →  ").append(String.format("%.2f", it)) }
                 if (h.learnedMin != null && h.learnedMax != null) {
-                    append("\n学习范围: ").append(String.format("%.2f", h.learnedMin))
+                    append("\n采样参考范围: ").append(String.format("%.2f", h.learnedMin))
                         .append(" ~ ").append(String.format("%.2f", h.learnedMax))
                 }
             }

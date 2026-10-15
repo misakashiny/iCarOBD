@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.DesignNumericGuardTest" tests="14" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:47.976Z" hostname="WIN-LI9OE82Q5LO" time="1.654">
+  <properties/>
+  <testcase name="布尔与对象也会被警告" classname="com.icar.obd.data.DesignNumericGuardTest" time="0.002"/>
+  <testcase name="数字字符串不产生警告且照常生效" classname="com.icar.obd.data.DesignNumericGuardTest" time="0.001"/>
+  <testcase name="scalarText 把字符串加上引号" classname="com.icar.obd.data.DesignNumericGuardTest" time="0.0"/>
+  <testcase name="超大 parts 数组被拒绝而不是被读进内存" classname="com.icar.obd.data.DesignNumericGuardTest" time="1.635"/>
+  <testcase name="关键字段都在清单里" classname="com.icar.obd.data.DesignNumericGuardTest" time="0.0"/>
+  <testcase name="缺字段与 null 不产生警告" classname="com.icar.obd.data.DesignNumericGuardTest" time="0.001"/>
+  <testcase name="v1 与 v2 对同一个非数字字段给出同一条警告" classname="com.icar.obd.data.DesignNumericGuardTest" time="0.001"/>
+  <testcase name="三张数值字段清单都非空且无重复" classname="com.icar.obd.data.DesignNumericGuardTest" time="0.001"/>
+  <testcase name="parts 超过上限被拒绝" classname="com.icar.obd.data.DesignNumericGuardTest" time="0.002"/>
+  <testcase name="量程写了非数字也要出声" classname="com.icar.obd.data.DesignNumericGuardTest" time="0.001"/>
+  <testcase name="部件里的非数字字段也要出声" classname="com.icar.obd.data.DesignNumericGuardTest" time="0.0"/>
+  <testcase name="parts 正好等于上限时通过" classname="com.icar.obd.data.DesignNumericGuardTest" time="0.006"/>
+  <testcase name="嵌套的部件 children 也受上限约束" classname="com.icar.obd.data.DesignNumericGuardTest" time="0.002"/>
+  <testcase name="坐标写了非数字 —— 给警告但不拒收" classname="com.icar.obd.data.DesignNumericGuardTest" time="0.002"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

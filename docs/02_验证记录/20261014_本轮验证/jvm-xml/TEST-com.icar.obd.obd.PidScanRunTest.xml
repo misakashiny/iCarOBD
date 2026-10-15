@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.obd.PidScanRunTest" tests="9" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:51.600Z" hostname="WIN-LI9OE82Q5LO" time="0.131">
+  <properties/>
+  <testcase name="idle engine stays idle and its prior header is restored" classname="com.icar.obd.obd.PidScanRunTest" time="0.018"/>
+  <testcase name="stopping before dispatch still releases lease without setup traffic" classname="com.icar.obd.obd.PidScanRunTest" time="0.019"/>
+  <testcase name="disconnection releases lease without restoring onto another session" classname="com.icar.obd.obd.PidScanRunTest" time="0.015"/>
+  <testcase name="polling restart exception still publishes terminal state and releases scan" classname="com.icar.obd.obd.PidScanRunTest" time="0.015"/>
+  <testcase name="active scan blocks initialization and another scan" classname="com.icar.obd.obd.PidScanRunTest" time="0.016"/>
+  <testcase name="stop cancels pending session without further PID sends and does restore" classname="com.icar.obd.obd.PidScanRunTest" time="0.015"/>
+  <testcase name="production owner pauses restores and releases only its lease" classname="com.icar.obd.obd.PidScanRunTest" time="0.016"/>
+  <testcase name="failed restoration never resumes polling" classname="com.icar.obd.obd.PidScanRunTest" time="0.015"/>
+  <testcase name="other adapter mode and init reject start before IO" classname="com.icar.obd.obd.PidScanRunTest" time="0.002"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

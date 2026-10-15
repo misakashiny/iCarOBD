@@ -56,25 +56,13 @@ class GaugePartsView(
      * 用一张表而不是单个 Float —— 多指针表里每个 needle 可能绑不同的 PID，
      * 一个值不够用。
      */
-    private val values = HashMap<String, Float>()
+    private val values = GaugePartValues(item.pidId, parts)
 
-    /**
-    * 这个视图**需要哪些 PID 的值**。
-    *
-    * 渲染器靠它一次把值取齐推进来 —— 视图自己不去读总线（红线 4.1.5）。
-    */
-    fun neededPids(): Set<String> {
-        val out = HashSet<String>()
-        out.add(item.pidId)
-        parts.forEach { p -> if (p.pid.isNotBlank()) out.add(p.pid) }
-        return out
-    }
+    fun neededPids(): Set<String> = values.neededPids
 
-    /** 推一批值进来（PID id → 值）。**变了才重绘** —— 5Hz 下每帧重绘很浪费 */
+    /** Receive a complete current snapshot, clearing unavailable sources too. */
     fun setValues(v: Map<String, Float>) {
-        var changed = false
-        v.forEach { (k, x) -> if (values[k] != x) { values[k] = x; changed = true } }
-        if (changed) invalidate()
+        if (values.replace(v)) invalidate()
     }
 
     /**
@@ -83,14 +71,16 @@ class GaugePartsView(
      * 绑了 pid 就用那个 PID 的值与量程；没绑就回落到仪表节点自己的。
      * **与工具侧 partValueRange() 是同一套判定** —— 各写一份迟早分叉。
      */
-    private fun valueRangeOf(p: GaugePart): FloatArray {
+    private data class ValueRange(val value: Float?, val min: Float, val max: Float)
+
+    private fun valueRangeOf(p: GaugePart): ValueRange {
         if (p.pid.isNotBlank()) {
             val def = Store.findPid(p.pid)
             val min = def?.minVal ?: 0f
             val max = def?.maxVal ?: 100f
-            return floatArrayOf(values[p.pid] ?: min, min, max)
+            return ValueRange(values.valueOf(p), min, max)
         }
-        return floatArrayOf(values[item.pidId] ?: item.minVal, item.minVal, item.maxVal)
+        return ValueRange(values.valueOf(p), item.minVal, item.maxVal)
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -124,13 +114,15 @@ class GaugePartsView(
         if (p.kind == GaugePart.KIND_VALUE) {
             // 数值部件用文字画 —— 它要跟着数据变
             canvas.drawText(
-                fmt(vr[0]),
+                GaugePartValues.format(vr.value),
                 (p.x + p.w / 2f) * k,
                 (p.y + p.h / 2f) * k + textPaint.textSize / 3f,
                 textPaint
             )
             return
         }
+
+        if (p.kind == GaugePart.KIND_NEEDLE && vr.value == null) return
 
         // 指针的角度由**值**驱动；其余部件用静态 rotation
         val angle = if (p.kind == GaugePart.KIND_NEEDLE) {
@@ -142,7 +134,7 @@ class GaugePartsView(
             val lead = parts.firstOrNull { it.kind == GaugePart.KIND_NEEDLE }
             val swFrom = if (p.sweepFollow && lead != null) lead.sweepFrom else p.sweepFrom
             val swTo = if (p.sweepFollow && lead != null) lead.sweepTo else p.sweepTo
-            p.angleFor(vr[0], vr[1], vr[2], swFrom, swTo)
+            p.angleFor(vr.value!!, vr.min, vr.max, swFrom, swTo)
         } else p.rotation
 
         // 旋转中心 = 部件自身的 pivot（相对自身 0..1）
@@ -168,11 +160,6 @@ class GaugePartsView(
 
         canvas.restoreToCount(saved)
     }
-
-    /** 数值格式化：整数不带小数点，小数保留一位 —— 与工具侧一致 */
-    private fun fmt(v: Float): String =
-        if (v == v.toInt().toFloat()) v.toInt().toString()
-        else String.format(java.util.Locale.US, "%.1f", v)
 
     override fun setAlpha(a: Float) {
         super.setAlpha(a)

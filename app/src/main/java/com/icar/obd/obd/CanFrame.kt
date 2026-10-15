@@ -97,11 +97,20 @@ object CanFrame {
         // 必须整串都是十六进制，否则可能是 "SEARCHING..." 之类
         if (!idTok.all { it.isHexDigit() }) return null
         val id = idTok.toIntOrNull(16) ?: return null
-        val data = ArrayList<Int>(toks.size - 1)
-        for (i in 1 until toks.size) {
+        if (id !in 0..0x1FFFFFFF) return null
+        // 兼容既有单个十六进制DLC前缀，但必须与实际字节数一致；不能静默丢字节。
+        val start = if (toks[1].length == 1) {
+            val dlc = toks[1].toIntOrNull(16) ?: return null
+            if (dlc !in 1..8 || toks.size - 2 != dlc) return null
+            2
+        } else 1
+        if (toks.size - start !in 1..8) return null
+        val data = ArrayList<Int>(toks.size - start)
+        for (i in start until toks.size) {
             val t = toks[i]
-            if (t.length != 2 || !t.all { it.isHexDigit() }) continue
-            data.add(t.toIntOrNull(16) ?: continue)
+            // 不能跳掉坏字节再拼接：这样会让 bit(C,...) 等公式读到错误位置。
+            if (t.length != 2 || !t.all { it.isHexDigit() }) return null
+            data.add(t.toIntOrNull(16) ?: return null)
         }
         if (data.isEmpty()) return null
         return Frame(id, data)

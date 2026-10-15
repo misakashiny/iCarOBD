@@ -114,5 +114,15 @@ object ProbeLog {
         AppLog.i(AppLog.M_SYS, "探测记录已清空某一类", "kind=$kind 清了${n}条 剩${entries.size}条")
     }
 
+    /** 删除一条记录。Entry 含完整时间戳，按值匹配不会误删同标题记录。 */
+    fun remove(entry: Entry): Boolean {
+        val removed = entries.remove(entry)
+        if (removed) {
+            save()
+            AppLog.i(AppLog.M_SYS, "已删除探测记录", "kind=${entry.kind} title=${entry.title}")
+        }
+        return removed
+    }
+
     fun count(): Int = entries.size
 }

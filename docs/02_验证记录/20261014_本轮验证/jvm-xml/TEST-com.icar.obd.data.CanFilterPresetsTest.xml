@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.CanFilterPresetsTest" tests="19" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:47.521Z" hostname="WIN-LI9OE82Q5LO" time="0.03">
+  <properties/>
+  <testcase name="空过滤器一条命令都不发" classname="com.icar.obd.data.CanFilterPresetsTest" time="0.011"/>
+  <testcase name="不过滤时状态行明说不发命令" classname="com.icar.obd.data.CanFilterPresetsTest" time="0.001"/>
+  <testcase name="按值找预设" classname="com.icar.obd.data.CanFilterPresetsTest" time="0.0"/>
+  <testcase name="状态行里带着实际下发的命令" classname="com.icar.obd.data.CanFilterPresetsTest" time="0.001"/>
+  <testcase name="常用段的说明一律标注未在本车实测，不编哪个灯在哪个段" classname="com.icar.obd.data.CanFilterPresetsTest" time="0.0"/>
+  <testcase name="全总线那条说明写清 ATCF000 不是第 0 段" classname="com.icar.obd.data.CanFilterPresetsTest" time="0.0"/>
+  <testcase name="段0不再与全总线重名，描述只对应实际范围" classname="com.icar.obd.data.CanFilterPresetsTest" time="0.006"/>
+  <testcase name="段预设的说明里写着那条命令" classname="com.icar.obd.data.CanFilterPresetsTest" time="0.0"/>
+  <testcase name="手打的过滤器只报命令，不编说明" classname="com.icar.obd.data.CanFilterPresetsTest" time="0.001"/>
+  <testcase name="每个预设解析出来的命令条数符合它的写法" classname="com.icar.obd.data.CanFilterPresetsTest" time="0.001"/>
+  <testcase name="标签里不出现 AT 语法" classname="com.icar.obd.data.CanFilterPresetsTest" time="0.001"/>
+  <testcase name="全总线预设使用零掩码，和700掩码的第0段不同" classname="com.icar.obd.data.CanFilterPresetsTest" time="0.0"/>
+  <testcase name="不常用的段不冒充常见车身域" classname="com.icar.obd.data.CanFilterPresetsTest" time="0.0"/>
+  <testcase name="8 个段一条不少，且掩码与过滤成对" classname="com.icar.obd.data.CanFilterPresetsTest" time="0.001"/>
+  <testcase name="AT 开头的原样按加号切开" classname="com.icar.obd.data.CanFilterPresetsTest" time="0.001"/>
+  <testcase name="预设补到 12 个（8 段 + 3 个常用 + 不过滤）" classname="com.icar.obd.data.CanFilterPresetsTest" time="0.001"/>
+  <testcase name="每个预设的标签与说明都不为空，且说明里带上实际命令" classname="com.icar.obd.data.CanFilterPresetsTest" time="0.0"/>
+  <testcase name="纯 hex 会包成 ATCRA 并转大写" classname="com.icar.obd.data.CanFilterPresetsTest" time="0.001"/>
+  <testcase name="转向灯那条写明是本车实测，并给出实测出处里的数字" classname="com.icar.obd.data.CanFilterPresetsTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

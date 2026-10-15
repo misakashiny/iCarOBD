@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.obd.CanFrameIntegrityTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:51.156Z" hostname="WIN-LI9OE82Q5LO" time="0.001">
+  <properties/>
+  <testcase name="valid standard extended and zero payload bytes remain supported" classname="com.icar.obd.obd.CanFrameIntegrityTest" time="0.0"/>
+  <testcase name="corrupted payload is rejected instead of shifting later byte positions" classname="com.icar.obd.obd.CanFrameIntegrityTest" time="0.0"/>
+  <testcase name="out of range ID or oversized classic payload is rejected" classname="com.icar.obd.obd.CanFrameIntegrityTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

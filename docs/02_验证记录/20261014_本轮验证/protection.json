@@ -1,0 +1,11 @@
+{
+  "production_config_asset_files_checked": 1167,
+  "changed": [],
+  "missing": [],
+  "original_document_bytes_verified": 37,
+  "historical_screenshot_bytes_verified": 20,
+  "maintenance_tests_rewired_only": [
+    "tools/icarui/tests/verify-rename.js",
+    "tools/icarui/tests/verify-bands.js"
+  ]
+}

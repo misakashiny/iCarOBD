@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.CanSnifferTextTest" tests="13" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:47.578Z" hostname="WIN-LI9OE82Q5LO" time="0.015">
+  <properties/>
+  <testcase name="已绑定时报出绑定个数并保留候选未验证的提醒" classname="com.icar.obd.data.CanSnifferTextTest" time="0.003"/>
+  <testcase name="未开始且未勾轮换时说明重复帧只计数" classname="com.icar.obd.data.CanSnifferTextTest" time="0.002"/>
+  <testcase name="超出上限的问题条目折叠成还有几条" classname="com.icar.obd.data.CanSnifferTextTest" time="0.002"/>
+  <testcase name="有已确认条目时才说开常驻监听就能取到值" classname="com.icar.obd.data.CanSnifferTextTest" time="0.0"/>
+  <testcase name="监听中按是否轮换给出两套帧计数" classname="com.icar.obd.data.CanSnifferTextTest" time="0.006"/>
+  <testcase name="勾了轮换但还没开始时报出轮换时长" classname="com.icar.obd.data.CanSnifferTextTest" time="0.0"/>
+  <testcase name="一个都没绑定必须说清只显示原始 hex 且不猜值" classname="com.icar.obd.data.CanSnifferTextTest" time="0.0"/>
+  <testcase name="还没有结果时解码汇总整段不显示" classname="com.icar.obd.data.CanSnifferTextTest" time="0.001"/>
+  <testcase name="失败与准备阶段原样转述底层消息" classname="com.icar.obd.data.CanSnifferTextTest" time="0.0"/>
+  <testcase name="全部未通过时明说 PID 列表没有任何变化" classname="com.icar.obd.data.CanSnifferTextTest" time="0.0"/>
+  <testcase name="丢弃计数只在真丢了的时候出现" classname="com.icar.obd.data.CanSnifferTextTest" time="0.0"/>
+  <testcase name="常驻监听开着时说的是轮询让位而不是未开始" classname="com.icar.obd.data.CanSnifferTextTest" time="0.0"/>
+  <testcase name="收下的全是候选时要明说未启用" classname="com.icar.obd.data.CanSnifferTextTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

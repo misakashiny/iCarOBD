@@ -52,7 +52,10 @@ class GForceSource(private val ctx: Context) : SensorEventListener {
         /** 车速差分模式的平滑系数 */
         private const val SPEED_ALPHA = 0.30f
 
-        /** 车速差分的最大 G，防止 GPS/总线跳变把指针甩飞 */
+        /**
+         * 车速差分的最大 G，防止 GPS/总线跳变把指针甩飞。
+         * ⚠️ 单位是 **G**：限幅写成 `a.coerceIn(-MAX_G * G, MAX_G * G)`（`a` 是 m/s²）。
+         */
         private const val MAX_G = 2f
     }
 
@@ -169,11 +172,23 @@ class GForceSource(private val ctx: Context) : SensorEventListener {
      * 由 [ObdEngine] 每轮轮询后调用。**只有车速差分模式在这里算**。
      *
      * 纵向 G = Δv / Δt / 9.80665。横向无从得知，固定输出 0。
+     *
+     * ## 单位约定（⚠️ 全链路**只换算一次**，出口除 G；不是两次）
+     *
+     * `fx` / `fy` 内部**一律 m/s²**（与字段声明处的注释一致），所以：
+     *
+     * 1. `Δv/Δt` 本来就是 m/s² → **直接限幅**到 `±MAX_G × G`（限幅对象是 m/s²）；
+     * 2. 用 `SPEED_ALPHA` 低通滤波；
+     * 3. **只有出口 `emit` 除一次 G** —— 全链路**仅此一次**换算。
+     *
+     * 修复前这里把 `a / G`（已是 G）存进 `fy`，`emit` 又除了一次 G —— 读数偏小 9.80665 倍。
+     *
+     * @param now 本拍的时间戳。**同一个 `now` 既算 `dt` 又写回 `lastTs`**，
+     *   保证两处基准一致；默认值就是生产行为，测试注入受控时钟即可得到确定的 `dt`。
      */
-    fun onCycle() {
+    fun onCycle(now: Long = System.currentTimeMillis()) {
         if (mode != MODE_SPEED) return
         val speed = VehicleBus.value("std_0D") ?: return
-        val now = System.currentTimeMillis()
 
         val v0 = lastSpeed
         val t0 = lastTs
@@ -181,17 +196,19 @@ class GForceSource(private val ctx: Context) : SensorEventListener {
             val dt = (now - t0) / 1000f
             // dt 太小会放大噪声，太大说明中间丢了很多轮
             if (dt in 0.05f..5f) {
-                val a = ((speed - v0) / 3.6f) / dt          // km/h → m/s，再除秒
-                val g = (a / G).coerceIn(-MAX_G, MAX_G)
-                fy += (g - fy) * SPEED_ALPHA
+                val a = ((speed - v0) / 3.6f) / dt          // km/h → m/s，再除秒 ⇒ m/s²
+                // ⚠️ 限幅的对象是 m/s²：MAX_G 的语义是「最大 G」，所以要乘回 G
+                val clamped = a.coerceIn(-MAX_G * G, MAX_G * G)
+                fy += (clamped - fy) * SPEED_ALPHA
                 fx += (0f - fx) * SPEED_ALPHA
-                emit(fx / G, fy / G, "speed")
+                emit(fx / G, fy / G, "speed")               // ← 出口只在这里换算一次
             }
         }
         lastSpeed = speed
         lastTs = now
     }
 
+    /** @param gx 横向 G；@param gy 纵向 G（调用方负责从 m/s² 换算） */
     private fun emit(gx: Float, gy: Float, src: String) {
         val now = System.currentTimeMillis()
         VehicleBus.put(PidValue("calc_gx", gx, src, now, true))

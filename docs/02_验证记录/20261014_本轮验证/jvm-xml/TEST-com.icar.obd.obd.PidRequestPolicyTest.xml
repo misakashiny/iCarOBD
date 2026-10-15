@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.obd.PidRequestPolicyTest" tests="16" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:51.577Z" hostname="WIN-LI9OE82Q5LO" time="0.014">
+  <properties/>
+  <testcase name="malformed partial unicode and multiple commands are rejected" classname="com.icar.obd.obd.PidRequestPolicyTest" time="0.001"/>
+  <testcase name="normal existing read modes and request formats are accepted" classname="com.icar.obd.obd.PidRequestPolicyTest" time="0.0"/>
+  <testcase name="all existing dangerous modes and unknown services are denied" classname="com.icar.obd.obd.PidRequestPolicyTest" time="0.001"/>
+  <testcase name="CAN headers are validated before any adapter write" classname="com.icar.obd.obd.PidRequestPolicyTest" time="0.001"/>
+  <testcase name="adapter commands are forbidden as user PID overrides" classname="com.icar.obd.obd.PidRequestPolicyTest" time="0.001"/>
+  <testcase name="all built in active request definitions remain compatible" classname="com.icar.obd.obd.PidRequestPolicyTest" time="0.001"/>
+  <testcase name="JSON import shape cannot conceal custom request danger" classname="com.icar.obd.obd.PidRequestPolicyTest" time="0.001"/>
+  <testcase name="actual session reads a valid checked PID and still sends internal setup" classname="com.icar.obd.obd.PidRequestPolicyTest" time="0.001"/>
+  <testcase name="internal initialization and existing protocol probes remain permitted" classname="com.icar.obd.obd.PidRequestPolicyTest" time="0.0"/>
+  <testcase name="overridden read service must match the declared service" classname="com.icar.obd.obd.PidRequestPolicyTest" time="0.0"/>
+  <testcase name="normal declaration cannot hide dangerous custom request" classname="com.icar.obd.obd.PidRequestPolicyTest" time="0.001"/>
+  <testcase name="checked request captures definition rather than following later edits" classname="com.icar.obd.obd.PidRequestPolicyTest" time="0.0"/>
+  <testcase name="monitor derived and unknown source cannot actively send" classname="com.icar.obd.obd.PidRequestPolicyTest" time="0.0"/>
+  <testcase name="actual session refuses invalid user PID before flush and send" classname="com.icar.obd.obd.PidRequestPolicyTest" time="0.001"/>
+  <testcase name="actual raw session also refuses unsafe diagnostic services before IO" classname="com.icar.obd.obd.PidRequestPolicyTest" time="0.002"/>
+  <testcase name="an internally constructed PID token cannot borrow the adapter command path" classname="com.icar.obd.obd.PidRequestPolicyTest" time="0.002"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

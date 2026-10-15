@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.ui.view.IslandStateMachineTest" tests="12" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:53.058Z" hostname="WIN-LI9OE82Q5LO" time="0.002">
+  <properties/>
+  <testcase name="到点自动收起" classname="com.icar.obd.ui.view.IslandStateMachineTest" time="0.002"/>
+  <testcase name="停留时长与告警条一致 —— 4 秒" classname="com.icar.obd.ui.view.IslandStateMachineTest" time="0.0"/>
+  <testcase name="去掉空白后相同的算同一条" classname="com.icar.obd.ui.view.IslandStateMachineTest" time="0.0"/>
+  <testcase name="不同的提示会换文案并累加 +N" classname="com.icar.obd.ui.view.IslandStateMachineTest" time="0.0"/>
+  <testcase name="来一条就展开" classname="com.icar.obd.ui.view.IslandStateMachineTest" time="0.0"/>
+  <testcase name="空白文案不弹空胶囊" classname="com.icar.obd.ui.view.IslandStateMachineTest" time="0.0"/>
+  <testcase name="文案首尾空白会被去掉" classname="com.icar.obd.ui.view.IslandStateMachineTest" time="0.0"/>
+  <testcase name="未展开时 tick 不会把它变成可见" classname="com.icar.obd.ui.view.IslandStateMachineTest" time="0.0"/>
+  <testcase name="同一条重复触发只续期 —— 不会闪、也不会把 +N 刷到几百" classname="com.icar.obd.ui.view.IslandStateMachineTest" time="0.0"/>
+  <testcase name="初始是隐藏的" classname="com.icar.obd.ui.view.IslandStateMachineTest" time="0.0"/>
+  <testcase name="收起之后再来的算全新一条 —— pending 归零" classname="com.icar.obd.ui.view.IslandStateMachineTest" time="0.0"/>
+  <testcase name="reset 立刻回到隐藏" classname="com.icar.obd.ui.view.IslandStateMachineTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

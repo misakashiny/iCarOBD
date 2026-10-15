@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.DashCanvasTest" tests="25" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:47.597Z" hostname="WIN-LI9OE82Q5LO" time="0.304">
+  <properties/>
+  <testcase name="删掉当前画布后落到邻居" classname="com.icar.obd.data.DashCanvasTest" time="0.028"/>
+  <testcase name="越界的浮标位置在读取时被夹住" classname="com.icar.obd.data.DashCanvasTest" time="0.014"/>
+  <testcase name="备份往返保留全部画布与当前画布" classname="com.icar.obd.data.DashCanvasTest" time="0.03"/>
+  <testcase name="画布数组里的坏条目被跳过而不是整体失败" classname="com.icar.obd.data.DashCanvasTest" time="0.012"/>
+  <testcase name="画布 JSON 往返保留全部字段" classname="com.icar.obd.data.DashCanvasTest" time="0.008"/>
+  <testcase name="旧配置迁移成一套画布且取值完全不变" classname="com.icar.obd.data.DashCanvasTest" time="0.013"/>
+  <testcase name="有画布时旧 dash 文件不再覆盖画布内容" classname="com.icar.obd.data.DashCanvasTest" time="0.012"/>
+  <testcase name="排序只动顺序不动当前画布" classname="com.icar.obd.data.DashCanvasTest" time="0.012"/>
+  <testcase name="导入摘要的格式是文件名加块表加时间" classname="com.icar.obd.data.DashCanvasTest" time="0.009"/>
+  <testcase name="类型名越界回落到第一项而不是抛异常" classname="com.icar.obd.data.DashCanvasTest" time="0.007"/>
+  <testcase name="浮标位置名越界回落到左上角" classname="com.icar.obd.data.DashCanvasTest" time="0.006"/>
+  <testcase name="画布名兜底与裁剪" classname="com.icar.obd.data.DashCanvasTest" time="0.006"/>
+  <testcase name="切换画布时各套内容互不串台" classname="com.icar.obd.data.DashCanvasTest" time="0.016"/>
+  <testcase name="activeCanvasId 悬空时自愈到第一套" classname="com.icar.obd.data.DashCanvasTest" time="0.008"/>
+  <testcase name="最近一次导入能往返设置文件" classname="com.icar.obd.data.DashCanvasTest" time="0.012"/>
+  <testcase name="没有设计文件时不写 designJson 键" classname="com.icar.obd.data.DashCanvasTest" time="0.013"/>
+  <testcase name="导入摘要缺文件名时兜底为未命名设计" classname="com.icar.obd.data.DashCanvasTest" time="0.007"/>
+  <testcase name="浮标位置的常量与名字表一一对应" classname="com.icar.obd.data.DashCanvasTest" time="0.007"/>
+  <testcase name="改名会被兜底成默认名" classname="com.icar.obd.data.DashCanvasTest" time="0.008"/>
+  <testcase name="画布数量到上限后加不进去" classname="com.icar.obd.data.DashCanvasTest" time="0.016"/>
+  <testcase name="最后一套画布删不掉" classname="com.icar.obd.data.DashCanvasTest" time="0.009"/>
+  <testcase name="迁移只发生一次" classname="com.icar.obd.data.DashCanvasTest" time="0.015"/>
+  <testcase name="浮标位置是全局的_切画布不变" classname="com.icar.obd.data.DashCanvasTest" time="0.013"/>
+  <testcase name="画布名浮标位置能往返设置文件" classname="com.icar.obd.data.DashCanvasTest" time="0.01"/>
+  <testcase name="旧配置没有导入字段时是空记录而不是假时间" classname="com.icar.obd.data.DashCanvasTest" time="0.008"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

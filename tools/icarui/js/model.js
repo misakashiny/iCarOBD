@@ -1111,6 +1111,352 @@ function toV2Json(d) {
     this.lastKey = null;
   }
 
+  /**
+   * 单次撤销/重做**最多查看多少条记录**（T5-R 返工，未发版）。
+   *
+   * 坏记录可能在栈里连成一片。搜索本身是 O(n) 且**一定会终止**
+   * （每轮 `i` 严格递增/递减、循环边界就是栈长），这个上限是第二道保险：
+   * 它让"步数"这件事**显式**，而不是依赖"数组总会走完"这种隐含性质。
+   * 触到上限时**不删记录、不改索引、返回失败** —— 宁可这一步撤销不动，
+   * 也不能为了"走到底"把好记录一起清掉。
+   */
+  const STEP_SCAN_LIMIT = 1000;
+
+  /** 这条记录还能不能用（判定由调用方给，见 app.js 的 `isUsableSnapshot`） */
+  UndoStack.prototype._usable = function (i, isUsable) {
+    const it = this.stack[i];
+    return !!(it && typeof it.state === "string" && isUsable(it.state));
+  };
+
+  /**
+   * 撤销/重做的**共同走法**（T5-A 引入；T5-R 返工修正端点语义，未发版）。
+   *
+   * ## 治的是什么
+   *
+   * 原来 `undo()` 只把 `index--` 就返回那一条。于是：
+   *  · 记录坏了 → `restore` 失败 → 用户看到"这一步的记录坏了"，
+   *    但**坏记录还在栈里**，下次撤销/重做又撞同一条（反复撞同一坏记录）；
+   *  · 靠"撤销到它"来跳过坏记录也不成 —— 记录在栈顶时 `canUndo()` 为假，
+   *    等于**永久卡住**。
+   *
+   * ## 怎么走
+   *
+   * `dir = -1` 撤销（往回）、`dir = +1` 重做（往前）。走到一条**可用**记录为止：
+   *  · 沿途扫过的坏记录**就地摘掉**（`splice`）—— 摘掉才是"不反复撞同一条"，
+   *    只跳过不摘等于每次都重新走一遍同一段坏路；
+   *  · **一个方向最多走到栈的端点**，不绕圈、不重扫，天然不会无限循环。
+   *
+   * ## ⚠️ 摘的**只能是坏记录**（这一条第一版写错过，全量套件抓出来了）
+   *
+   * 第一版摘的是"目标与当前之间**整段**"（含好记录）。后果是**正常撤销就废掉了重做**：
+   * `[A, B, C, D]`（index=3）撤销到 C 时把 D 摘掉，用户再点重做**回不到 D** ——
+   * `verify-pages` 的"重做能再回到新建之后"、`verify-studio2` 的"重做把 x 改回 33"
+   * 两条既有回归同时报红。
+   *
+   * 所以：扫过的坏记录全部摘掉，**好记录一条都不动**
+   * （撤销后重做、重做后撤销都仍然成立）；另外把**够不到**的坏记录
+   * （撤销时在当前条之上、重做时在当前条之下）也摘掉，它们已经不在任何可走路径上。
+   *
+   * ## ⚠️⚠️ 「本方向没有可用目标」≠「整个栈都坏了」（T5-R 修正）
+   *
+   * 第一版在"这个方向走不到可用记录"时**无条件 `splice` 掉整条栈**。
+   * 规划方在真实页面复现了后果（两例都不该清）：
+   *
+   * | 起点 | 操作 | 第一版的后果 |
+   * |---|---|---|
+   * | `[坏, current, 好redo]` index=1 | 撤销 | 整栈清空 → **反方向那条好重做记录永久丢失** |
+   * | `[好undo, current, 坏]` index=1 | 重做 | 整栈清空 → **反方向那条好撤销记录永久丢失** |
+   *
+   * 两次都是"混合栈"（有好的），却被 UI 报成"记录都坏了"。
+   * 现在两条路分开：
+   *  · **一次 `_step` 只摘确认坏的记录**（判断与 `splice` 彻底分开：先整个栈
+   *    过一遍判据、坏的下标从大到小记进 `dead`，再照序摘 —— 边扫边删会漏条）；
+   *  · **只有真的一条可用记录都没有**时才清空整栈（调用方随后用当前设计起新基准）；
+   *  · 摘除之后**索引认对象重算**，`lastKey` 归位 —— 用户接着走另一个方向仍然连贯；
+   *  · 失败时**区分两种情形**：栈还有 ≥1 条可用记录 = "本方向没有可用的记录"
+   *    （不动设计、不动好记录、不动索引）；一条可用的都没有 = "整个栈都坏了"。
+   *
+   * ## ⚠️⚠️⚠️ 当前记录**自己被摘掉**时必须为"实际当前设计"补锚点（T5-R3）
+   *
+   * T5-R2 的 `_relocate` 判据 2 仍是"就近找一条可用记录"。规划方在真实页面
+   * 复现了它的后果（**当前记录自己坏**，不是整栈全坏）：
+   *
+   * | 栈 | `index` | 操作 | T5-R2 的后果 |
+   * |---|---|---|---|
+   * | `[坏BEFORE, 坏CURRENT, FUTURE]` | 1 | 撤销 | 两条坏摘掉后栈=`[FUTURE]`、`index=0`；**实际设计还是 CURRENT**，`canRedo=false` → 保留的 FUTURE **不可达** |
+   * | `[EARLIER, 坏CURRENT, 坏AFTER]` | 1 | 重做 | 对称：栈=`[EARLIER]`、`index=0`，**实际设计还是 CURRENT**，`canUndo=false` → 保留的 EARLIER **不可达** |
+   *
+   * 两例都**不是**"整个栈都坏了"（反方向真有好记录），所以既不许清栈、也不许
+   * 把游标硬指到一条**不是当前**的记录上。正确做法是**仅为"实际当前设计"补一个
+   * 有效锚点**：锚点的 `state` 由调用方传进来（`curState` = 当前设计的真实快照），
+   * 位置 = "当前记录原来的位置前面还剩几条活着的记录"。
+   *
+   *  · 上面第一例：锚点插在 0 → 栈 `[当前锚点, FUTURE]`、`index=0`
+   *    → `canUndo=false` / `canRedo=true`，**真实重做能到 FUTURE**；
+   *  · 第二例：锚点插在 1 → 栈 `[EARLIER, 当前锚点]`、`index=1`
+   *    → `canUndo=true` / `canRedo=false`，**真实撤销能回 EARLIER**。
+   *
+   * ⚠️ 三条边界：
+   *  1. **不是"清空整个有效历史重建"**：只有当前记录自己坏了才插**一条**，
+   *     EARLIER/FUTURE 的原字节与顺序一个都不动（全栈真坏才走 `reset`）；
+   *  2. **只在"这一步没走成"（`picked === null`）时插**：走成了的话游标归目标、
+   *     设计也换成目标，不需要锚点 —— 也就不会给栈里凭空加记录
+   *     （否则"重做成功"这一步会多出一条谁都没要求的历史，见 R5 的回归）；
+   *  3. 补不出有效锚点（`curState` 不是可用快照）时**退回 T5-R2 的就近兜底**，
+   *     不清栈、不谎报 —— 如实标成边界。
+   *
+   * `ok:true` 的返回里带上 `anchorAt` / `curRemoved`：调用方在
+   * **`restore` 又失败**时要用它们补锚点（`app.js` 的 `afterRestoreFailed`）。
+   *
+   * @param dir       -1 = 撤销，+1 = 重做
+   * @param isUsable  判定单条快照是否可用；不传则一律视为可用（旧行为）
+   * @param curState  **实际当前设计**的快照（补锚点用；不传 = 不补锚点，旧行为）
+   * @param curLabel  锚点记录的标签（默认"当前设计"）
+   * @returns {{ok:true, state, label, target, removed, index, sizeBefore, usableLeft,
+   *            anchorAt, curRemoved, anchor}}
+   *          走到了可用记录（`target` 是记录对象本身，供 `restore` 失败时精确摘除）
+   *        | {{ok:false, removed, sizeBefore, usableLeft, anchorAt, curRemoved, anchor}}
+   *          本方向没有可用记录
+   *        `usableLeft`：栈里还剩几条可用记录（0 = 整个栈都坏了，栈已被清空）。
+   */
+  UndoStack.prototype._step = function (dir, isUsable, curState, curLabel) {
+    const usable = typeof isUsable === "function" ? isUsable : function () { return true; };
+    const cur = this.index;
+    const sizeBefore = this.stack.length;
+    // 当前索引不指向任何记录 → 没有比"本方向无可用记录"更细的信息可给。
+    if (cur < 0 || cur >= sizeBefore) {
+      return { ok: false, removed: 0, sizeBefore: sizeBefore, usableLeft: 0 };
+    }
+
+    // ---- ① 当前这一格（认**对象**不认下标）----
+    //
+    // 后面要摘记录，下标会整体左移，所以全程只认对象引用
+    // （第一版用 `i + removed` 自己算下标，在"摘掉的都在目标右边"时算错，
+    //  实测栈只剩 2 条、索引却停在 4，撤销序列整个错位）。
+    const curRec = this.stack[cur];
+
+    // ---- ② 单遍扫描（只判断）：本方向的第一个可用目标 + 沿途的坏记录 ----
+    //
+    // 撤销（`dir < 0`）从 `cur-1` 往回扫；重做（`dir > 0`）从 `cur+1` 往前扫。
+    // 扫到第一条**可用**记录就停（那就是目标），沿途**确认坏的**下标记进 `dead`。
+    // 两端各限 1000 条（`STEP_SCAN_LIMIT`）—— 搜索本身一定会终止（下标每轮严格
+    // 移动、边界就是栈长），这个上限是第二道保险，让"步数"这件事显式。
+    //
+    // ⚠️ **全程只判断、不 `splice`**：边扫边删会让还没检查的记录整体下移，于是
+    //    漏掉一条（套件三次用 `可用表 11000 → 1101` 精确指到这里 —— 末尾那条
+    //    坏记录摘不掉）。摘除统一放到最后、按**从大到小**一次做完。
+    const dead = [];
+    let scanned = 0;
+    let picked = null;                 // 目标的**记录对象**（摘除只改下标，不改对象）
+    for (let k = cur + dir; k >= 0 && k < sizeBefore; k += dir) {
+      if (scanned++ >= STEP_SCAN_LIMIT) break;
+      if (this._usable(k, usable)) { picked = this.stack[k]; break; }
+      dead.push(k);
+    }
+    // 反方向够不到的坏记录：撤销时在当前条**之上**（`canRedo` 顶多回到当前条）、
+    // 重做时在当前条**之下**（`canUndo` 也退不到）—— 留着只会在下次加载时又冒出来。
+    // ⚠️ 当前条自己在**撤销**方向**不算**："下面那格是好的"必须仍是**纯粹的一格
+    //    移动**（一条都不摘），这是既有回归 `(a1)` 钉死的行为；**重做**方向以当前条
+    //    为出发点，所以它当然在扫描范围内。
+    // ⚠️ **只摘确认坏的**，好记录一条都不动 —— 这就是"端点无可用目标不清空有效历史"。
+    if (dir < 0) {
+      for (let k = sizeBefore - 1; k > cur; k--) {
+        if (scanned++ >= STEP_SCAN_LIMIT) break;
+        if (!this._usable(k, usable)) dead.push(k);
+      }
+    } else {
+      for (let k = cur - 1; k >= 0; k--) {
+        if (scanned++ >= STEP_SCAN_LIMIT) break;
+        if (!this._usable(k, usable)) dead.push(k);
+      }
+    }
+    // ⚠️ **当前条自己**：撤销时它不参与扫描（不重读），但**它自己坏了就必须摘**
+    //    —— 否则索引会停在一条坏记录上，`count`/按钮与实际不一致
+    //    （规划方实测的"整栈全坏"就是这一支：栈里只剩当前条且它是坏的）。
+    if (!this._usable(cur, usable)) dead.push(cur);
+    dead.sort(function (a, b) { return b - a; });
+    for (let k = 0; k < dead.length; k++) this.stack.splice(dead[k], 1);
+    const removed = dead.length;
+
+    // ---- ③ 摘完之后，按**当前记录对象**重定位游标 ----
+    //
+    // ⚠️⚠️ 落点必须代表**实际当前的那条记录**，不能用删除前的数值下标
+    //    重新算（T5-R2 的核心修正）。规划方实测的反例：
+    //
+    //     | 栈 | `index` | 操作 | 第一版的后果 |
+    //     |---|---|---|---|
+    //     | `[坏, CURRENT, FUTURE]` | 1 | 撤销 | 摘掉坏条后栈=`[CURRENT, FUTURE]`，但 `index` 仍**1 → 指向 FUTURE**；实际设计还是 CURRENT，`canRedo=false`，计数 `1 / 1`；**再按重做就把 FUTURE 也丢了** |
+    //     | `[CURRENT, TARGET, FUTURE]` | 1 | 重做（TARGET 恢复失败被摘） | 同样的错位：`index` 落到 FUTURE，实际 CURRENT |
+    //
+    //     两例都是"`index` 指向的不是当前那条记录"。删除前的 `cur` 只在
+    //     **没删过东西**时才等于当前记录的新下标。
+    //
+    // 所以：删之前先把**当前记录对象**抓住（`curRec`），删完之后用
+    // `indexOf` 问它现在在第几格 —— 这就是"按保存的当前记录对象重定位"。
+    // 不允许"找一条碰巧可用的记录"（撤销取最左、重做取最右那种兜底）：
+    // 那会把游标挪到一条**不是当前**的记录上，反方向的有效历史看着还在、
+    // 实际语义已经错位。"当前记录自己被摘掉"的正确解法是**为实际当前设计补锚点**
+    // （`anchorCurrent`；T5-R2 当时写的是"就近找"，T5-R3 改掉了 —— 见函数头注释），
+    // 只有在补不出有效锚点时才退回 `_relocate` 的就近行为。
+    //
+    // ⚠️ 这段逻辑**必须与 `afterRestoreFailed`（app.js）共用一份实现**：
+    //    那里是"`_step` 判据通过、`restore` 才失败"的另一半，同样要
+    //    "按当前记录对象重定位"，否则 redo 方向又会把游标留在 FUTURE 上。
+    //
+    // ⚠️⚠️ T5-R3：当前记录**自己被摘掉**时不能"就近硬指"一条好记录（那不代表
+    //     实际当前设计），而是**为实际当前设计补一个有效锚点**。位置 = 它原来的
+    //     位置前面还剩几条活着的记录（`cur` 减去被摘的、原本在它前面的条数）。
+    //     锚点只在"这一步没走成"（`picked === null`）时补 —— 详见函数头注释。
+    const curRemoved = this.stack.indexOf(curRec) < 0;
+    let removedBeforeCur = 0;
+    for (let k = 0; k < dead.length; k++) if (dead[k] < cur) removedBeforeCur++;
+    const anchorAt = cur - removedBeforeCur;
+
+    let anchor = null;
+    if (curRemoved && !picked && this._countUsable(usable) > 0) {
+      // ⚠️ `_countUsable(...) > 0` 这一条就是"**全栈真坏才可 reset**"：
+      //    当前记录自己坏、而**别的方向一条可用记录都不剩**时（规划方 E 例：
+      //    栈里两条全坏），这不是"混合栈"，补锚点会把"整栈真坏"偷偷变成
+      //    "还有一条好的" —— 提示会说成"其他记录保留"（其实一条都没有）。
+      //    所以那时**不补锚点**，让下面 `_relocate` 返回 -1 走"整栈全坏"那一支，
+      //    由调用方用当前设计重建基准（当前设计一个字节都没动）。
+      anchor = this.anchorCurrent(anchorAt, curState, curLabel, usable);
+    }
+    this.index = anchor ? this.stack.indexOf(anchor)
+                        : this._relocate(curRec, cur, usable);
+    if (this.index < 0) {
+      // 一条可用的都没有 = **整个栈都坏了**（调用方据此起新基准）。
+      // 当前设计一个字节都没动，只是栈被清理干净。
+      this.lastKey = null;
+      this.stack.splice(0, this.stack.length);
+      return { ok: false, removed: removed, sizeBefore: sizeBefore, usableLeft: 0,
+               anchorAt: anchorAt, curRemoved: curRemoved, anchor: anchor };
+    }
+
+    // ---- ④ 认对象取回目标（摘除只改下标，记录对象本身没动）----
+    const target = picked;
+    if (target && this.stack.indexOf(target) >= 0) {
+      this.index = this.stack.indexOf(target);
+      this.lastKey = null;
+      return {
+        ok: true, state: target.state, label: target.label,
+        // `target` 是**记录对象本身**：调用方在 `restore` 失败时要用它
+        // 精确摘掉这一条（app.js 的 `afterRestoreFailed`）。
+        target: target, removed: removed, index: this.index,
+        sizeBefore: sizeBefore, usableLeft: 1,
+        // T5-R3：当前记录自己被摘掉、而 `restore` 又失败时，调用方靠这两个
+        // 字段为**实际当前设计**补锚点（`afterRestoreFailed`）。
+        anchorAt: anchorAt, curRemoved: curRemoved, anchor: anchor,
+      };
+    }
+    // ---- 本方向确实走不到可用记录 ----
+    //
+    // ⚠️ **绝不动 `state`、绝不返回记录、绝不移动 `this.index`**：
+    // 调用方会把"没有可用目标"当成"这一步撤销不动"，当前设计**原样保留**
+    // （不能因为栈烂了就清画布）；索引也不再往前挪 —— 挪了就等于
+    // "先把索引推进、再把坏设计/错误提示留给用户"。
+    //
+    // ⚠️ 两种情形在这里天然分开（`usableLeft` 由 `_countUsable` 数出来）：
+    //  · **本方向没有可用的记录**（反方向还有好的）→ `usableLeft > 0`。
+    //    这一路**只摘了坏记录**，反方向的好记录、当前设计、当前索引全都在
+    //    （规划方 R2 的两个反例就是这一支：`[坏, current, 好redo]` 撤销、
+    //    `[好undo, current, 坏]` 重做 —— 不许把混合栈报成"全坏"）；
+    //  · **整个栈都坏了**（`usableLeft === 0`）→ 上面第 2 步已经清空并返回，
+    //    走不到这里。
+    this.lastKey = null;
+    return { ok: false, removed: removed, sizeBefore: sizeBefore, usableLeft: this._countUsable(usable),
+             anchorAt: anchorAt, curRemoved: curRemoved, anchor: anchor };
+  };
+
+  /**
+   * 为**实际当前设计**补一个有效锚点记录（T5-R3；`_step` 与 `afterRestoreFailed` 共用）。
+   *
+   * ## 什么时候需要它
+   *
+   * 代表"实际当前设计"的那条记录**自己坏了**、被 `_step` 摘掉之后，栈里就再没有
+   * 任何一条记录对应画布上真正的那份设计。此时：
+   *
+   *  · 就近硬指一条可用记录 = **游标不代表实际当前**（T5-R2 的缺陷形态）：
+   *    `canRedo`/`canUndo` 与实际相反，反方向的好历史**看着还在、实际不可达**；
+   *  · 清空整栈 = 把好记录一起丢掉（"全栈真坏才可 reset"，这里不是）。
+   *
+   * 所以插**一条**：`state` 就是当前设计的真实快照（调用方给），位置由调用方算
+   * （"它原来的位置前面还剩几条活着的记录"）。
+   *
+   * ⚠️ 只在 `state` 是**可用快照**时才插（`isUsable(state)`）—— 插一条判据不认的
+   *    记录等于插了个下次就要摘的垃圾；判据不认时返回 `null`，由调用方退回就近兜底。
+   *
+   * @param at        期望插入的下标（会夹到 `0..栈长`）
+   * @param state     实际当前设计的快照字符串
+   * @param label     锚点记录的标签
+   * @param isUsable  单条快照的可用性判据
+   * @returns 插入的记录对象；没插返回 `null`
+   */
+  UndoStack.prototype.anchorCurrent = function (at, state, label, isUsable) {
+    const usable = typeof isUsable === "function" ? isUsable : function () { return true; };
+    if (typeof state !== "string" || !state) return null;
+    let okState = false;
+    try { okState = !!usable(state); } catch (e) { okState = false; }
+    if (!okState) return null;
+    const pos = Math.max(0, Math.min(at, this.stack.length));
+    const rec = { state: state, label: label || "当前设计" };
+    this.stack.splice(pos, 0, rec);
+    return rec;
+  };
+
+  /**
+   * 摘掉坏记录之后，**游标该落在哪一格**（T5-R2；`_step` 与 `afterRestoreFailed` 共用）。
+   *
+   * ## 判据（三条，按优先级）
+   *
+   *  1. **当前记录对象还在栈里** → 游标就是它的新下标。这就是验收要求的
+   *     "按保存的当前记录对象重定位"：`index` 永远代表**实际当前的那条记录**，
+   *     不是"删除前那个数值下标所指的别的东西"。
+   *  2. 当前记录**自己被摘掉了**（它本来就是坏的）→ 以它**原来的位置**为锚点
+   *     （`curAt 摘掉后最多左移一格`，用 `min(curAt, 栈长)` 表示"它原来的位置"），
+   *     先往右、再往左找第一条**可用**记录。找不到才返回 -1。
+   *
+   *     ⚠️⚠️ **这一支是 T5-R3 之后的"兜底"，不是首选**（T5-R3 修正）。
+   *     T5-R2 把它当成首选，于是"当前记录自己坏"时游标被硬指到一条**不是当前**的
+   *     记录上（规划方实测：`canRedo`/`canUndo` 与实际相反，反方向的好历史不可达）。
+   *     首选现在是 `anchorCurrent()`：**为实际当前设计补一条有效锚点**，位置由
+   *     `_step` / `afterRestoreFailed` 算好。只有"补不出有效锚点"（当前设计的快照
+   *     自己就不可用）时才走到这里 —— 那时宁可保留 T5-R2 的就近行为，也**不清栈、
+   *     不谎报**（清栈会丢掉真好的记录，那才是不可接受的）。
+   *  3. 一条可用记录都没有 → **-1**（= 整个栈都坏了，调用方据此重建基准）。
+   *
+   * ## ⚠️ 为什么"撤销取最左、重做取最右"那种兜底是错的
+   *
+   * 那是"**找一条碰巧可用的记录**"：游标会落到一条**不是当前**的记录上。
+   * 规划方实测的反例 `[坏, CURRENT, FUTURE]`（index=1）撤销后，
+   * 兜底把游标留在 FUTURE 上 —— 设计仍是 CURRENT、`canRedo=false`、
+   * 计数 `1 / 1`，用户再按重做就把 FUTURE 也丢了。
+   *
+   * ⚠️ T5-R3 补充：`[坏BEFORE, 坏CURRENT, FUTURE]`（当前记录**自己**坏）是同一个病
+   * 的另一个入口 —— 见 `anchorCurrent()` 与 `_step` 的说明。这一支现在只作兜底。
+   *
+   * @param curRec  当前那条记录的**对象**（`_step` 在摘除前抓的）
+   * @param curAt   摘除前它的下标（当前条自己被摘时用来定位锚点）
+   * @param isUsable 单条快照的可用性判据
+   * @returns 新游标下标；一条可用记录都没有时 `-1`
+   */
+  UndoStack.prototype._relocate = function (curRec, curAt, isUsable) {
+    const usable = typeof isUsable === "function" ? isUsable : function () { return true; };
+    const same = this.stack.indexOf(curRec);
+    if (same >= 0) return same;                    // ① 当前记录还在 → 就是它
+    const anchor = Math.min(curAt, this.stack.length);
+    for (let k = anchor; k < this.stack.length; k++) if (this._usable(k, usable)) return k;
+    for (let k = anchor - 1; k >= 0; k--) if (this._usable(k, usable)) return k;
+    return -1;                                     // ③ 整个栈都不可用
+  };
+
+  /** 栈里还有几条可用记录（决定「本方向无目标」还是「整栈全坏」） */
+  UndoStack.prototype._countUsable = function (isUsable) {
+    let n = 0;
+    for (let i = 0; i < this.stack.length; i++) if (this._usable(i, isUsable)) n++;
+    return n;
+  };
+
   UndoStack.prototype.reset = function (state, label) {
     this.stack = [{ state: state, label: label || "初始" }];
     this.index = 0;
@@ -1148,18 +1494,48 @@ function toV2Json(d) {
   UndoStack.prototype.canUndo = function () { return this.index > 0; };
   UndoStack.prototype.canRedo = function () { return this.index < this.stack.length - 1; };
 
-  UndoStack.prototype.undo = function () {
-    if (!this.canUndo()) return null;
-    this.index--;
-    this.lastKey = null;
-    return { state: this.stack[this.index].state, label: this.stack[this.index + 1].label };
+  /**
+   * 撤销一步。
+   *
+   * ⚠️ `isUsable` 是**可选**的（T5-A 任务引入；T5-R / T5-R2 返工 —— 这一批**尚未发版**）：
+   * 传进来时，坏记录会在这一步被就地摘掉并继续往回找，见 `_step`。
+   * 不传 = 旧的"只退一格"行为，现有调用方与套件不受影响。
+   *
+   * ## ⚠️⚠️ 已经到栈底时**不返回 `null`**（T5-R2 修正）
+   *
+   * 旧写法是 `if (!this.canUndo()) return null;`。调用方（`app.js` 的
+   * `doUndo`）看到 `null` 走 `afterFailedStep(null)`，而缺省
+   * `usableLeft = 0` → 被判成"**整个栈都坏了**" → `undo.reset(snapshot())`。
+   * 规划方在真实页面按 Ctrl+Z 复现：**一个全好的栈在栈底按一下，三条有效
+   * 记录全变 `[初始]`、计数 `0 / 0`、toast 误报"记录都坏了"** ——
+   * 反方向的历史就这么没了。按钮变灰**挡不住真实快捷键**（`bindKeys`）。
+   *
+   * 现在返回**明确的"这个方向没有可用记录"**（`ok:false` + `removed:0` +
+   * `usableLeft>0`）：调用方只刷按钮、不摘记录、不重建基准、不提示。
+   *
+   * ## ⚠️⚠️ T5-R3：`curState` 是"实际当前设计"的锚点材料
+   *
+   * 当前记录**自己坏了**时，摘掉它之后栈里就没有东西代表画布上真正那份设计了。
+   * 调用方把当前设计的真实快照（`app.js` 的 `snapshot()`）与标签传进来，
+   * `_step` 会用它补**一条**有效锚点 —— 见 `anchorCurrent()`。
+   * 不传（旧调用方）= 不补锚点，行为与 T5-R2 一致。
+   */
+  UndoStack.prototype.undo = function (isUsable, curState, curLabel) {
+    const usable = typeof isUsable === "function" ? isUsable : function () { return true; };
+    if (!this.canUndo()) {
+      // ⚠️ 真的全坏（连一条可用的都没有）才让 `usableLeft = 0` —— 那才是
+      //    "整个栈都坏了"该走重建基准的路径。正常到栈底时它 > 0。
+      return { ok: false, removed: 0, sizeBefore: this.stack.length, usableLeft: this._countUsable(usable) };
+    }
+    return this._step(-1, isUsable, curState, curLabel);
   };
 
-  UndoStack.prototype.redo = function () {
-    if (!this.canRedo()) return null;
-    this.index++;
-    this.lastKey = null;
-    return { state: this.stack[this.index].state, label: this.stack[this.index].label };
+  UndoStack.prototype.redo = function (isUsable, curState, curLabel) {
+    const usable = typeof isUsable === "function" ? isUsable : function () { return true; };
+    if (!this.canRedo()) {
+      return { ok: false, removed: 0, sizeBefore: this.stack.length, usableLeft: this._countUsable(usable) };
+    }
+    return this._step(1, isUsable, curState, curLabel);
   };
 
   /** 当前状态（用于显示"可撤销 N 步"） */

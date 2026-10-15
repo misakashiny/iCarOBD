@@ -216,7 +216,9 @@ const KNOWN_BLANK_REFS = {};
         if (e.isDirectory()) walk(f); else if (e.name.endsWith('.png')) onDisk.push(f);
       });
     })(path.join(STUDIO, 'assets'));
-    eq(onDisk.length, all.length, `磁盘上的 PNG 数与清单一致（${onDisk.length} 个）`);
+    const fresh = await cdp.eval('NEXT_LIBRARY.assets.map(a=>a.path)');
+    fresh.forEach(p => { if(!fs.existsSync(path.join(STUDIO,p))) throw new Error('Missing new asset: '+p); });
+    eq(onDisk.length, all.length + fresh.length, `磁盘上的 PNG 数与清单一致（${onDisk.length} 个）`);
 
     // ---------- 2b) **内嵌 data 与磁盘字节必须逐字节一致**
     //

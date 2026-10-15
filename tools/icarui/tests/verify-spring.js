@@ -577,6 +577,10 @@ function runSpring(k, c, steps, dt, target) {
         c2.fillText = function (t, x, y) { texts.push([String(t), Math.round(x * 10) / 10, Math.round(y * 100) / 100]); return orig.apply(null, arguments); };
         S.previewValues = { std_0C: 12.4 };
         window.draw();
+        const digital = texts.slice();
+        texts = [];
+        // The drum helper retains its drawing contract; live readouts now use the raw value.
+        window.drawDigitDrum(n, 12.4, 100, 100, Math.max(8, Math.min(200 * .44, 200 * .30)));
         const drum = texts.slice();
         texts = [];
         S.previewValues = null;
@@ -590,10 +594,11 @@ function runSpring(k, c, steps, dt, target) {
         const tag2 = texts.slice().map(t => t[0]);
         n.cardStyle = null;
         c2.fillText = orig;
-        return JSON.stringify({ drum: drum, blank: blank, tag2: tag2, fs: Math.max(8, Math.min(200 * 0.44, 200 * 0.30)) });
+        return JSON.stringify({ drum: drum, digital: digital, blank: blank, tag2: tag2, fs: Math.max(8, Math.min(200 * 0.44, 200 * 0.30)) });
       })()`);
       const D = JSON.parse(r);
       console.log('    · 数字鼓画出的文字：' + JSON.stringify(D.drum));
+      eq(D.digital.filter(t => t[0] === '12').length, 1, '实时数字读数按App精度显示真值，数字鼓绘制另行验证');
       const fsNum = D.fs;
       const rowH = fsNum * 1.16;
       const digitCalls = D.drum.filter(t => /^[0-9]$/.test(t[0]));
@@ -609,7 +614,7 @@ function runSpring(k, c, steps, dt, target) {
       ok(three.length === 1, '最低位那一格画了数字 3（**下一位正从下面滚进来**）');
       near(three[0][2], 100 + 0.6 * rowH, 0.05, '下一位的 y = 中心 + 0.6 行');
       ok(!digitCalls.some(t => t[0] === '0'), '**前导零不画**（12.4 显示 "12"，不是 "012"）');
-      eq(D.blank.filter(t => t[0] === '123').length, 1, '没有数据时仍然画占位 "123"（老行为不变）');
+      eq(D.blank.filter(t => t[0] === '--').length, 1, '没有数据时显示未知，不伪造123');
       const tag = D.blank.map(t => t[0]).filter(t => /^数字/.test(t));
       eq(tag.length, 1, '右下角有样式标签');
       eq(tag[0], '数字', '标签是 "数字"（**不是 "数字 · undefined"** —— v2.81.0 修：resolveCard 返回的是对象，不是档位数字）');

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.ui.dash.NodeStateResolverTest" tests="20" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:52.702Z" hostname="WIN-LI9OE82Q5LO" time="0.008">
+  <properties/>
+  <testcase name="library warning and midpoint critical remain supported" classname="com.icar.obd.ui.dash.NodeStateResolverTest" time="0.001"/>
+  <testcase name="no warning threshold stays normal only with valid data" classname="com.icar.obd.ui.dash.NodeStateResolverTest" time="0.001"/>
+  <testcase name="missing warning skin falls back normal" classname="com.icar.obd.ui.dash.NodeStateResolverTest" time="0.0"/>
+  <testcase name="explicit thresholds override library" classname="com.icar.obd.ui.dash.NodeStateResolverTest" time="0.0"/>
+  <testcase name="critical without skin falls back warning then normal" classname="com.icar.obd.ui.dash.NodeStateResolverTest" time="0.0"/>
+  <testcase name="NaN is unknown" classname="com.icar.obd.ui.dash.NodeStateResolverTest" time="0.0"/>
+  <testcase name="recovered warning follows current phase not old unknown alpha" classname="com.icar.obd.ui.dash.NodeStateResolverTest" time="0.0"/>
+  <testcase name="runtime unknown does not add a shared state name" classname="com.icar.obd.ui.dash.NodeStateResolverTest" time="0.0"/>
+  <testcase name="minimum blink period remains enforced" classname="com.icar.obd.ui.dash.NodeStateResolverTest" time="0.0"/>
+  <testcase name="expired bus reading enters production resolver as unknown" classname="com.icar.obd.ui.dash.NodeStateResolverTest" time="0.003"/>
+  <testcase name="missing bound value is unknown" classname="com.icar.obd.ui.dash.NodeStateResolverTest" time="0.0"/>
+  <testcase name="configured longer blink period and alpha clamping remain enforced" classname="com.icar.obd.ui.dash.NodeStateResolverTest" time="0.001"/>
+  <testcase name="critical boundary takes priority" classname="com.icar.obd.ui.dash.NodeStateResolverTest" time="0.0"/>
+  <testcase name="every prior level dispatches unknown and can recover" classname="com.icar.obd.ui.dash.NodeStateResolverTest" time="0.001"/>
+  <testcase name="normal valid value uses normal skin" classname="com.icar.obd.ui.dash.NodeStateResolverTest" time="0.0"/>
+  <testcase name="no selected skin is not confused with missing data" classname="com.icar.obd.ui.dash.NodeStateResolverTest" time="0.0"/>
+  <testcase name="no binding is static and never queries a value or definition" classname="com.icar.obd.ui.dash.NodeStateResolverTest" time="0.0"/>
+  <testcase name="failed bus reading enters production resolver as unknown" classname="com.icar.obd.ui.dash.NodeStateResolverTest" time="0.001"/>
+  <testcase name="infinite values are unknown" classname="com.icar.obd.ui.dash.NodeStateResolverTest" time="0.0"/>
+  <testcase name="warning boundary is inclusive" classname="com.icar.obd.ui.dash.NodeStateResolverTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

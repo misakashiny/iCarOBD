@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.DesignPackTest" tests="18" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:49.645Z" hostname="WIN-LI9OE82Q5LO" time="0.575">
+  <properties/>
+  <testcase name="清单里有、包里没有的素材要报缺失" classname="com.icar.obd.data.DesignPackTest" time="0.085"/>
+  <testcase name="清单里一个素材都没有的包也能解开（纯控件设计）" classname="com.icar.obd.data.DesignPackTest" time="0.03"/>
+  <testcase name="manifest 是坏 JSON 时报解析失败而不是崩" classname="com.icar.obd.data.DesignPackTest" time="0.035"/>
+  <testcase name="正常包能解开：设计文件拿到、素材按原路径落盘" classname="com.icar.obd.data.DesignPackTest" time="0.057"/>
+  <testcase name="没有 manifest 就不是设计包" classname="com.icar.obd.data.DesignPackTest" time="0.031"/>
+  <testcase name="格式版本不对要拒收并说出认哪个版本" classname="com.icar.obd.data.DesignPackTest" time="0.031"/>
+  <testcase name="包里有穿越条目时整个包拒收，且一个文件都没写到目标目录外" classname="com.icar.obd.data.DesignPackTest" time="0.021"/>
+  <testcase name="包里多出不在清单里的文件：放行，但要说出来" classname="com.icar.obd.data.DesignPackTest" time="0.044"/>
+  <testcase name="拒收时不留半个目录" classname="com.icar.obd.data.DesignPackTest" time="0.043"/>
+  <testcase name="CRC32 不符要明确报错，并说清是哪个文件" classname="com.icar.obd.data.DesignPackTest" time="0.05"/>
+  <testcase name="safeEntryName 归一化正常路径" classname="com.icar.obd.data.DesignPackTest" time="0.004"/>
+  <testcase name="manifest 读得懂工具写的字段" classname="com.icar.obd.data.DesignPackTest" time="0.004"/>
+  <testcase name="文件头识别：zip 认得出，JSON 不误判" classname="com.icar.obd.data.DesignPackTest" time="0.003"/>
+  <testcase name="safeEntryName 拒绝穿越与绝对路径" classname="com.icar.obd.data.DesignPackTest" time="0.003"/>
+  <testcase name="字节数不符要明确报错" classname="com.icar.obd.data.DesignPackTest" time="0.046"/>
+  <testcase name="没有设计文件条目也要说清" classname="com.icar.obd.data.DesignPackTest" time="0.032"/>
+  <testcase name="工具导出时就缺的素材：放行，但逐条列成警告" classname="com.icar.obd.data.DesignPackTest" time="0.04"/>
+  <testcase name="根本不是 zip 时被拒收而不是崩" classname="com.icar.obd.data.DesignPackTest" time="0.01"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

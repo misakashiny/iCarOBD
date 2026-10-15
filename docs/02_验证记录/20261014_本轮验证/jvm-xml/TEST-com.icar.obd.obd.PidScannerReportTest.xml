@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.obd.PidScannerReportTest" tests="12" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:52.558Z" hostname="WIN-LI9OE82Q5LO" time="0.004">
+  <properties/>
+  <testcase name="界面日志按行完整写出" classname="com.icar.obd.obd.PidScannerReportTest" time="0.0"/>
+  <testcase name="模式 22 的范围用四位十六进制" classname="com.icar.obd.obd.PidScannerReportTest" time="0.0"/>
+  <testcase name="零命中也是一份完整报告" classname="com.icar.obd.obd.PidScannerReportTest" time="0.001"/>
+  <testcase name="学习量程只在有时才出现" classname="com.icar.obd.obd.PidScannerReportTest" time="0.002"/>
+  <testcase name="位图块第一位对应 block 加一" classname="com.icar.obd.obd.PidScannerReportTest" time="0.0"/>
+  <testcase name="A0 块解出 A4 与 A6 挡位与总里程" classname="com.icar.obd.obd.PidScannerReportTest" time="0.0"/>
+  <testcase name="超长原始响应被截断" classname="com.icar.obd.obd.PidScannerReportTest" time="0.0"/>
+  <testcase name="没有配置时不崩且不写模式行" classname="com.icar.obd.obd.PidScannerReportTest" time="0.0"/>
+  <testcase name="位图链必须走到 01 C0 而不是停在 01 60" classname="com.icar.obd.obd.PidScannerReportTest" time="0.0"/>
+  <testcase name="每条命中都带齐可用字段" classname="com.icar.obd.obd.PidScannerReportTest" time="0.001"/>
+  <testcase name="多条命中按顺序编号" classname="com.icar.obd.obd.PidScannerReportTest" time="0.0"/>
+  <testcase name="报告带头部参数" classname="com.icar.obd.obd.PidScannerReportTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>ICarUI</title>
+<link rel="icon" type="image/png" href="branding/icarui-icon.png">
 <!--
   "双击即用"靠这个保证：全部是**经典脚本**，没有 ES module、没有 fetch、没有 XHR
   —— 那些在 file:// 下会被 CORS 挡住（已实测）。见 docs/主题设计大纲.md §6.1 与 §3.3。
@@ -14,55 +15,57 @@
 <body>
 
 <header>
-  <h1>ICarUI<span class="brandSub">车机仪表主题制作工具</span></h1>
-  <span class="ver">格式 <code id="schemaLabel">icar.ui/2</code></span>
-
-  <span class="sep"></span>
-  <button id="btnNew" onclick="newDesign()" title="清空重来（会先问一次）">新建</button>
-  <button onclick="pickFile()" title="打开设计文件">打开</button>
-  <button class="primary" id="btnSave" onclick="saveFile()" title="保存为 icar.ui/2（完整能力）">保存</button>
-  <button onclick="exportV1()" title="导出 App 当前版本能读的格式（无图片/状态/分组/变换）">导出</button>
-  <!-- 设计包（v2.79.0）。**按钮文案刻意不叫「导出」** —— 老套件
-       verify-features 断言的是"有且只有「导出」"，改它的文案会连带改测试。
-       这个按钮的意义是：**把素材一起带走**，解决"推到设备上只剩空卡片"。 -->
-  <button id="btnPack" onclick="exportPackage()" title="导出设计包（.icarzip）：design.json + 这份设计真正引用到的素材 + manifest.json。App 侧导入待做（见 README）">📦 设计包</button>
-  <button onclick="exportPng()" title="把当前画布导出成 PNG 预览图（自动去掉选择框与网格）">导出图</button>
-  <button onclick="validateNow()" title="校验硬错误与警告">校验</button>
-
-  <span class="sep"></span>
-  <button id="btnUndo" class="icon" onclick="doUndo()" title="撤销（Ctrl+Z）">↶ 撤销</button>
-  <button id="btnRedo" class="icon" onclick="doRedo()" title="重做（Ctrl+Y）—— 把刚撤销的操作再做一遍">↷ 返回</button>
-  <span class="ver" id="undoCount" title="可撤销步数 / 栈内总步数">0 / 0</span>
-
-  <span class="sep"></span>
-  <!-- 吸附拆成两种（v2.20.0）：
-     · 网格吸附 —— 坐标四舍五入到 15 单位网格（对齐"格子"）
-     · 对象吸附 —— 拖动时对齐到画布边/中线与其它节点的边/中心（对齐"邻居"）
-     两者**独立开关、可同时生效**：网格先落位，对象再微调。 -->
-<button id="btnSnap" onclick="toggleSnap()" title="网格吸附：移动/缩放时坐标对齐到 15 单位网格">▦ 网格吸附 开</button>
-<button onclick="openThemeColors()" title="调整这个设计的主题配色（只改颜色）">🎨 主题配色</button>
-<button id="btnSnapObj" onclick="toggleSnapObj()" title="对象吸附：拖动时对齐到画布边/中线与其它节点的边/中心">🧲 对象吸附 开</button>
-  <button id="btnGrid" class="on" onclick="toggleGrid()" title="显示/隐藏参考网格">▦ 网格</button>
-  <button id="btnPid" onclick="togglePidLabel()" title="当前：画布上不显示 PID。点击开启（做主题时用来确认绑的是哪个 PID）">🏷 PID 关</button>
-
-  <span class="sep"></span>
-  <button id="btnSim" onclick="toggleSim()" title="用正弦波形驱动预览，看数值变化与状态切换">▶ 实时模拟</button>
-
-  <span class="spacer"></span>
-  <button onclick="openSettings()" title="界面设置（缩放等）。设置存在本机，不进设计文件">⚙ 设置</button>
-<button id="btnTheme" onclick="toggleTheme()" title="切换暗黑 / 白色主题">🌙 暗黑</button>
-  <span class="ver" id="canvasSizeLabel"></span>
+  <div class="fileToolbar">
+    <h1>ICarUI<img class="brandIcon" src="branding/icarui-icon.png" alt=""><span class="brandSub">车机仪表设计</span></h1>
+    <span class="ver">格式 <code id="schemaLabel">icar.ui/2</code></span>
+    <div class="toolbarGroup" role="group" aria-label="设计文件">
+      <button id="btnNew" onclick="newDesign()" title="新建空白设计；替换当前设计前会确认">新建</button>
+      <button onclick="pickFile()" title="打开 JSON 设计文件">打开设计</button>
+      <button class="primary" id="btnSave" onclick="saveFile()" title="保存完整的 icar.ui/2 设计文件；素材另存">保存设计</button>
+    </div>
+    <div class="toolbarGroup" role="group" aria-label="导出">
+      <button onclick="exportV1()" title="导出兼容旧版 App 的设计；不含图片、状态、分组或变换">兼容导出</button>
+      <button id="btnPack" onclick="exportPackage()" title="下载 .icarzip，包含设计和引用到的素材。App 导入设计包尚未支持">打包素材</button>
+      <button onclick="exportPng()" title="保存当前画布的 PNG 图片，不含网格和选择框">导出预览图</button>
+    </div>
+    <span class="spacer"></span>
+    <div class="toolbarGroup preferences" role="group" aria-label="界面设置">
+      <button onclick="openSettings()" title="调整界面缩放等本机设置">设置</button>
+      <button id="btnTheme" onclick="toggleTheme()" title="切换编辑器的深色 / 浅色外观">深色界面</button>
+    </div>
+  </div>
+  <div class="editToolbar" aria-label="画布工具">
+    <div class="toolbarGroup" role="group" aria-label="编辑历史">
+      <button id="btnUndo" class="icon" onclick="doUndo()" title="撤销（Ctrl+Z）">↶ 撤销</button>
+      <button id="btnRedo" class="icon" onclick="doRedo()" title="重做（Ctrl+Y）：恢复刚撤销的操作">↷ 重做</button>
+      <span class="ver" id="undoCount" title="可撤销步数 / 栈内总步数">0 / 0</span>
+    </div>
+    <div class="toolbarGroup" role="group" aria-label="对齐与辅助显示">
+      <button id="btnSnap" onclick="toggleSnap()" title="网格吸附：移动和缩放对齐到 15 单位网格">网格吸附 开</button>
+      <button id="btnSnapObj" onclick="toggleSnapObj()" title="对象吸附：对齐画布和其他控件的边缘或中心">对象吸附 开</button>
+      <button id="btnGrid" class="on" onclick="toggleGrid()" title="显示或隐藏参考网格">参考网格</button>
+      <button id="btnPid" onclick="togglePidLabel()" title="当前：隐藏数据标识（PID）。点击显示控件绑定的数据源">数据标识 关</button>
+    </div>
+    <div class="toolbarGroup" role="group" aria-label="预览与检查">
+      <button onclick="openThemeColors()" title="调整当前设计的颜色">设计配色</button>
+      <button id="btnSim" onclick="toggleSim()" title="用示例数据预览数值变化和状态切换；不是车辆实时数据">▶ 模拟预览</button>
+      <button onclick="validateNow()" title="检查设计错误与兼容提示">检查设计</button>
+    </div>
+    <span class="spacer"></span>
+    <span class="ver" id="canvasSizeLabel"></span>
+  </div>
 </header>
 
 <main>
   <!-- ============================================ 左栏：素材库 + 控件树 -->
-  <div class="col">
+  <div class="col libraryColumn">
     <div class="panel grow" id="assets"></div>
     <div class="panel grow" id="tree"></div>
   </div>
 
   <!-- ============================================ 中栏：画布 + 校验结果 -->
-  <div class="col">
+  <div class="col stageColumn">
+    <div class="workspaceLabel"><span>设计画布</span><span>拖入控件 · 点选编辑</span></div>
     <div class="canvasWrap">
       <div id="pageTabs"></div>
         <div id="breadcrumb"></div>
@@ -72,17 +75,17 @@
     </div>
 
     <div class="panel" style="max-height:32vh;display:flex;flex-direction:column">
-      <h2>校验结果</h2>
+      <h2>设计检查<span class="sectionNote">错误与兼容提示</span></h2>
       <div class="msgs" id="msgs"></div>
     </div>
   </div>
 
   <!-- ============================================ 右栏：可折叠的各设置面板 -->
-  <div class="col scroll">
+  <div class="col scroll inspectorColumn">
     <!-- 预设布局（从原来的中栏挪过来，**默认不展开**） -->
     <div class="panel">
       <div class="panelHead" onclick="togglePanel('preset')">
-        <span class="pcaret" id="caret-preset">▸</span>预设布局
+        <span class="pcaret" id="caret-preset">▸</span>从预设开始
       </div>
       <div class="panelBody" id="body-preset" style="display:none">
         <div class="btnRow">
@@ -93,14 +96,14 @@
         <div class="btnRow">
           <button onclick="applyPreset('race')">赛道（含状态灯）</button>
           <button onclick="applyPreset('quad')">四联表</button>
-          <button onclick="applyPreset('blank')">空盘面</button>
+          <button onclick="applyPreset('blank')">空白画布</button>
         </div>
         <div class="hint">
           拖动移动 · 四角手柄缩放 · 上方圆柄或<b>右下角图标</b>旋转（<kbd>Shift</kbd> 15° 步进）·
           空白拖动框选 · <kbd>Shift</kbd> 点选加选 · <kbd>方向键</kbd> 走一格
           （<kbd>Shift</kbd>+<kbd>方向键</kbd> 只走 1 单位，用来对到非网格的位置）·
           <kbd>滚轮</kbd> 缩放选中控件 · <kbd>右键</kbd> 出菜单 · <kbd>F2</kbd> 打开控件编辑器 ·
-          <kbd>Ctrl+Z/Y</kbd> 撤销返回 · <kbd>Ctrl+D</kbd> 复制 ·
+          <kbd>Ctrl+Z/Y</kbd> 撤销 / 重做 · <kbd>Ctrl+D</kbd> 复制 ·
           <kbd>Ctrl+G</kbd> / <kbd>Ctrl+Shift+G</kbd> 打组 / 解组 · <kbd>Delete</kbd> 删除
         </div>
       </div>
@@ -108,7 +111,7 @@
 
     <div class="panel">
       <div class="panelHead" onclick="togglePanel('info')">
-        <span class="pcaret" id="caret-info">▾</span>设计信息
+        <span class="pcaret" id="caret-info">▾</span>设计与画布
       </div>
       <div class="panelBody" id="body-info">
         <div class="prow"><label>名称</label><input id="mName" oninput="metaChanged()" placeholder="未命名设计"></div>
@@ -116,23 +119,22 @@
         <div class="prow"><label>说明</label><input id="mDesc" oninput="metaChanged()"></div>
         <div class="prow"><label>主题</label>
           <select id="mTheme" onchange="metaChanged()">
-            <option value="">（用当前主题）</option>
-            <option value="neon">neon 霓虹</option>
-            <option value="ice">ice 冰川</option>
-            <option value="amber">amber 经典</option>
+            <option value="">跟随当前主题</option>
+            <option value="neon">霓虹</option>
+            <option value="ice">冰川</option>
+            <option value="amber">琥珀</option>
           </select>
         </div>
-        <div class="prow"><label>设计分辨率</label>
+        <div class="prow"><label>画布尺寸</label>
           <input id="dW" type="number" step="1" oninput="canvasChanged()" title="目标屏幕宽（像素）">
           <input id="dH" type="number" step="1" oninput="canvasChanged()" title="目标屏幕高（像素）">
         </div>
         <div class="prow"><label>缩放模式</label>
           <select id="scaleMode" onchange="canvasChanged()"></select>
         </div>
-        <div class="hint">
-          设计分辨率决定<b>画布形状</b>（画布宽高比 = 设计宽高比），设计时就能看出会不会留黑边。
-          <br>⚠️ 默认「拉伸」是 v1 的行为 —— 改成等比会让存量设计留黑边。
-        </div>
+        <details class="helpDetails"><summary>画布尺寸与缩放怎么选？</summary>
+          <div class="hint">填入目标屏幕的宽和高，画布会按这个比例显示。拉伸会铺满屏幕；等比模式可能留边。旧设计改成等比后，请重新检查布局。</div>
+        </details>
       </div>
     </div>
 
@@ -144,23 +146,20 @@
         <div class="prow"><label>路径</label>
           <input id="bgPath" placeholder="如 assets/carbon.png" oninput="bgChanged()">
         </div>
-        <div class="prow"><label>铺法</label>
+        <div class="prow"><label>显示方式</label>
           <select id="bgFit" onchange="bgChanged()"></select>
         </div>
-        <div class="prow"><label>尺寸 w / h</label>
+        <div class="prow"><label>图片宽 / 高</label>
           <input id="bgW" type="number" step="1" placeholder="自动" oninput="bgChanged()" title="留空 = 按铺法自动">
           <input id="bgH" type="number" step="1" placeholder="自动" oninput="bgChanged()" title="留空 = 按铺法自动">
         </div>
         <div class="btnRow">
-          <button onclick="pickBgImage()">选择图片预览</button>
+          <button onclick="pickBgImage()">选择预览图片</button>
           <button onclick="clearBg()">清除背景</button>
         </div>
-        <div class="hint">
-          这里填的路径会写进设计文件（App 会去读）。<b>图片本身</b>请放到设计文件同目录的
-          <code>assets/</code> 下。<br>
-          「选择图片预览」只是让工具里能看到效果（浏览器读不到设备路径），不影响写出的路径。
-          <br>⚠️ <b>尺寸</b>目前只有工具在用；App 侧要等「阶段 2」才会读它。
-        </div>
+        <details class="helpDetails"><summary>如何把背景带到设备？</summary>
+          <div class="hint">路径会写入设计文件。请把图片放在设计文件旁的 <code>assets/</code> 文件夹，或点击“打包素材”一起下载。选择预览图片只改变工具内的预览；请同时检查路径。这里的图片宽高目前只用于工具预览，App 尚未读取。</div>
+        </details>
       </div>
     </div>
 
@@ -174,28 +173,30 @@
     <!-- JSON 面板（v2.91.0：默认**收起**，见下面 body-json 的说明）
          ⚠️ 折叠箭头用的是与「设计信息 / 背景图 / 预设布局」**同一套** panelHead + pcaret
          —— 不再自己写一个，否则"箭头长什么样"会有两种。 -->
-    <div class="panel grow" style="min-height:200px">
+    <div class="panel jsonPanel">
       <div class="panelHead" onclick="togglePanel('json')" title="点标题或箭头收起 / 展开 JSON">
-        <span class="pcaret" id="caret-json">▸</span>JSON 与差异
+        <span class="pcaret" id="caret-json">▸</span>高级：JSON 与兼容性
       </div>
-      <!-- ⚠️ **默认 display:none**（用户要求「JSON页面默认隐藏」）。
-           但 `.panel.grow` 是 flex:1 1 auto —— 收起时它仍然占着右栏的剩余高度，
-           所以"默认隐藏"不会把右栏布局挤变形（画布在中栏，与右栏无关）。
-           `restorePanels()` 会按 localStorage 覆盖这个初始值（记住用户上次的选择）。 -->
+      <!-- 默认收起；restorePanels() 从 localStorage 恢复用户上次的折叠状态。 -->
       <div class="panelBody" id="body-json" style="display:none;flex:1 1 auto;min-height:0;flex-direction:column">
         <div class="tabs">
           <button id="tabJson" class="on" onclick="showTab('json')">JSON</button>
-          <button id="tabDiff" onclick="showTab('diff')">与 App 规则的差异</button>
+          <button id="tabDiff" onclick="showTab('diff')">App 兼容性</button>
         </div>
         <div id="paneJson" class="tabPane">
           <textarea id="jsonArea" spellcheck="false" oninput="jsonEdited()"></textarea>
-          <div class="hint">直接编辑也可以：改动会立刻回灌到画布。校验用的就是这一份文本。</div>
+          <div class="hint">输入后自动检查，内容有效时才应用到画布。无效草稿会保留；替换设计前会提示确认。</div>
         </div>
         <div id="paneDiff" class="tabPane" style="display:none">
           <div class="msgs" id="diffBox"></div>
         </div>
       </div>
     </div>
+    <details class="panel helpDetails editorHelp"><summary>操作帮助与控件风格</summary>
+      <div class="hint">拖动移动，四角调整大小，圆柄旋转。Shift 点选可多选，右键打开更多操作。Ctrl+D 复制，Delete 删除，F2 编辑控件。</div>
+      <div class="hint">新控件样板：原厂风用指针和清楚的刻度；运动风用弧形读数；极简风突出大数字。三种风格的告警含义一致。首批车速、转速、水温、电压、油量已放在控件库顶部；其他控件仍是样板。</div>
+      <div class="hint">模拟预览使用示例数据。保存设计不包含图片文件；打包素材会带上引用的图片。App 导入设计包尚未支持。</div>
+    </details>
   </div>
 </main>
 
@@ -222,6 +223,9 @@
 <script src="js/validate.js"></script>
 <script src="js/presets.js"></script>
 <script src="js/canvas.js"></script>
+<script src="next-library/data.js"></script>
+<script src="js/next-controls.js"></script>
+<script src="js/data-bindings.js"></script>
 <script src="js/panels.js"></script>
 <script src="js/editor.js"></script>
 <!-- 设计包（v2.79.0）：zip.js 是自写的 store-only ZIP 写入/读回，
@@ -229,6 +233,7 @@
      放在 app.js **之前** —— app.js 的 exportPackage() 要用它们。 -->
 <script src="js/zip.js"></script>
 <script src="js/pack.js"></script>
+<script src="js/control-files.js"></script>
 <script src="js/app.js"></script>
 <script>
   /* 标签页切换（很小，不值得单独一个文件） */

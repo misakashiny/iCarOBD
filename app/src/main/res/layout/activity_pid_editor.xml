@@ -30,13 +30,20 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:paddingTop="0dp"
-                android:text="基本信息" />
+                android:text="1 · 基本信息与数据来源" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="带 * 的项目需要填写。主动请求适合 ECU PID；监听广播适合 CAN 周期帧。"
+                android:textColor="@color/text_dim"
+                android:textSize="12sp" />
 
             <TextView
                 style="@style/FieldLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="名称" />
+                android:text="名称 *" />
 
             <EditText
                 android:id="@+id/etName"
@@ -183,13 +190,13 @@
                 style="@style/SectionTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="解析与换算" />
+                android:text="2 · 解析公式与显示量程" />
 
             <TextView
                 style="@style/FieldLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="公式（A..Z 为响应数据字节）" />
+                android:text="公式 *（A..Z 为响应数据字节）" />
 
             <EditText
                 android:id="@+id/etFormula"
@@ -637,7 +644,14 @@
                 style="@style/SectionTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="测试（强烈建议保存前先测）" />
+                android:text="3 · 验证与保存" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="建议先验证响应和解析结果，再保存并启用。没有适配器时可以先保存为禁用状态。"
+                android:textColor="@color/text_dim"
+                android:textSize="12sp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnTest"

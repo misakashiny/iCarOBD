@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.obd.PidRequestImportTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:51.530Z" hostname="WIN-LI9OE82Q5LO" time="0.045">
+  <properties/>
+  <testcase name="real Store import preserves unsafe definition but engine sends nothing" classname="com.icar.obd.obd.PidRequestImportTest" time="0.025"/>
+  <testcase name="real Backup round trip does not make unsafe imported request executable" classname="com.icar.obd.obd.PidRequestImportTest" time="0.015"/>
+  <testcase name="repairing configuration re includes the same user PID without disabling it" classname="com.icar.obd.obd.PidRequestImportTest" time="0.005"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

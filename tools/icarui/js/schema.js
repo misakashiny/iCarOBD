@@ -351,12 +351,12 @@ window.partValueRange = function (part, gauge, values) {
     const min = info ? info.min : 0;
     const max = info ? info.max : 100;
     const raw = v[p.pid];
-    return { value: (raw === null || raw === undefined) ? min : raw, min: min, max: max };
+    return { value: typeof raw === "number" && Number.isFinite(raw) && Number.isFinite(Math.fround(raw)) ? raw : null, min: min, max: max };
   }
   const raw = gauge && gauge.pid ? v[gauge.pid] : null;
   const gmin = gauge ? gauge.min : 0;
   const gmax = gauge ? gauge.max : 100;
-  return { value: (raw === null || raw === undefined) ? gmin : raw, min: gmin, max: gmax };
+  return { value: typeof raw === "number" && Number.isFinite(raw) && Number.isFinite(Math.fround(raw)) ? raw : null, min: gmin, max: gmax };
 };
 
 /** 指针在给定值下的角度 */
@@ -422,9 +422,9 @@ window.SCALE_STRETCH = 0;
 window.SCALE_FIT = 1;
 window.SCALE_FILL = 2;
 window.SCALE_MODES = [
-  { v: 0, n: "拉伸（每轴独立，v1 行为）", d: "自动铺满，但宽高比变了会变形" },
-  { v: 1, n: "等比适应（留黑边）", d: "不变形；宽高比不同时短边留边" },
-  { v: 2, n: "等比铺满（裁切）", d: "不变形；超出部分裁掉，适合背景图" },
+  { v: 0, n: "拉伸铺满（可能变形）", d: "自动铺满，但宽高比变了会变形" },
+  { v: 1, n: "保持比例（可能留边）", d: "不变形；宽高比不同时短边留边" },
+  { v: 2, n: "保持比例并铺满（裁切）", d: "不变形；超出部分裁掉，适合背景图" },
 ];
 
 /**

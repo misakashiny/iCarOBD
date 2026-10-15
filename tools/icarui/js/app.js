@@ -17,6 +17,18 @@
   let batch = null;          // {label, depth} —— 批量改动只压一次栈
   let suppressJsonSync = false;
 
+  /**
+   * 最近一次 `restore()` **失败收尾**里，"画布有没有按实际设计重画成功"（T5-R3）。
+   *
+   * ⚠️ 为什么要记它：`restore()` 只返回 `false`，而"失败"有两种收尾质量 ——
+   *   · 画布已经按回滚后的实际设计重画过 → 界面自洽；
+   *   · 重画**自己也抛**了（持续异常）→ 画面可能还停在候选那一帧。
+   * 两种都**不向调用方抛**，但**绝不能都算"已复原"**。这里如实记下来，
+   * 并由只读钩子 `window.__lastRestoreFinish()` 暴露给套件直接断言
+   * （与 `__jsonSyncFlags` 同一个理由：状态必须能被测，不能靠观感猜）。
+   */
+  let lastRestoreFinish = null;
+
   function el(id) { return document.getElementById(id); }
 
   // ================================================================ 撤销集成
@@ -30,6 +42,250 @@
   }
 
   /**
+   * 快照的**最低结构校验**（T5-A 引入；T5-R 返工补全，未发版）。返回错误原因，可用则返回 `null`。
+   *
+   * ## 为什么"解析成功"不等于"快照可用"
+   *
+   * `JSON.parse` 只保证是合法 JSON。`"null"`、`"[1,2]"`、`"{}"`、
+   * `{"d":null}` 全都解析成功，但没有一个能当快照用。旧代码在这里只查了
+   * `o.d` 是不是对象 —— 于是**结构坏了但 JSON 合法**的那些（`d` 里没有
+   * `nodes`、`pages` 不是数组、`sel` 不是数组）一路放行，
+   * 赋值给 `S.design` 之后才在 `refreshAll()` / `draw()` 里炸掉。
+   *
+   * ## 为什么加载和 restore 必须用**同一个**判据
+   *
+   * 两处判据不一致 = 加载时留下的"好"记录，撤销到它时仍然会失败。
+   * 所以 `loadUndoStack` 与 `restore` 都走这一个函数。
+   *
+   * ## ⚠️ T5-R 返工：判据要覆盖**恢复路径真的会读到的**最低结构
+   *
+   * T5-A 第一版只查 `nodes`/`pages` 是数组、`sel` 是字符串数组，
+   * 于是下面四类**数组层面看着"结构有效"**的快照被判可用，`restore` 一路
+   * 走到 `syncJson()` / `toV2Json()` / `draw()` 才抛（规划方在真实 `file:` 页面实测）：
+   *
+   * | 快照 | 第一版 | 真实读取点 |
+   * |---|---|---|
+   * | 缺 `canvas` | 判**可用** ✗ | `syncJson()` 读 `S.design.canvas.designW` |
+   * | `nodes=[null]` | 判**可用** ✗ | `nodeToJson` / `draw` 读 `n.id`、`n.type` |
+   * | `pages=[null]` | 判**可用** ✗ | `currentPage()` / 页签读 `pg.nodes` |
+   * | `assets` 是对象 | 判**可用** ✗ | `toV2Json` 遍历 `rd.assets` |
+   *
+   * 所以判据改成**按"后面每一步真的会用到"的结构逐项查**：
+   *
+   *  · `d` 是对象，且 `d.nodes` 是数组、**里面每一项都是节点对象**（不是 null/字符串/数字）；
+   *  · `d.pages` 要么没有、要么是数组，且**每一项都是带 `nodes` 数组的页对象**
+   *    （`pageIndex` 越界**不**硬拒：现有代码本来就容错，见 `currentPage()`）；
+   *  · 节点**有 `children` 字段时**必须是数组（旧节点没有这个字段 = 叶节点，仍然合法）；
+   *  · `d.canvas` **要么没有、要么是对象**（T5-A 第一版在这里放行了"`canvas` 是
+   *    数字/字符串"——那不可能来自任何一版快照，直接拒）。**缺 `canvas` 仍然接受**：
+   *    它是有依据的旧形态（旧快照可以只有 `nodes`），由 `restore()` 用
+   *    `normalizeSnapshotDesign()` 做**纯候选归一化**把缺省值补上 —— 不靠
+   *    "反正有默认值"这种没验证过的说法（T5-A 正是这么放行的，实测 `designW` 直接抛）；
+   *  · `d.assets` 要么没有、要么是数组（`toV2Json` 直接 `.map`）；
+   *  · `sel` 要么没有、要么是数组且元素是字符串 —— 指向已删除节点的
+   *    id 仍然合法，`findNode` 自己会返回 null，不该因此判快照坏了。
+   *
+   * ⚠️ **不查**每个节点的字段形状（`name`/`x`/`pid`/部件…）。理由有两条：
+   *  1. 那是"旧快照可能只有一部分字段"的正常情形，硬拒就是验收禁止的**误伤**；
+   *  2. 那一类坏记录由 `restore()` 的**失败回滚**兜住（见下面的说明），
+   *     不需要把判据写成"半个 schema 校验器"。
+   *
+   * ⚠️ 判据只**接受 / 拒绝**，**不做归一化**：恢复路径上不许"修一修再赋值"，
+   * 否则"失败后 design/selection/JSON/dirty 一个字节都不变"这条就没有保证
+   * （改了一半再失败，已经不是原值了）。
+   */
+  function snapshotProblem(snap) {
+    // ⚠️⚠️ 整个判据**绝不许抛**（T5-R2 修正）。
+    //
+    // 规划方实测：可解析的 10000 层 `children` 让 `nodeProblem` 递归爆栈，
+    // 而 `snapshotProblem` 当时在 `restore()` 的事务 `try` **之外** ——
+    // `restore` 抛 `Maximum call stack size exceeded` 而不是返回 `false`。
+    // 更糟的是它还被 `UndoStack._usable` 用（`_step` 的扫描里），
+    // 所以"判据抛异常"会污染撤销栈的走法本身。
+    //
+    // 现在两道保险：`nodeProblem` 改成迭代 + 显式预算（不再爆栈），
+    // 这里再包一层 `try/catch` 把任何意外都变成"这条快照不可用"。
+    try {
+      if (typeof snap !== "string" || !snap) return "不是字符串";
+      let o = null;
+      try {
+        o = JSON.parse(snap);
+      } catch (e) {
+        return "不是合法 JSON";        // 截断、半截字符串
+      }
+      if (!o || typeof o !== "object" || Array.isArray(o)) return "不是一个快照对象";
+      if (!o.d || typeof o.d !== "object" || Array.isArray(o.d)) return "缺少设计（d）";
+      if (!Array.isArray(o.d.nodes)) return "设计的节点表（d.nodes）不是数组";
+      if (o.d.nodes.length > NODE_SCAN_LIMIT) {
+        return "设计的节点表（d.nodes）有 " + o.d.nodes.length + " 项，超过 " + NODE_SCAN_LIMIT + " 无法验证";
+      }
+      for (let i = 0; i < o.d.nodes.length; i++) {
+        const bad = nodeProblem(o.d.nodes[i]);
+        if (bad) return "设计的节点表（d.nodes）第 " + i + " 项" + bad;
+      }
+      if (o.d.pages != null) {
+        if (!Array.isArray(o.d.pages)) return "设计的页表（d.pages）不是数组";
+        for (let i = 0; i < o.d.pages.length; i++) {
+          const pg = o.d.pages[i];
+          // ⚠️ 页对象必须有 `nodes` 数组：`currentPage()` 直接读 `pg.nodes`，
+          // `pages=[null]` / `pages=[{id}]` 都过不了这一关。
+          if (!pg || typeof pg !== "object" || Array.isArray(pg)) {
+            return "设计的页表（d.pages）第 " + i + " 项不是页对象";
+          }
+          if (!Array.isArray(pg.nodes)) {
+            return "设计的页表（d.pages）第 " + i + " 项的 nodes 不是数组";
+          }
+          // ⚠️⚠️ 页里的节点**也要逐个过一遍**（T5-R2 补的缺口）。
+          //
+          // 原来这里只查"`pg.nodes` 是数组"，**不查里面每一项** —— 而恢复路径
+          // 真的会读它们（`resolveDesign()` / `currentPage()` / `draw()`）。
+          // 实测反例：坏节点藏在 `pages[0].nodes` 里时判据放行、后面才炸。
+          if (pg.nodes.length > NODE_SCAN_LIMIT) {
+            return "设计的页表（d.pages）第 " + i + " 项的 nodes 有 " + pg.nodes.length + " 项，超过 " + NODE_SCAN_LIMIT + " 无法验证";
+          }
+          for (let j = 0; j < pg.nodes.length; j++) {
+            const badPg = nodeProblem(pg.nodes[j]);
+            if (badPg) return "设计的页表（d.pages）第 " + i + " 项的 nodes 第 " + j + " 项" + badPg;
+          }
+        }
+      }
+      // ⚠️ `canvas` **要么没有、要么是对象**（T5-R 返工）。
+      //
+      // 明确**不据此硬拒**：缺 `canvas` 是**有依据的旧形态**（旧快照可以只有
+      // `nodes`），验收禁止"对旧合法快照的无依据硬拒绝"。
+      // 但 T5-A 放行它的**理由**（"现有代码按默认值走"）是错的 —— 规划方实测
+      // `toV2Json()` / `syncJson()` 直接读 `design.canvas.designW`，缺了就是
+      // `TypeError`。所以现在改成：**判据继续接受，`restore()` 里先做纯候选
+      // 归一化**（见 `normalizeSnapshotDesign`）把缺省补上，再走后面的同步/刷新。
+      // 拒绝的只有"有 `canvas` 但根本不是对象"——那不可能来自任何一版快照。
+      if (o.d.canvas != null && (typeof o.d.canvas !== "object" || Array.isArray(o.d.canvas))) {
+        return "画布（d.canvas）不是对象";
+      }
+      if (o.d.assets != null && !Array.isArray(o.d.assets)) return "素材表（d.assets）不是数组";
+      if (o.sel != null) {
+        if (!Array.isArray(o.sel)) return "选区（sel）不是数组";
+        for (let i = 0; i < o.sel.length; i++) {
+          if (typeof o.sel[i] !== "string") return "选区（sel）里有非字符串项";
+        }
+      }
+      return null;
+    } catch (e) {
+      // 判据自己出意外（爆栈/内存/宿主环境的怪东西）→ 一律当"这条不可用"。
+      // ⚠️ **这不是"护栈静默丢合法节点"**：走到这里说明判据根本没法给出
+      //    可信结论，说"可用"才是拿用户的设计去赌。
+      return "判据本身无法完成校验（" + String((e && e.message) || e) + "）";
+    }
+  }
+
+  /**
+   * 一个节点"最低限度是不是节点"（只看恢复路径**必然直接读**的两样）：
+   * 是对象、`children`（有的话）是数组。返回错误原因，可用则返回 `null`。
+   *
+   * ⚠️ 刻意**不查** `id` / `type` / 名字 / 坐标 —— 那属于"旧快照字段不全"，
+   * 现有代码对它们本来就容错（`nodeToJson` 有 `num()` 缺省值），硬拒会误伤。
+   *
+   * ## ⚠️⚠️ 必须**迭代**遍历，不能递归（T5-R2 修正）
+   *
+   * 规划方实测：**可解析**的 10000 层 `children` JSON 在这两个函数里抛
+   * `Maximum call stack size exceeded`，而且发生在事务 `try` **之外**
+   * —— `restore()` 抛异常而不是返回 `false`。
+   *
+   * 现在用显式数组当工作栈（深度优先），配**两层显式预算**：
+   *  · `NODE_SCAN_LIMIT`：最多检查多少个节点；
+   *  · `NODE_DEPTH_LIMIT`：`children` 最多多少层。
+   *
+   * 超预算 = **拒绝**（返回一个说明文案），不是"检查一半就当通过"。
+   * ⚠️ 这**不是**"为了护栈静默丢合法节点"：没超预算的节点**一个都不放过**，
+   * 全部逐个查（`pages[].nodes` 与 `children` 两条实际读取路径都覆盖）；
+   * 只有"这份 JSON 大到/深到根本没法验证"时才拒绝 —— 那时说"可用"才是撒谎。
+   */
+  const NODE_SCAN_LIMIT = 200000;
+  const NODE_DEPTH_LIMIT = 512;
+
+  function nodeProblem(n) {
+    // 工作栈里每项是 { node, depth, path }；`path` 用于把错误定位成人看得懂的路径
+    const work = [{ node: n, depth: 1, path: "" }];
+    let scanned = 0;
+    while (work.length) {
+      const it = work.pop();
+      const cur = it.node;
+      if (++scanned > NODE_SCAN_LIMIT) {
+        return "（节点太多，超过 " + NODE_SCAN_LIMIT + " 个，无法验证）";
+      }
+      if (!cur || typeof cur !== "object" || Array.isArray(cur)) return it.path + "不是节点对象";
+      if (cur.children != null) {
+        if (!Array.isArray(cur.children)) return it.path + "的 children 不是数组";
+        if (it.depth >= NODE_DEPTH_LIMIT) {
+          return it.path + "的嵌套深度超过 " + NODE_DEPTH_LIMIT + " 层，无法验证";
+        }
+        // ⚠️ 倒着压栈，弹出顺序才与原来的递归一致（错误定位到**第一条**坏节点）
+        for (let i = cur.children.length - 1; i >= 0; i--) {
+          work.push({ node: cur.children[i], depth: it.depth + 1, path: it.path + "的 children 第 " + i + " 项" });
+        }
+      }
+    }
+    return null;
+  }
+
+  /** 这条快照能不能用（`UndoStack.undo/redo` 与 `loadUndoStack` 共用的判据） */
+  function isUsableSnapshot(snap) { return snapshotProblem(snap) === null; }
+
+  /**
+   * 把一份**已经通过判据**的快照设计归一化成"恢复路径读得动"的候选（T5-R）。
+   *
+   * ## 为什么需要它，以及它**不是**什么
+   *
+   * 判据里刻意接受了"缺 `canvas` / 缺 `assets` / 只有 `nodes`"这些**有依据的旧形态**
+   * （验收禁止对旧合法快照的无依据硬拒绝）。但恢复路径**真的会直接读**这些字段：
+   * `toV2Json()` / `syncJson()` 读 `design.canvas.designW`、`toV2Json` 读 `assets.map`。
+   * T5-A 只写了一句"现有代码按默认值走"就放行了 —— 那句话说错了，实测直接抛。
+   *
+   * 所以这里把缺省值**显式补齐**，补齐的只是"缺了就没法同步/绘制"的那几样：
+   *
+   * ```
+   * canvas:   { unit, designW: 2560, designH: 1600, scaleMode: STRETCH }
+   * assets:   []        controls: []       pages: [{id:'pg0', name:'主页面', nodes}]
+   * pageIndex: 0
+   * ```
+   *
+   * ## ⚠️ 三条约束（都来自验收）
+   *
+   *  1. **纯候选**：只读 `design`、返回一个**新对象**，不改调用方给的那份
+   *     （`Object.assign({}, design)` 只是浅拷贝一层，其余字段仍是原引用 ——
+   *     这一步不改它们，只补缺失的顶层字段）；
+   *  2. **只在缺失时补**：有值的字段（`canvas`、`pages`…）**原样保留引用**，
+   *     不做任何"修一修"；
+   *  3. 归一化**只在 `restore()` 内部**用于赋值与同步 —— 判据本身**不做归一化**，
+   *     `isUsableSnapshot()` 的语义仍然是"接受 / 拒绝"。
+   */
+  function normalizeSnapshotDesign(design) {
+    const d = Object.assign({}, design);      // 浅拷贝：其余字段保持原引用
+    if (!d.canvas || typeof d.canvas !== "object" || Array.isArray(d.canvas)) {
+      d.canvas = {
+        unit: window.CANVAS,
+        designW: 2560,
+        designH: 1600,
+        scaleMode: window.SCALE_STRETCH,
+      };
+    }
+    if (!Array.isArray(d.assets)) d.assets = [];
+    if (!Array.isArray(d.controls)) d.controls = [];
+    // 页表：老快照可能没有 `pages`（只有 `nodes`）→ 补一个页，`nodes` 用**同一个引用**
+    // （`design.nodes === design.pages[pageIndex].nodes` 这条别名必须成立）。
+    // ⚠️ 已经有 `pages` 时**不动 `nodes`**：`nodes` 才是内存里"活着的那份"
+    //    （见 `resolveDesign` 的说明），把它换成 `pages[pi].nodes` 会把当前页
+    //    的内容换成页表里那份**已经落后**的副本 —— 实测症状是"撤销后画布上
+    //    新加的控件全部消失"（套件 (a1)/(a2)/连续坏 三处同时报红）。
+    if (!Array.isArray(d.pages) || !d.pages.length) {
+      d.pages = [{ id: "pg0", name: "主页面", nodes: d.nodes }];
+      d.pageIndex = 0;
+    } else if (typeof d.pageIndex !== "number" || !d.pages[d.pageIndex]) {
+      d.pageIndex = 0;
+    }
+    return d;
+  }
+
+  /**
    * 从快照恢复。**返回是否成功** —— 调用方要据此决定提示什么。
    *
    * 为什么要防御（v2.37.0）：撤销栈会**持久化到 localStorage**，
@@ -39,27 +295,211 @@
    *
    * "静默失灵"是这类问题里最糟的形态：用户会以为是"撤销坏了"，
    * 而不是"这一条记录坏了"。
+   *
+   * ## ⚠️ 校验必须**全部做完再赋值**（T5-A）
+   *
+   * 旧代码的赋值在 `refreshAll()` **之前**。只要刷新那一侧抛一次
+   * （设计结构坏到 `draw()` 都不认），`S.design` 已经被换成坏快照了，
+   * 而 `restore` 因为异常冒出去**没返回 false** —— 留下的是"半套状态"：
+   * 画布是坏的、撤销栈的索引却已经动了。现在校验先跑完，赋值是最后一步，
+   * 失败路径上 `S.design` / `S.selection` **一个字节都没动**。
+   *
+   * ## ⚠️ T5-R 返工：光"先校验后赋值"不是**事务**
+   *
+   * 规划方在真实 `file:` 页面实测：判据放行、赋值之后才在 `syncJson()` /
+   * `toV2Json()` 里抛的四类快照（缺 `canvas`、`nodes=[null]`、`pages=[null]`、
+   * `assets` 是对象），**design 已经被换掉、dirty 已经被清掉、JSON 草稿被覆盖**，
+   * 而异常冒出去 —— `restore` 连 `false` 都没返回。
+   * 也就是说 T5-A 声称的"失败路径 design/selection 一个字节都不动"
+   * 只对**判据自己拦住**的那些成立，对"判据没拦住、后面才炸"的一类不成立。
+   *
+   * 现在按**失败回滚**做实：
+   *
+   *  1. `prepareDesign()` 把"同步 JSON 要用的那个文本"**先算好**放到
+   *     `pendingJson`（写 DOM 是后面的事）。这一步抛 = 还没动任何状态，直接 false；
+   *  2. 捕获 `design` / `selection` 的**引用**、`jsonArea` 的**原文**、
+   *     `jsonDirty` 与 dirty 提示条的当前状态；
+   *  3. 赋值 + `syncJson()` + `refreshAll()` + `updateUndoButtons()`
+   *     **整体** `try/catch`；任何一处抛异常 → 回滚上面全部（含临时标志
+   *     `suppressJsonSync` 归位、dirty 状态与 dirty 提示条复原）→ 返回 `false`；
+   *  4. `pendingJson` 没算出来时**绝不写 JSON 文本域** —— 未应用的 JSON 草稿
+   *     一个字节都不会被覆盖。
+   *
+   * ⚠️ `syncJson()` 在 `jsonDirty` 为真时**自己会提前 return**（那是 T6 的
+   * 「正常撤销时的 JSON 交互方案」，本卡不做）；这里只保证"失败不丢草稿"。
    */
   function restore(snap) {
+    if (typeof S === "undefined" || !S) return false;   // 没装配好就没有可恢复的状态
+    // ⚠️ 每次进来先清掉上一次的收尾记录（T5-R3）：`null` = 这一次没有走失败收尾
+    //    （成功恢复、或判据/准备阶段就干净失败），不是"画布重画失败"。
+    lastRestoreFinish = null;
+
+    // ⚠️⚠️ 判据与解析**必须在 try 之内**（T5-R2 修正）。
+    //
+    // 规划方实测：可解析的 10000 层 `children` 让 `snapshotProblem`/`nodeProblem`
+    // 递归爆栈，而这两句当时在事务之外 —— `restore()` **抛异常**而不是返回
+    // `false`，调用方（`doUndo`/`doRedo`）直接被异常打断。
+    // 验收要求"`restore` 对解析/判据/准备异常均 `false` 且不抛"。
+    //
+    // 现在拆成**两层**（与验收逐条对应）：
+    //  ① 判据 + `JSON.parse`（可能爆栈 / 可能被宿主环境里的 getter 弄抛）；
+    //  ② 归一化 + `toV2Json` 准备（`prepareDesign` 那一层）。
+    // 两层都在 `restore` 内部、都由 `try/catch` 兜住并返回 `false`。
     let o = null;
+    let cand = null;
     try {
+      if (snapshotProblem(snap) !== null) return false;   // 先校验，再赋值
       o = JSON.parse(snap);
     } catch (e) {
-      return false;                 // 快照本身不是合法 JSON
+      console.warn("快照无法解析/校验，已拒绝恢复：", e && e.message);
+      return false;
     }
-    // 结构也得像样 —— 合法 JSON 不等于"是一份快照"
-    if (!o || typeof o !== "object" || !o.d || typeof o.d !== "object") return false;
-    S.design = o.d;
-    S.selection = o.sel || [];
-    setJsonDirty(false);          // 撤销/重做整体替换设计，文本域跟着走
+
+    // ---- 第 1 步：准备（**纯计算，不碰任何状态**）
+    //
+    //  `cand` 是**纯候选**：缺 `canvas`/`assets`/`pages` 的旧快照在这里补齐缺省
+    //  （见 `normalizeSnapshotDesign`），判据本身只接受/拒绝、不做归一化。
+    //  抛异常 = 这份设计连"同步 JSON"都过不去 → 直接失败，design 一个字节没动。
+    let pendingJson = null;
+    try {
+      cand = normalizeSnapshotDesign(o.d);
+      pendingJson = window.toV2Json(cand);
+    } catch (e) {
+      console.warn("快照无法同步到 JSON 文本域，已拒绝恢复：", e && e.message);
+      return false;
+    }
+
+    // ---- 第 2 步：回滚现场（全部是"取值"，不改任何东西）
+    //
+    // ⚠️ T5-R2：这里不只是 design/selection/JSON 文本，还包括**已经写进
+    //    元数据表单的值**与**dirty 提示条的整段内容**。
+    //    规划方实测的反例：让真实 `window.draw` 抛一次之后，design/selection
+    //    引用与草稿/dirty 标志确实回滚了，但 **`mName` 仍显示 TARGET**、
+    //    **dirty 提示从"1 个错误"变成"0 个错误"**（`areaDirty` 只是个布尔，
+    //    没有把"几个错误"存下来）。现在整份现场一起存、一起还原。
+    const prevDesign = S.design;        // 只存引用：回滚要把**同一个对象**放回去
+    const prevSelection = S.selection;
+    const area = el("jsonArea");
+    const prevJsonText = area ? area.value : null;
+    const dirtyState = captureDirtyState();
+    // 元数据表单里**与本次恢复有关**的那几个值的原文（回滚要逐字段还原）
+    const FORM_IDS = ["mName", "mAuthor", "mDesc", "mTheme", "dW", "dH",
+      "scaleMode", "bgPath", "bgFit", "bgW", "bgH"];
+    const prevForm = FORM_IDS.map(function (id) {
+      const e = el(id);
+      return { id: id, v: e ? e.value : null };
+    });
+
+    // ---- 第 3 步：应用（失败要能整体回滚）
+    //
+    // ⚠️ `suppressJsonSync` 的归位用**最外层 finally**（T5-R2）：原来只在
+    //    `syncPreparedJson` 外面那一层 finally 里归位，`refreshAll()` 抛出去
+    //    时仍然能归位 —— 但回滚路径本身再抛就漏了。现在无论哪条路出去都归位。
+    const prevSuppress = suppressJsonSync;
+    let ok = false;
     suppressJsonSync = true;
-    syncJson();
-    suppressJsonSync = false;
-    refreshAll();
-    // ⚠️ 必须刷新撤销按钮 —— 第一版漏了这句，撤销后计数一直是旧值
-    // （实测：连按撤销，界面上的"100 / 100"纹丝不动，看着像撤销没生效）
-    updateUndoButtons();
-    return true;
+    try {
+      S.design = cand;
+      S.selection = o.sel || [];
+      setJsonDirty(false);        // 撤销/重做整体替换设计，文本域跟着走
+      syncPreparedJson(pendingJson);
+      refreshAll();
+      // ⚠️ 必须刷新撤销按钮 —— 第一版漏了这句，撤销后计数一直是旧值
+      // （实测：连按撤销，界面上的"100 / 100"纹丝不动，看着像撤销没生效）
+      updateUndoButtons();
+      ok = true;
+    } catch (e) {
+      // 走到这里说明"判据没拦住、后面才炸"。回滚到进函数那一刻的状态：
+      S.design = prevDesign;
+      S.selection = prevSelection;
+      // ⚠️ **每一处还原都各自容错**（T5-R2）。验收明确要求
+      //    "异常收尾本身不得再抛" —— 而"失败的原因"完全可能出在这些
+      //    DOM 写操作自己身上（规划方注入的正是"写元数据表单时抛"）。
+      //    第一版把还原写成裸赋值，于是回滚路径**又抛了一次**，
+      //    异常从 `restore` 冒出去、连 `false` 都没返回。
+      //    真实世界对应：某个 DOM 节点被宿主禁用/只读时，
+      //    还原一个字段失败不该让**其余字段**和 design 都留着坏值。
+      try { if (area && prevJsonText !== null) area.value = prevJsonText; } catch (e2) { }
+      // 元数据表单逐字段还原（⚠️ 不依赖任何会抛的东西：`el()` 本身不抛）
+      for (let i = 0; i < prevForm.length; i++) {
+        try {
+          const e2 = el(prevForm[i].id);
+          if (e2 && prevForm[i].v !== null) e2.value = prevForm[i].v;
+        } catch (e3) { }
+      }
+      restoreDirtyState(dirtyState);   // dirty 标志 + 提示条**整段**内容一起复原
+      // ⚠️ 页签/树/属性可能在 `refreshAll()` 里**已经刷新过一半** ——
+      //    现在让它们重新从**实际设计**（prevDesign）渲染一遍，界面与实际一致。
+      try { if (window.renderPageTabs) window.renderPageTabs(); } catch (e2) { }
+      try { if (window.renderPanels) window.renderPanels(); } catch (e2) { }
+      try { if (window.renderTree) window.renderTree(); } catch (e2) { }
+      try { if (window.renderProps) window.renderProps(); } catch (e2) { }
+      // ⚠️⚠️ T5-R3：**画布也必须回到实际设计**（像素回滚，不再留给"下一次刷新"）。
+      //
+      // 规划方实测的反例：候选快照在**真实 `draw()` 内部**抛 —— 而 `draw` 是
+      // **先画了候选**（空节点/目标页）**再抛**的。上面的还原把 `S.design` 放回去了，
+      // 但画布上留下的是**候选那一帧**：`restore` 返回 false、实际设计是 CURRENT，
+      // 画面却停在 TARGET，而且**自己不会好**（T5-R2 的注释把"整套失效重画"留给了
+      // 下一次成功的 `refreshAll()`）。规划方用诊断脚本手动 `draw(CURRENT)` 才让
+      // 像素和原来一致 —— 那正说明**产品没有完成像素回滚**。
+      //
+      // 现在按**已经回滚好的实际设计**（`S.design === prevDesign`）重画，并且
+      // **有界、容错**：
+      //   · **只重画 1 次**，不重试轰炸 —— 异常收尾的代价必须可预期；
+      //   · 重画**再抛也吞掉**："异常收尾本身不得再抛"是硬要求（持续异常那一类）；
+      //   · 失败**不谎报成功**：结果写进 `lastRestoreFinish`（只读钩子）并打印，
+      //     "重画也失败了"与"画布已复原"是两件事。
+      //
+      // ⚠️ 这不是"诊断脚本手动重画冒充产品回滚"：重画就在**产品自己的收尾路径**里，
+      //    用户在真实 `file:` 页面上按 Ctrl+Z 就会走到这一段（下面的套件也是走
+      //    `restoreSnapshot` / `doUndo` 这些真实入口，不额外手动补画）。
+      let 画布已重画 = false;
+      let 画布错误 = null;
+      try {
+        if (typeof window.draw === "function") { window.draw(); 画布已重画 = true; }
+        else 画布错误 = "没有可用的 window.draw";
+      } catch (e2) {
+        画布错误 = (e2 && e2.message) ? String(e2.message) : String(e2);
+      }
+      lastRestoreFinish = { canvas: 画布已重画, error: 画布错误 };
+      if (!画布已重画) {
+        console.warn("快照恢复失败后重画画布也失败了（画面可能未复原）：", 画布错误);
+      }
+      console.warn("快照恢复失败，已回滚到恢复前的状态：", e && e.message);
+    } finally {
+      suppressJsonSync = prevSuppress;   // ⚠️ 临时标志必须归位（异常路径也一样）
+    }
+    if (ok) cancelJsonTimer();
+    return ok;
+  }
+
+  /**
+   * 把 `prepareDesign()` 算好的文本写进 JSON 文本域 —— **只写文本，不重算**。
+   *
+   * 单独一个函数是为了让"算"和"写"分开：算的那一步在状态没动之前，
+   * 失败就是干净失败；写 DOM 的那一步失败也已经可以整体回滚。
+   */
+  function syncPreparedJson(text) {
+    const a = el("jsonArea");
+    if (a) a.value = text;
+    const d = S.design || {};
+    setVal("mName", d.name);
+    setVal("mAuthor", d.author);
+    setVal("mDesc", d.description);
+    setVal("mTheme", d.themeId);
+    // ⚠️ `canvas` 可能没有（旧快照）—— 走与 `toV2Json` 同一组缺省值，
+    // 不许在这里裸读 `d.canvas.designW`（那正是 T5-A 四例里"缺 canvas 抛错"的原因）。
+    const cv = (d.canvas && typeof d.canvas === "object") ? d.canvas : {};
+    setVal("dW", num(cv.designW, 2560));
+    setVal("dH", num(cv.designH, 1600));
+    setVal("scaleMode", String(num(cv.scaleMode, window.SCALE_STRETCH)));
+    setVal("bgPath", d.background ? d.background.path : "");
+    setVal("bgFit", String(d.background ? d.background.fit : 0));
+    // 尺寸留空显示（0 = 自动）
+    const bw = d.background && d.background.w ? d.background.w : "";
+    const bh = d.background && d.background.h ? d.background.h : "";
+    setVal("bgW", bw);
+    setVal("bgH", bh);
   }
 
   /**
@@ -129,7 +569,8 @@
       const o = JSON.parse(raw);
       if (!o || !Array.isArray(o.stack) || !o.stack.length) return null;
       if (!S.design || o.designName !== S.design.name) return null;
-      // ⚠️ **丢掉坏的条目**（v2.37.0）。
+      // ⚠️ **丢掉坏的条目**（v2.37.0；判据在 **T5-A 任务内**换成与 restore 一致的
+      // `isUsableSnapshot`；该批改动**尚未发版**）。
       //
       // 只判断"是不是数组"不够 —— 里面的 `state` 可能是被截断的字符串。
       // 不在这里滤掉的话，坏的那条会一直躺在栈里，**每次撤销到它都要再撞一次**
@@ -137,15 +578,24 @@
       //
       // 在**加载时**一次清干净，比每次运行时分摊处理更简单，也更诚实：
       // 那些条目本来就是坏的，留着没有任何价值。
+      //
+      // ⚠️ 判据（T5-A 起）**同时管住"合法 JSON 但结构坏了"**这一类：
+      // 原来这里只 `JSON.parse` 一下就算过，那种记录加载时留着、
+      // 撤销到时才失败 —— 与"加载和 restore 用一致的最低结构校验"相悖。
+      // 用同一个函数也保证了两边**不会各自漂移**。
       const good = o.stack.filter(function (it) {
-        if (!it || typeof it.state !== "string") return false;
-        try { JSON.parse(it.state); return true; } catch (e) { return false; }
+        return !!(it && isUsableSnapshot(it.state));
       });
       if (good.length !== o.stack.length) {
         console.warn("撤销栈里有 " + (o.stack.length - good.length) + " 条坏记录，已丢弃");
       }
       if (!good.length) return null;
+      // ⚠️ 索引必须跟着过滤后的栈重算（T5-A）：旧代码把 `o.index` 原样带出去，
+      // 而它指的是**过滤前**的位置。栈短了之后这个索引可能越界，
+      // 也可能让"可撤销步数"与实际条数对不上。
+      // 持久化时写的一直是 `index = 栈顶`（见 saveUndoStack），所以这里就是栈顶。
       o.stack = good;
+      o.index = good.length - 1;
       return o;
     } catch (e) { return null; }
   }
@@ -236,19 +686,198 @@
   // 而 `restore` 在闭包里，从外面碰不到。
   window.restoreSnapshot = restore;
 
+  // 测试钩子（T5-A；T5-R 沿用）。补三个口子，因为这一卡要验的是**判据与走法本身**：
+  //  · `isUsableSnapshot` —— "解析成功≠快照可用"的判据必须能被逐条钉住
+  //    （否则只能在 restore 的副作用里间接猜）；
+  //  · `__undoStack` —— 撤销栈是闭包里的局部变量，没有它就**造不出"运行中
+  //    栈里躺着坏记录"**这个场景，只能靠真实坏 localStorage 碰运气；
+  //  · `__commitState` —— `commit` 把新快照压栈后，需要把它**原样换掉**才能
+  //    模拟"这条记录写坏了"。直接改 `state` 会破坏"每条记录都是真实快照"的前提，
+  //    换掉才能让其余记录保持真实。
+  window.isUsableSnapshot = isUsableSnapshot;
+  window.__undoStack = undo;
+  window.__commitState = function () { return snapshot(); };
+  // ⚠️ T5-R2 新增：`suppressJsonSync` 是闭包里的临时标志。验收要求
+  //    "`suppressJsonSync` 归位"，而它是**状态**、不是界面观感 ——
+  //    从外面只能靠"再敲一次 JSON 会不会被静默吞掉"间接猜。
+  //    这里给一个只读的取样口子，让"归位"能被**直接**断言。
+  window.__jsonSyncFlags = function () {
+    return { suppress: suppressJsonSync, dirty: jsonDirty, dirtyErrors: jsonDirtyErrors };
+  };
+  // ⚠️ T5-R3 新增：失败收尾里"画布重画"的结果。它是**状态**（重画成功/重画也抛了），
+  //    从外面只能靠像素间接猜"有没有重画过"（持续异常那一例里像素可能本来就是对的），
+  //    所以给一个只读取样口子，让"有界重画 + 如实记录失败"能被**直接**断言。
+  window.__lastRestoreFinish = function () { return lastRestoreFinish; };
+
   window.doUndo = function () {
-    const r = undo.undo();
-    if (!r) return;
-    // 快照坏了要说出来 —— 不能"点了没反应"（v2.37.0）
-    if (!restore(r.state)) { toast("这一步的记录坏了，已跳过：" + r.label); return; }
-    toast("已撤销：" + r.label);
+    if (undo.canUndo() && !confirmJsonReplace("撤销")) return;
+    // ⚠️ 把"这条快照能不能用"交给 `UndoStack`（T5-A）：
+    // 它会在往回走的路上把坏记录**就地摘掉**，而不是只把索引挪一格。
+    // 只挪索引的话，坏记录永远躺在栈里 —— 用户每次撤销/重做都要再撞它一次。
+    //
+    // ⚠️⚠️ **`.undo()` 与 `.redo()` 永远返回对象，不再返回 `null`**（T5-R2）。
+    // 旧写法在"已经到栈底/栈顶"时返回 `null`，这里走 `afterFailedStep(null)`，
+    // 而缺省 `usableLeft = 0` 被判成"**整个栈都坏了**" → `undo.reset(...)`：
+    // 规划方实测一个**全好的栈**在栈底按 Ctrl+Z（或栈顶按 Ctrl+Y）
+    // 就被清成 `[初始]`、`0 / 0`、toast 误报"记录都坏了"，反方向历史全丢。
+    // 按钮变灰挡不住真实快捷键（`bindKeys`）。
+    //
+    // ⚠️ 还要先把**当前记录对象**抓下来（T5-R2）：`_step` 成功后 `undo.index`
+    // 已经指向目标，`restore` 再失败时我们靠这个对象把游标放回**实际当前**那条
+    // （否则摘掉 TARGET 之后 `index` 会留在 FUTURE 上 —— 规划方 redo 方向的反例）。
+    //
+    // ⚠️⚠️ T5-R3：还要把**实际当前设计的快照**一起交给 `UndoStack`。
+    //    当前记录**自己坏了**（规划方 R1 的第一类反例）时，`_step` 会把那条
+    //    坏记录摘掉 —— 摘完之后栈里就**没有任何一条记录代表画布上真正那份设计**。
+    //    光靠"就近找一条可用记录"会让游标与实际当前相反（`canRedo=false`，
+    //    反方向的 FUTURE 不可达）。锚点材料就是这里抓的 `snapshot()`：
+    //    它是**画布此刻的真实设计**，与那条坏记录无关。
+    const curRec = undo.stack[undo.index] || null;
+    const curState = snapshot();
+    const r = undo.undo(isUsableSnapshot, curState, "当前设计");
+    // ⚠️⚠️ **失败不是 `null`，而是一个带 `ok:false` 的对象**（T5-R）。
+    // 只判 `!r` 会把失败当成功：`r.state` 是 `undefined`，`restore(undefined)`
+    // 返回 false，于是走 `afterRestoreFailed` —— 提示变成"这一步的记录无法恢复"
+    // 而不是"整个栈都坏了"，索引/计数也不再归位（套件实测 `-1 / -1`）。
+    if (!r || !r.ok) return afterFailedStep("撤销", r);
+    // ⚠️ **不许假设 `restore` 必然成功**（T5-R）：判据过了也可能在后面抛
+    // （规划方实测的四类快照）。失败就必须看得见，而且**不能**报"已撤销"。
+    if (!restore(r.state)) return afterRestoreFailed("撤销", r, curRec);
+    // 跳过几条坏记录要说出来 —— 用户会看到"按一下退了好几步"
+    toast(r.removed > 0
+      ? "已撤销：" + r.label + "（跳过 " + r.removed + " 条坏记录）"
+      : "已撤销：" + r.label);
   };
   window.doRedo = function () {
-    const r = undo.redo();
-    if (!r) return;
-    if (!restore(r.state)) { toast("这一步的记录坏了，已跳过：" + r.label); return; }
-    toast("已重做：" + r.label);
+    if (undo.canRedo() && !confirmJsonReplace("重做")) return;
+    const curRec = undo.stack[undo.index] || null;   // 同上：失败时按它重定位
+    const curState = snapshot();                     // 同上：补锚点用的"实际当前设计"
+    const r = undo.redo(isUsableSnapshot, curState, "当前设计");
+    if (!r || !r.ok) return afterFailedStep("重做", r);   // 同上：失败是对象，不是 null
+    if (!restore(r.state)) return afterRestoreFailed("重做", r, curRec);
+    toast(r.removed > 0
+      ? "已重做：" + r.label + "（跳过 " + r.removed + " 条坏记录）"
+      : "已重做：" + r.label);
   };
+
+  /**
+   * 撤销/重做**没走到任何可用记录**之后的收尾（T5-A；T5-R 区分两种情形；
+   * T5-R2 把"正常端点"与"混合栈"彻底分开）。
+   *
+   * 三种情形，都要"看得见"，都不能"点了没反应"：
+   *  1. **正常到栈底/栈顶** —— 一步都没走成、也**没摘任何记录**
+   *     （`removed === 0` 且 `usableLeft > 0`）。按索引刷新按钮即可，
+   *     不用提示（按钮本来就是灰的，再弹一句是噪音），**绝不重建基准**；
+   *  2. **本方向没有可用的记录**（T5-R 新增，规划方 R2 的反例）——
+   *     例如 `[坏, current, 好redo]` 撤销、`[好undo, current, 坏]` 重做。
+   *     这一路**只摘了坏记录**（`removed > 0`），反方向的好记录与当前设计
+   *     都原样保留；用户会看到"这个方向没有可用的记录了"，
+   *     而不是被误报成"记录都坏了"；
+   *  3. **整个栈都坏了** —— `usableLeft === 0`。此时 `_step` 已经清空栈
+   *     （或栈本来就一条可用的都没有），用**当前设计**重新起一个基准：
+   *     当前设计一个字节都没改，起基准只是让索引重新有落点
+   *     （否则 `depth()` 会读到 -1，按钮文案会显示 "-1 / -1" 这种明显的坏值）。
+   *
+   * ⚠️ 情形 1 与 2 的**按钮/计数**可能都是 `0 / 0`，区分它们的可见信号是
+   * **提示文案**（以及"反方向是否还能走"）与**是否摘了记录**。
+   * 规划方明确要求"不能把混合栈称为全坏"，反过来也一样：
+   * **正常的栈底/栈顶不许被当成全坏**。
+   */
+  function afterFailedStep(what, r) {
+    const info = r || { removed: 0, sizeBefore: 0, usableLeft: 0 };
+    const usableLeft = (typeof info.usableLeft === "number") ? info.usableLeft : 0;
+    const removed = (typeof info.removed === "number") ? info.removed : 0;
+    if (usableLeft > 0) {
+      updateUndoButtons();
+      // 情形 2：摘掉了坏记录 = "这个方向没有可用的记录了"（反方向的还在）
+      if (removed > 0) {
+        toast("已没有可以" + what + "的记录了（已清掉 " + removed + " 条坏记录，其他记录保留）");
+      }
+      // 情形 1：一条都没摘 = 正常走到端点，**无操作、不提示、不清栈**
+      return;
+    }
+    // 情形 3：整个栈都坏了
+    undo.reset(snapshot(), "初始");        // 当前设计原样成为新基准
+    updateUndoButtons();
+    toast(what + "栈里的记录都坏了，已清空（当前设计未改动）");
+  }
+
+  /**
+   * `_step` 走到了可用记录、但 `restore` 仍然失败之后的收尾（T5-R）。
+   *
+   * 规划方要求："不能先推进索引再把坏设计/错误成功提示留给用户"。
+   * 所以这里做两件事：
+   *  1. **如实提示失败**（不报"已撤销"）；
+   *  2. 那条记录已经被判据判为可用 —— 它没能恢复说明是**判据与恢复路径不一致**
+   *     （判据漏了某个后面真的会读到的结构）。把它**当成坏记录就地摘掉**，
+   *     这样用户不会反复撞同一条；同时按当前设计/栈状态刷新按钮与计数。
+   *
+   * ⚠️ 只摘**这一条**（`stack.indexOf` 认对象），好记录一条不动。
+   * ⚠️ 顺序：**先把栈收拾干净（必要时 reset 起新基准），再刷按钮与计数** ——
+   *    反过来的话 `undoCount` 会停在 `-1 / -1` 这种坏值上（`_step` 失败路径
+   *    会把空栈的 `index` 置 -1）。
+   *
+   * ## ⚠️⚠️ 摘掉 TARGET 之后游标必须回到**实际当前记录**（T5-R2 修正）
+   *
+   * 旧写法只是"把数值下标夹回栈长以内"（`if (undo.index >= len) index = len-1`）。
+   * 规划方实测反例：栈 `[CURRENT, TARGET, FUTURE]`、`index=1`，令 TARGET 在
+   * 真实 `draw` 阶段失败 → 摘掉 TARGET 后栈变 `[CURRENT, FUTURE]`，
+   * 而**夹取把 `index` 留在了 1 → 指向 FUTURE**；实际设计仍是 CURRENT，
+   * 于是 `canRedo=false`、计数 `1 / 1` —— 与 R1 的第一个反例同一个病。
+   * （undo 方向那一次"恰好"夹到 0，所以不能据此认为这条路是对的。）
+   *
+   * 现在：把**进 `restore` 之前的当前记录对象**（`curRec`）传进来，
+   * 用与 `_step` **同一份实现**（`UndoStack._relocate`）重定位 ——
+   * 当前记录还在就落在它上面；它自己被摘掉才按锚点就近取可用记录。
+   *
+   * ## ⚠️⚠️ T5-R3：当前记录**自己被摘掉**时，补的是"实际当前设计"的锚点
+   *
+   * T5-R2 这里同样是"就近取可用记录"。规划方实测的第四类反例：栈
+   * `[坏BEFORE, 坏CURRENT, TARGET(判据可用), FUTURE]`、`index=1`、实际设计 CURRENT，
+   * 重做 → `_step` 摘掉两条坏的、走到 TARGET；`restore(TARGET)` 失败 →
+   * 摘掉 TARGET 之后只剩 `[FUTURE]`，就近兜底把 `index` 放在 0
+   * （`canRedo=false`）—— **实际设计还是 CURRENT**，FUTURE 不可达。
+   * 所以这里跟 `_step` 走**同一条路**：
+   *  ① 当前记录还在栈里 → 就是它（对象身份）；
+   *  ② 它是坏的、已被摘掉 → **用 `snapshot()` 给实际当前设计补一条有效锚点**，
+   *     位置取 `_step` 算好的 `anchorAt`（目标被摘掉时跟着左移一格）；
+   *  ③ 补不出来才退回 `_relocate` 的就近兜底；一条可用记录都没有才 `reset`。
+   *
+   * ⚠️ 界面一致性：这一步发生在 `restore` 已经回滚完模型之后，
+   *    **不能再跑一遍完整刷新**（那会重画、还可能再抛）。这里只做
+   *    `updateUndoButtons()` + 如实提示 —— 与规划方"按钮/计数/lastKey/提示一致，
+   *    失败不报成功"的要求对应。
+   */
+  function afterRestoreFailed(what, r, curRec) {
+    const at = undo.stack.indexOf(r && r.target);
+    if (at >= 0) undo.stack.splice(at, 1);
+    if (undo.stack.length === 0) {
+      // 一条记录都不剩 → 用当前设计重建基准（当前设计一个字节都没动）
+      undo.reset(snapshot(), "初始");
+    } else {
+      let idx = curRec ? undo.stack.indexOf(curRec) : -1;     // ① 当前记录还在 → 就是它
+      if (idx < 0 && r && r.curRemoved && typeof r.anchorAt === "number" &&
+          undo._countUsable(isUsableSnapshot) > 0) {
+        // ② 当前记录**自己被摘掉了**（它本来就是坏的）→ 为实际当前设计补锚点。
+        //    ⚠️ 与 `_step` 同一条判据：**别的方向一条可用记录都不剩**时不是"混合栈"，
+        //       不补锚点，让下面 `_relocate` 返回 -1 走"整栈真坏 → 重建基准"。
+        let anchorAt = r.anchorAt;
+        if (at >= 0 && at < anchorAt) anchorAt--;             // 目标被摘掉，锚点跟着左移
+        const rec = undo.anchorCurrent(anchorAt, snapshot(), "当前设计", isUsableSnapshot);
+        if (rec) idx = undo.stack.indexOf(rec);
+      }
+      if (idx < 0) {
+        // ③ 兜底：按**保存的当前记录对象**重定位（`curAt` 用摘除后仍能定位锚点：
+        //    当前条自己被摘掉时 `min(cur, 栈长)` 就是它原来的位置附近）
+        idx = undo._relocate(curRec, at >= 0 ? at : undo.stack.length, isUsableSnapshot);
+      }
+      if (idx < 0) undo.reset(snapshot(), "初始");
+      else undo.index = idx;
+    }
+    undo.lastKey = null;
+    updateUndoButtons();
+    toast("这一步的记录无法恢复，已摘掉（当前设计未改动）");
+  }
 
   // ================================================================ 多页面（页签）
 
@@ -626,7 +1255,7 @@
   /**
    * 把选中节点**恢复成素材的原始宽高比**。
    *
-   * 保持**面积不变**（按当前 w 推出 h）—— 直接改成素材尺寸的话，
+   * 保持**宽度不变**（按当前 w 推出 h）—— 直接改成素材尺寸的话，
    * 用户精心调好的大小会被重置，那是另一种"我明明没让它变"的意外。
    */
   window.fitNodeAspect = function () {
@@ -635,7 +1264,7 @@
     const a = (S.design.assets || []).find(x => x.id === n.assetId);
     const nat = a ? window.naturalSizeOf(a, n.assetId) : null;
     if (!nat) { toast("这个素材没有记录原始尺寸"); return; }
-    const ar = nat[0] / nat[1];
+    const ar = window.imageNodeAspect(nat);
     window.commit(() => {
       n.h = Math.max(1, Math.round(n.w / ar * 100) / 100);
     }, "恢复素材比例");
@@ -984,18 +1613,14 @@
       "改 " + k, "null:" + k);
   };
   window.setNodePid = function (v) {
-    const n = sel(); if (!n) return;
-    const raw = String(v || "").trim();
-    window.commit(() => {
-      n.rawPid = raw;
-      n.pid = window.resolvePid(raw);
-      const info = window.BUILTIN_PIDS[n.pid];
-      if (info) {
-        n.min = info.min; n.max = info.max;
-        n.warnLow = info.warnLow === undefined ? null : info.warnLow;
-        n.warnHigh = info.warnHigh === undefined ? null : info.warnHigh;
-      }
-    }, "改 PID");
+    const n = sel(); if (!n || n.type !== window.NODE_GAUGE) return;
+    window.commit(() => window.assignControlBinding(n, v), "改数据源");
+  };
+  window.setControlBinding = function (id, value) {
+    const root = sel(); if (!root || root.type !== window.NODE_GROUP) return;
+    const n = window.controlDataBindings(root).find(n => n.id === id);
+    if (!n) return;
+    window.commit(() => window.assignControlBinding(n, value), "改控件数据源");
   };
   /** 状态系统的驱动 PID：内部存**解析后的 id**，原样写法留在 rawStatePid（与 pid 一致） */
   window.setNodeStatePid = function (v) {
@@ -1422,7 +2047,7 @@
     S.snap = !S.snap;
     const b = el("btnSnap");
     if (b) {
-      b.textContent = S.snap ? "▦ 网格吸附 开" : "▦ 网格吸附 关";
+      b.textContent = S.snap ? "网格吸附 开" : "网格吸附 关";
       b.classList.toggle("on", S.snap);
       b.classList.toggle("off", !S.snap);
     }
@@ -1444,7 +2069,7 @@
     const b = el("btnSnapObj");
     if (!b) return;
     const on = S.snapGuides !== false;
-    b.textContent = on ? "🧲 对象吸附 开" : "🧲 对象吸附 关";
+    b.textContent = on ? "对象吸附 开" : "对象吸附 关";
     b.classList.toggle("on", on);
     b.classList.toggle("off", !on);
     if (!on) { S.snapLines = null; window.draw(); }
@@ -1473,8 +2098,8 @@
       // ⚠️ 文案要写**当前状态**，不能写成动作，否则会读反。
       // 第一版写"🏷 PID 隐 / 🏷 PID 显"，用户以为"点了会隐藏"——
       // 实际它表示"现在处于隐藏/显示状态"。
-      // 现在：`🏷 PID 关`（不显示）/ `🏷 PID 开`（显示），并配 title 说明。
-      b.textContent = S.showPid ? "🏷 PID 开" : "🏷 PID 关";
+      // 现在：`数据标识 关`（不显示）/ `数据标识 开`（显示），并配 title 说明。
+      b.textContent = S.showPid ? "数据标识 开" : "数据标识 关";
       b.title = S.showPid
         ? "当前：画布上显示 PID 别名（如 obd.coolant）。点击关闭"
         : "当前：画布上不显示 PID。点击开启（做主题时用来确认绑的是哪个 PID）";
@@ -1497,10 +2122,10 @@
     document.documentElement.setAttribute("data-theme", next);
     try { localStorage.setItem("studio.theme", next); } catch (e) { }
     const b = el("btnTheme");
-    if (b) b.textContent = next === "dark" ? "🌙 暗黑" : "☀ 白色";
+    if (b) b.textContent = next === "dark" ? "深色界面" : "浅色界面";
     // 画布要重画（底色变了）
     window.draw();
-    if (!silent) toast(next === "dark" ? "已切到暗黑主题" : "已切到白色主题");
+    if (!silent) toast(next === "dark" ? "已切换为深色界面" : "已切换为浅色界面");
   };
 
   /** 画布用色：从 CSS 变量读，这样切主题时画布跟着变 */
@@ -1622,15 +2247,11 @@
   /** 清空重来。**会先问一次** —— 没保存的设计丢了很恼火 */
   window.newDesign = function () {
     const n = window.flatten(S.design.nodes).length;
-    if (n > 0 && !confirm("新建会清空当前 " + n + " 个控件（未保存的改动会丢）。\n\n继续？")) return;
-    setJsonDirty(false);
+    if ((n > 0 || jsonDirty) && !confirmJsonReplace("新建", "新建会清空当前 " + n + " 个控件（未保存的改动会丢）。")) return;
     const d = blankDesign();
     d.nodes = window.PRESETS["blank"]();
-    window.commit(() => {
-      S.design = d;
-      S.selection = [];
-      S.bgImage = null;
-    }, "新建设计");
+    if (!replaceDesign(d, "新建设计")) return;
+    S.bgImage = null;
     window.applyCanvasSize();
     toast("已新建空白设计");
   };
@@ -1776,6 +2397,90 @@
    */
   let jsonDirty = false;
 
+  /**
+   * 最近一次"JSON 有错未生效"的**错误条数**（T5-R2）。
+   *
+   * 为什么要单独存：dirty 提示条的文案是
+   * `"⚠️ JSON 有 N 个错误…"`。失败回滚时如果不能把 `N` 还原，
+   * 用户看到的就是"**1 个错误变成 0 个错误**"这种前后矛盾的界面
+   * （规划方实测的反例）。`setJsonDirty(dirty, errors)` 在 `dirty` 为真时
+   * 一定带着 `errors`，这里就把 `errors.length` 记下来。
+   */
+  let jsonDirtyErrors = 0;
+  let jsonPending = false;
+
+  /**
+   * 把"dirty 现场"整份**原样**抓下来（T5-R2；T5-R3 补**事件**）。
+   *
+   * ⚠️ 只记一个布尔是不够的：规划方实测"`mName` 仍是 TARGET、
+   * dirty 提示从 1 个错误变 0 个错误"就是因为它只留了 `areaDirty`。
+   * 这里连**提示条的可见性与内容**一起抓 —— 复原是"逐字节还原原现场"，
+   * 不是"照着当前状态重新渲染一个看起来差不多的"。
+   *
+   * ## ⚠️⚠️ T5-R3：**HTML 相同 ≠ 交互相同**
+   *
+   * T5-R2 抓的是 `bar.innerHTML`（字符串），复原时 `bar.innerHTML = 那个字符串`。
+   * 而"放弃 JSON 改动"那个按钮的点击处理是**JS 属性**（`btn.onclick = function…`），
+   * **不在 `innerHTML` 里** —— 重新解析出来的新节点 `onclick` 是 `null`。
+   * 规划方实测：真实 `draw` 失败一次之后，点那个按钮**什么都不发生**
+   * （dirty 还是 true、草稿没被换掉、提示条不消失），而 HTML 逐字节相同。
+   *
+   * 所以现在抓的是**原来那批 DOM 节点本身**（`childNodes`）：
+   * 复原时把它们**放回**提示条即可 —— 事件监听/属性全都跟着节点走，
+   * 不解析任何 HTML、不执行任何脚本（`innerHTML` 那条路彻底不用了）。
+   *
+   * ⚠️ `restore()` 应用阶段会先 `setJsonDirty(false)`，那一步做的是
+   *    `bar.innerHTML = ""` —— 节点只是**脱离文档**，JS 对象与事件都还在，
+   *    所以"抓住引用 → 事后放回"是成立的（这正是 T5-R2 丢掉东西的地方）。
+   */
+  function captureDirtyState() {
+    const area = el("jsonArea");
+    const bar = el("jsonDirtyBar");
+    return {
+      dirty: jsonDirty,
+      errors: jsonDirtyErrors,
+      pending: jsonPending,
+      areaHasDirty: !!(area && area.classList.contains("dirty")),
+      barExisted: !!bar,
+      barDisplay: bar ? bar.style.display : null,
+      // ⚠️ 抓**节点本身**（不是 innerHTML 字符串）：事件是 JS 属性，序列化不了
+      barNodes: bar ? Array.prototype.slice.call(bar.childNodes) : null,
+    };
+  }
+
+  /**
+   * 把 `captureDirtyState()` 抓下来的现场**原样放回去**（T5-R2；T5-R3 连事件）。
+   *
+   * ⚠️ 全程**不许抛**：这是异常收尾路径（"异常收尾本身不得再抛"）。
+   * 有没有提示条、`style`/节点可不可写，都容错。
+   *
+   * ⚠️ 复原方式：`bar.innerHTML = ""` 清空之后，把**抓下来的那几个节点**
+   *    `appendChild` 回去（顺序不变）。不重新解析 HTML、不执行脚本，
+   *    `onclick` / 监听器 / 文本与属性全都是原来那一个。
+   */
+  function restoreDirtyState(st) {
+    if (!st) return;
+    jsonDirty = st.dirty;
+    jsonDirtyErrors = st.errors;
+    jsonPending = !!st.pending;
+    try {
+      const area = el("jsonArea");
+      if (area) area.classList.toggle("dirty", st.areaHasDirty);
+      const bar = el("jsonDirtyBar");
+      if (!bar) return;
+      if (st.barExisted && st.barNodes) {
+        // 先清空（把"应用阶段可能建/写进去的东西"去掉），再放回**原节点**
+        while (bar.firstChild) bar.removeChild(bar.firstChild);
+        for (let i = 0; i < st.barNodes.length; i++) bar.appendChild(st.barNodes[i]);
+        if (st.barDisplay !== null) bar.style.display = st.barDisplay;
+      } else if (!st.barExisted) {
+        // 抓现场时**根本没有**提示条 → 恢复成"没有"（哪怕应用阶段把它建出来了）
+        while (bar.firstChild) bar.removeChild(bar.firstChild);
+        bar.style.display = "none";
+      }
+    } catch (e) { }
+  }
+
   function syncJson() {
     if (!S.design) return;
     if (jsonDirty) return;                 // ← 关键：别冲掉用户正在改的文本
@@ -1799,8 +2504,12 @@
   }
 
   /** JSON 文本域有错未生效时，给个**看得见**的提示 + 一个"放弃改动"的出口 */
-  function setJsonDirty(dirty, errors) {
+  function setJsonDirty(dirty, errors, pending) {
     jsonDirty = dirty;
+    jsonPending = !!(dirty && pending);
+    // ⚠️ T5-R2：错误条数单独存一份 —— 失败回滚要按**原条数**重建提示条，
+    //    否则就是规划方实测的"1 个错误变成 0 个错误"。
+    jsonDirtyErrors = (dirty && errors) ? errors.length : 0;
     const area = el("jsonArea");
     if (area) area.classList.toggle("dirty", dirty);
     let bar = el("jsonDirtyBar");
@@ -1816,20 +2525,20 @@
     bar.style.display = "";
     bar.innerHTML = "";
     const msg = document.createElement("span");
-    msg.textContent = "⚠️ JSON 有 " + (errors ? errors.length : 0) +
-      " 个错误，画布仍是上一次成功解析的状态。修好错误才会生效 —— 在此之前画布上的改动不会写回这段文本。";
+    msg.textContent = jsonPending
+      ? "JSON 草稿等待校验，尚未应用。画布可以继续编辑，两边暂未同步；合法草稿会自动替换画布，画布改动不会写回草稿。"
+      : "⚠️ JSON 有 " + jsonDirtyErrors + " 个错误，草稿尚未应用。画布可以继续编辑，两边暂未同步；修好后会自动替换画布，画布改动不会写回草稿。";
     const btn = document.createElement("button");
     btn.textContent = "放弃 JSON 改动，回到画布状态";
     btn.onclick = function () {
-      setJsonDirty(false);
-      syncJson();
-      validateNow();
+      window.discardJsonEdit();
       toast("已放弃 JSON 改动，文本已回到画布当前状态");
     };
     bar.appendChild(msg);
     bar.appendChild(btn);
   }
   window.discardJsonEdit = function () {
+    cancelJsonTimer();
     setJsonDirty(false);
     syncJson();
     validateNow();
@@ -1856,11 +2565,47 @@
   window.syncJson = syncJson;
 
   let jsonTimer = null;
+  let jsonEditRevision = 0;
+  function cancelJsonTimer() {
+    clearTimeout(jsonTimer);
+    jsonTimer = null;
+    jsonEditRevision++;
+  }
+
+  // 确认只授予替换许可；恢复失败时仍由 restore 保留原草稿。
+  function confirmJsonReplace(action, message) {
+    if (!jsonDirty && !message) return true;
+    const draftNote = jsonDirty
+      ? "\nJSON 草稿尚未应用，继续会放弃草稿；无法通过撤销找回这段草稿。"
+      : "";
+    return confirm((message || action + "会替换当前画布。") + draftNote + "\n\n继续？");
+  }
+
+  function replaceDesign(design, label) {
+    let candidate;
+    try { candidate = JSON.stringify({ d: design, sel: [] }); }
+    catch (e) { toast("设计无法读取，当前设计和 JSON 草稿已保留"); return false; }
+    if (!restore(candidate)) {
+      toast("设计无法恢复，当前设计和 JSON 草稿已保留");
+      return false;
+    }
+    undo.push(snapshot(), label);
+    lastPersistKey = null;
+    saveUndoStack();
+    updateUndoButtons();
+    return true;
+  }
+
   window.jsonEdited = function () {
     if (suppressJsonSync) return;
-    clearTimeout(jsonTimer);
+    cancelJsonTimer();
+    const revision = jsonEditRevision;
+    const text = getVal("jsonArea");
+    setJsonDirty(true, null, true);
     jsonTimer = setTimeout(() => {
-      const r = window.validateText(getVal("jsonArea"));
+      if (revision !== jsonEditRevision || getVal("jsonArea") !== text) return;
+      jsonTimer = null;
+      const r = window.validateText(text);
       if (r.errors.length || !r.design) {
         // 解析失败：**保留当前设计**（画布不动），把文本域标记成"有错未生效"，
         // 并且从此不再覆盖它（见 syncJson 的 jsonDirty）
@@ -1994,12 +2739,7 @@
   let simLast = 0;
 
   function collectPids() {
-    const set = new Set();
-    window.walk(S.design.nodes, n => {
-      if (n.type === window.NODE_GAUGE && n.pid) set.add(n.pid);
-      if (n.type === window.NODE_IMAGE && n.statePid) set.add(n.statePid);
-    });
-    return Array.from(set);
+    return window.collectDesignPids(S.design.nodes);
   }
 
   /** 第 t 秒时的**真值**表 `{pid: value}`（正弦） */
@@ -2054,7 +2794,7 @@
       Object.keys(vals).forEach(k => S.simSprings.snap(k, vals[k]));
       simStep();
       if (b) { b.textContent = "⏸ 停止模拟"; b.classList.add("on"); }
-      toast("实时模拟已开始：数值按正弦变化，指针走弹簧（不是直接映射）");
+      toast("模拟预览已开始：正在使用示例数据，不是车辆实时数据");
     } else {
       if (simRaf) cancelAnimationFrame(simRaf);
       S.previewValues = null;
@@ -2062,7 +2802,7 @@
       S.simSprings.active = false;
       S.simSprings.clear();
       window.draw();
-      if (b) { b.textContent = "▶ 实时模拟"; b.classList.remove("on"); }
+      if (b) { b.textContent = "▶ 模拟预览"; b.classList.remove("on"); }
     }
   };
 
@@ -2142,16 +2882,20 @@
       r.onload = () => {
         // ⚠️ 「打开」是**危险操作**：它会把当前设计整个换掉（v2.83.0，Round 5）。
         // 原来这里一声不吭就替换了 —— 用户选错文件时**没有任何提示**。
-        // 现在先问一句，并说明"可以用撤销找回来"（下面 `jsonEdited` 会压一步）。
+        // 先验证文件，再确认替换；成功才记设计历史，草稿不能靠设计撤销找回。
+        const candidate = window.validateText(String(r.result));
+        if (candidate.errors.length || !candidate.design) {
+          toast("文件校验失败，当前设计和 JSON 草稿已保留");
+          return;
+        }
         const cur = window.flatten(S.design.nodes).length;
-        if (cur > 0 && !confirm("打开文件会替换当前设计（" + cur + " 个控件）。\n" +
-          "未保存的改动会丢 —— 但可以用撤销（Ctrl+Z）找回来。\n\n继续？")) return;
-        setJsonDirty(false);
-        setVal("jsonArea", String(r.result));
-        jsonTimer = null;
-        window.jsonEdited();
-        setTimeout(() => { syncJson(); validateNow(); }, 420);
+        if ((cur > 0 || jsonDirty) && !confirmJsonReplace("打开文件",
+          "打开文件会替换当前设计（" + cur + " 个控件）。画布改动可用撤销找回。")) return;
+        if (!replaceDesign(candidate.design, "打开设计文件")) return;
+        window.applyCanvasSize();
+        validateNow();
       };
+      r.onerror = () => toast("文件读取失败，当前设计和 JSON 草稿已保留");
       r.readAsText(f, "utf-8");
     };
     inp.click();
@@ -2282,7 +3026,8 @@
     let bytes = a ? dataUrlToBytes(a.data) : null;
     if (bytes) return sizeOf(bytes);
 
-    const b = (window.BUILTIN_ASSETS || []).find(x => norm(x.path) === norm(ref.path));
+    const b = (window.BUILTIN_ASSETS || []).concat(window.NEXT_LIBRARY ? window.NEXT_LIBRARY.assets : [])
+      .find(x => norm(x.path) === norm(ref.path));
     bytes = b ? dataUrlToBytes(b.data) : null;
     if (bytes) return { bytes: bytes, w: (b && b.w) || (a && a.w) || 0, h: (b && b.h) || (a && a.h) || 0 };
 
@@ -2452,12 +3197,13 @@
     const fn = P[name];
     if (!fn) return;
     const cur = window.flatten(S.design.nodes).length;
-    if (cur && !confirm("会替换当前全部 " + cur + " 个控件，继续？")) return;
-    setJsonDirty(false);
-    window.commit(() => {
-      S.design.nodes = fn();
-      S.selection = [];
-    }, "套用预设：" + name);
+    if ((cur || jsonDirty) && !confirmJsonReplace("套用预设", "会替换当前全部 " + cur + " 个控件。")) return;
+    const assets = S.design.assets;
+    const candidate = Object.assign({}, S.design);
+    candidate.nodes = fn();
+    if (!replaceDesign(candidate, "套用预设：" + name)) return;
+    // 套用预设只换控件；保留导入图片的 File 等内存数据，快照不能序列化它们。
+    S.design.assets = assets;
     window.applyCanvasSize();
   };
 
@@ -2507,7 +3253,7 @@
         if (on) window.togglePidLabel();
         else {
           const b = el("btnPid");
-          if (b) b.textContent = "🏷 PID 关";
+          if (b) b.textContent = "数据标识 关";
         }
       }],
       ["下拉框", function () {

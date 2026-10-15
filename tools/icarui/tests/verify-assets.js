@@ -159,7 +159,7 @@ ok(M.n >= 280, `内置素材 ≥280 个（实际 ${M.n}）`);
     console.log('    · 展开: ' + openNames.join(' / '));
     console.log('    · 收起: ' + shutNames.join(' / '));
     ok(L.hasSearch, '有搜索框');
-    eq(L.sections.length, 2, '两个大区块（控件库 / 素材）');
+    eq(L.sections.length, 3, '三个大区块（新控件 / 兼容控件 / 素材）');
     ok(L.assetGrids >= 1, '素材用网格排（不是一行一个）');
     ok(L.ctrlGrids >= 1, '控件用网格排');
     ok(L.thumbs >= 90, `缩略图数量 ${L.thumbs}（≥90）`);
@@ -300,7 +300,7 @@ ok(M.n >= 280, `内置素材 ≥280 个（实际 ${M.n}）`);
       fs.readdirSync(dir + '/' + e.name).forEach(f => { if (f.endsWith('.png')) pngCount++; });
     });
     // v2.20.0 从 10 类扩到 12 类（新增「条形轨道」「面板边框」）
-eq(dirs, 12, '12 个分类目录');
+eq(dirs, 13, '12 个旧素材分类与 next 新库目录');
     ok(pngCount >= 95, `${pngCount} 个 PNG 文件在磁盘上`);
     ok(fs.existsSync(dir + '/builtin.js'), 'builtin.js 清单存在');
 
@@ -329,7 +329,7 @@ eq(dirs, 12, '12 个分类目录');
       out.cases.push({
         tag: s.tag,
         素材比: +(s.w / s.h).toFixed(4),
-        节点比: +(n.w / n.h).toFixed(4),
+        节点比: +(n.w / n.h * window.nodeToCanvasMatrix().a / window.nodeToCanvasMatrix().d).toFixed(4),
         尺寸: n.w + '×' + n.h,
         加了节点: S.design.nodes.length === n0 + 1,
       });

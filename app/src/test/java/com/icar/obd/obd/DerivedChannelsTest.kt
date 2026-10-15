@@ -6,6 +6,7 @@ import com.icar.obd.data.PidValue
 import com.icar.obd.data.Store
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -35,8 +36,8 @@ class DerivedChannelsTest {
 
     @After
     fun tearDown() {
-        VehicleBus.clear()
         VehicleBus.Derived.resetTrip()
+        VehicleBus.clear()
         // 油箱容量是 Store 上的全局状态，别泄漏给别的用例
         Store.settings.tankCapacityL = 50f
     }
@@ -59,7 +60,7 @@ class DerivedChannelsTest {
         while (elapsed < seconds) {
             out.clear()
             VehicleBus.Derived.integrateDistance(dt) { v -> out.add(v); VehicleBus.put(v) }
-            out.firstOrNull { it.pidId == "calc_avg_l100" }?.let { avg = it.value }
+            out.firstOrNull { it.pidId == "calc_avg_l100" && it.ok }?.let { avg = it.value }
             elapsed += dt
         }
         return avg
@@ -183,14 +184,14 @@ class DerivedChannelsTest {
         // ① 只有油量，没有平均油耗（还没跑够 0.5km）
         put("std_2F", 50f)
         VehicleBus.Derived.computeAll { out.add(it) }
-        assertNull("没有平均油耗时不该出续航", out.firstOrNull { it.pidId == "calc_range" })
+        assertFalse("没有平均油耗时必须显式未知", out.first { it.pidId == "calc_range" }.ok)
 
         // ② 有油量也有油耗，但用户没填容量（0 = 关闭续航）
         out.clear()
         put("calc_avg_l100", 10f)
         Store.settings.tankCapacityL = 0f
         VehicleBus.Derived.computeAll { out.add(it) }
-        assertNull("容量为 0 应当关闭续航", out.firstOrNull { it.pidId == "calc_range" })
+        assertFalse("容量为 0 应当关闭续航", out.first { it.pidId == "calc_range" }.ok)
 
         // ③ 容量有了，但车不支持油量（std_2F 缺失）
         out.clear()
@@ -198,7 +199,7 @@ class DerivedChannelsTest {
         VehicleBus.clear()
         put("calc_avg_l100", 10f)
         VehicleBus.Derived.computeAll { out.add(it) }
-        assertNull("没有油量时不该出续航", out.firstOrNull { it.pidId == "calc_range" })
+        assertFalse("没有油量时必须显式未知", out.first { it.pidId == "calc_range" }.ok)
     }
 
     @Test
@@ -219,5 +220,183 @@ class DerivedChannelsTest {
         assertNotNull("calc_range 必须存在", r)
         assertEquals("CALC", r!!.mode)
         assertTrue(r.enabled)
+    }
+
+    // App-A1-D: run the real production callbacks and inspect the live bus.
+    private fun compute() = VehicleBus.Derived.computeAll(VehicleBus::put)
+    private fun invalidate(id: String) = VehicleBus.put(PidValue(id, Float.NaN, "T", System.currentTimeMillis(), false))
+    private fun expire(id: String, v: Float) = VehicleBus.put(PidValue(id, v, "T", System.currentTimeMillis() - 5000, true, ttlMs = 1000))
+    private fun unknown(id: String) {
+        assertNull("$id cannot keep a previous valid readout", VehicleBus.value(id))
+        assertFalse("$id must explicitly become invalid", VehicleBus.get(id)!!.ok)
+    }
+    private fun rangeInputs() { put("std_2F", 50f); put("calc_avg_l100", 10f); Store.settings.tankCapacityL = 50f }
+
+    @Test fun `boost clears failed MAP and BARO and recovers`() {
+        put("std_0B", 160f); put("std_33", 100f); compute()
+        assertEquals(60f, VehicleBus.value("calc_boost")!!, 0f)
+        invalidate("std_0B"); compute(); unknown("calc_boost")
+        put("std_0B", 140f); compute()
+        assertEquals(40f, VehicleBus.value("calc_boost")!!, 0f)
+        invalidate("std_33"); compute(); unknown("calc_boost")
+    }
+
+    @Test fun `boost clears a TTL expired dependency`() {
+        put("std_0B", 160f); put("std_33", 100f); compute()
+        expire("std_33", 100f); compute(); unknown("calc_boost")
+    }
+
+    @Test fun `boost expiry is no later than earliest timed input`() {
+        val now = System.currentTimeMillis()
+        val map = PidValue("std_0B", 160f, "T", now - 1000, true, ttlMs = 60000)
+        val baro = PidValue("std_33", 100f, "T", now - 2000, true, ttlMs = 50000)
+        VehicleBus.put(map); VehicleBus.put(baro); compute()
+        val boost = VehicleBus.get("calc_boost")!!
+        assertTrue(boost.ok)
+        assertTrue("derived output must carry upstream expiry", boost.ttlMs > 0)
+        assertTrue(boost.ts + boost.ttlMs <= baro.ts + baro.ttlMs)
+    }
+
+    @Test fun `missing fuel clears fuel flow and instantaneous consumption`() {
+        put("std_5E", 8f); put("std_0D", 80f); compute()
+        assertEquals(10f, VehicleBus.value("calc_l100")!!, 0f)
+        invalidate("std_5E"); compute()
+        unknown("calc_lh"); unknown("calc_l100")
+        put("std_5E", 4f); compute()
+        assertEquals(5f, VehicleBus.value("calc_l100")!!, 0f)
+    }
+
+    @Test fun `speed loss clears instantaneous value without clearing valid fuel flow`() {
+        put("std_5E", 8f); put("std_0D", 80f); compute()
+        expire("std_0D", 80f); compute(); unknown("calc_l100")
+        assertEquals(8f, VehicleBus.value("calc_lh")!!, 0f)
+    }
+
+    @Test fun `fuel flow and instantaneous output inherit selected input TTL`() {
+        val source = PidValue("std_5E", 8f, "T", System.currentTimeMillis() - 1000, true, ttlMs = 60000)
+        VehicleBus.put(source); put("std_0D", 80f); compute()
+        for (id in listOf("calc_lh", "calc_l100")) {
+            val v = VehicleBus.get(id)!!
+            assertTrue(v.ttlMs > 0)
+            assertTrue(v.ts + v.ttlMs <= source.ts + source.ttlMs)
+        }
+    }
+
+    @Test fun `range capacity zero or negative invalidates old result and positive restores`() {
+        rangeInputs(); compute()
+        assertEquals(250f, VehicleBus.value("calc_range")!!, 0f)
+        for (capacity in listOf(0f, -1f)) {
+            Store.settings.tankCapacityL = capacity; compute(); unknown("calc_range")
+        }
+        Store.settings.tankCapacityL = 50f; compute()
+        assertEquals(250f, VehicleBus.value("calc_range")!!, 0f)
+    }
+
+    @Test fun `range clears invalid average and expired fuel percentage`() {
+        rangeInputs(); compute()
+        invalidate("calc_avg_l100"); compute(); unknown("calc_range")
+        put("calc_avg_l100", 10f); compute()
+        expire("std_2F", 50f); compute(); unknown("calc_range")
+    }
+
+    @Test fun `range cannot outlive its fuel level dependency`() {
+        rangeInputs()
+        val level = PidValue("std_2F", 50f, "T", System.currentTimeMillis() - 1000, true, ttlMs = 60000)
+        VehicleBus.put(level); compute()
+        val range = VehicleBus.get("calc_range")!!
+        assertTrue(range.ttlMs > 0)
+        assertTrue(range.ts + range.ttlMs <= level.ts + level.ttlMs)
+    }
+
+    @Test fun `reset immediately publishes zero distance and clears average and range only`() {
+        drive(100f, 8f, 36f)
+        put("std_2F", 50f); put("calc_gx", 0.2f); compute()
+        val speedHistory = VehicleBus.historyOf("std_0D")
+        VehicleBus.Derived.resetTrip()
+        assertEquals(0f, VehicleBus.value("calc_km")!!, 0f)
+        assertEquals(0f, VehicleBus.Derived.accKm, 0f)
+        assertEquals(0f, VehicleBus.Derived.accLiters, 0f)
+        unknown("calc_avg_l100"); unknown("calc_range")
+        assertEquals(100f, VehicleBus.value("std_0D")!!, 0f)
+        assertEquals(50f, VehicleBus.value("std_2F")!!, 0f)
+        assertEquals(0.2f, VehicleBus.value("calc_gx")!!, 0f)
+        assertEquals(speedHistory, VehicleBus.historyOf("std_0D"))
+    }
+
+    @Test fun `short trip after reset does not resurrect last average`() {
+        drive(100f, 8f, 36f)
+        VehicleBus.Derived.resetTrip()
+        drive(100f, 4f, 3f)
+        unknown("calc_avg_l100")
+        drive(100f, 4f, 36f)
+        assertEquals(4f, VehicleBus.value("calc_avg_l100")!!, 0.01f)
+    }
+
+    @Test fun `repeated resets are idempotent and preserve unrelated values`() {
+        drive(100f, 8f, 36f); put("unrelated", 123f)
+        repeat(3) { VehicleBus.Derived.resetTrip() }
+        assertEquals(0f, VehicleBus.value("calc_km")!!, 0f)
+        assertEquals(123f, VehicleBus.value("unrelated")!!, 0f)
+        unknown("calc_avg_l100"); unknown("calc_range")
+    }
+
+    @Test fun `missing speed preserves known totals but invalidates average and range`() {
+        drive(100f, 8f, 36f); put("std_2F", 50f); compute()
+        val km = VehicleBus.Derived.accKm; val liters = VehicleBus.Derived.accLiters
+        invalidate("std_0D")
+        VehicleBus.Derived.integrateDistance(1f, VehicleBus::put)
+        assertEquals(km, VehicleBus.Derived.accKm, 0f)
+        assertEquals(liters, VehicleBus.Derived.accLiters, 0f)
+        assertEquals(km, VehicleBus.value("calc_km")!!, 0f)
+        unknown("calc_avg_l100"); unknown("calc_range")
+    }
+
+    @Test fun `fuel gap cannot produce a false complete average after recovery`() {
+        drive(100f, 8f, 36f)
+        val liters = VehicleBus.Derived.accLiters
+        expire("calc_lh", 8f)
+        VehicleBus.Derived.integrateDistance(1f, VehicleBus::put)
+        assertEquals(liters, VehicleBus.Derived.accLiters, 0f)
+        unknown("calc_avg_l100")
+        drive(100f, 8f, 36f); unknown("calc_avg_l100")
+        VehicleBus.Derived.resetTrip()
+        drive(100f, 8f, 36f)
+        assertEquals(8f, VehicleBus.value("calc_avg_l100")!!, 0.01f)
+    }
+
+    @Test fun `invalid time intervals cannot alter totals or publish a valid average`() {
+        for (dt in listOf(-1f, 0f, Float.NaN, Float.POSITIVE_INFINITY)) {
+            VehicleBus.Derived.resetTrip(); drive(100f, 8f, 36f)
+            val km = VehicleBus.Derived.accKm; val liters = VehicleBus.Derived.accLiters
+            VehicleBus.Derived.integrateDistance(dt, VehicleBus::put)
+            assertEquals(km, VehicleBus.Derived.accKm, 0f)
+            assertEquals(liters, VehicleBus.Derived.accLiters, 0f)
+            unknown("calc_avg_l100")
+        }
+    }
+
+    @Test fun `non finite dependencies cannot create valid derived readings`() {
+        put("std_0B", Float.POSITIVE_INFINITY); put("std_33", 100f)
+        put("std_5E", Float.POSITIVE_INFINITY); put("std_0D", 80f)
+        rangeInputs(); Store.settings.tankCapacityL = Float.POSITIVE_INFINITY
+        compute()
+        for (id in listOf("calc_boost", "calc_lh", "calc_l100", "calc_range")) unknown(id)
+    }
+
+    @Test fun `integrated average carries finite input expiry but cumulative distance does not`() {
+        val now = System.currentTimeMillis()
+        val fuel = PidValue("calc_lh", 8f, "T", now - 1000, true, ttlMs = 60000)
+        VehicleBus.put(fuel); put("std_0D", 100f)
+        repeat(36) { VehicleBus.Derived.integrateDistance(1f, VehicleBus::put) }
+        val avg = VehicleBus.get("calc_avg_l100")!!
+        assertTrue(avg.ok); assertTrue(avg.ttlMs > 0)
+        assertTrue(avg.ts + avg.ttlMs <= fuel.ts + fuel.ttlMs)
+        assertEquals(0, VehicleBus.get("calc_km")!!.ttlMs)
+    }
+
+    @Test fun `known zero fuel remains a valid integration input`() {
+        drive(100f, 0f, 36f)
+        assertEquals(0f, VehicleBus.Derived.accLiters, 0f)
+        assertEquals(0f, VehicleBus.value("calc_avg_l100")!!, 0f)
     }
 }

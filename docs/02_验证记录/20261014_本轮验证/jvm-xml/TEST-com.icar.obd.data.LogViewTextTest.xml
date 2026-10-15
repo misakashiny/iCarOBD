@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.LogViewTextTest" tests="10" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:50.778Z" hostname="WIN-LI9OE82Q5LO" time="0.002">
+  <properties/>
+  <testcase name="没有过滤器时统计行只有两个数字" classname="com.icar.obd.data.LogViewTextTest" time="0.001"/>
+  <testcase name="有过滤器时把过滤条件写在后面" classname="com.icar.obd.data.LogViewTextTest" time="0.0"/>
+  <testcase name="空态绝不出现暂无数据这种空话" classname="com.icar.obd.data.LogViewTextTest" time="0.0"/>
+  <testcase name="每个级别字母都有描述" classname="com.icar.obd.data.LogViewTextTest" time="0.001"/>
+  <testcase name="缓冲区空时说清日志什么时候才会有" classname="com.icar.obd.data.LogViewTextTest" time="0.0"/>
+  <testcase name="只筛模块时不写级别" classname="com.icar.obd.data.LogViewTextTest" time="0.0"/>
+  <testcase name="两种过滤同时开着时先说是模块（模块更常见）" classname="com.icar.obd.data.LogViewTextTest" time="0.0"/>
+  <testcase name="被模块筛掉时点名是哪个模块在挡" classname="com.icar.obd.data.LogViewTextTest" time="0.0"/>
+  <testcase name="被级别筛掉时点名是哪个级别在挡" classname="com.icar.obd.data.LogViewTextTest" time="0.0"/>
+  <testcase name="级别描述说清是及以上，不是只等于" classname="com.icar.obd.data.LogViewTextTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

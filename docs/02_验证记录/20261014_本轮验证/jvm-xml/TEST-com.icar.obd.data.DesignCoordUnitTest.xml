@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.DesignCoordUnitTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:47.904Z" hostname="WIN-LI9OE82Q5LO" time="0.012">
+  <properties/>
+  <testcase name="v2 节点树的坐标不被乘 360" classname="com.icar.obd.data.DesignCoordUnitTest" time="0.0"/>
+  <testcase name="分组里的仪表坐标也不被乘 360" classname="com.icar.obd.data.DesignCoordUnitTest" time="0.002"/>
+  <testcase name="v2 正常坐标不产生越界假警报" classname="com.icar.obd.data.DesignCoordUnitTest" time="0.002"/>
+  <testcase name="多页面设计里的仪表坐标也不被乘 360" classname="com.icar.obd.data.DesignCoordUnitTest" time="0.002"/>
+  <testcase name="真越界两条路都报 且文案一致" classname="com.icar.obd.data.DesignCoordUnitTest" time="0.004"/>
+  <testcase name="v1 与 v2 两条路算出的 gauges 逐字段一致" classname="com.icar.obd.data.DesignCoordUnitTest" time="0.001"/>
+  <testcase name="v2 抽出的仪表不是旧网格配置" classname="com.icar.obd.data.DesignCoordUnitTest" time="0.0"/>
+  <testcase name="节点几何与抽出的 gauge 几何一致" classname="com.icar.obd.data.DesignCoordUnitTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.RuleAlertRoutingTest" tests="10" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:51.002Z" hostname="WIN-LI9OE82Q5LO" time="0.013">
+  <properties/>
+  <testcase name="规则提示动作不再直接弹系统 Toast —— 源码级回归" classname="com.icar.obd.data.RuleAlertRoutingTest" time="0.009"/>
+  <testcase name="只有 toast 与 notify 有可视出口" classname="com.icar.obd.data.RuleAlertRoutingTest" time="0.001"/>
+  <testcase name="notify 动作只有系统通知一个出口" classname="com.icar.obd.data.RuleAlertRoutingTest" time="0.001"/>
+  <testcase name="灵动岛文案带统一前缀" classname="com.icar.obd.data.RuleAlertRoutingTest" time="0.001"/>
+  <testcase name="没有任何动作类型同时走灵动岛和系统 Toast" classname="com.icar.obd.data.RuleAlertRoutingTest" time="0.0"/>
+  <testcase name="每个动作类型的可视出口不超过一个" classname="com.icar.obd.data.RuleAlertRoutingTest" time="0.0"/>
+  <testcase name="动作文案为空时回退规则名" classname="com.icar.obd.data.RuleAlertRoutingTest" time="0.0"/>
+  <testcase name="动作类型大小写与空白容错" classname="com.icar.obd.data.RuleAlertRoutingTest" time="0.0"/>
+  <testcase name="toast 动作只有灵动岛一个出口" classname="com.icar.obd.data.RuleAlertRoutingTest" time="0.0"/>
+  <testcase name="预览文案两个都空时给示例而不是空胶囊" classname="com.icar.obd.data.RuleAlertRoutingTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

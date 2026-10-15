@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.ui.view.GaugeEasingTest" tests="14" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:52.779Z" hostname="WIN-LI9OE82Q5LO" time="0.007">
+  <properties/>
+  <testcase name="一个 5Hz 推送周期内不会走完 —— 留余量给下一次推送" classname="com.icar.obd.ui.view.GaugeEasingTest" time="0.005"/>
+  <testcase name="绝对阈值在大数值上也能收住 —— 相对比例的毛病" classname="com.icar.obd.ui.view.GaugeEasingTest" time="0.0"/>
+  <testcase name="dt 异常大时被夹住 不会一步跳到位" classname="com.icar.obd.ui.view.GaugeEasingTest" time="0.0"/>
+  <testcase name="时间常数是正数" classname="com.icar.obd.ui.view.GaugeEasingTest" time="0.0"/>
+  <testcase name="dt 为 0 或负数时不动" classname="com.icar.obd.ui.view.GaugeEasingTest" time="0.0"/>
+  <testcase name="时间常数符合预期 —— 一个 tau 走约 63百分之" classname="com.icar.obd.ui.view.GaugeEasingTest" time="0.0"/>
+  <testcase name="30Hz 与 144Hz 也接近" classname="com.icar.obd.ui.view.GaugeEasingTest" time="0.0"/>
+  <testcase name="单调逼近 不过冲" classname="com.icar.obd.ui.view.GaugeEasingTest" time="0.001"/>
+  <testcase name="3 个 tau 内能走完 95百分之" classname="com.icar.obd.ui.view.GaugeEasingTest" time="0.0"/>
+  <testcase name="持续逼近目标" classname="com.icar.obd.ui.view.GaugeEasingTest" time="0.0"/>
+  <testcase name="下降方向同样单调不过冲" classname="com.icar.obd.ui.view.GaugeEasingTest" time="0.001"/>
+  <testcase name="一步不跳到位 —— 要能看出动画" classname="com.icar.obd.ui.view.GaugeEasingTest" time="0.0"/>
+  <testcase name="settled 用绝对阈值" classname="com.icar.obd.ui.view.GaugeEasingTest" time="0.0"/>
+  <testcase name="相同墙钟时间内 不同帧率结果接近" classname="com.icar.obd.ui.view.GaugeEasingTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

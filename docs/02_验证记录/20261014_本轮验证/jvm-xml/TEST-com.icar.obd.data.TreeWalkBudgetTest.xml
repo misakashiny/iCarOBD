@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.TreeWalkBudgetTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:51.110Z" hostname="WIN-LI9OE82Q5LO" time="0.002">
+  <properties/>
+  <testcase name="正常的一棵树不会被误判为收手" classname="com.icar.obd.data.TreeWalkBudgetTest" time="0.002"/>
+  <testcase name="默认上限是一个数量级余量，不是卡死的紧箍咒" classname="com.icar.obd.data.TreeWalkBudgetTest" time="0.0"/>
+  <testcase name="同一个节点第二次出现必须被挡住（断环）" classname="com.icar.obd.data.TreeWalkBudgetTest" time="0.0"/>
+  <testcase name="环也能被深度上限兜住（两道闸互相独立）" classname="com.icar.obd.data.TreeWalkBudgetTest" time="0.0"/>
+  <testcase name="最深记录只涨不跌" classname="com.icar.obd.data.TreeWalkBudgetTest" time="0.0"/>
+  <testcase name="不同的对象互不影响" classname="com.icar.obd.data.TreeWalkBudgetTest" time="0.0"/>
+  <testcase name="节点数到上限就收手" classname="com.icar.obd.data.TreeWalkBudgetTest" time="0.0"/>
+  <testcase name="深度到上限就不再往下钻" classname="com.icar.obd.data.TreeWalkBudgetTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

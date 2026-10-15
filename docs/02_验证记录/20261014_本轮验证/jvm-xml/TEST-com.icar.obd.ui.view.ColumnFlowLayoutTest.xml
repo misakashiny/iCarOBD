@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.ui.view.ColumnFlowLayoutTest" tests="9" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:52.735Z" hostname="WIN-LI9OE82Q5LO" time="0.014">
+  <properties/>
+  <testcase name="单列时所有孩子都在第 0 列" classname="com.icar.obd.ui.view.ColumnFlowLayoutTest" time="0.013"/>
+  <testcase name="assign 与 assignColumns 是同一套规则" classname="com.icar.obd.ui.view.ColumnFlowLayoutTest" time="0.0"/>
+  <testcase name="等高块在两列间均分" classname="com.icar.obd.ui.view.ColumnFlowLayoutTest" time="0.001"/>
+  <testcase name="两列时依次放进当前最矮的列" classname="com.icar.obd.ui.view.ColumnFlowLayoutTest" time="0.0"/>
+  <testcase name="三列也能均衡" classname="com.icar.obd.ui.view.ColumnFlowLayoutTest" time="0.0"/>
+  <testcase name="空列表不崩" classname="com.icar.obd.ui.view.ColumnFlowLayoutTest" time="0.0"/>
+  <testcase name="列数为 0 或负数时按 1 列处理" classname="com.icar.obd.ui.view.ColumnFlowLayoutTest" time="0.0"/>
+  <testcase name="极不均衡的高度也不会让某列空着" classname="com.icar.obd.ui.view.ColumnFlowLayoutTest" time="0.0"/>
+  <testcase name="间隙计入列高" classname="com.icar.obd.ui.view.ColumnFlowLayoutTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

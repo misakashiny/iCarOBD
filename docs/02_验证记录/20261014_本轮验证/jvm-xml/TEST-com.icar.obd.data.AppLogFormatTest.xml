@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.AppLogFormatTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:47.189Z" hostname="WIN-LI9OE82Q5LO" time="0.079">
+  <properties/>
+  <testcase name="五个级别下级别列与正文列都不动" classname="com.icar.obd.data.AppLogFormatTest" time="0.034"/>
+  <testcase name="任意内置模块下正文起始列恒定" classname="com.icar.obd.data.AppLogFormatTest" time="0.035"/>
+  <testcase name="时间戳与级别定长 模块列左对齐补到 5 位" classname="com.icar.obd.data.AppLogFormatTest" time="0.003"/>
+  <testcase name="补位不进 equals 与 copy 语义" classname="com.icar.obd.data.AppLogFormatTest" time="0.001"/>
+  <testcase name="超过 5 位的模块不截断 只影响这一行自己的对齐" classname="com.icar.obd.data.AppLogFormatTest" time="0.001"/>
+  <testcase name="单字符到五字符的模块都落在同一列" classname="com.icar.obd.data.AppLogFormatTest" time="0.0"/>
+  <testcase name="extra 不影响正文起始列" classname="com.icar.obd.data.AppLogFormatTest" time="0.002"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

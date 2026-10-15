@@ -250,8 +250,9 @@ class PidMergeTest {
             assertNotNull("续航必须还在算", range)
             assertEquals(312.5f, range!!, 1f)
         } finally {
-            com.icar.obd.obd.VehicleBus.clear()
             com.icar.obd.obd.VehicleBus.Derived.resetTrip()
+            // resetTrip 现在会通知总线，最后清理以免污染其他测试。
+            com.icar.obd.obd.VehicleBus.clear()
             Store.settings.tankCapacityL = 50f
         }
     }

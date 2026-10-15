@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.icar.obd.data.SoundPresetsTest" tests="17" skipped="0" failures="0" errors="0" timestamp="2026-10-14T07:14:51.060Z" hostname="WIN-LI9OE82Q5LO" time="0.015">
+  <properties/>
+  <testcase name="byId 大小写与首尾空白容错" classname="com.icar.obd.data.SoundPresetsTest" time="0.001"/>
+  <testcase name="覆盖需求点名的六类语义" classname="com.icar.obd.data.SoundPresetsTest" time="0.001"/>
+  <testcase name="预设 id 不重名" classname="com.icar.obd.data.SoundPresetsTest" time="0.001"/>
+  <testcase name="预设显示名不重名" classname="com.icar.obd.data.SoundPresetsTest" time="0.001"/>
+  <testcase name="描述里显示的是人话而不是机器名" classname="com.icar.obd.data.SoundPresetsTest" time="0.0"/>
+  <testcase name="ids 与 ALL 一致且不重名" classname="com.icar.obd.data.SoundPresetsTest" time="0.0"/>
+  <testcase name="每个预设的 resId 都不同" classname="com.icar.obd.data.SoundPresetsTest" time="0.0"/>
+  <testcase name="音效总体积没有暴涨" classname="com.icar.obd.data.SoundPresetsTest" time="0.001"/>
+  <testcase name="预设列表不为空且比 v1_20_20 更多" classname="com.icar.obd.data.SoundPresetsTest" time="0.0"/>
+  <testcase name="分组不丢条目" classname="com.icar.obd.data.SoundPresetsTest" time="0.0"/>
+  <testcase name="每个预设都有分类与说明" classname="com.icar.obd.data.SoundPresetsTest" time="0.0"/>
+  <testcase name="每个音效不超过 20 KB" classname="com.icar.obd.data.SoundPresetsTest" time="0.001"/>
+  <testcase name="每个 wav 都能被解码且不是静音" classname="com.icar.obd.data.SoundPresetsTest" time="0.005"/>
+  <testcase name="显示名说人话" classname="com.icar.obd.data.SoundPresetsTest" time="0.001"/>
+  <testcase name="id 只含小写字母与下划线" classname="com.icar.obd.data.SoundPresetsTest" time="0.001"/>
+  <testcase name="res raw 里没有游离的 wav" classname="com.icar.obd.data.SoundPresetsTest" time="0.001"/>
+  <testcase name="每个预设音效文件都存在" classname="com.icar.obd.data.SoundPresetsTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
