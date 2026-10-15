@@ -38,7 +38,7 @@
 
 ## 总控 V0.1 文档接入
 
-项目编号 P002；根目录 D:/AIHarness/ICarOBD。采用 [总控入口](../../AI-Workspace-Manager/README.md) 指向的 V0.1 [AI规则](../../AI-Workspace-Manager/standards/01-AI开发规则.md)、[Git安全](../../AI-Workspace-Manager/standards/02-Git安全规则.md)、[双AI交接](../../AI-Workspace-Manager/standards/03-双AI交接协议.md)、[文档规范](../../AI-Workspace-Manager/standards/04-文档编号规范.md)。专属架构、数据/设备安全和验证规则继续有效，通用规范改变不自动覆盖，冲突先记录并澄清。
+项目编号 P002；根目录 D:/AIHarness/P002_ICarOBD。采用 [总控入口](../../AI-Workspace-Manager/README.md) 指向的 V0.1 [AI规则](../../AI-Workspace-Manager/standards/01-AI开发规则.md)、[Git安全](../../AI-Workspace-Manager/standards/02-Git安全规则.md)、[双AI交接](../../AI-Workspace-Manager/standards/03-双AI交接协议.md)、[文档规范](../../AI-Workspace-Manager/standards/04-文档编号规范.md)。专属架构、数据/设备安全和验证规则继续有效，通用规范改变不自动覆盖，冲突先记录并澄清。
 
 唯一当前任务仍为 TASK.md；唯一当前交接快照使用 STATUS.md 顶部 iteration-summary 及紧随其后的当前交接段，不新增第二套模板。PLAN.md 只维护顺序，开发问题与产品验收沿用 docs/03。接手先核对真实 Git、当前任务、交接及修改归属；只允许一个 AI 写入，未确认前任停止或现场不一致时先只读调查。
 
