@@ -43,6 +43,8 @@ const docFiles = [
   if (!fs.existsSync(full)) return true;
   return !isRedirectStub(f, read(f));
 });
+// 问题清单必须进快照 —— 「后续计划」要从它读待办表
+if (!docFiles.includes('docs/03_开发进度与问题清单.md')) docFiles.push('docs/03_开发进度与问题清单.md');
 const files = ['03_当前任务.md', '02_开发计划.md', '04_交接状态.md', '01_项目规格.md', 'AGENTS.md', 'README.md', 'tools/iteration-board/README.md', 'tools/icarui/README.md',
   ...docFiles];
 for (const d of summary.docs) {
@@ -93,13 +95,96 @@ const recentWork = git(['log', '-20', '--date=short', '--pretty=format:%h | %ad 
     return { hash, date, subject: rest.join(' | ') };
   });
 
+// ---- 待办清单（T-Mgr-P002-BOARD-02 新增）----
+// 用户问"接下来做什么"时，`02_开发计划.md` 只是索引（当前任务/暂缓/候选/历史），
+// **真正的待办表在 docs/03_开发进度与问题清单.md**。这里把它读进来，按优先级分组。
+//
+// 表格形如：`| App-A2 / P1 | 未完成内容 | 下一步/阻塞 |`
+// 优先级取 ID 里 `/` 之后那段（`P0`/`P1`/`P2`/`P3`/`P1-P2`/`后置`）。
+const prioRank = s => {
+  const t = String(s || '').toUpperCase();
+  if (t.includes('P0')) return 0;
+  if (t.includes('P1')) return 1;
+  if (t.includes('P2')) return 2;
+  if (t.includes('P3')) return 3;
+  return 9; // 后置 / 无标注
+};
+const prioLabel = s => {
+  const t = String(s || '');
+  if (/P0/i.test(t)) return 'P0 · 最高';
+  if (/P1/i.test(t)) return 'P1 · 高';
+  if (/P2/i.test(t)) return 'P2 · 中';
+  if (/P3/i.test(t)) return 'P3 · 低';
+  return '后置 / 未定';
+};
+const todos = (() => {
+  const text = sources['docs/03_开发进度与问题清单.md'] || '';
+  // 只扫「BUG与后续优先级」这一节之后的表格行
+  const idx = text.indexOf('## BUG与后续优先级');
+  const scope = idx >= 0 ? text.slice(idx) : text;
+  const out = [];
+  for (const line of scope.split('\n')) {
+    const m = line.match(/^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*$/);
+    if (!m) continue;
+    const id = m[1].trim();
+    // 跳过表头与分隔行
+    if (/^-+$/.test(id) || id === 'ID/优先级') continue;
+    const [, idPart, prioPart = ''] = id.split('/');
+    out.push({
+      id,
+      code: (idPart || id).trim(),
+      priority: (prioPart || '').trim(),
+      rank: prioRank(prioPart || id),
+      group: prioLabel(prioPart || id),
+      pending: m[2].trim(),
+      next: m[3].trim(),
+    });
+  }
+  out.sort((a, b) => a.rank - b.rank);
+  return out;
+})();
+
+// ---- 构建与设备信息（新增）----
+// 用户关心的"现在装的是哪个包"，看板此前完全没有。
+const build = (() => {
+  const apk = path.join(root, 'app/build/outputs/apk/debug/app-debug.apk');
+  const gradle = read('app/build.gradle.kts');
+  const versionName = gradle.match(/versionName\s*=\s*"([^"]+)"/)?.[1] || '';
+  const versionCode = gradle.match(/versionCode\s*=\s*(\d+)/)?.[1] || '';
+  if (!fs.existsSync(apk)) {
+    return { exists: false, versionName, versionCode };
+  }
+  const st = fs.statSync(apk);
+  const sha = require('node:crypto').createHash('sha256').update(fs.readFileSync(apk)).digest('hex');
+  return {
+    exists: true, versionName, versionCode,
+    bytes: st.size, mtime: st.mtime.toISOString(), sha256: sha,
+    // APK 是否比最后一次提交更新 —— 提醒"改了代码但没重装"
+    newerThanHead: st.mtime > new Date(Number(git(['log', '-1', '--format=%ct']).trim()) * 1000),
+  };
+})();
+
+// ---- 文档分类（新增）----
+// 47 份文档平铺一堆，用户找不到重点。按用途分段。
+const docGroup = (file) => {
+  if (!file.includes('/')) return '协作文件（根目录）';
+  if (file.startsWith('docs/01_专题')) return '现行规范与专题';
+  if (file.startsWith('docs/02_验证记录')) return '验证记录';
+  if (file.startsWith('docs/03_历史归档')) return '历史归档（仅供参考）';
+  if (file.startsWith('docs/')) return '项目文档';
+  if (file.startsWith('tools/')) return '工具文档';
+  return '其他';
+};
+
 const data = {
   generated: new Date().toISOString(), summary, sources,
-  milestones, releases, recentWork,
+  milestones, releases, recentWork, todos, build,
+  docGroups: Object.fromEntries(files.map(f => [f, docGroup(f)])),
   gitStatus: git(['status', '--short']), diffStat: git(['diff', '--stat']),
   commits: git(['log', '-8', '--date=short', '--pretty=format:%h | %ad | %s'])
 };
-const payload = JSON.stringify(data).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+// 清理 < 转义问题：JSON.stringify 已保证合法，这里只防御 U+2028/2029
+const payload = JSON.stringify(data).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 const template = read('tools/iteration-board/template.html');
 if (template.split('/* SNAPSHOT_DATA */').length !== 2) throw new Error('模板数据占位符必须唯一');
 fs.writeFileSync(path.join(__dirname, 'index.html'), template.replace('/* SNAPSHOT_DATA */', () => payload));
