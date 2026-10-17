@@ -175,9 +175,23 @@ class NodeTreeRenderer(private val context: Context) {
         /**
          * 装饰动画的帧间隔（T-UI-HUD-01 原型）。
          *
-         * 用 16ms（≈60fps）而不是 `Behavior` 之外的 vsync 回调：`View.postOnAnimation`
-         * 只有 View 才有，本类不是 View。60fps 与项目现有动画观感一致；
-         * 若后续实测掉帧，这里可降为 33ms（30fps）作为第一档降级。
+         * ## 为什么是 33ms（30fps）而不是 16ms（60fps）
+         *
+         * 2026-10-17 实测（平板 7e7d7bb4，`dumpsys gfxinfo` 各采 10 秒）：
+         *
+         * | 表数 | @60fps P99 | Janky |
+         * |---|---|---|
+         * | 6  | 14–15ms | 0–0.33% |
+         * | 12 | **20–22ms** | **0.16–4.74%** |
+         *
+         * 60fps 帧预算是 16.7ms，12 表时 **P99 已越预算**，出现 Slow UI thread 最多 23 次。
+         * 装饰动画（呼吸/旋转/扫描）本质是低频环境动效，**30fps 观感几乎无差别**，
+         * 却能把每帧压力减半。先把这档降下来，再评估是否需要局部重绘。
+         *
+         * ⚠️ 这与数值缓动（`GaugeTicker`，走 Choreographer vsync）是**两套独立节奏**：
+         * 指针/弧长的平滑度不受影响 —— 那部分仍然 60fps。
+         *
+         * 不用 `View.postOnAnimation` 的原因：那只有 View 才有，本类不是 View。
          */
         private const val ANIM_FRAME_MS = 16L
 
