@@ -8,6 +8,7 @@ import android.view.View
 import com.icar.obd.data.GaugeFont
 import com.icar.obd.data.GaugeItem
 import com.icar.obd.data.GaugePart
+import com.icar.obd.data.PartAnim
 import com.icar.obd.data.Store
 
 /**
@@ -49,6 +50,47 @@ class GaugePartsView(
 
     /** 这个表绑的 PID。渲染器靠它取当前值推进来 */
     val pid: String get() = item.pidId
+
+    // ================================================================ 装饰动画
+
+    /** 最近一帧的 vsync 时间（[stepFrame] 写入，绘制时读取） */
+    private var clockMs: Long = 0L
+
+    /**
+     * 这棵部件树里是否**有**持续动画。
+     *
+     * 没有的话 [stepFrame] 立刻返回 false —— 存量设计（无 anim 字段）
+     * 一行代码都不多跑，行为与改动前完全一致。
+     */
+    private val hasAnim: Boolean by lazy { parts.any { animatingIn(it) } }
+
+    private fun animatingIn(p: GaugePart): Boolean {
+        if (p.anim != null) return true
+        return p.children.any { animatingIn(it) }
+    }
+
+    /**
+     * 每帧推进（由 `GaugeTicker` 经 `BaseGaugeView` 调进来）。
+     *
+     * 与数值缓动的区别：缓动会收敛、会停；这里只要还有 anim 部件就**永远返回 true**
+     * —— 这是"环境动画"的本质。
+     *
+     * ⚠️ **调用方必须保证不可见时不调用**（见 `BaseGaugeView.stepFrame` 的可见性守卫），
+     * 否则页面切走后仍会 60fps 空转。
+     *
+     * @return 是否还需要下一帧
+     */
+    fun stepFrame(nowMs: Long): Boolean {
+        if (!hasAnim) return false
+        clockMs = nowMs
+        invalidate()
+        return true
+    }
+
+    /** 停止时把时钟归零，避免下次进入时相位「跳」一大段 */
+    fun stopAnimation() {
+        clockMs = 0L
+    }
 
     /**
      * 当前值表：**PID id → 值**（由渲染器 5Hz 推入）。
@@ -141,8 +183,42 @@ class GaugePartsView(
         val cx = (p.x + p.w * p.pivotX) * k
         val cy = (p.y + p.h * p.pivotY) * k
         val saved = canvas.save()
-        canvas.translate(cx, cy)
+
+        // ---- 装饰动画（T-UI-HUD-01 原型）----
+        // 在**静态布局之上**追加时间偏移：不改变任何静态字段的含义，
+        // 所以没有 anim 的部件与改动前逐像素一致。
+        var animAlpha = p.alpha
+        var animDx = 0f
+        var animDy = 0f
+        var animAngle = 0f
+        val a = p.anim
+        if (a != null && clockMs > 0L) {
+            val u = a.cycle(clockMs)
+            when (a.kind) {
+                // 绕 pivot 匀速转：u 走完一圈 → 360°×amplitude
+                PartAnim.KIND_SPIN -> animAngle = 360f * a.amplitude * u
+                // alpha 呼吸：sin 曲线，中位不动、两端 ±amplitude
+                PartAnim.KIND_PULSE -> {
+                    val s = Math.sin(u * 2.0 * Math.PI).toFloat()   // -1..1
+                    animAlpha = (p.alpha * (1f + s * a.amplitude * 0.5f)).toInt().coerceIn(0, 255)
+                }
+                // 沿主轴往返扫描：三角波，画布单位
+                PartAnim.KIND_SWEEP -> {
+                    val tri = if (u < 0.5f) u * 2f else (1f - u) * 2f   // 0..1..0
+                    animDx = (tri * 2f - 1f) * a.amplitude
+                }
+                // 小幅缓慢漂移：两个不同频率的正弦，避免规律感
+                PartAnim.KIND_DRIFT -> {
+                    animDx = (Math.sin(u * 2.0 * Math.PI) * a.amplitude).toFloat()
+                    animDy = (Math.cos(u * 2.0 * Math.PI * 0.7) * a.amplitude).toFloat()
+                }
+            }
+            paint.alpha = animAlpha.coerceIn(0, 255)
+        }
+
+        canvas.translate(cx + animDx * k, cy + animDy * k)
         if (angle != 0f) canvas.rotate(angle)
+        if (animAngle != 0f) canvas.rotate(animAngle)
 
         // 自身画在"以 pivot 为原点"的坐标系里
         bitmapOf(p.assetId)?.let { bmp ->

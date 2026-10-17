@@ -97,6 +97,56 @@ class NodeTreeRenderer(private val context: Context) {
     /** 用子部件拼装的仪表（v2.12.0）。它们的值由 5Hz tick 推入 */
     val partsViews = ArrayList<GaugePartsView>()
 
+    /**
+     * **装饰动画驱动**（T-UI-HUD-01 原型）。
+     *
+     * ## 为什么要单独一个时钟
+     *
+     * 现有 `GaugeTicker` 只驱动 `BaseGaugeView`（数值缓动 + 爆闪）。
+     * `GaugePartsView` 不是 `BaseGaugeView`，**从来没有被任何时钟推进过** ——
+     * 所以子部件里的持续动画（扫描光带/呼吸光晕）原本永远不会动。
+     *
+     * 这里用**本渲染器自己的 5Hz→vsync 时钟**：只要有带 anim 的部件就持续投递，
+     * 全部静止时**立刻停止投递**（与 `GaugeTicker` 同样的"收敛即停"原则）。
+     *
+     * ⚠️ 页面不可见时必须调 [stopPartsAnimation]：本类拿不到 Activity 生命周期，
+     * 由 `DashRenderer`/页面在 `setPageActive(false)` 时负责。
+     */
+    private val animHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var animRunning = false
+
+    private val animTick = object : Runnable {
+        override fun run() {
+            if (!animRunning) return
+            var any = false
+            val now = android.view.animation.AnimationUtils.currentAnimationTimeMillis()
+            for (pv in partsViews) {
+                // isShown 覆盖 visibility + 被父级移除前的窗口分离状态
+                if (pv.isShown && pv.stepFrame(now)) any = true
+            }
+            if (any) animHandler.postDelayed(this, ANIM_FRAME_MS) else animRunning = false
+        }
+    }
+
+    /** 有部件带动画时启动时钟；已经跑着就什么都不做 */
+    private fun ensurePartsAnimation() {
+        if (animRunning) return
+        animRunning = true
+        animHandler.post(animTick)
+    }
+
+    /** 页面切走 / 渲染器销毁时停掉，避免后台 60fps 空转 */
+    fun stopPartsAnimation() {
+        animRunning = false
+        animHandler.removeCallbacks(animTick)
+        partsViews.forEach { it.stopAnimation() }
+    }
+
+    /** 页面重新可见时恢复（与 [stopPartsAnimation] 成对，由 `DashRenderer.start()` 调） */
+    fun resumePartsAnimation() {
+        if (partsViews.isNotEmpty()) ensurePartsAnimation()
+    }
+
     /** 素材位图缓存：路径 → Bitmap。**必须缓存** —— 每次 render 都解码会卡住主线程 */
     private val bitmaps = HashMap<String, Bitmap?>()
 
@@ -122,6 +172,15 @@ class NodeTreeRenderer(private val context: Context) {
      * 不用去造一个跑不起来的 Android 环境（单测 classpath 里没有 MockContext）。
      */
     companion object {
+        /**
+         * 装饰动画的帧间隔（T-UI-HUD-01 原型）。
+         *
+         * 用 16ms（≈60fps）而不是 `Behavior` 之外的 vsync 回调：`View.postOnAnimation`
+         * 只有 View 才有，本类不是 View。60fps 与项目现有动画观感一致；
+         * 若后续实测掉帧，这里可降为 33ms（30fps）作为第一档降级。
+         */
+        private const val ANIM_FRAME_MS = 16L
+
         fun computeViewport(scaleMode: Int, cw: Int, ch: Int): Viewport {
         val c = GaugeItem.CANVAS
         return when (scaleMode) {
@@ -329,6 +388,8 @@ class NodeTreeRenderer(private val context: Context) {
             )
             pv.setValues(pv.neededPids().mapNotNull { id -> currentValueOf(id)?.let { id to it } }.toMap())
             partsViews.add(pv)
+            // 有装饰动画就启动时钟（无 anim 的部件由 stepFrame 自己返回 false，零开销）
+            ensurePartsAnimation()
             host.addView(
                 pv,
                 FrameLayout.LayoutParams(

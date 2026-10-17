@@ -449,11 +449,16 @@ class DashRenderer(
         if (running) return
         running = true
         main.post(ticker)
+        // 页面重新可见：恢复子部件的装饰动画（T-UI-HUD-01 原型）。
+        // 非当前页本来就不该动 —— 所以这里与 5Hz 取值时钟同一个激活边界。
+        nodeRenderer.resumePartsAnimation()
     }
 
     fun stop() {
         running = false
         main.removeCallbacks(ticker)
+        // 离开当前页/后台：必须停掉装饰动画，否则会 60fps 空转
+        nodeRenderer.stopPartsAnimation()
     }
 
     /** 自定义仪表盘里被删除的 PID 需要清理，避免出现「未绑定」死块 */

@@ -583,6 +583,85 @@ data class DesignNode(
 }
 
 /**
+ * **子部件的持续装饰动画**（T-UI-HUD-01 原型）。
+ *
+ * 与数值缓动的本质区别：缓动是**过渡**（会收敛会停），这里是**环境动画**
+ * （永不收敛，只要表可见就一直按时间跑）。
+ *
+ * ## 为什么要它
+ *
+ * 「科幻 HUD」类仪表的观感来源不是数值动画，而是**总有东西在动**：
+ * 扫描光带循环扫过、圆心光晕呼吸、刻度流动。这些都不是数值驱动的。
+ *
+ * ## 四种模式
+ *
+ * | kind | 动什么 | 典型用途 |
+ * |---|---|---|
+ * | [KIND_SPIN] | 绕 pivot 匀速旋转 | 外环、雷达扫描线 |
+ * | [KIND_PULSE] | alpha 正弦呼吸 | 圆心光晕、警示环 |
+ * | [KIND_SWEEP] | 位置沿主轴往返 | 扫描光带 |
+ * | [KIND_DRIFT] | 位置小幅缓慢漂移 | 背景粒子 |
+ *
+ * ⚠️ **原型阶段只做解析与渲染，不进工具侧**。铺开前必须补跨语言守卫。
+ */
+data class PartAnim(
+    val kind: String = KIND_PULSE,
+    /** 一个完整周期的毫秒数。越小越快，下限由 [MIN_PERIOD_MS] 夹住 */
+    val periodMs: Int = 2400,
+    /** 相位偏移 0..1，让多个部件错开不同步 */
+    val phase: Float = 0f,
+    /** 振幅：spin 是角度倍数，pulse 是 alpha 深度，sweep/drift 是位移（画布单位） */
+    val amplitude: Float = 1f
+) {
+    /** 归一化到 0..1 的循环相位（含相位偏移） */
+    fun cycle(nowMs: Long): Float {
+        val p = periodMs.coerceAtLeast(MIN_PERIOD_MS)
+        val u = ((nowMs % p).toFloat() / p + phase) % 1f
+        return if (u < 0f) u + 1f else u
+    }
+
+    companion object {
+        const val KIND_SPIN = "spin"
+        const val KIND_PULSE = "pulse"
+        const val KIND_SWEEP = "sweep"
+        const val KIND_DRIFT = "drift"
+
+        val KINDS = listOf(KIND_SPIN, KIND_PULSE, KIND_SWEEP, KIND_DRIFT)
+        val KIND_NAMES = listOf("旋转", "呼吸", "扫描", "漂移")
+
+        /**
+         * 周期下限 400ms —— 与 [NodeState.MIN_BLINK_MS] 同一个理由与数字：
+         * WCAG 2.3.1 要求每秒闪烁不超过 3 次。装饰动画若快到像闪烁同样是隐患。
+         */
+        const val MIN_PERIOD_MS = 400
+
+        fun parse(o: org.json.JSONObject?, path: String, warnings: MutableList<String>): PartAnim? {
+            if (o == null) return null
+            var kind = o.optString("kind", KIND_PULSE)
+            if (kind !in KINDS) {
+                warnings.add("$path.anim.kind = $kind 不认识（本版本认：${KINDS.joinToString(" / ")}）—— 已回落到 $KIND_PULSE")
+                kind = KIND_PULSE
+            }
+            var period = o.optInt("periodMs", 2400)
+            if (period < MIN_PERIOD_MS) {
+                warnings.add("$path.anim.periodMs = $period 过快 —— 已夹到 $MIN_PERIOD_MS（WCAG 2.3.1：每秒不超过 3 次）")
+                period = MIN_PERIOD_MS
+            }
+            if (period > 60000) {
+                warnings.add("$path.anim.periodMs = $period 过长 —— 已夹到 60000")
+                period = 60000
+            }
+            return PartAnim(
+                kind = kind,
+                periodMs = period,
+                phase = o.optDouble("phase", 0.0).toFloat(),
+                amplitude = o.optDouble("amplitude", 1.0).toFloat()
+            )
+        }
+    }
+}
+
+/**
  * **仪表的一个子部件**（v2.12.0）。
  *
  * 一个仪表不再只能"选一种画法"，而是可以拆成几个可替换的部件：
@@ -641,7 +720,19 @@ data class GaugePart(
     val pivotX: Float = 0.5f,
     val pivotY: Float = 0.5f,
     val sweepFrom: Float = 135f,
-    val sweepTo: Float = 405f
+    val sweepTo: Float = 405f,
+    /**
+     * **持续装饰动画**（T-UI-HUD-01 原型，v0.1）。
+     *
+     * null = **完全无动画**（存量设计逐像素不变）。
+     *
+     * 与「数值缓动」的区别：缓动会收敛、会停；这里的动画**永不收敛**，
+     * 由时间相位驱动，只要表在屏幕上就一直动。
+     *
+     * ⚠️ 这是**原型字段**，尚未进 ICarUI 工具侧与跨语言守卫。铺开成体系前
+     * 必须先补 `schema.js` 与 `verify-crosslang.js`，否则会形成单边分叉。
+     */
+    val anim: PartAnim? = null
 ) {
     /**
      * 给定值下的角度。
@@ -749,6 +840,8 @@ data class GaugePart(
                         // ⚠️ **递归解析子部件**，深度上限 5 —— 与工具侧一致，
                         // 防手改文件写出超深结构。
                         sweepFollow = o.optBoolean("sweepFollow", false),
+                        // 持续装饰动画（T-UI-HUD-01 原型）。缺省 null = 无动画。
+                        anim = PartAnim.parse(o.optJSONObject("anim"), "$path[$i]", warnings),
                         children = if (depth >= 5) emptyList()
                         else parseAll(
                             o.optJSONArray("children"), "$path[$i].children",
