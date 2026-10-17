@@ -64,6 +64,15 @@ object FrameMonitor {
     private const val LINE_BUF_MAX = 8192
     private const val LOG_INTERVAL_MS = 5000L
 
+    /**
+     * 监听来源的 owner 标识（T-App-A1-M-P）。
+     *
+     * 用固定单例而不是 `this`：`FrameMonitor` 本身是 object，语义上就只有一个
+     * 监听通道。`VehicleBus.openSource(owner)` 对同一 owner 会**自动关闭旧来源**
+     * 并分配递增 epoch，这正是"同一通道的新一轮取代旧一轮"需要的语义。
+     */
+    private val MONITOR_SOURCE_OWNER = Any()
+
     @Volatile
     internal lateinit var runtime: FrameMonitorRuntime
     @Volatile
@@ -101,9 +110,49 @@ object FrameMonitor {
     private var gateWarned = false
     private var lastWarnMode = FrameRateGate.Mode.NORMAL
 
+    /**
+     * 关闭本轮监听专属来源（T-App-A1-M-P）。
+     *
+     * **幂等**：重复调用无副作用。**只失效本来源拥有的 PID**：
+     * [VehicleBus.closeSource] 会把它们置 `ok=false`（未知），保留历史与累计，
+     * 并且跳过已被其他来源接管的 PID —— 所以"同 PID 被别的源覆盖后再停监听"
+     * 不会误清别人的值。
+     *
+     * 本轮目标来源与 `running`/`epoch` 解耦：无论在准备失败、断连还是正常
+     * [stop] 里调用，都只关"当前挂着的那个"，不会关到更新的那一轮。
+     */
+    private fun closeMonitorSource() {
+        val s = monitorSource ?: return
+        monitorSource = null
+        runCatching { VehicleBus.closeSource(s) }.onFailure {
+            AppLog.w(AppLog.M_OBD, "关闭监听来源失败", it.message ?: "")
+        }
+    }
+
     @Volatile
     var running = false
         private set
+
+    /**
+     * 本轮监听的**专属来源**（T-App-A1-M-P）。
+     *
+     * ## 为什么需要它
+     *
+     * 原来 [feedLine] 走的是无来源的 [VehicleBus.put] —— 那个重载会
+     * `currentOwners.remove(v.pidId)`，等于宣告"这个 PID 现在没人拥有"。
+     * 于是 [stop] 时没有任何东西可以把监听 PID 置为"未知"，它就一直挂着
+     * 最后一次收到的值，**看起来和实时一样**。这正是用户说的"停源失效"。
+     *
+     * 现在改为：本轮 start 打开一个专属 Source 并绑定本轮 [epoch]，
+     * [feedLine] 用 `put(source, …)` 发布；[stop] 与准备失败/断连路径在
+     * 同一收尾边界 [closeMonitorSource] 关闭它 —— 关闭会把**本来源的当前值**
+     * 置 `ok=false`（history/累计保留），且**不触碰其他来源**的同 PID。
+     *
+     * 代际保护：新一轮 start 先开新 Source 再**关闭旧的那个**；
+     * 旧 Source 的 close 只会失效它自己拥有的 PID，不会结束新 Source。
+     */
+    @Volatile
+    private var monitorSource: VehicleBus.Source? = null
 
     /** 正在收尾（重新初始化）—— 期间不接受新的启动/探测 */
     @Volatile
@@ -221,6 +270,16 @@ object FrameMonitor {
             running = true
             busy = true
             val generation = ++epoch
+            // ---- 监听专属来源（T-App-A1-M-P）----
+            // 先开新一轮来源，再关掉残留的旧来源：这样"快速重开"时旧来源的
+            // close 只会失效它自己那一轮发布过的 PID，不会结束刚开的新来源。
+            val previous = monitorSource
+            monitorSource = VehicleBus.openSource(MONITOR_SOURCE_OWNER)
+            if (previous != null) {
+                runCatching { VehicleBus.closeSource(previous) }.onFailure {
+                    AppLog.w(AppLog.M_OBD, "关闭上一轮监听来源失败", it.message ?: "")
+                }
+            }
             engineWasRunning = runtime.engineRunning
             if (engineWasRunning) runtime.stopPolling()
             val plan = filterPlan(sigs)
@@ -260,6 +319,9 @@ object FrameMonitor {
                 }.onFailure { error ->
                     if (error !is CancellationException) {
                         AppLog.e(AppLog.M_OBD, "常驻监听准备失败", error.message ?: "")
+                        // 准备失败也必须释放本来源：此时尚未进接收，但来源已开，
+                        // 不关就会让"开过又失败"的残留 owner 继续挂着。
+                        closeMonitorSource()
                         scheduler.post(Runnable { if (running && epoch == generation) stop() })
                     }
                     return@launch
@@ -289,7 +351,13 @@ object FrameMonitor {
     fun stop() {
         if (!::runtime.isInitialized || !::scheduler.isInitialized) return
         val stoppingEpoch = synchronized(CanAdapterGate.lock) {
-            if (!running) return
+            if (!running) {
+                // 已经不在运行：可能是上一轮收尾中，也可能是准备阶段失败后
+                // 由外部重复调用。此处仍要兜底关闭尚未释放的来源，
+                // 避免"没 running 但来源还挂着"而让监听 PID 停在当前值。
+                closeMonitorSource()
+                return
+            }
             running = false
             busy = true
             preparation?.cancel()
@@ -301,6 +369,8 @@ object FrameMonitor {
             if (!runtime.connected) {
                 runtime.rawMode = false
                 runtime.rawChunkListener = null
+                // 断连收尾同样要关闭监听来源：否则监听 PID 会挂着最后一次的值。
+                closeMonitorSource()
                 busy = false
                 scheduler.post(Runnable { if (epoch == stoppingEpoch && !running) onStateChanged?.invoke(false) })
                 return@launch
@@ -313,6 +383,10 @@ object FrameMonitor {
             delay(400)
             busy = true
             val r = runCatching { runtime.initializeWithoutPolling() }.getOrNull()
+            // 监听专属来源在此统一关闭（正常停 / 准备失败 / 断连都走这条路）。
+            // 必须在 rawMode=false 与回调摘除之后 —— 先断流再失效，避免收尾期间
+            // 还有晚到帧把值写回去。
+            closeMonitorSource()
 
             val f = frames
             val h = hits
@@ -498,7 +572,18 @@ object FrameMonitor {
             else p.hitsInvalidRaw(Formula.rawBits(p.formula, arr), v)
             // 命中无效值 → `ok=false`。下游（仪表/规则/CSV）都是 `ok` 才给值，
             // 所以显示 `--`、规则不误触发、CSV 记空 —— **下游零改动**。
-            VehicleBus.put(PidValue(p.id, fv, raw, now, !bad, ttlMs = p.ttlMs))
+            //
+            // ---- 来源化发布（T-App-A1-M-P）----
+            // 必须走带 Source 的重载。无来源的 `VehicleBus.put(v)` 会把当前来源
+            // 标记清掉，导致 stop 时没有任何东西能把该 PID 置为未知 —— 那就是
+            // "停源失效"红用例的根因。已关闭的来源会让 put 返回 false 并丢弃，
+            // 这正是我们要的：收尾之后到达的晚到帧不得再写当前值/历史。
+            val src = monitorSource
+            if (src == null || !VehicleBus.put(src, PidValue(p.id, fv, raw, now, !bad, ttlMs = p.ttlMs))) {
+                // 收尾竞态：来源已关闭（或正在被替换）—— 本轮这帧不再发布。
+                // 不增加告警日志（热路径，且属于正常竞态）。
+                continue
+            }
             hits++
             matched = true
             // 取值变化时记一条（每种信号最多 20 条）——
