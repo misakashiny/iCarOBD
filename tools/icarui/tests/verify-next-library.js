@@ -51,7 +51,33 @@ async function main(){
   results.forEach(([v,m])=>ok(v,m));
   await sleep(500);
   const screenshot=await cdp.send('Page.captureScreenshot',{format:'png'});
-  require('fs').writeFileSync(require('path').resolve(__dirname,'../../../stage/t11i-codex-20261012/production.png'),Buffer.from(screenshot.data,'base64'));
+  // ---------------------------------------------------------------------------
+  // 截图落盘（P2A 修）：原来这里是**裸写**到一个固定的私有路径
+  //   stage/t11i-codex-20261012/production.png
+  // 而 stage/ 被 .gitignore 忽略、该子目录在别的机器上不存在 ——
+  // ENOENT 抛出后被 catch 计为 1 条 FAIL，于是这套件永远是 FAIL=1。
+  //
+  // 关键事实：**没有任何断言依赖这个文件**（L51 已经跑完全部断言，截图在之后）。
+  // 它是遗留的调试副产物，不是测试素材。
+  //
+  // 修法（不降低门槛、不跳过断言）：
+  //   · 改成写到系统临时目录下带前缀的文件（任何机器都存在、不污染仓库）
+  //   · 包一层 try/catch：截图失败**不影响测试结论**，但要打印出来，
+  //     不能静默 —— 否则等于把"截图坏了"藏起来。
+  //   · 保留一条断言：截图必须确实产出非空 PNG。这样它仍在被验证，
+  //     只是不再依赖私人本地目录。
+  // ---------------------------------------------------------------------------
+  let shotOk=false, shotInfo='';
+  try{
+    if(screenshot&&screenshot.data){
+      const buf=Buffer.from(screenshot.data,'base64');
+      const out=require('path').join(require('os').tmpdir(),'p002-verify-next-library-production.png');
+      require('fs').writeFileSync(out,buf);
+      shotOk=buf.length>1000;
+      shotInfo=' -> '+out+' ('+buf.length+'B)';
+    } else shotInfo=' (无截图数据)';
+  }catch(e){ shotInfo=' ('+e.message+')'; }
+  ok(shotOk,'screenshot produced a non-empty PNG'+shotInfo);
  }catch(e){ok(false,e.stack||e.message);}finally{if(cdp)cdp.ws.close();proc.kill();}
  console.log('PASS='+pass+' FAIL='+fail);process.exitCode=fail?1:0;
 }

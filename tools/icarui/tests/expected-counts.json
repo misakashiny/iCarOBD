@@ -25,7 +25,7 @@
     "verify-cats": 20,
     "verify-cats2": 21,
     "verify-control-files": 1145,
-    "verify-crosslang": 174,
+    "verify-crosslang": 235,
     "verify-data-bindings": 217,
     "verify-feat2": 39,
     "verify-features": 93,
@@ -37,7 +37,7 @@
     "verify-lamp-state": 97,
     "verify-layout": 58,
     "verify-more": 15,
-    "verify-next-library": 90,
+    "verify-next-library": 91,
     "verify-p1a-registry": 57,
     "verify-pack": 111,
     "verify-pages": 48,
@@ -52,6 +52,7 @@
     "verify-tokens2": 38,
     "verify-v27": 48,
     "verify-v28": 28,
-    "verify-v291": 82
+    "verify-v291": 82,
+    "verify-p2a-catalog": 50
   }
 }

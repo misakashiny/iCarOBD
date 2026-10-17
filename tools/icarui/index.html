@@ -234,12 +234,46 @@
 <script src="js/registry/datasource-registry.js"></script>
 <script src="js/registry/control-registry.js"></script>
 <script src="js/registry/controls/t_label.js"></script>
+<script src="js/registry/catalog.js"></script>
 <script src="js/adapter/legacy-adapter.js"></script>
 <script src="js/canvas.js"></script>
 <script src="next-library/data.js"></script>
 <script src="js/next-controls.js"></script>
 <script src="js/data-bindings.js"></script>
 <script src="js/panels.js"></script>
+<!-- P2A：Catalog 构建点。
+     为什么放在这里（两处时序依赖，缺一不可）：
+       1. 必须晚于 next-controls.js —— 它往 BUILTIN_CONTROLS unshift 15 条 next_*；
+          提前构建会漏掉它们（P0 审计数出 200 而非 215 就是这个原因）。
+       2. 必须晚于 panels.js —— 素材条目的 make() 走 window.ensureBuiltinAsset
+          （定义在 panels.js:1703），缺它则 assetId 为空、104 个素材会被误判成控件。
+     ⚠️ Catalog.build() 内部对 assets 做了快照/恢复，**无副作用**：
+       不会往 design.assets 里塞用户没拖过的素材。 -->
+<script>
+/* P2A：Catalog 构建时机。
+   为什么不能直接在这里同步 build()：
+     next_* 条目的 make() 要读 CanvasState.design.canvas（next-controls.js:17），
+     而 design 要到 app.js 的 init()（app.js:3352，DOMContentLoaded）才赋值。
+     在这里同步构建会拿到 design===null → 15 条 next_* 全部失败。
+
+   策略：优先在 DOMContentLoaded + design 就绪后构建；
+         若那时还没就绪，退化为「首次查询时惰性构建」（见 Catalog.build 的幂等保证）。
+   幂等：重复调用结果一致，且内部对 assets 做快照/恢复，无副作用。 */
+(function () {
+  var C = window.ICAR && window.ICAR.registry && window.ICAR.registry.Catalog;
+  if (!C) return;
+  function tryBuild(attempt) {
+    var S = window.CanvasState;
+    if (S && S.design) { C.build(); return; }
+    if (attempt < 50) { setTimeout(function () { tryBuild(attempt + 1); }, 100); }
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function () { tryBuild(0); });
+  } else {
+    tryBuild(0);
+  }
+})();
+</script>
 <script src="js/editor.js"></script>
 <!-- 设计包（v2.79.0）：zip.js 是自写的 store-only ZIP 写入/读回，
      pack.js 是"哪些素材被引用了 + manifest"的纯逻辑（可在 Node 里直接测）。
