@@ -101,6 +101,79 @@ const recentWork = git(['log', '-20', '--date=short', '--pretty=format:%h | %ad 
 //
 // 表格形如：`| App-A2 / P1 | 未完成内容 | 下一步/阻塞 |`
 // 优先级取 ID 里 `/` 之后那段（`P0`/`P1`/`P2`/`P3`/`P1-P2`/`后置`）。
+
+// ⚠️⚠️ **白话说人话映射**（T-Mgr-P002-BOARD-03）
+//
+// 用户原话：「后续计划都说的这么高深、看不太懂」。看板直接把问题清单里的
+// 开发术语（`Session 重连代际`、`015E 合法 0`、`LVGL` …）呈现出来，
+// 而这些**本来就是用户自己提的需求**，只是被写成了黑话。
+//
+// 约定：
+//  1. **只在本文件里做映射，绝不修改 docs/03 原文** —— 原文是问题唯一权威。
+//  2. 每项给 `plain`（一句人话）+ 可选的 `origin`（用户原话）+ `impact`（对用户的影响）。
+//  3. **拿不准的一律标「原意待确认」，不编一个听起来合理的解释。**
+//  4. 映射按 ID 前缀匹配；新增待办若没配映射，看板**照原样显示并标注「未翻译」**，
+//     不会静默丢失 —— 缺翻译是可发现的，不是隐形的。
+const PLAIN_TODO = {
+  'App-A1-M-P': {
+    plain: '车上的转向灯/广播信号，停止监听后屏幕上可能还停在最后一个值',
+    impact: '平板上已装新包、本地测试通过，但没接真车实测过。',
+  },
+  'UI-HUD-01': {
+    plain: '仪表动效与导出已完成，还差全局开关',
+    impact: '你已能在 PC 工具里编辑动画并在设备上看到；还缺「默认关闭」的安全开关。',
+  },
+  'App-A1其余': {
+    plain: '断线重连后，仪表读数可能不刷新、或刷出旧值',
+    impact: '开车途中蓝牙断了再接上，可能出现数值卡住。',
+  },
+  'App-A2': {
+    plain: '油耗、进气量这类读数可能算得不准',
+    impact: '仪表上显示的油耗/空燃比数字，可信度还没保证。',
+  },
+  'App-A3/A4': {
+    plain: '同时开扫描和监听时，可能出现抢占或收尾不干净',
+    impact: '属安全类缺口；正常单任务使用不受影响。',
+  },
+  'App-A5': {
+    plain: '换设备或换文件夹后，设计里的背景图可能找不到',
+    impact: '把设计文件拷到别的机器上，图可能显示不出来。',
+  },
+  'App-A6': {
+    plain: '导入特别大的设计包时，可能卡住或只导入一半',
+    impact: '正常大小的设计没问题；超大包才有风险。',
+  },
+  'App-A7': {
+    plain: 'App 切到后台、或规则/日志长时间跑之后的生命周期问题',
+    impact: '长时间开车时才可能遇到。',
+  },
+  'T11-I、T7与排版': {
+    plain: '小卡片上的标题字和数字叠在一起了；部分控件缩放不准',
+    origin: '你在 2026-10-11 提过「小卡片标题重叠」',
+    impact: '这是能直接看见的排版问题。',
+  },
+  'App-A8/LVGL': {
+    plain: '清理一段已经放弃的旧渲染代码，顺带拆几个大文件',
+    impact: '纯内部维护，你看不出差别；好处是以后改起来不容易出错。',
+  },
+  '真车与SPP': {
+    plain: '你 10-11 提的三件事：挡位显示格式、指示灯都是一张图、G 力值仪表',
+    origin: '原话：「挡位显示的格式不行」「指示灯…而不是全部都是一个图」「G 力值仪表样式不一样」',
+    impact: '这些还没做；挡位现在显示 P R N 1 2 3…（缺 D），19 个警示灯共用同一张警告图。',
+  },
+};
+
+/** 按 ID 前缀找映射；先精确匹配，再前缀匹配 */
+function plainOf(id) {
+  const code = id.split('/')[0].trim();
+  if (PLAIN_TODO[code]) return { ...PLAIN_TODO[code], translated: true };
+  // 前缀兜底：`App-A3/A4` 这类带斜杠的 ID 会被 split 拆坏，用原文再试一次
+  for (const k of Object.keys(PLAIN_TODO)) {
+    if (id.startsWith(k)) return { ...PLAIN_TODO[k], translated: true };
+  }
+  return { translated: false };
+}
+
 const prioRank = s => {
   const t = String(s || '').toUpperCase();
   if (t.includes('P0')) return 0;
@@ -111,11 +184,11 @@ const prioRank = s => {
 };
 const prioLabel = s => {
   const t = String(s || '');
-  if (/P0/i.test(t)) return 'P0 · 最高';
-  if (/P1/i.test(t)) return 'P1 · 高';
-  if (/P2/i.test(t)) return 'P2 · 中';
-  if (/P3/i.test(t)) return 'P3 · 低';
-  return '后置 / 未定';
+  if (/P0/i.test(t)) return 'P0 · 最要紧';
+  if (/P1/i.test(t)) return 'P1 · 接下来该做的';
+  if (/P2/i.test(t)) return 'P2 · 有空再做';
+  if (/P3/i.test(t)) return 'P3 · 内部整理';
+  return '后置 · 需要额外条件';
 };
 const todos = (() => {
   const text = sources['docs/03_开发进度与问题清单.md'] || '';
@@ -130,6 +203,7 @@ const todos = (() => {
     // 跳过表头与分隔行
     if (/^-+$/.test(id) || id === 'ID/优先级') continue;
     const [, idPart, prioPart = ''] = id.split('/');
+    const plain = plainOf(id);
     out.push({
       id,
       code: (idPart || id).trim(),
@@ -138,6 +212,11 @@ const todos = (() => {
       group: prioLabel(prioPart || id),
       pending: m[2].trim(),
       next: m[3].trim(),
+      // 白话层（只用于看板显示）
+      plain: plain.plain || '',
+      origin: plain.origin || '',
+      impact: plain.impact || '',
+      translated: !!plain.translated,
     });
   }
   out.sort((a, b) => a.rank - b.rank);

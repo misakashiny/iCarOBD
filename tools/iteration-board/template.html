@@ -15,6 +15,15 @@
 .todo:first-of-type{border-top:0}
 .todoid{flex:0 0 130px;font-size:12px;color:var(--accent,#8edeb9);overflow-wrap:anywhere}
 .todo p{margin:0 0 4px}
+/* 白话说人话（T-Mgr-P002-BOARD-03）：一句主显示 + 可选来源/影响 + 技术细节折叠 */
+.todocard{border-top:1px solid var(--line);padding:14px 0}
+.todocard:first-of-type{border-top:0}
+.todoplain{font-size:16px;line-height:1.6;margin:0 0 6px;color:var(--text)}
+.todoorigin{font-size:13px;color:var(--green);margin:0 0 4px}
+.todoimpact{font-size:13px;color:var(--muted);margin:0 0 6px}
+.todocard details{margin-top:6px}
+.todocard details summary{font-size:12px;color:var(--blue);cursor:pointer;user-select:none}
+.todocard details summary:hover{text-decoration:underline}
 .docgroup{margin:14px 0 4px;font-size:11px;letter-spacing:1px;color:var(--green);border-bottom:1px solid var(--line);padding-bottom:4px}
 .doclist button.isrecent{font-weight:600;border-color:var(--green)}
 .toc{margin:8px 0 12px;display:flex;flex-wrap:wrap;gap:6px}
@@ -108,6 +117,13 @@ s.docs.forEach(d=>{const row=element('div',undefined,'step');row.append(docButto
 
 // ============================================================ 待办与优先级（新）
 // 这是"接下来做什么"的答案来源：docs/03_开发进度与问题清单.md 的待办表。
+//
+// ⚠️ T-Mgr-P002-BOARD-03：用户原话「后续计划都说的这么高深、看不太懂」。
+// 原因不是他看不懂，而是**我们把用户自己提的需求写成了开发黑话**
+// （`Session 重连代际`、`015E 合法 0`、`LVGL` …）。
+//
+// 这里改成：**白话一句优先显示，技术原文折叠在「技术细节」里**。
+// 白话映射来自 build.js 的 PLAIN_TODO，**不改 docs/03 原文一字**。
 (function renderTodos(){
   const box=$('todos');if(!box)return;
   const list=DATA.todos||[];
@@ -115,6 +131,7 @@ s.docs.forEach(d=>{const row=element('div',undefined,'step');row.append(docButto
     box.append(element('p','问题清单里没有解析到待办行（表头或格式可能变了）。点下方按钮看原文。','source-note'));
     return;
   }
+  box.prepend(element('p','共 '+list.length+' 项。**每项先用一句话说清「这是什么、对你有什么影响」**，想看代码级细节再展开。','source-note'));
   const groups=new Map();
   list.forEach(t=>{if(!groups.has(t.group))groups.set(t.group,[]);groups.get(t.group).push(t);});
   groups.forEach((items,g)=>{
@@ -123,17 +140,34 @@ s.docs.forEach(d=>{const row=element('div',undefined,'step');row.append(docButto
     h.className='prio prio-'+(items[0].rank===9?'other':items[0].rank);
     wrap.append(h);
     items.forEach(t=>{
-      const row=element('div',undefined,'todo');
-      row.append(element('div',t.id,'todoid'));
-      const body=element('div');
-      body.append(element('p',t.pending));
-      body.append(element('p','下一步：'+t.next,'source-note'));
-      row.append(body);
-      wrap.append(row);
+      const card=element('div',undefined,'todocard');
+
+      // ① 白话一句（主显示）
+      const title=element('p',t.translated&&t.plain ? t.plain : t.pending);
+      title.className='todoplain';
+      card.append(title);
+
+      // ② 用户提过的，标出来源 —— 让他能认出"这是我说的"
+      if(t.origin)card.append(element('p','· '+t.origin,'todoorigin'));
+
+      // ③ 影响
+      if(t.impact)card.append(element('p',t.impact,'todoimpact'));
+
+      // ④ 未翻译的明确标出来，不静默显示黑话
+      if(!t.translated)card.append(element('p','（这一项还没有白话说明，下面是原文）','source-note'));
+
+      // ⑤ 技术原文折叠
+      const det=element('details');
+      det.append(element('summary','技术细节（原始记录）'));
+      det.append(element('p',t.pending,'source-note'));
+      det.append(element('p','下一步：“'+t.next+'”','source-note'));
+      det.append(element('p','编号：'+t.id,'source-note'));
+      card.append(det);
+
+      wrap.append(card);
     });
     box.append(wrap);
   });
-  box.prepend(element('p','共 '+list.length+' 项待办，按优先级排序。','source-note'));
 })();
 
 DATA.milestones.forEach(m=>{const row=element('div',undefined,'step');row.append(element('h3',m.title),element('p',m.status),docButton('查看判据','02_开发计划.md',m.text));$('milestones').append(row);});
