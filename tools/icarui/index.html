@@ -218,10 +218,23 @@
      两边都要用它：canvas 画盘面与指针，app 的实时数据主循环推弹簧。
      它自己不依赖任何东西（纯函数），所以放多前都行，放这儿是为了读起来顺。 -->
 <script src="js/spring.js"></script>
+<!-- ===== P1A 新架构基础设施（2026-10-18）=====
+     零依赖、零构建，仍是普通 <script>。
+     ① core/namespace.js 必须最先 —— 其它新模块都要往 window.ICAR 挂载。
+     ② registry/* 只依赖 core + 旧工厂（createNode），**不依赖编辑器/属性面板**。
+     ③ adapter/* 桥接新旧路径，P1A 只用它做等价性自检，不接管渲染。
+     旧全局符号（window.xxx）全部保留，一个都不删。 -->
+<script src="js/core/namespace.js"></script>
 <script src="js/schema.js"></script>
 <script src="js/model.js"></script>
 <script src="js/validate.js"></script>
 <script src="js/presets.js"></script>
+<!-- 注册表必须在 presets.js 之后：adapter 要读 BUILTIN_CONTROLS 做等价比对；
+     控件定义里的 build() 要用 schema.js 的 createNode/NODE_TEXT。 -->
+<script src="js/registry/datasource-registry.js"></script>
+<script src="js/registry/control-registry.js"></script>
+<script src="js/registry/controls/t_label.js"></script>
+<script src="js/adapter/legacy-adapter.js"></script>
 <script src="js/canvas.js"></script>
 <script src="next-library/data.js"></script>
 <script src="js/next-controls.js"></script>

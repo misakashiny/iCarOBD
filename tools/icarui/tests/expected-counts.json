@@ -17,11 +17,16 @@
   ],
   "minAssertions": {
     "verify-asset-audit": 35,
+    "verify-asset-gen": 27,
     "verify-assets": 50,
+    "verify-assets-wiring": 72,
+    "verify-bands": 131,
     "verify-bugfix": 1024,
     "verify-cats": 20,
     "verify-cats2": 21,
+    "verify-control-files": 1145,
     "verify-crosslang": 174,
+    "verify-data-bindings": 217,
     "verify-feat2": 39,
     "verify-features": 93,
     "verify-fields": 18,
@@ -32,6 +37,8 @@
     "verify-lamp-state": 97,
     "verify-layout": 58,
     "verify-more": 15,
+    "verify-next-library": 90,
+    "verify-p1a-registry": 57,
     "verify-pack": 111,
     "verify-pages": 48,
     "verify-parts": 79,
@@ -45,12 +52,6 @@
     "verify-tokens2": 38,
     "verify-v27": 48,
     "verify-v28": 28,
-    "verify-assets-wiring": 72,
-    "verify-asset-gen": 27,
-    "verify-bands": 131,
-    "verify-v291": 82,
-    "verify-next-library": 90,
-    "verify-control-files": 1145,
-    "verify-data-bindings": 217
+    "verify-v291": 82
   }
 }
