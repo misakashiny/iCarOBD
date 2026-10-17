@@ -6,19 +6,19 @@ const { execFileSync } = require('node:child_process');
 const root = path.resolve(__dirname, '../..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/^\uFEFF/, '');
 const git = args => execFileSync('git', ['-c', 'core.quotepath=false', ...args], { cwd: root, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
-const status = read('STATUS.md');
-const task = read('TASK.md');
-const plan = read('PLAN.md');
+const status = read('04_交接状态.md');
+const task = read('03_当前任务.md');
+const plan = read('02_开发计划.md');
 const block = status.match(/```iteration-summary\s*\n([\s\S]*?)\n```/);
-if (!block) throw new Error('STATUS.md 缺少 iteration-summary 摘要；请按 tools/iteration-board/README.md 更新。');
+if (!block) throw new Error('04_交接状态.md 缺少 iteration-summary 摘要；请按 tools/iteration-board/README.md 更新。');
 const summary = JSON.parse(block[1]);
 for (const field of ['taskId', 'title', 'review', 'before', 'after', 'remaining']) {
   if (typeof summary[field] !== 'string' || !summary[field].trim()) throw new Error('摘要字段缺失：' + field);
 }
 if (!Array.isArray(summary.verification) || !Array.isArray(summary.docs)) throw new Error('verification/docs 必须为数组');
 const taskHeading = task.match(/^## (T[^\s：:]+)[：:]/m);
-if (!taskHeading || taskHeading[1] !== summary.taskId) throw new Error('摘要 taskId 与 TASK.md 不一致，拒绝生成过期摘要');
-const files = ['TASK.md', 'PLAN.md', 'STATUS.md', 'SPEC.md', 'AGENTS.md', 'README.md', 'tools/iteration-board/README.md', 'tools/icarui/README.md',
+if (!taskHeading || taskHeading[1] !== summary.taskId) throw new Error('摘要 taskId 与 03_当前任务.md 不一致，拒绝生成过期摘要');
+const files = ['03_当前任务.md', '02_开发计划.md', '04_交接状态.md', '01_项目规格.md', 'AGENTS.md', 'README.md', 'tools/iteration-board/README.md', 'tools/icarui/README.md',
   ...fs.readdirSync(path.join(root, 'docs')).filter(n => /^\d\d_.*\.md$/.test(n)).map(n => 'docs/' + n),
   ...fs.readdirSync(path.join(root, 'docs/01_专题')).filter(n => n.endsWith('.md')).map(n => 'docs/01_专题/' + n),
   'docs/02_验证记录/00_验证索引.md', 'docs/03_历史归档/00_归档说明.md'];

@@ -1,0 +1,35 @@
+{
+  "projectId": "P002",
+  "capturedAt": "2026-10-16T20:49:33.377816+08:00",
+  "includes_uncommitted_content": true,
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 5204,
+      "sha256": "0eda6a0b0515bf91463e8a8af1b6843b23251a0e692f9814760568e0ab9a2bce"
+    },
+    {
+      "path": "SPEC.md",
+      "bytes": 1625,
+      "sha256": "dcf728b7d748535aba6fb8edf0eb66ade93d7e9bde8f79e1df2f6b17d9b77e33"
+    },
+    {
+      "path": "PLAN.md",
+      "bytes": 1689,
+      "sha256": "71ced1811a35f65624976b64841de3d558525f8c7eddefad8cde1944aa9d3da5"
+    },
+    {
+      "path": "TASK.md",
+      "bytes": 13905,
+      "sha256": "9041d391b22a3f9b65bb5621771de66a1933fc7637ac217dd7bde56fc1fc97c5"
+    },
+    {
+      "path": "STATUS.md",
+      "bytes": 19852,
+      "sha256": "2d5bd9d20144532c29eaca64e57170f6270e5f672c5184329c960282ec0f8258"
+    }
+  ],
+  "source_HEAD": "6a35b4f4d167fde95227a10efe723fcea2687563",
+  "source_status": "M STATUS.md\n M TASK.md\n?? MANIFEST.json\n?? SHA256SUMS.txt\n?? history.bundle\n?? iCarOBD2_开发交接包.zip",
+  "purpose": "原始字节审计副本，不是当前任务或可执行规则"
+}

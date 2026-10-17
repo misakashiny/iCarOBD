@@ -8,21 +8,21 @@
 
 ## 每轮如何更新
 
-详细记录仍写 STATUS.md，任务、计划和专题仍以原有权威文档为准。STATUS.md 顶部只保留一个 `iteration-summary` 代码块，提供简洁摘要；新一轮替换该块，历史完整报告保留。Codex 维护最新审查结论，DeepSeekHarness 更新实施变化和运行证据，保持“待审查”或已记录的返工结论，不自行宣布通过。
+详细记录仍写 04_交接状态.md，任务、计划和专题仍以原有权威文档为准。04_交接状态.md 顶部只保留一个 `iteration-summary` 代码块，提供简洁摘要；新一轮替换该块，历史完整报告保留。Codex 维护最新审查结论，DeepSeekHarness 更新实施变化和运行证据，保持“待审查”或已记录的返工结论，不自行宣布通过。
 
 代码块内容为 JSON：
 
 ```json
 {
   "updated": "2026-10-11（Asia/Shanghai）",
-  "taskId": "必须等于 TASK.md 中的任务 ID",
+  "taskId": "必须等于 03_当前任务.md 中的任务 ID",
   "title": "这轮改善什么",
   "review": "待审查 / 未通过 / 审查通过",
   "before": "原来的用户体验或问题",
   "after": "当前已经实现的变化；未实现须说清楚",
   "remaining": "剩余验收缺口与下一步",
   "verification": [{"name": "单元测试", "state": "未运行", "detail": "命令、退出码及证据位置"}],
-  "docs": [{"file": "STATUS.md", "change": "更新了什么"}]
+  "docs": [{"file": "04_交接状态.md", "change": "更新了什么"}]
 }
 ```
 
