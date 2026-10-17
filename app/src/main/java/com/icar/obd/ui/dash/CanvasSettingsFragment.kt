@@ -1091,25 +1091,60 @@ class CanvasSettingsFragment : Fragment() {
             gauges = Store.customGauges.toList()
         )
         val json = com.icar.obd.data.DesignExporter.build(canvas.designJson, d)
-        val file = java.io.File(requireContext().cacheDir, "design.json")
-        runCatching { file.writeText(json) }.onFailure {
-            ObdController.toast("导出失败：${it.message}")
-            return
+
+        // ---- 写入公共下载目录 Download/ICarOBD/（T-UI-EXPORT-03）----
+        // 用户能直接在文件管理器里找到并传到电脑，不再只能依赖分享面板
+        // （分享面板受 MIME 声明与 FileProvider URI 权限限制，实测找不到微信）。
+        val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
+            .format(java.util.Date())
+        val displayName = com.icar.obd.data.DesignExporterFiles.fileName(canvas.name, stamp)
+        val written = com.icar.obd.data.DesignExporterFiles.write(requireContext(), displayName, json)
+        val shareUri: android.net.Uri? = when (written) {
+            is com.icar.obd.data.DesignExporterFiles.Result.Ok -> {
+                ObdController.toast("已保存到 ${written.location}")
+                AppLog.i(AppLog.M_UI, "设计文件已写入下载目录", "${written.location} ${json.length}字符")
+                // API ≥ 29 拿到的是 MediaStore Uri，可以直接分享；
+                // 低版本没有 Uri，走下面的 cache 兜底
+                written.uri
+            }
+            is com.icar.obd.data.DesignExporterFiles.Result.Failed -> {
+                // **不静默当成功**：明确告诉用户写失败了，但仍然弹分享，
+                // 让他还有一条路把内容带走
+                ObdController.toast("保存到下载目录失败：${written.reason}")
+                AppLog.e(AppLog.M_UI, "设计文件写入下载目录失败", written.reason)
+                null
+            }
         }
-        val uri = androidx.core.content.FileProvider.getUriForFile(
-            requireContext(), "${requireContext().packageName}.fileprovider", file
-        )
-        startActivity(
-            Intent.createChooser(
-                Intent(Intent.ACTION_SEND).apply {
-                    type = "application/json"
-                    putExtra(Intent.EXTRA_STREAM, uri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                },
-                "导出设计文件"
+
+        // ---- 保留分享面板（用户要求）----
+        // 优先分享刚写进 Download 的那份（有 Uri 时）；否则退回 cache 副本。
+        // cache 副本在分享后不删 —— 它同时充当"写 Download 失败时的兜底载体"。
+        val fallbackFile = java.io.File(requireContext().cacheDir, "design.json")
+        val cacheOk = runCatching { fallbackFile.writeText(json) }.isSuccess
+        val uriToShare = shareUri ?: if (cacheOk) {
+            runCatching {
+                androidx.core.content.FileProvider.getUriForFile(
+                    requireContext(), "${requireContext().packageName}.fileprovider", fallbackFile
+                )
+            }.getOrNull()
+        } else null
+
+        if (uriToShare != null) {
+            startActivity(
+                Intent.createChooser(
+                    Intent(Intent.ACTION_SEND).apply {
+                        // ⚠️ 用 `*/*` 而不是 `application/json`（T-UI-EXPORT-03）：
+                        // 微信等应用不声明接收 application/json，写窄了它们**根本不出现在面板里**。
+                        // 放宽后系统把"能收文件的 App"都列出来，不硬编码任何包名。
+                        type = if (shareUri != null) "application/json" else "*/*"
+                        putExtra(Intent.EXTRA_STREAM, uriToShare)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    },
+                    "导出设计文件"
+                )
             )
-        )
-        AppLog.i(AppLog.M_UI, "已导出设计文件", "gauges=${d.gauges.size} theme=${d.themeId}")
+        }
+        AppLog.i(AppLog.M_UI, "已导出设计文件", "gauges=${d.gauges.size} theme=${d.themeId} file=$displayName")
     }
 
     /**
