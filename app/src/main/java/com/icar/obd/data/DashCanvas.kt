@@ -79,6 +79,27 @@ data class DashCanvas(
 
     /** 缩放模式，取值与 `DesignFile.SCALE_*` 同源 */
     var scaleMode: Int = 0,
+
+    /**
+     * **本套画布自己的素材基目录**（T-App-A5-BASEDIR）。
+     *
+     * ## 为什么必须按画布存，而不是全局一个
+     *
+     * `designBaseDir` 原来是 `Settings` 上的**全局单值**，但画布最多有
+     * [MAX_CANVASES] 套、每套可以有自己的设计文件与素材。全局单值的后果：
+     *
+     * ```
+     * 给「画布1」导入素材 → designBaseDir = files/design/<ts1>
+     * 切到「画布2」（也有自己的素材）→ designBaseDir 还是 <ts1>
+     *   → 画布2 的相对路径素材全部解析失败 → 盘面空白、背景消失
+     * ```
+     *
+     * 现在每套画布记住自己的目录，切换时由 `Store.loadActiveCanvas()` 同步到
+     * 全局实时字段（渲染层仍只读全局那个，不改解析规则）。
+     *
+     * 空串 = 这套画布没有导入过素材（或用的是程序化绘制，不依赖素材）。
+     */
+    var designBaseDir: String = "",
 ) {
 
     /** 仪表条数（列表 / 设置页显示用；设计文件与扁平表不叠加，取两者较大的那个口径） */
@@ -102,6 +123,8 @@ data class DashCanvas(
         put("scaleMode", scaleMode)
         // 空串不写：旧版本读到"没有这个键"就是"没有设计文件"，语义一致
         if (designJson.isNotBlank()) put("designJson", designJson)
+        // 同理：空基目录不写，避免每个老画布一存盘就多一行噪音
+        if (designBaseDir.isNotBlank()) put("designBaseDir", designBaseDir)
         put("gauges", JSONArray().apply { gauges.forEach { put(it.toJson()) } })
     }
 
@@ -183,6 +206,8 @@ data class DashCanvas(
                 bgH = o.optInt("bgH", 0),
                 bgFit = o.optInt("bgFit", 0),
                 scaleMode = o.optInt("scaleMode", 0),
+                // 旧配置没有这个键 -> 空串，由 Store.migrateLegacyBaseDir() 从全局值迁移
+                designBaseDir = o.optString("designBaseDir", ""),
             )
         }
 

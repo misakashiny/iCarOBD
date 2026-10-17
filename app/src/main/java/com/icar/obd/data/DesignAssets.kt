@@ -13,14 +13,21 @@ import java.io.File
  * 设计文件（`icar.ui/2`）里的素材是**相对路径**（`assets/背景/carbon.png`），
  * 要拼上 `Store.settings.designBaseDir` 才能读到。而：
  *
- * 1. **`designBaseDir` 全项目没有任何地方赋值** —— 导入走的是 SAF **单文件**
- *    （`OpenDocument` 选一个 `design.json`），**拿不到它所在的目录**；
+ * 1. 导入走的是 SAF **单文件**（`OpenDocument` 选一个 `design.json`），
+ *    **拿不到它所在的目录**；
  * 2. 于是 `NodeTreeRenderer.resolveAssetPath` 原样返回那个相对路径，
  *    `DashboardBackground.load` 必然读不到 → **所有素材加载失败**；
  * 3. 由**控件（素材图片）**拼出来的表盘就只剩空卡片 ——
  *    用户报的"**画布不显示我做好的内容、显示是空的**"就是这个。
  *
  * 纯程序化绘制的表（圆表/数字/条形）不依赖素材，所以以前一直没暴露。
+ *
+ * > 📌 **订正（T-App-A5-BASEDIR）**：早期这里写着"`designBaseDir` 全项目没有任何
+ * > 地方赋值"。**该说法已过期** —— 现在两处会赋值：本文件配合的
+ * > `CanvasSettingsFragment.pickAssetDir`（选素材文件夹）与设计包导入。
+ * > 并且从 T-App-A5-BASEDIR 起，基目录**按画布各存一份**
+ * > （`DashCanvas.designBaseDir`），切换画布时由 `Store.loadActiveCanvas()` 同步到全局，
+ * > 不再是一套画布覆盖所有。
  *
  * ## 做法：把素材复制进 app 私有目录
  *

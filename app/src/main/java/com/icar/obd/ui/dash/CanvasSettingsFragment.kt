@@ -266,6 +266,11 @@ class CanvasSettingsFragment : Fragment() {
             ObdController.toast("这个文件夹里没有 assets/ 子目录 —— 请选它的上一层")
             return@registerForActivityResult
         }
+        // 写到**当前这套画布**自己名下（T-App-A5-BASEDIR）：
+        // 只写全局值的话，切到别的画布时上一套的目录会被带过去，
+        // 本套素材立刻找不到；切回来也恢复不了。
+        val canvas = Store.activeCanvas()
+        canvas.designBaseDir = dest.absolutePath
         Store.settings.designBaseDir = dest.absolutePath
         Store.saveSettings()
         AppLog.i(

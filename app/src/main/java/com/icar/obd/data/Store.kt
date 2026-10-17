@@ -501,6 +501,11 @@ object Store {
         // 抽在这里，而不是让每个调用方自己记得同步：调用方（load / 备份导入）
         // 在返回后读 settings.dashType / Store.customGauges 就必须已经是当前画布的值，
         // 否则备份导入会拿**上一台设备的实时字段**去覆写刚导进来的画布（静默丢配置）。
+        //
+        // ⚠️ 迁移必须在 loadActiveCanvas **之前**（T-App-A5-BASEDIR）：
+        // loadActiveCanvas 会用画布自己的（空的）基目录覆盖全局值，
+        // 先迁移才不会把老配置的素材目录清掉。
+        if (settings.canvases.isNotEmpty()) migrateLegacyBaseDir()
         if (settings.canvases.isNotEmpty()) loadActiveCanvas()
     }
 
@@ -680,6 +685,15 @@ object Store {
         c.bgH = settings.bgH
         c.bgFit = settings.bgFit
         c.scaleMode = settings.dashScaleMode
+        // 素材基目录也要落回自己名下（T-App-A5-BASEDIR）——
+        // 否则"给这套画布新导入了素材"在切走之后会丢失。
+        //
+        // ⚠️ **只在全局值非空时覆盖**。切换画布的瞬间，全局值可能还是空的
+        // （例如刚新建的画布、或从备份导入后还没来得及同步），
+        // 无条件覆盖会把本画布已经记下的有效目录**清空**，
+        // 表现为"切出去再切回来，素材全没了"。
+        // 真实编辑（导入素材）会同时写画布与全局两处，所以这里不会漏掉用户改动。
+        if (settings.designBaseDir.isNotBlank()) c.designBaseDir = settings.designBaseDir
     }
 
     /** **当前画布 → 实时字段**（切画布 / 加载配置时用） */
@@ -694,8 +708,39 @@ object Store {
         settings.bgH = c.bgH
         settings.bgFit = c.bgFit
         settings.dashScaleMode = c.scaleMode
+        // 每套画布用自己的素材基目录（T-App-A5-BASEDIR）。
+        // 原来是全局单值 -> 切画布时沿用上一套的目录 -> 本套素材全部解析失败。
+        settings.designBaseDir = c.designBaseDir
         customGauges.clear()
         customGauges.addAll(c.gauges)
+    }
+
+    /**
+     * **旧配置迁移**：把历史上全局的 `designBaseDir` 迁到首套画布（T-App-A5-BASEDIR）。
+     *
+     * ## 为什么要单独一步
+     *
+     * 在 [DashCanvas.designBaseDir] 出现之前，素材基目录只有一个全局值。
+     * 老配置加载后：画布上没有该字段（空串），全局有值。
+     * 如果不迁移，第一次 `loadActiveCanvas()` 就会用画布的空值**把全局值清掉**
+     * —— 升级后素材立刻全丢，而且用户没有任何操作能找回（路径还在，只是被忘了）。
+     *
+     * ## 为什么只迁到"首套"
+     *
+     * 老配置只有一套画布会用到素材（导入素材时也只写了全局值），
+     * 无法反推它属于哪一套。迁到首套是最保守的：至少保证"当前在用的那套"不丢。
+     * **已有基目录的画布一律不动** —— 绝不覆盖用户后来的选择。
+     *
+     * 幂等：多次调用结果相同。
+     */
+    fun migrateLegacyBaseDir() {
+        val legacy = settings.designBaseDir
+        if (legacy.isBlank()) return
+        // 已经有任何一套画布自带基目录 -> 说明是新配置或已迁移过，不再动
+        if (settings.canvases.any { it.designBaseDir.isNotBlank() }) return
+        val first = settings.canvases.firstOrNull() ?: return
+        first.designBaseDir = legacy
+        AppLog.i(AppLog.M_DATA, "已迁移旧素材基目录", "画布=${first.name} dir=$legacy")
     }
 
     /**
