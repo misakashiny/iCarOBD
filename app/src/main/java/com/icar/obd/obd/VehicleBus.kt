@@ -205,8 +205,43 @@ object VehicleBus {
      * 汽油密度取 0.745 kg/L，因此 g/s → L/h 的系数为 3.6/0.745 ≈ 4.83。
      */
     object Derived {
+        /**
+         * 汽油密度，单位 **kg/L**。
+         *
+         * 0.745 kg/L（≈ 0.745 g/cm³）是汽油在常温下的常见值，随标号与温度有 ±2% 波动。
+         * 用它做的是"质量流量 → 体积流量"的换算，属于估算：
+         * 真正权威的是车直接给的 `015E`，本系数只用于车不支持 `01 5E` 时的 MAF 推算。
+         */
         private const val GAS_DENSITY = 0.745
+
+        /**
+         * MAF `g/s` → 燃油 `L/h` 的换算系数。
+         *
+         * 推导（注意 0.745 是 kg/L，分子分母都按 g 算）：
+         * ```
+         * MAF[g/s] ÷ 745[g/L] = [L/s]
+         * [L/s] × 3600[s/h]   = [L/h]
+         * ⇒ 系数 = 3600 / 745 = 3.6 / 0.745
+         * ```
+         * 两种写法数学等价（分子分母同乘 1000）。
+         *
+         * 物理恒等式（不依赖具体密度取值）：**MAF = 745 g/s 时恰好 1 L/s = 3600 L/h**。
+         * `FuelRateUnitRangeTest` 用这条交叉验证，防止有人改了密度却忘了改 3.6。
+         */
         private const val G_S_TO_L_H = 3.6 / GAS_DENSITY
+
+        /**
+         * 燃油流量的**物理上界**（L/h），用于识别解析异常。
+         *
+         * 取 **3276.75** —— PID `01 5E` 的标准满量程：
+         * 编码 `((256*A + B) / 20)`，`A=B=0xFF` 时 `65535 / 20 = 3276.75 L/h`。
+         *
+         * ⚠️ 曾经这里用的是写死的 **100**，没有任何依据 —— 而大排量全油门时
+         * MAF 200 g/s 就≈966 L/h，中等排量提速 30 g/s 也≈145 L/h。
+         * 越过 100 会被当成坏数据丢掉，进而把 `tripComplete` 永久置 false，
+         * 用户表现为"平均油耗跑着跑着变成 `--` 再也不回来"（T-App-A2-MAF0）。
+         */
+        private const val FUEL_RATE_MAX_LH = 3276.75f
 
         // 累计项缺过一段数据就不能再冒充完整行程平均；只有重置可重新开始。
         private var tripComplete = true
@@ -321,7 +356,21 @@ object VehicleBus {
             publish(put, "calc_km", km, now)
 
             // 油量积分：L/h × 小时 = L。`calc_lh` 要么来自 015E，要么由 MAF 推算
-            val fuel = input(readings, "calc_lh")?.takeIf { it.value in 0f..100f }
+            //
+            // ⚠️⚠️ **上界不能用 100**（T-App-A2-MAF0 修的就是这个）。
+            //
+            // 原来写的是 `takeIf { it.value in 0f..100f }`，但 PID 5E 的标准满量程是
+            // **3276.75 L/h**（`((256A+B)/20)`）。真实场景轻松越过 100：
+            //   · 大排量全油门：MAF 200 g/s ≈ 966 L/h
+            //   · 中等排量提速：MAF 30 g/s ≈ 145 L/h
+            //
+            // 被丢掉的后果不是"这一次不算"，而是 `tripComplete = false` ——
+            // **整个行程的平均油耗从此永久失效**，只能靠 `resetTrip()` 恢复。
+            // 用户看到的现象是"跑着跑着平均油耗变成 `--` 了，再也不回来"。
+            //
+            // 现在按 **PID 5E 的物理满量程**卡上界：超出才说明解析异常，宁可让行程失效
+            // 也不要把坏数据积进去。下界仍是 0（负油耗不可能）。
+            val fuel = input(readings, "calc_lh")?.takeIf { it.value in 0f..FUEL_RATE_MAX_LH }
             val liters = fuel?.let { accLiters + it.value * dtSeconds / 3600f }
             if (liters != null && liters.isFinite()) accLiters = liters else tripComplete = false
 
