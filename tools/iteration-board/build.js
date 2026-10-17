@@ -173,7 +173,6 @@ function plainOf(id) {
   }
   return { translated: false };
 }
-
 const prioRank = s => {
   const t = String(s || '').toUpperCase();
   if (t.includes('P0')) return 0;
@@ -217,11 +216,47 @@ const todos = (() => {
       origin: plain.origin || '',
       impact: plain.impact || '',
       translated: !!plain.translated,
+      // 显式跳过（纯内部改动、用户无感）—— 不算"缺白话"，但页面会标出来
+      skip: !!plain.skip,
     });
   }
   out.sort((a, b) => a.rank - b.rank);
   return out;
 })();
+
+// ---- 强制：每条待办必须有白话说明（T-Mgr-P002-BOARD-04）----
+//
+// ## 为什么这里要 throw 而不是警告
+//
+// 用户原话：「后续更新的话会更新白话吗」。答案是"靠自觉"—— 那就等于会漏。
+// 事实：`PLAIN_TODO` 原本只在 README 里提了一句，不在 AGENTS.md 里，
+// **换一个 AI 接手基本必漏**，然后看板又悄悄退回一堆黑话。
+//
+// 所以这里跟既有做法保持一致：像"摘要 taskId 不一致就拒绝生成"那样，
+// **忘了补白话就直接让生成失败**，并一次列出全部缺项 + 怎么补。
+// 失败是显性的、可修的；静默退化才是最难发现的。
+//
+// 唯一例外：用户明确说"这条不用白话"时，在 PLAIN_TODO 里写 `{ skip: true }`。
+const missingPlain = todos.filter(t => !t.translated && !t.skip);
+if (missingPlain.length) {
+  const lines = missingPlain.map(t => '  - ' + t.id + '   （' + t.pending.slice(0, 40) + '…）');
+  throw new Error(
+    [
+      '有 ' + missingPlain.length + ' 条待办缺少白话说明，拒绝生成看板。',
+      '',
+      '缺少的：',
+      ...lines,
+      '',
+      '怎么补：打开 tools/iteration-board/build.js，在 PLAIN_TODO 里按 ID 加一条：',
+      "  '你的ID': { plain: '一句人话：这是什么 + 对用户有什么影响',",
+      "              impact: '可选：不修会怎样',",
+      "              origin: '可选：用户原话（若这条是用户提的）' },",
+      '',
+      '确属无需白话（纯内部、用户无感）的，写 { skip: true } 显式跳过。',
+      '⚠️ 不要为了让它跑过而编一句听起来合理的解释 —— 拿不准就写「原意待确认」。',
+    ].join('\n')
+  );
+}
 
 // ---- 构建与设备信息（新增）----
 // 用户关心的"现在装的是哪个包"，看板此前完全没有。
