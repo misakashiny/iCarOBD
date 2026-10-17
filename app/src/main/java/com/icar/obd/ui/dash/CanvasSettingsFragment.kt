@@ -1060,16 +1060,27 @@ class CanvasSettingsFragment : Fragment() {
      * 只能从头重画。
      *
      * 主题写成**别名**而不是数字 id —— 见 [GaugeTheme.aliasOf]。
+     *
+     * ## v2 画布走「原文直出」（T-UI-EXPORT-02）
+     *
+     * 原来这里固定用 [DesignFile.toJson]，而它**只写 v1 的 `gauges`** ——
+     * `nodes` / `assets` / `parts` / `states` / 字体 / 旋转 / 图层全部丢失。
+     * 于是"在电脑上设计 → 导入 → 回电脑"这个闭环对 v2 设计是断的。
+     *
+     * 现在：画布存有 v2 原文时**直接导出原文**，一字不改。
+     * 取舍：不反映 App 内的增量编辑（例如在 App 里拖动过仪表位置，原文不会更新）。
+     * 这是已知并接受的 —— 项目的定位是「PC 上设计、设备上显示」。
      */
     private fun exportDesign() {
         if (Store.customGauges.isEmpty()) {
             ObdController.toast("这一套画布是空的，先添加几块表")
             return
         }
+        val canvas = Store.activeCanvas()
         val d = com.icar.obd.data.DesignFile(
-            name = Store.activeCanvas().name,
+            name = canvas.name,
             author = "",
-            description = "由 App 导出的画布「${Store.activeCanvas().name}」",
+            description = "由 App 导出的画布「${canvas.name}」",
             // 自建主题没有别名 → 留空（用当前主题），否则导出后导入会报"主题不存在"
             themeId = GaugeTheme.aliasOf(Store.settings.gaugeTheme) ?: "",
             background = Store.settings.bgImagePath.takeIf { it.isNotBlank() }?.let {
@@ -1079,7 +1090,7 @@ class CanvasSettingsFragment : Fragment() {
             },
             gauges = Store.customGauges.toList()
         )
-        val json = d.toJson().toString(2)
+        val json = com.icar.obd.data.DesignExporter.build(canvas.designJson, d)
         val file = java.io.File(requireContext().cacheDir, "design.json")
         runCatching { file.writeText(json) }.onFailure {
             ObdController.toast("导出失败：${it.message}")

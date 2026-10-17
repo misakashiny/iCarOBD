@@ -746,3 +746,68 @@ data class DesignFile(
         }
     }
 }
+
+// ---------------------------------------------------------------- 导出（T-UI-EXPORT-02）
+
+/**
+ * **把画布内容变成设计文件文本**。
+ *
+ * ## 为什么单独抽出来
+ *
+ * 导出原来写在 `CanvasSettingsFragment.exportDesign()` 里，直接调
+ * `DesignFile.toJson()` —— 那是个**只认 v1** 的序列化器（只写 `gauges`）。
+ *
+ * 于是 v2 设计的 `nodes` / `assets` / `parts` / `states` / 字体 / 旋转 / 图层
+ * 在"App 导出 → 回电脑"这条路上**全部丢失**，闭环对 v2 是断的。
+ *
+ * 抽成纯函数是为了能 JVM 单测覆盖两条分支 —— 原先埋在 Fragment 里，
+ * 一行测试都写不了。
+ *
+ * ## 两条分支
+ *
+ * | 画布状态 | 导出内容 |
+ * |---|---|
+ * | 有 v2 原文（`designJson` 非空且 `schema == "icar.ui/2"`） | **原文直出**，一字不改 |
+ * | 否则（v1 画布 / 从没用过设计文件） | 维持原样，走 [DesignFile.toJson] |
+ *
+ * ## 为什么是"原文直出"而不是重新序列化
+ *
+ * App 存的就是导入时的原文（见 `CanvasSettingsFragment` 的 `designJson` 赋值）。
+ * 原文里可能有 App 当前版本还不认识的字段（工具侧先在用的新特性）——
+ * 重新序列化会把它们**静默抹掉**。
+ *
+ * **已知取舍**：原文直出不反映 App 内的增量编辑（例如在 App 里拖动了仪表位置，
+ * 导出的仍是导入时的坐标）。项目的定位是「PC 上设计、设备上显示」，
+ * 这个取舍经用户确认接受。
+ *
+ * @param rawDesignJson 画布上存的设计原文（`DashCanvas.designJson`）
+ * @param fallback v1 画布要序列化的内容
+ */
+object DesignExporter {
+
+    /** `icar.ui/2` 的 schema 名（与 [DesignFile.SCHEMA_V2] 同源，这里单独引用便于判空） */
+    private val SCHEMA_V2: String get() = DesignFile.SCHEMA_V2
+
+    /**
+     * 这份原文能否原样导出。
+     *
+     * 判据是**解析出 schema 且等于 v2** —— 不能只看 `contains("icar.ui/2")`：
+     * 原文里可能只是某个字符串字段碰巧含这串字。解析失败一律当作不能直出。
+     */
+    fun isReusableV2(rawDesignJson: String): Boolean {
+        if (rawDesignJson.isBlank()) return false
+        val schema = runCatching {
+            org.json.JSONObject(rawDesignJson).optString("schema", "")
+        }.getOrNull() ?: return false
+        return schema == SCHEMA_V2
+    }
+
+    /**
+     * 生成导出文本。
+     *
+     * @return 可直接写盘的设计文件文本
+     */
+    fun build(rawDesignJson: String, fallback: DesignFile): String =
+        if (isReusableV2(rawDesignJson)) rawDesignJson
+        else fallback.toJson().toString(2)
+}
