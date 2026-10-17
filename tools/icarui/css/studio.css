@@ -548,6 +548,40 @@ kbd {
 }
 .partBody { padding: 2px 6px 5px; border-top: 1px solid var(--divider); }
 
+/* ---------------------------------------------------------- 装饰动画（T-UI-HUD-01）
+ *
+ * 这一段必须显式给字号：`.animHead` / `.animBody` 是新元素，
+ * 不写 `font-size` 会继承浏览器默认的 13.3333px ——
+ * `verify-layout` 有一条「面板内不许出现继承默认字号」的断言会当场红。
+ * 字号取值沿用子部件区（11px / 10px），与 `.partHead` 保持一致。
+ */
+.animBox {
+  margin: 5px 0 3px; border: 1px solid var(--divider); border-radius: var(--r-sm);
+  background: var(--surface); overflow: hidden;
+}
+.animHead {
+  display: flex; align-items: center; justify-content: space-between; gap: 5px;
+  padding: 3px 6px; font-size: 11px; color: var(--textDim);
+  border-bottom: 1px solid var(--divider);
+}
+.animHead .chk { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; }
+.animBody { padding: 2px 6px 4px; font-size: 11px; }
+.animBody input, .animBody select, .animBody label { font-size: 11px; }
+.animBox .hint { font-size: 10px; }
+/*
+ * ⚠️ **勾选框本身也要给字号**（与 `.prow input[type=checkbox]` 成对）。
+ *
+ * 面板里那条规则限定在 `.prow` 内；`.animHead` 不是 `.prow`，
+ * 所以里面的 `<input type=checkbox>` 会掉回浏览器默认 13.3333px ——
+ * `verify-layout` 的「不许出现继承默认字号」断言会当场红（实测被它抓到）。
+ * 这里补上同样的尺寸与强调色，让新面板与既有面板一致。
+ */
+.animHead input[type=checkbox] {
+  flex: 0 0 auto; width: 14px; height: 14px; margin: 0; padding: 0;
+  accent-color: var(--accent); cursor: pointer;
+  font: inherit;              /* 显式继承 —— 不给字号会掉回浏览器默认 13.3333px */
+}
+
 /* ---------------------------------------------------------------- 多页面页签 */
 #pageTabs {
   display: flex; align-items: center; gap: 2px; flex-wrap: wrap;

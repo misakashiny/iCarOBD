@@ -1032,7 +1032,7 @@ function uniformMatrix(m, w, h) {
       ctx.font = window.fontShort(lf, fl);
       const lx = lf.align === "center" ? n.w / 2 : (lf.align === "right" ? n.w - pad : pad);
       if (n.showLabel !== false) ctx.fillText(clipText(label, n.w - pad * 2), lx, pad);
-  
+
       // PID id（可开关，见 app.js 的 togglePidLabel）——
       // 做主题时常要确认"这个表绑的是哪个 PID"，但摆位置时那行字挡视线。
       //
@@ -1045,7 +1045,7 @@ function uniformMatrix(m, w, h) {
         ctx.textBaseline = "top";
         ctx.fillText(clipText(pidLabelOf(n), n.w - pad * 2), lx, pad + fl * 1.25);
       }
-  
+
       if (n.showRange !== false) {
         ctx.textAlign = "right"; ctx.fillStyle = T.dim;
         ctx.font = fs2 + "px " + window.fontCss("mono");
@@ -1285,9 +1285,38 @@ function uniformMatrix(m, w, h) {
     const cx = part.x + part.w * part.pivotX;
     const cy = part.y + part.h * part.pivotY;
 
+    // ---- 持续装饰动画（T-UI-HUD-01）----
+    // 与 App 侧 `GaugePartsView.drawPart` 同一套变换，确保"电脑上看到的就是设备上的"：
+    //   spin  → 绕 pivot 再转 360°×amplitude×u（叠加在静态 rotation 之上）
+    //   pulse → alpha 按 sin 调制
+    //   sweep → 沿 x 三角波往返（画布单位）
+    //   drift → x/y 双频正弦漂移
+    // `S.__animMs` 由预览循环推进；为 0 时全部保持静态（不动 = 老行为）。
+    let animAngle = 0, animDx = 0, animDy = 0, animAlphaMul = 1;
+    if (part.anim && S.__animMs) {
+      const u = window.partAnimCycle(part.anim, S.__animMs);
+      const amp = Number(part.anim.amplitude) || 0;
+      if (part.anim.kind === "spin") {
+        animAngle = 360 * amp * u;
+      } else if (part.anim.kind === "pulse") {
+        const s = Math.sin(u * 2 * Math.PI);      // -1..1
+        animAlphaMul = 1 + s * amp * 0.5;
+      } else if (part.anim.kind === "sweep") {
+        const tri = u < 0.5 ? u * 2 : (1 - u) * 2; // 0..1..0
+        animDx = (tri * 2 - 1) * amp;
+      } else if (part.anim.kind === "drift") {
+        animDx = Math.sin(u * 2 * Math.PI) * amp;
+        animDy = Math.cos(u * 2 * Math.PI * 0.7) * amp;
+      }
+      if (animAlphaMul !== 1) {
+        ctx.globalAlpha = Math.max(0, Math.min(1, prevAlpha * (part.alpha / 255) * animAlphaMul));
+      }
+    }
+
     ctx.save();
-    ctx.translate(cx, cy);
+    ctx.translate(cx + animDx, cy + animDy);
     if (ang) ctx.rotate(ang * Math.PI / 180);
+    if (animAngle) ctx.rotate(animAngle * Math.PI / 180);
 
     const bmp = assetBitmap(part.assetId);
     if (bmp) ctx.drawImage(bmp, -part.w * part.pivotX, -part.h * part.pivotY, part.w, part.h);

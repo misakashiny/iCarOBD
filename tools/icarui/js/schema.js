@@ -222,6 +222,86 @@ window.PART_KINDS = [
 /** 指针部件的默认扫描范围（度，0 = 正右，顺时针）。与经典表盘一致 */
 window.PART_DEFAULT_SWEEP = { from: 135, to: 405 };
 
+/**
+ * **子部件的持续装饰动画**（T-UI-HUD-01）。
+ *
+ * 与「数值缓动」的本质区别：缓动是**过渡**（会收敛、会停）；
+ * 这里是**环境动画**（永不收敛，只要表可见就按时间跑）。
+ *
+ * | kind | 动什么 | 典型用途 |
+ * |---|---|---|
+ * | spin   | 绕 pivot 匀速旋转 | 外环、雷达扫描线 |
+ * | pulse  | alpha 正弦呼吸   | 圆心光晕、警示环 |
+ * | sweep  | 位置沿主轴往返   | 扫描光带 |
+ * | drift  | 位置小幅缓慢漂移 | 背景粒子 |
+ *
+ * ⚠️ **必须与 App 侧 `PartAnim.KINDS` 逐字一致** —— `verify-crosslang.js` 钉着。
+ */
+window.PART_ANIM_KINDS = [
+  { v: "spin", n: "旋转", icon: "⟳" },
+  { v: "pulse", n: "呼吸", icon: "◉" },
+  { v: "sweep", n: "扫描", icon: "⇄" },
+  { v: "drift", n: "漂移", icon: "≈" },
+];
+
+/**
+ * 动画周期的**下限**（毫秒）。与 App 侧 `PartAnim.MIN_PERIOD_MS` 同源。
+ *
+ * 依据与 `MIN_BLINK_MS` 同一条：WCAG 2.3.1 要求每秒闪烁不超过 3 次。
+ * 装饰动画若快到像闪烁，同样是驾驶安全隐患。
+ */
+window.MIN_ANIM_PERIOD_MS = 400;
+
+/** 动画周期上限：再长就看不出在动，且容易让人以为坏了 */
+window.MAX_ANIM_PERIOD_MS = 60000;
+
+/**
+ * 一个 `anim` 的默认值。
+ *
+ * ⚠️ **`null` 表示"没有动画"**（存量设计行为完全不变）。
+ * 这个对象只在用户真的挂了动画之后才有意义。
+ */
+window.PART_ANIM_DEFAULT = {
+  kind: "pulse",
+  periodMs: 2400,
+  phase: 0,
+  amplitude: 1,
+};
+
+/**
+ * 规范化一个 `anim`。**返回 null 表示没有动画**。
+ *
+ * 与 App 侧 `PartAnim.parse` 同一套判定（未知 kind 回落 pulse、周期夹到
+ * [MIN_ANIM_PERIOD_MS, MAX_ANIM_PERIOD_MS]）。
+ */
+window.normalizePartAnim = function (o) {
+  if (!o || typeof o !== "object") return null;
+  const a = Object.assign({}, window.PART_ANIM_DEFAULT, o);
+  if (!window.PART_ANIM_KINDS.some(k => k.v === a.kind)) a.kind = window.PART_ANIM_DEFAULT.kind;
+  let period = Math.round(Number(a.periodMs));
+  if (!Number.isFinite(period)) period = window.PART_ANIM_DEFAULT.periodMs;
+  a.periodMs = Math.max(window.MIN_ANIM_PERIOD_MS, Math.min(window.MAX_ANIM_PERIOD_MS, period));
+  const phase = Number(a.phase);
+  a.phase = Number.isFinite(phase) ? phase : 0;
+  const amp = Number(a.amplitude);
+  a.amplitude = Number.isFinite(amp) ? amp : 1;
+  return a;
+};
+
+/**
+ * 归一化到 0..1 的循环相位（含相位偏移）。
+ *
+ * **必须与 App 侧 `PartAnim.cycle()` 逐字一致** —— 否则"电脑上看到的动画节奏
+ * 和设备上不一样"，用户只会觉得工具不准。
+ */
+window.partAnimCycle = function (a, nowMs) {
+  if (!a) return 0;
+  const period = Math.max(window.MIN_ANIM_PERIOD_MS, Number(a.periodMs) || window.PART_ANIM_DEFAULT.periodMs);
+  let u = ((nowMs % period) / period + (Number(a.phase) || 0)) % 1;
+  if (u < 0) u += 1;
+  return u;
+};
+
 /** 一个部件的默认值。**缺字段回落这里**，两端必须一致 */
 window.PART_DEFAULT = {
   kind: "decor",
@@ -260,6 +340,15 @@ window.PART_DEFAULT = {
   rotation: 0,
   pivotX: 0.5, pivotY: 0.5,
   sweepFrom: 135, sweepTo: 405,
+  /**
+   * **持续装饰动画**（T-UI-HUD-01）。
+   *
+   * `null` = **完全没有动画**，存量设计逐像素不变。
+   * 非 null 时按时间循环：旋转 / 呼吸 / 扫描 / 漂移。
+   *
+   * ⚠️ 这是"环境动画"，永不收敛 —— 与数值缓动是两套东西。
+   */
+  anim: null,
 };
 
 /** 规范化一个部件：补默认 + 夹住非法值。**解析与新建都走它** */
@@ -306,6 +395,8 @@ window.normalizePart = function (o, depth) {
     .map(function (c) { return window.normalizePart(c, d + 1); })
     .filter(Boolean);
   if (!Number.isFinite(p.sweepTo)) p.sweepTo = 405;
+  // 持续装饰动画（T-UI-HUD-01）：null = 无动画（存量设计不变）
+  p.anim = window.normalizePartAnim(p.anim);
   return p;
 };
 

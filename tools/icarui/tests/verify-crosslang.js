@@ -520,6 +520,55 @@ console.log("\n=== 4b. 字体枚举（v2 新增，跨语言契约）===");
   ok(kMaxParts !== null, `从 DesignNode.kt 解析到 MAX_PARTS（${kMaxParts}）`);
   eq(tool.MAX_PARTS, kMaxParts, "子部件条数上限一致（MAX_PARTS）");
 
+  // ---- 持续装饰动画（T-UI-HUD-01）------------------------------------------
+  //
+  // ⚠️ 为什么这三条必须跨语言比对：动画是**新加的字段**，两侧各写一份定义。
+  // 单边改的症状与 `MIN_BLINK_MS` 完全同型 —— 而且更隐蔽：
+  //   · 只改 App 侧 → 工具里还能设 60ms 的扫描线，用户以为设好了，装到车上被抬回去；
+  //   · 只改工具侧 → 老设计文件在 App 上报未知 kind、静默回落成呼吸；
+  //   · `cycle()` 算法不一致 → **"电脑上看到的动画节奏和设备上不一样"**，
+  //     用户只会觉得工具不准，而这在本仓库是最难查的一类 bug。
+  //
+  // 用 `ok(... !== null)` + 非空双保险：常量被改名/删掉时，若只写 `eq`，
+  // 两边都是"空"会**静默通过** —— 正是本仓库最恨的形态。
+  const kAnimKinds = kotlinConstList(nodeKt, "KINDS");
+  ok(kAnimKinds.length > 0, `从 DesignNode.kt 解析到 PartAnim.KINDS（${kAnimKinds.length} 个）`);
+  eq(JSON.stringify(tool.PART_ANIM_KINDS.map(x => x.v)), JSON.stringify(kAnimKinds),
+    "装饰动画 kind 的**名字与顺序**逐条一致");
+
+  const kMinAnimPeriod = kotlinConstAny(nodeKt, "MIN_PERIOD_MS");
+  ok(kMinAnimPeriod !== null, `从 DesignNode.kt 解析到 MIN_PERIOD_MS（${kMinAnimPeriod}）`);
+  eq(tool.MIN_ANIM_PERIOD_MS, kMinAnimPeriod, "动画周期下限一致（MIN_PERIOD_MS）");
+  if (kMinAnimPeriod !== null) {
+    // 与 MIN_BLINK_MS 同一条依据：WCAG 2.3.1 每秒不超过 3 次
+    ok(kMinAnimPeriod >= 400,
+      `动画周期下限 ≥ 400ms（实际 ${kMinAnimPeriod}ms = ${(1000 / kMinAnimPeriod).toFixed(2)} Hz）`);
+  }
+
+  // cycle() 的算法必须两端逐字一致（相位含偏移、结果落在 0..1）
+  const animCases = [
+    { periodMs: 1000, phase: 0 },
+    { periodMs: 1000, phase: 0.5 },
+    { periodMs: 2400, phase: 0.13 },
+    { periodMs: 400, phase: 0.999 },
+  ];
+  const animTimes = [0, 1, 250, 999, 1000, 1500, 123456789];
+  for (const a of animCases) {
+    for (const t of animTimes) {
+      const toolU = tool.partAnimCycle(a, t);
+      // 与 Kotlin `PartAnim.cycle()` 同一公式：
+      //   val p = periodMs.coerceAtLeast(MIN_PERIOD_MS)
+      //   val u = ((nowMs % p).toFloat() / p + phase) % 1f
+      const p = Math.max(kMinAnimPeriod, a.periodMs);
+      let kU = ((t % p) / p + a.phase) % 1;
+      if (kU < 0) kU += 1;
+      ok(Math.abs(toolU - kU) < 1e-6,
+        `cycle(period=${a.periodMs}, phase=${a.phase}, t=${t}) 工具=${toolU} App=${kU}`);
+      ok(toolU >= 0 && toolU < 1, `cycle 结果落在 0..1（实际 ${toolU}）`);
+    }
+  }
+  note("装饰动画：kind 顺序 / 周期下限 / cycle 公式 已跨语言钉住");
+
   // ---- "非数字静默回落"的字段清单（v1.20.20）--------------------------------
   //
   // 这三张清单决定"哪些字段写了非数字要出声"。**单边加字段 = 新的跨语言分叉**

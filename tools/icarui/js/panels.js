@@ -818,6 +818,11 @@
             '<button onclick="setPartSweep(' + i + ',135,405)">135→405</button></div>') : "") +
           (isNeedle ? "" : row("静态旋转", '<input type="number" step="0.5" value="' + q.rotation +
             '" oninput="setPartNum(' + i + ',\'rotation\',this.value)">')) +
+          // ---- 持续装饰动画（T-UI-HUD-01）----
+          // 与"数值缓动"完全不同的东西：缓动会收敛会停，这里是**永不收敛**的
+          // 环境动画（旋转/呼吸/扫描/漂移）。刻意放在"静态旋转"下面 ——
+          // 用户容易把两者搞混，位置相邻便于对照。
+          animPanel(i, q) +
           '</div>';
       }
       h += '</div>';
@@ -829,6 +834,59 @@
       '</div>';
     return h;
   }
+  /**
+   * **子部件的持续装饰动画**面板（T-UI-HUD-01）。
+   *
+   * ## 与"数值缓动"的区别，必须在 UI 上说清楚
+   *
+   * 数值缓动是**过渡**（数值变了才动、收敛就停）；这里是**环境动画**
+   * （只要表在屏幕上就永远循环）。用户极易把两者混为一谈，
+   * 所以标题写成「装饰动画（持续）」并加一句提示。
+   *
+   * ## 为什么默认关闭
+   *
+   * 车规场景下持续动态有安全隐患（分心）。项目已有 `MIN_BLINK_MS=400`
+   * 的先例（WCAG 2.3.1 每秒不超过 3 次）。所以：
+   * - 默认 `null`（没有动画），存量设计完全不受影响；
+   * - 周期下限 400ms，与闪烁下限同一条依据。
+   *
+   * @param i 部件下标
+   * @param q 已规范化的部件
+   */
+  function animPanel(i, q) {
+    const a = q.anim;
+    let h = '<div class="animBox">' +
+      '<div class="animHead">' +
+      '<span>装饰动画（持续）</span>' +
+      '<label class="chk"><input type="checkbox"' + (a ? " checked" : "") +
+      ' onchange="setPartAnim(' + i + ',this.checked)"> 启用</label>' +
+      '</div>';
+    if (!a) {
+      h += '<div class="hint">关闭时与以前完全一样（不产生任何动画开销）。' +
+        '开启后只要表可见就一直循环 —— 这与「数值变化时的缓动」是两回事。</div></div>';
+      return h;
+    }
+    h += '<div class="animBody">' +
+      row("动画", '<select onchange="setPartAnimField(' + i + ',\'kind\',this.value)">' +
+        window.PART_ANIM_KINDS.map(k => '<option value="' + attr(k.v) + '"' +
+          (a.kind === k.v ? " selected" : "") + '>' + k.icon + ' ' + esc(k.n) + '</option>').join("") +
+        '</select>') +
+      row("周期 ms", '<input type="number" min="' + window.MIN_ANIM_PERIOD_MS +
+        '" max="' + window.MAX_ANIM_PERIOD_MS + '" step="100" value="' + a.periodMs +
+        '" oninput="setPartAnimField(' + i + ',\'periodMs\',this.value)"' +
+        ' title="一个完整循环的毫秒数；下限 ' + window.MIN_ANIM_PERIOD_MS +
+        'ms（WCAG 2.3.1：每秒不超过 3 次）">' +
+        '<span class="hint inline">' + (1000 / a.periodMs).toFixed(2) + ' Hz</span>') +
+      row("相位 0~1", '<input type="number" min="0" max="1" step="0.05" value="' +
+        window.r2(a.phase) + '" oninput="setPartAnimField(' + i + ',\'phase\',this.value)"' +
+        ' title="让多个部件错开、不要同步">') +
+      row("幅度", '<input type="number" step="0.1" value="' + window.r2(a.amplitude) +
+        '" oninput="setPartAnimField(' + i + ',\'amplitude\',this.value)"' +
+        ' title="旋转=圈数倍数；呼吸=透明度深度；扫描/漂移=位移（画布单位）">') +
+      '</div></div>';
+    return h;
+  }
+
   /**
    * 渲染**部件树**（v2.18.0 支持嵌套）。
    *

@@ -989,8 +989,13 @@
     // 缩放期间跳过，收尾时 canvas.js 的 wheelEndTimer 会补一次完整刷新。
     if (!S.suppressPanelRender && window.renderPanels) window.renderPanels();
     if (window.draw) window.draw();
+    // 装饰动画预览（T-UI-HUD-01）：设计一变就重新判断要不要跑时钟。
+    // 放在最后 —— 它内部会再 draw 一次，前面那次负责静态内容立刻可见。
+    if (window.__ensureAnimPreview) window.__ensureAnimPreview();
   }
   window.refreshAll = refreshAll;
+  // 供 refreshAll 内部调用（定义在后面，用 window 挂接避免前后顺序耦合）
+  window.__ensureAnimPreview = ensureAnimPreview;
 
   window.onSelectionChanged = function () {
   // 换了选中对象 → 部件选择失效（v2.32.0）
@@ -1497,6 +1502,45 @@
     window.commit(() => {
       n.parts[i] = window.normalizePart(Object.assign({}, n.parts[i], { sweepFrom: from, sweepTo: to }));
     }, "部件扫描范围");
+  };
+
+  /**
+   * **开关子部件的持续装饰动画**（T-UI-HUD-01）。
+   *
+   * 关掉时写 `null`（不是删字段）—— 与 App 侧 `PartAnim?` 的语义一致，
+   * 也让序列化结果稳定（不会因为"有没有这个键"产生 diff 噪音）。
+   */
+  window.setPartAnim = function (i, on) {
+    const n = gaugeSel(); if (!n || !n.parts || !n.parts[i]) return;
+    window.commit(() => {
+      const base = n.parts[i];
+      base.anim = on ? window.normalizePartAnim(base.anim || window.PART_ANIM_DEFAULT) : null;
+      n.parts[i] = window.normalizePart(base);
+    }, on ? "启用装饰动画" : "关闭装饰动画");
+  };
+
+  /**
+   * 改装饰动画的一个字段。**归一化统一走 `normalizePartAnim`** ——
+   * 周期下限、未知 kind 回落都在那里，工具与 App 两侧同一套判定。
+   */
+  window.setPartAnimField = function (i, k, v) {
+    const n = gaugeSel(); if (!n || !n.parts || !n.parts[i]) return;
+    const cur = n.parts[i].anim;
+    if (!cur) return;
+    const patch = {};
+    if (k === "kind") {
+      patch[k] = String(v || "");
+    } else {
+      const s = String(v).trim();
+      const x = s === "" ? NaN : Number(s);
+      if (!Number.isFinite(x)) return;
+      patch[k] = x;
+    }
+    window.commit(() => {
+      n.parts[i] = window.normalizePart(
+        Object.assign({}, n.parts[i], { anim: window.normalizePartAnim(Object.assign({}, cur, patch)) })
+      );
+    }, "改动画 " + k);
   };
 
   window.clearParts = function () {
@@ -2869,11 +2913,88 @@
     step();
   };
 
+  // ================================================================ 装饰动画预览（T-UI-HUD-01）
+
+  /**
+   * **装饰动画的预览时钟**。
+   *
+   * ## 为什么要有它
+   *
+   * `GaugePart.anim` 是**时间驱动**的（永不收敛）。工具的画布原本只在
+   * "有东西变了"时才重绘，所以静态预览里那些扫描光带/呼吸光晕**根本不会动** ——
+   * 用户设了动画却完全看不到效果，以为没生效。
+   *
+   * 这个循环每帧把 `S.__animMs` 推进并重绘一次。
+   *
+   * ## 三条不破坏现有行为的设计
+   *
+   * 1. **只在真的存在 anim 部件时才跑** —— 没有动画的设计零开销，
+   *    不会让整个工具一直 60fps 空转。
+   * 2. **与 `S.anim` 让位仲裁并存**：用独立的 `raf`，不抢 `tween` 的名字；
+   *    扫表/实时数据演示期间动画照常（它们动的是**数值**，动画动的是**装饰**，
+   *    两者互不覆盖）。
+   * 3. **可暂停**：`S.__animPaused` 打开时不推进时间，画布保持静止当前帧 ——
+   *    编辑静态布局时不该被动画干扰。
+   */
+  let animPrevRaf = null;
+
+  /** 当前设计里是否存在带 anim 的子部件（含嵌套）。没有就不启动循环 */
+  function hasAnyAnim(nodes) {
+    let found = false;
+    (function walk(list) {
+      if (found || !list) return;
+      list.forEach(function (n) {
+        if (found) return;
+        if (n.parts) {
+          (function wp(ps) {
+            if (found || !ps) return;
+            ps.forEach(function (p) {
+              if (found) return;
+              if (p.anim) { found = true; return; }
+              wp(p.children);
+            });
+          })(n.parts);
+        }
+        walk(n.children);
+      });
+    })(nodes || (S.design && S.design.nodes) || []);
+    return found;
+  }
+
+  function ensureAnimPreview() {
+    const need = !S.__animPaused && hasAnyAnim(S.design && S.design.nodes);
+    if (need && !animPrevRaf) {
+      S.__animMs = S.__animMs || 0;
+      const step = function () {
+        if (S.__animPaused || !hasAnyAnim(S.design && S.design.nodes)) {
+          animPrevRaf = null;
+          S.__animMs = 0;          // 归零：停下时回到静态相位，不动 = 老行为
+          window.draw();
+          return;
+        }
+        S.__animMs = performance.now();
+        window.draw();
+        animPrevRaf = requestAnimationFrame(step);
+      };
+      animPrevRaf = requestAnimationFrame(step);
+    } else if (!need && animPrevRaf) {
+      cancelAnimationFrame(animPrevRaf);
+      animPrevRaf = null;
+      S.__animMs = 0;
+    }
+  }
+
+  /** 暂停/恢复动画预览（编辑静态布局时用） */
+  window.toggleAnimPreview = function (paused) {
+    S.__animPaused = !!paused;
+    ensureAnimPreview();
+    window.draw();
+  };
+
   // ================================================================ 文件读写
 
   window.pickFile = function () {
-    const inp = document.createElement("input");
-    inp.type = "file";
+    const inp = document.createElement("input");    inp.type = "file";
     inp.accept = ".json,application/json";
     inp.onchange = () => {
       const f = inp.files[0];
