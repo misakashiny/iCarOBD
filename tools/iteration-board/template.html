@@ -12,7 +12,7 @@
 <header><div class="eyebrow">ICAROBD / ITERATION</div><h1>这轮改进了什么</h1><div id="snapshot" class="muted"></div><small>文档与 Git 的本地快照 · 修改后重新双击“打开迭代看板.cmd”获取最新内容</small></header>
 <main><nav aria-label="看板导航"><button class="active" data-view="overview">本轮改进</button><button data-view="roadmap">后续计划</button><button data-view="history">版本记录</button><button data-view="documents">文档与证据</button><button data-view="changes">工作区改动</button></nav>
 <section id="overview" class="view"><div class="card wide"><div class="row"><div><div id="taskid" class="eyebrow"></div><h2 id="title"></h2></div><span id="review" class="tag"></span></div><button data-doc="03_当前任务.md">查看当前任务</button> <button data-doc="04_交接状态.md">查看审查与执行证据</button></div><div class="grid section"><article class="card"><div class="label">01 / 改进前</div><p id="before"></p></article><article class="card"><div class="label">02 / 当前变化</div><p id="after"></p></article><article class="card"><div class="label">03 / 还差什么</div><p id="remaining"></p></article></div><div class="grid section"><article class="card" style="grid-column:span 2" id="validation"><h2>验证与审查</h2><div id="verification"></div></article><article class="card"><h2>文档同步</h2><div id="docchanges"></div></article></div></section>
-<section id="roadmap" class="view" hidden><article class="card"><h2>协作计划</h2><p class="muted">未显式标注完成的里程碑保持待安排，具体前置与验收以原文为准。</p><div id="milestones"></div><button data-doc="docs/03-迭代清单.md">项目完整迭代清单</button></article></section>
+<section id="roadmap" class="view" hidden><article class="card"><h2>协作计划</h2><p class="muted">未显式标注完成的里程碑保持待安排，具体前置与验收以原文为准。</p><div id="milestones"></div><button data-doc="docs/03_开发进度与问题清单.md">项目完整问题与候选清单</button> <button data-doc="02_开发计划.md">开发计划原文</button></article></section>
 <section id="history" class="view" hidden><article class="card"><h2>近期版本变化</h2><p class="muted">历史版本事实独立于当前任务的验证结果；标题和详情直接来自两份 CHANGELOG。</p><div id="releases"></div></article></section>
 <section id="documents" class="view" hidden><div class="filters"><input id="search" type="search" aria-label="搜索文档" placeholder="搜索文档名称或内容，例如 G 值、上车、主题"><select id="scope" aria-label="文档分组"><option value="all">所有文档</option><option value="root">协作文件</option><option value="docs/">项目文档</option><option value="tools/">工具文档</option></select></div><div class="docs"><aside class="doclist" id="doclist"></aside><article class="card reader"><h2 id="docname">选择一份文档</h2><p class="muted">保留原始内容，便于核对证据。无需另外打开文件。</p><pre id="doctext"></pre></article></div></section>
 <section id="changes" class="view" hidden><article class="card"><h2>当前工作区</h2><p class="muted">包含本轮与既有改动，不自动归因于当前任务。统计只含已跟踪的未暂存差异；未跟踪文件另列。条目多寡不代表功能完成度。</p><h3>文件状态（M 修改 / ?? 未跟踪）</h3><pre id="gitstatus"></pre><h3>差异统计</h3><pre id="diffstat"></pre><h3>最近提交</h3><pre id="commits"></pre></article></section>
@@ -35,7 +35,23 @@ $('review').classList.toggle('pass',s.review==='审查通过');
 s.verification.forEach(v=>{const row=element('div',undefined,'verify');const head=element('div',undefined,'row');head.append(element('h3',v.name),element('span',v.state,'tag'));row.append(head,element('p',v.detail));$('verification').append(row);});
 s.docs.forEach(d=>{const row=element('div',undefined,'step');row.append(docButton(d.file,d.file),element('p',d.change));$('docchanges').append(row);});
 DATA.milestones.forEach(m=>{const row=element('div',undefined,'step');row.append(element('h3',m.title),element('p',m.status),docButton('查看判据','02_开发计划.md',m.text));$('milestones').append(row);});
+// 里程碑为空时给一句人话，而不是留一片空白让用户以为坏了。
+// `02_开发计划.md` 在 T-Mgr-P002-STD-01 之后改成了「当前任务索引 / 暂缓 / 候选 / 历史索引」
+// 的分段结构，已不再用「## N. xxx + 状态：…」这种里程碑写法 —— 所以正常就是 0 条。
+if(!DATA.milestones.length){$('milestones').append(element('p','当前 02_开发计划.md 采用「当前任务索引 / 暂缓 / 候选 / 历史索引」分段，没有「状态：」式的里程碑条目，故此处为空 —— 这是文档结构如此，不是看板出错。候选与阻塞请看右侧按钮打开的原文。','source-note'));}
 DATA.releases.forEach(r=>{const row=element('div',undefined,'release');row.append(element('small',r.file.startsWith('tools/')?'ICarUI 工具':'Android App'),element('h3',r.title),docButton('展开该版本原文',r.file,r.text));$('releases').append(row);});
+// 最近几轮：从 Git 提交取任务级改动，补上 overview「只看当前一张卡」的盲区
+if(DATA.recentWork && DATA.recentWork.length){
+  const box=element('div',undefined,'section');
+  box.append(element('h2','最近几轮做了什么'));
+  box.append(element('p','以下按 Git 提交倒序，勾出这个项目最近实际推进过的任务。点标题可看完整提交列表。','source-note'));
+  DATA.recentWork.forEach(w=>{
+    const row=element('div',undefined,'step');
+    row.append(element('small',w.date+' · '+w.hash));
+    row.append(element('h3',w.subject));
+    box.append(row);
+  });
+  $('overview').append(box);}
 function renderDocs(){const q=$('search').value.toLocaleLowerCase();const scope=$('scope').value;const list=$('doclist');list.replaceChildren();Object.entries(DATA.sources).filter(([file,text])=>(scope==='all'||(scope==='root'?!file.includes('/'):file.startsWith(scope)))&&(!q||(file+'\n'+text).toLocaleLowerCase().includes(q))).forEach(([file])=>list.append(docButton(file,file)));if(!list.children.length)list.append(element('p','没有匹配的文档','empty'));}
 $('search').addEventListener('input',renderDocs);$('scope').addEventListener('change',renderDocs);renderDocs();
 ['gitstatus','diffstat','commits'].forEach((id,i)=>put(id,DATA[['gitStatus','diffStat','commits'][i]]||'无'));
