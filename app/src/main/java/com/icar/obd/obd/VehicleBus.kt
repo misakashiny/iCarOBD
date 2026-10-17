@@ -243,7 +243,22 @@ object VehicleBus {
             val baro = input(readings, "std_33")
 
             // 燃油流量 L/h：优先用 015E，否则由 MAF 推算
-            val fuelSource = fuelRate?.takeIf { it.value > 0f } ?: maf?.takeIf { it.value > 0.5f }
+            //
+            // ⚠️⚠️ **不能写 `takeIf { it.value > 0f }`**（T-App-A2-MAF0 修的就是这个）。
+            //
+            // `input()` 的语义是 `ok && isFinite` —— **0 是合法值**。
+            // 再加一个 `> 0` 的阈值等于把"车真的没在烧油"（滑行/断火/断油）
+            // 当成"没有读数"，后果分两档：
+            //
+            //   1. MAF 也没有 → `calc_lh` 变成未知 → 仪表显示 `--`（本该显示 0）
+            //   2. MAF 有值     → **改用 MAF 推算，凭空造出一个油耗**，
+            //      而车上明明有更权威的 `015E=0` → 累计用油虚增，用户无从察觉
+            //
+            // MAF 的 `> 0.5f` 是同类问题：`0 g/s` 进气 ⇔ `0 L/h` 燃油，是有效读数。
+            //
+            // 判据统一为：**只要 `input()` 认为有效（ok 且有限）就用它，包括 0**。
+            // "失效"与"0"是两件事 —— 失效由 `ok=false` 表达，不该靠数值阈值猜测。
+            val fuelSource = fuelRate ?: maf
             val lh = when (fuelSource) {
                 null -> null
                 fuelRate -> fuelSource.value
