@@ -70,6 +70,7 @@
     "verify-p4p1b-undo-persist": 40,
     "verify-p4r1-draft": 50,
     "verify-p4r11-draft-hardening": 26,
-    "verify-p4r12-live-draft": 33
+    "verify-p4r12-live-draft": 33,
+    "verify-p4r2a-anchor-prototype": 19
   }
 }

@@ -640,13 +640,18 @@
         window.toast && window.toast("恢复失败：缺少 replaceDesign");
         return false;
       }
-      // 换身份 → 落到草稿原来的 designId
-      state.designId = g.record.designId;
+      // 先用既有合法校验流程恢复设计。replaceDesign 成功时会重置为新身份，
+      // 因此必须在它之后再绑定草稿原身份；否则 A 的历史/CAS 会被误认为新设计。
       const okv = window.replaceDesign(design, "恢复草稿");
       if (!okv) {
         window.toast && window.toast("草稿恢复失败（校验未通过），原数据仍保留");
         return false;
       }
+      // 只恢复草稿身份及 CAS 期望 revision。**不调用 loadUndoStack**，
+      // 旧历史没有可靠 designId，P4R-2A 尚在做隔离验证。
+      state.designId = g.record.designId;
+      state.lastPersistedRevision = Number.isInteger(g.record.revision) ? g.record.revision : null;
+      state.conflict = null;
       state.dirty = false;
       state.pendingDesign = null;
       hideRecoveryBar();

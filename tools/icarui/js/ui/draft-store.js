@@ -73,10 +73,35 @@
   if (!ICAR) throw new Error("draft-store.js 必须在 core/namespace.js 之后加载");
 
   const DB_NAME = "icar-studio-drafts";
-  const DB_VERSION = 1;
+  // P4R-2A：新增 tombstones object store，需要触发一次 IndexedDB schema upgrade。
+  const DB_VERSION = 2;
   /** 草稿格式版本。改结构时 +1，旧草稿仍可按旧版本读取 */
   const DRAFT_SCHEMA_VERSION = 1;
   const STORE = "drafts";
+  /**
+   * 持久化删除墓碑（P4R-2A）。
+   *
+   * ## 为什么需要持久化
+   *
+   * P4R-1.1/1.2 用的是**内存**墓碑（60 秒 TTL）。P4R-2A 关卡 A 实测：
+   *
+   *   A 删除草稿 → 墓碑生效（立刻写入被拒）✅
+   *   B 等待 65 秒（墓碑过期）→ B 保存 → **草稿复活**（rev=100）❌
+   *
+   * 也就是「已删除的草稿会在 60 秒后被另一个标签页复活」。
+   * 任务第八部分明确：**不能只靠增加内存 TTL**，必须持久化。
+   *
+   * ## 怎么存
+   *
+   * 与草稿同一个数据库、同一个版本，**增加一个 object store**。
+   * 升级逻辑是 `if (!contains) createObjectStore`，所以旧库能平滑加上。
+   *
+   * ## 生命周期
+   *
+   * 墓碑**永久有效**（不设 TTL）—— 删除就是删除。
+   * 只有用户显式"恢复/重新新建"同一身份时才清除。
+   */
+  const TOMB_STORE = "tombstones";
   const META = "meta";
 
   /**
@@ -163,6 +188,10 @@
           if (!db.objectStoreNames.contains(META)) {
             db.createObjectStore(META, { keyPath: "key" });
           }
+          // P4R-2A：持久化删除墓碑
+          if (!db.objectStoreNames.contains(TOMB_STORE)) {
+            db.createObjectStore(TOMB_STORE, { keyPath: "draftId" });
+          }
         } catch (e) { /* 已存在 */ }
       };
       req.onsuccess = function (ev) {
@@ -233,7 +262,11 @@
       }
 
       const draftId = "draft_" + p.designId;
-      // ⚠️ 已经删除的草稿不允许被飞行中的写入复活（P4R-1.1）
+      // ⚠️ 已删除的草稿不允许被复活（P4R-1.1 内存墓碑 → P4R-2A 持久墓碑）
+      //
+      // P4R-2A 实测：只用内存墓碑（60s TTL）时，另一个标签页在 65 秒后写入
+      // **仍能把已删除的草稿复活**。现在墓碑同时持久化到 IndexedDB，
+      // 且检查发生在**同一个写事务之前**（下面还有一道事务内检查）。
       if (isTombstoned(draftId)) {
         return { ok: false, reason: "tombstoned" };
       }
@@ -287,7 +320,8 @@
       return new Promise(function (resolve) {
         let tx;
         try {
-          tx = db.transaction([STORE], "readwrite");
+          // 草稿 + 墓碑都进同一事务（查墓碑与写草稿原子）
+          tx = db.transaction([STORE, TOMB_STORE], "readwrite");
         } catch (e) {
           state.failures++;
           state.lastError = "transaction: " + e.message;
@@ -312,6 +346,21 @@
         let currentRevision = null;
         try {
           const store = tx.objectStore(STORE);
+
+          // ⚠️ P4R-2A：**同一个事务里**先查持久墓碑。
+          //    与下面的 revision 检查在同一个 readwrite 事务内，
+          //    所以「查墓碑」和「写草稿」之间不可能被别的标签页插入删除。
+          const tombReq = tx.objectStore(TOMB_STORE).get(draftId);
+          tombReq.onsuccess = function () {
+            if (tombReq.result) {
+              rejectReason = "tombstoned";
+              return;
+            }
+            proceedWithPut();
+          };
+          tombReq.onerror = function () { proceedWithPut(); };
+
+          function proceedWithPut() {
           const curReq = store.get(draftId);
           curReq.onsuccess = function () {
             const cur = curReq.result;
@@ -359,6 +408,7 @@
             // 读失败 → 保守：不写（宁可本次失败，也不要覆盖别人的数据）
             rejectReason = "read-failed";
           };
+          }
         } catch (e) {
           state.failures++;
           state.lastError = "put: " + e.message;
@@ -497,18 +547,63 @@
     return true;
   }
 
-  /** 删除草稿。**只在用户明确确认后调用** */
+  /**
+   * 删除草稿。**只在用户明确确认后调用**。
+   *
+   * P4R-2A：墓碑**同时写内存与 IndexedDB**，且在**同一个事务里**完成
+   * 「删除草稿 + 写墓碑」—— 要么都成功，要么都不做。
+   * 这样即使另一个标签页在 60 秒后（甚至重启后）尝试写入，也会被持久墓碑拦住。
+   */
   function deleteDraft(draftId) {
     return open().then(function (db) {
       if (!db) return { ok: false, reason: "unavailable" };
-      // ⚠️ 先立墓碑，再删 —— 防止飞行中的写入把记录复活
+      // ⚠️ 先立内存墓碑，立刻挡住飞行中的写入
       tombstones.set(draftId, Date.now());
       return new Promise(function (resolve) {
         let tx;
-        try { tx = db.transaction([STORE], "readwrite"); } catch (e) { resolve({ ok: false }); return; }
-        try { tx.objectStore(STORE).delete(draftId); } catch (e) { resolve({ ok: false }); return; }
-        tx.oncomplete = function () { resolve({ ok: true }); };
-        tx.onerror = function () { resolve({ ok: false }); };
+        try {
+          // 两个 store 进**同一个事务** → 原子
+          tx = db.transaction([STORE, TOMB_STORE], "readwrite");
+        } catch (e) {
+          resolve({ ok: false, reason: "transaction" });
+          return;
+        }
+        try {
+          tx.objectStore(STORE).delete(draftId);
+          tx.objectStore(TOMB_STORE).put({
+            draftId: draftId,
+            deletedAt: Date.now(),
+            sessionId: SESSION_ID,
+            reason: "user-delete",
+          });
+        } catch (e) {
+          resolve({ ok: false, reason: "delete" });
+          return;
+        }
+        tx.oncomplete = function () { resolve({ ok: true, persisted: true }); };
+        tx.onerror = function () { resolve({ ok: false, reason: "delete" }); };
+        tx.onabort = function () { resolve({ ok: false, reason: "aborted" }); };
+      });
+    });
+  }
+
+  /**
+   * 查询持久墓碑（P4R-2A）。
+   *
+   * 内存墓碑命中 → 立刻返回 true（快路径）。
+   * 否则查 IndexedDB 的 `tombstones` store。
+   */
+  function isPersistentlyDeleted(draftId) {
+    if (isTombstoned(draftId)) return Promise.resolve(true);
+    return open().then(function (db) {
+      if (!db) return false;                 // 库不可用 → 内存墓碑已尽力
+      return new Promise(function (resolve) {
+        let tx;
+        try { tx = db.transaction([TOMB_STORE], "readonly"); }
+        catch (e) { resolve(false); return; }
+        const req = tx.objectStore(TOMB_STORE).get(draftId);
+        req.onsuccess = function () { resolve(!!req.result); };
+        req.onerror = function () { resolve(false); };
       });
     });
   }
@@ -559,6 +654,7 @@
     getDraft: getDraft,
     listDrafts: listDrafts,
     deleteDraft: deleteDraft,
+    isPersistentlyDeleted: isPersistentlyDeleted,
     validateDraft: validateDraft,
     getStatus: getStatus,
     checksumOf: checksumOf,

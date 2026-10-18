@@ -590,7 +590,14 @@
         }
         one += '}';
         // +2 是数组的逗号与括号
-        if (bytes + one.length + 2 > UNDO_BUDGET && parts.length > 0) break;
+        // P4R-2A：**首条也必须受预算限制**。
+        // 旧条件只在 parts.length > 0 时 break，导致一个 1.7MB 的单快照
+        // 可以绕过 1.2MB 上限直接写入 localStorage（实测 5 张图即复现）。
+        // 超预算时跳过本次持久化，保留内存栈；不写出超过预算的历史。
+        if (bytes + one.length + 2 > UNDO_BUDGET) {
+          if (!parts.length) return;
+          break;
+        }
         parts.unshift(one);
         bytes += one.length + 2;
       }
