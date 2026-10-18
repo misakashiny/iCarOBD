@@ -1078,3 +1078,13 @@ main { grid-template-columns: 280px minmax(0, 1fr) 340px; gap: 10px; padding: 10
 }
 .spRow input[type="checkbox"] { width: 14px; height: 14px; cursor: pointer; }
 .spEmpty { padding: 16px 10px; text-align: center; font-size: 11px; color: #5c6b7d; line-height: 1.7; }
+/* P4A.1/P4B：颜色字段（色板 + 文本框） */
+.spColorWrap { flex: 1; display: flex; gap: 4px; align-items: center; min-width: 0; }
+.spColorWrap input[type="color"] {
+  width: 26px; height: 20px; padding: 0; border: 1px solid #2a3441;
+  border-radius: 4px; background: #151c25; cursor: pointer; flex: 0 0 26px;
+}
+.spColorWrap input[type="text"] { flex: 1; min-width: 0; font-size: 11px; padding: 2px 6px;
+  border-radius: 4px; border: 1px solid #2a3441; background: #151c25; color: #cfdae7; }
+.spColorWrap input[type="text"]:focus { outline: none; border-color: #4ea8ff; }
+.spColorWrap input[type="text"].spInvalid { border-color: #ff5e6e; background: rgba(255,94,110,0.08); }

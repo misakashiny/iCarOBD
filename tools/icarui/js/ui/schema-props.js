@@ -134,6 +134,34 @@
         return { ok: true, value: n, error: null };
       }
 
+      // ---- 颜色（P4B）----
+      //
+      // 支持两种合法形态（与项目既有约定一致）：
+      //   ① `#RRGGBB` 字面色 —— `window.isHexColor`
+      //   ② `$变量名` 引用串 —— `normalizeFont` 会**原样保留**它，
+      //      由 validate.js 去报"bindings 里没有对应条目"的硬错误。
+      //      面板这里**不能**把它当非法值拒掉，否则用户就改不回引用了。
+      if (t === "color") {
+        const s = raw === null || raw === undefined ? "" : String(raw).trim();
+        if (s === "") {
+          // 空 = 不设颜色（回落默认）。允许，但明确告诉调用方这是"清空"
+          return { ok: true, value: null, error: null };
+        }
+        const isRef = /^\$[A-Za-z_][\w-]*$/.test(s);        // 变量引用
+        const isHex6 = /^#[0-9a-fA-F]{6}$/.test(s);
+        const isHex3 = /^#[0-9a-fA-F]{3}$/.test(s);
+        if (isRef) return { ok: true, value: s, error: null };
+        if (isHex6) return { ok: true, value: s.toUpperCase(), error: null };
+        if (isHex3) {
+          // #abc → #AABBCC（展开成 6 位，与 isHexColor 的存储约定一致）
+          const r = s[1], g = s[2], b = s[3];
+          return { ok: true, value: ("#" + r + r + g + g + b + b).toUpperCase(), error: null };
+        }
+        return {
+          ok: false, value: s,
+          error: "颜色需要 #RRGGBB、#RGB 或 $变量名（当前：" + s + "）",
+        };
+      }
       if (t === "enum") {
         const vals = field.values || [];
         // ⚠️⚠️ **null 必须按"真 null"比较**，不能转成字符串 "null"。
@@ -178,12 +206,74 @@
    * "这是哪一族"，具体字段表一律回 Registry 取。
    * 这样新增字段时只改 Registry 一处，面板自动跟上。
    */
+  /**
+   * 按**持久化能力**判断是不是文字控件。
+   *
+   * 文字节点没有别的特征字段，`type === "text"` 就足够 ——
+   * 且它在 `nodeToJson` 白名单里，保存重载不会丢。
+   */
+  function isTextNode(node) {
+    return !!node && node.type === "text";
+  }
+
+  /**
+   * 从一个 Registry 定义里挑出**代表该族**的那条，用于取 schema。
+   *
+   * ⚠️⚠️ **不能随便挑一条就假设全族一致**（P4B 实测教训）：
+   *
+   *   12 个文字控件里有 **2 种 schema 签名**：
+   *     · `t_label`（P1A 单独注册）      → font.size max = **200**
+   *     · 其余 11 条（text-family.js）   → font.size max = **400**
+   *
+   * 渲染侧 `normalizeFont()` 对字号**只有下限 size > 0，没有上限**，
+   * 所以两者都能正常渲染；差异只存在于 Schema 声明层。
+   *
+   * **分派规则**（明确写死，不做隐式假设）：
+   *
+   *   1. 节点带 `__controlKey` 且该 key 在 Registry 里 → **用该 key 自己的 schema**
+   *   2. 否则（保存重载后 `__controlKey` 必然丢失）→ 取 Registry 里
+   *      **最宽松**的文字族 schema（`text-family` 那份，max=400）
+   *
+   * 选"最宽松"的理由：字号在渲染侧本来就不受限，用宽的那份不会拒绝
+   * 用户本来就能设的值；反之用 t_label 的 200 会**凭空限制**其余 11 条。
+   *
+   * 已知后果（如实记录）：重载后的 `t_label` 字号上限会从 200 变成 400。
+   * 这**不影响渲染、不影响存量设计**，只是校验放宽。
+   */
+  function textSchemaFor(node) {
+    const Reg = ICAR.registry && ICAR.registry.Control;
+    if (!Reg || !Reg.all) return null;
+
+    // ① 精确定位：新建的节点带 __controlKey
+    const key = node && node.__controlKey;
+    if (key && Reg.get) {
+      const own = Reg.get(key);
+      if (own && own.schema && own.schema.length) return own;
+    }
+
+    // ② 回退：挑最宽松的文字族定义（font.size.max 最大者）
+    const all = Reg.all();
+    let best = null;
+    let bestMax = -1;
+    for (let i = 0; i < all.length; i++) {
+      const d = all[i];
+      if (!d || !d.schema || !d.render) continue;
+      if (d.render.mode !== "text") continue;
+      const f = d.schema.find(function (x) { return x.key === "font.size"; });
+      const mx = f && f.max !== undefined ? f.max : 0;
+      if (mx > bestMax) { bestMax = mx; best = d; }
+    }
+    return best;
+  }
   const SchemaResolver = {
     /** 持久化能力：代码轨道 = image + 有 trackStyle */
     isTrack(node) {
       return !!node && node.type === "image" && node.trackStyle !== null &&
         typeof node.trackStyle === "object";
     },
+
+    /** 持久化能力：文字节点 */
+    isText(node) { return isTextNode(node); },
 
     /** 持久化能力：普通图片（含 bar_* 图片轨道） */
     isPlainImage(node) {
@@ -207,6 +297,18 @@
     },
 
     resolve(node) {
+      // ---- 文字族（P4B）----
+      if (isTextNode(node)) {
+        const def = textSchemaFor(node);
+        if (!def) {
+          return {
+            family: "text", editable: [], fields: [],
+            error: "Control Registry 中没有文字族的定义（注册未执行？）",
+          };
+        }
+        return { family: "text", editable: EDITABLE.text.slice(), fields: def.schema };
+      }
+
       if (!this.isTrack(node)) return null;
 
       const rep = this._representative("track");
@@ -233,6 +335,8 @@
    */
   const EDITABLE = {
     track: ["trackStyle.orient", "trackStyle.segments", "trackStyle.glow", "trackStyle.fill"],
+    // P4B：文字族第一批只开这 5 个；w/h/rotation/alpha 等仍走旧面板
+    text: ["text", "font.size", "font.weight", "font.color", "font.align"],
   };
   // ============================================================ 四、PropertyUpdate
 
@@ -300,6 +404,16 @@
         }, "改属性：" + p);
       }
       return true;
+    },
+
+    /**
+     * 放弃当前 live 事务（Escape / 切换节点 / 节点被删）。
+     *
+     * 与 endLive 的区别：**不压实、不产生撤销记录**。
+     * 若已经把值写进模型，由调用方负责还原（schema-panel 的 cancelEditing 会做）。
+     */
+    abortLive() {
+      liveEdit = null;
     },
 
     /** 单次离散修改（下拉框 / 复选框）：直接一次事务 */
@@ -417,6 +531,15 @@
             // null 的显示文案
             const s = v === null ? "__null__" : String(v);
             if (el.value !== s) el.value = s;
+          } else if (f.type === "color") {
+            const s = v === null || v === undefined ? "" : String(v);
+            const pk = el.querySelector && el.querySelector('[data-role="picker"]');
+            const tx = el.querySelector && el.querySelector('[data-role="text"]');
+            if (tx && tx.value !== s) tx.value = s;
+            if (pk && /^#[0-9a-fA-F]{6}$/.test(s)) {
+              const lower = s.toLowerCase();
+              if (pk.value !== lower) pk.value = lower;
+            }
           } else {
             const s = v === null || v === undefined ? "" : String(v);
             // ⚠️ 正在输入的框不要改值（会打断光标）—— 由调用方传 skipPath
@@ -442,6 +565,28 @@
       el = document.createElement("input");
       el.type = "checkbox";
       return el;
+    }
+    // ---- 颜色：色板 + 文本框（P4B）----
+    //
+    // 只用 `input[type=color]` 不够：它只认 `#RRGGBB`，会把 `$变量引用` 那种
+    // 合法值直接抹掉。所以做成**色板 + 文本框**两个控件：
+    //   · 色板点选 → 写 #RRGGBB
+    //   · 文本框   → 可以手写 #RGB / #RRGGBB / $变量名
+    if (f.type === "color") {
+      const wrap = document.createElement("span");
+      wrap.className = "spColorWrap";
+      const picker = document.createElement("input");
+      picker.type = "color";
+      picker.setAttribute("data-path", f.key);
+      picker.setAttribute("data-role", "picker");
+      const txt = document.createElement("input");
+      txt.type = "text";
+      txt.setAttribute("data-path", f.key);
+      txt.setAttribute("data-role", "text");
+      txt.placeholder = "#RRGGBB / $变量";
+      wrap.appendChild(picker);
+      wrap.appendChild(txt);
+      return wrap;
     }
     if (f.type === "enum") {
       el = document.createElement("select");

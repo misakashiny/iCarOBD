@@ -59,7 +59,7 @@
     const head = document.createElement("div");
     head.className = "panelBar";
     head.innerHTML = '<span class="pbTitle">属性（Schema 试点）</span>' +
-      '<span class="pbCount">' + (schema ? "轨道" : "无") + "</span>";
+      '<span class="pbCount">' + (schema ? (schema.family === "text" ? "文字" : "轨道") : "无") + "</span>";
     container.appendChild(head);
 
     if (!schema) {
@@ -111,6 +111,118 @@
 
   // ============================================================ 事件绑定
 
+  // ============================================================ 文本输入事务（P4B）
+
+  /** 中文输入法组合状态 —— 组合期间**不得提交**，否则拼音字母会被当成最终文字 */
+  let composingPath = null;
+
+  /** Escape 取消：记下"开始编辑前的值"，Escape 时还原 */
+  let escSnapshot = null;   // { path, nodeId, value }
+
+  function bindTextTransactions(box) {
+    // ① 组合开始（中文输入法）
+    box.addEventListener("compositionstart", function (ev) {
+      const path = ev.target && ev.target.getAttribute && ev.target.getAttribute("data-path");
+      if (!path) return;
+      composingPath = path;
+      // 记下组合前的值，给 Escape 用
+      const node = selectedNode();
+      if (node) {
+        escSnapshot = { path: path, nodeId: node.id,
+          value: SP.PropertyAccessor.get(node, path) };
+      }
+    }, true);
+
+    // ② 组合中 —— 明确不提交（只是把状态标住；input 事件里会跳过）
+    box.addEventListener("compositionupdate", function (ev) {
+      const path = ev.target && ev.target.getAttribute && ev.target.getAttribute("data-path");
+      if (path) composingPath = path;
+    }, true);
+
+    // ③ 组合结束 —— 这时才是真正的最终文字，提交一次
+    box.addEventListener("compositionend", function (ev) {
+      const t = ev.target;
+      const path = t && t.getAttribute && t.getAttribute("data-path");
+      composingPath = null;
+      if (!path) return;
+      const node = selectedNode();
+      if (!node) return;
+      const field = findField(path);
+      if (!field) return;
+      const r = SP.PropertyValidator.coerce(field, t.value);
+      if (!r.ok) {
+        t.classList.add("spInvalid");
+        t.title = r.error || "输入无效";
+        return;
+      }
+      t.classList.remove("spInvalid");
+      t.title = "";
+      editingPath = path;
+      SP.PropertyUpdate.beginLive(node, path);
+      SP.PropertyUpdate.setLive(node, path, r.value);
+    }, true);
+
+    // ④ Escape：取消本次编辑，还原到开始前的值
+    box.addEventListener("keydown", function (ev) {
+      if (ev.key !== "Escape") return;
+      const t = ev.target;
+      const path = t && t.getAttribute && t.getAttribute("data-path");
+      if (!path) return;
+      ev.preventDefault();
+      cancelEditing(path);
+    }, true);
+  }
+
+  /**
+   * 取消当前编辑（Escape）。
+   *
+   * 语义：把输入框与模型都还原到**开始编辑前**的值，且**不产生撤销记录**。
+   * 若此前有 live 事务在跑，先把它丢弃（不回填模型）。
+   */
+  function cancelEditing(path) {
+    const node = selectedNode();
+    const box = el("schemaProps");
+
+    // 丢弃未提交的 live 事务（不压实）
+    SP.PropertyUpdate.abortLive && SP.PropertyUpdate.abortLive();
+
+    if (node && escSnapshot && escSnapshot.nodeId === node.id && escSnapshot.path === path) {
+      SP.PropertyAccessor.set(node, path, escSnapshot.value);
+      if (window.requestDraw) window.requestDraw();
+      else if (window.draw) window.draw();
+    }
+    escSnapshot = null;
+    composingPath = null;
+    editingPath = null;
+
+    // 把输入框的值也拨回去
+    if (box && node) {
+      const inp = findInput(path);
+      if (inp) {
+        const v = SP.PropertyAccessor.get(node, path);
+        const f = findField(path);
+        if (f && f.type === "enum") {
+          inp.value = v === null ? "__null__" : String(v);
+        } else if (f && f.type === "boolean") {
+          inp.checked = !!v;
+        } else {
+          inp.value = v === null || v === undefined ? "" : String(v);
+        }
+        inp.classList.remove("spInvalid");
+        inp.title = "";
+      }
+    }
+  }
+
+  function findInput(path) {
+    const box = el("schemaProps");
+    if (!box) return null;
+    const all = box.querySelectorAll("input,select");
+    for (let i = 0; i < all.length; i++) {
+      if (all[i].getAttribute("data-path") === path) return all[i];
+    }
+    return null;
+  }
   function bindEvents() {
     const box = el("schemaProps");
     if (!box) return;
@@ -125,12 +237,20 @@
       const field = findField(path);
       if (!field) return;
 
+      // ⚠️ 中文输入法组合期间**不提交** —— 否则拼音字母会先被当成最终文字写入模型
+      if (composingPath === path) return;
+
       let val = t.type === "checkbox" ? t.checked : t.value;
       const r = SP.PropertyValidator.coerce(field, val);
       if (!r.ok) {
         t.classList.add("spInvalid");
         t.title = r.error || "输入无效";
         return;          // ⚠️ 非法输入**不写入模型**
+      }
+      // 快照由 focusin 记录（见 bindEvents）；这里只在缺失时兜底，
+      // 且**绝不覆盖** focusin 记下的那个值 —— 否则 Escape 会还原到"半途值"。
+      if (!escSnapshot || escSnapshot.nodeId !== node.id || escSnapshot.path !== path) {
+        escSnapshot = { path: path, nodeId: node.id, value: SP.PropertyAccessor.get(node, path) };
       }
       t.classList.remove("spInvalid");
       t.title = "";
@@ -185,6 +305,21 @@
         refresh();
       }
     }, true);
+
+    // ① 聚焦即记录"开始编辑前的值" —— Escape 要靠它还原。
+    //    放在 focus 而不是首次 input：用户可能聚焦后什么都没敲就按 Escape。
+    box.addEventListener("focusin", function (ev) {
+      const t = ev.target;
+      const path = t && t.getAttribute && t.getAttribute("data-path");
+      if (!path) return;
+      const node = selectedNode();
+      if (!node) return;
+      escSnapshot = { path: path, nodeId: node.id,
+        value: SP.PropertyAccessor.get(node, path) };
+    }, true);
+
+    // P4B：文本输入事务（IME / Escape）
+    bindTextTransactions(box);
   }
 
   /** 从当前 schema 里找字段声明 */
@@ -217,6 +352,10 @@
     onSelectionChanged: onSelectionChanged,
     /** 测试用 */
     supportedFields: function () { return SUPPORTED_EDIT.slice(); },
+    /** 取消当前编辑（Escape 语义） */
+    cancelEditing: cancelEditing,
+    /** 测试用：是否处于 IME 组合中 */
+    __composing: function () { return composingPath; },
     /** 测试用：模拟"正在编辑某个字段"（refresh 时跳过它，保住光标与输入值） */
     __setEditing: function (path) { editingPath = path; },
     currentFamily: function () { return currentFamily; },
