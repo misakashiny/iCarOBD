@@ -273,12 +273,19 @@
         nodeType: decl && decl.nodeType ? decl.nodeType : (node ? node.type : "error"),
         renderer: decl && decl.renderer ? decl.renderer : cls.renderer,
         legacyKey: (decl && decl.legacyKey) || c.key,
+        // ⚠️ P2B.1：复合节点（next_*）**不再预设 bound** ——
+        //    它们的 pid 在子节点里，必须由 analyzeDataOf 分析，
+        //    否则 15 个组合预设会被误判成"根节点没数据 → L4"。
         dataCapability: decl && decl.dataCapability ? decl.dataCapability
-          : (c.next ? DATA.BOUND : cls.dataCapability),
-        // ⚠️ 数据能力 ≠ 车辆可用性（P2B 第二部分）。
-        // declared 可以直接给 vehicleAvailability；否则按数据源判定。
-        availability: "unknown",
-        vehicleAvailability: (decl && decl.vehicleAvailability) || "unknown",
+          : (c.next ? DATA.NONE : cls.dataCapability),
+        // ---- P2B.1 三字段方案（旧字段保留兼容，见下方 __legacy）----
+        // channelStatus  : implemented | alias-only | unimplemented | unknown | n/a
+        // vehicleStatus  : supported | unsupported | unverified
+        // dataCapability : none | bound | state | composite
+        channelStatus: "unknown",
+        vehicleStatus: "unverified",
+        availability: "unknown",              // 旧字段（= channelStatus 的 L1~L4 写法）
+        vehicleAvailability: (decl && decl.vehicleAvailability) || "unknown",  // 旧字段
         source: decl ? "declared" : "probe",   // 便于统计"还有多少条在走探测"
         tags: [],
         thumbnail: (decl && decl.thumbnail) || thumbnailOf(node, cls),
@@ -307,7 +314,25 @@
       // 声明条目**不调 make()**：通道信息由声明直接给出（decl.pid / decl.statePid）。
       // 这是 P2B「静态元数据注册机制」的核心 —— 声明过的条目零探测。
       const availNode = node || (decl ? { pid: decl.pid || "", statePid: decl.statePid || "" } : null);
+
+      // ---- P2B.1：**先**分析数据能力（复合节点要看子节点），**再**算可用性 ----
+      // 顺序不能反：composite 的可用性要读 childChannels（实测反了会全变 n/a）。
+      const ds = analyzeDataOf(availNode);
+      if (entry.dataCapability === DATA.NONE && ds.capability && ds.capability !== "none") {
+        entry.dataCapability = "composite";
+        entry.__meta.childChannels = ds.channels;
+      }
       entry.availability = availabilityOf(entry, availNode);
+      // channelStatus 由 availability(L1~L4/n/a) 映射
+      entry.channelStatus = entry.availability === "n/a" ? "n/a"
+        : entry.availability === "L1" ? "implemented"
+        : entry.availability === "L2" ? "alias-only"
+        : entry.availability === "L4" ? "unimplemented"
+        : "unknown";
+      // vehicleStatus：三态。App 有通道 → unverified（**不是** supported）
+      entry.vehicleStatus = entry.channelStatus === "n/a" ? "unverified"
+        : entry.channelStatus === "unimplemented" ? "unsupported"
+        : "unverified";
       if (decl) {
         entry.__meta.pid = entry.__meta.pid || decl.pid || "";
         entry.__meta.statePid = entry.__meta.statePid || decl.statePid || "";
@@ -342,6 +367,46 @@
    * 复用 P1A 的 DataSource Registry 四层语义。
    */
   /**
+   * **复合节点的数据绑定分析**（P2B.1 第一部分要求）。
+   *
+   * 问题：`next_*` 是 `group` 节点，**根节点没有 pid** —— 它的数据在子节点里
+   * （底板 image + 仪表 gauge，gauge 那个才绑 pid）。
+   * 只看根节点会把 15 个组合预设全部误判成"无数据/L4"（实测就是 28 条 L4 里的 15 条）。
+   *
+   * @returns {{capability:string, channels:string[]}} capability: none|bound|state|composite
+   */
+  function analyzeDataOf(node) {
+    if (!node) return { capability: "none", channels: [] };
+
+    // 自身带数据
+    if (node.pid) return { capability: "bound", channels: [node.pid] };
+    if (node.statePid) return { capability: "state", channels: [node.statePid] };
+
+    // 复合：递归子节点
+    const kids = node.children || [];
+    if (!kids.length) return { capability: "none", channels: [] };
+
+    const channels = [];
+    let hasBound = false, hasState = false;
+    (function walk(list) {
+      (list || []).forEach(function (c) {
+        if (!c) return;
+        if (c.pid) { channels.push(c.pid); hasBound = true; }
+        if (c.statePid) { channels.push(c.statePid); hasState = true; }
+        if (c.children && c.children.length) walk(c.children);
+      });
+    })(kids);
+
+    if (!channels.length) return { capability: "none", channels: [] };
+    return {
+      capability: "composite",
+      channels: channels,
+      // 子节点里既有 bound 又有 state 时以 bound 为主（有连续值）
+      _primary: hasBound ? "bound" : (hasState ? "state" : "none"),
+    };
+  }
+
+  /**
    * 可用性判定。
    *
    * ⚠️⚠️ **P2B 第二部分硬要求**：不要把「App 已实现 PID」当成「真车可用」。
@@ -356,8 +421,22 @@
    */
   function availabilityOf(entry, node) {
     const DS = ICAR.registry.DataSource;
-    // 不读数据的条目不参与可用性判定
+    // 不读数据的条目不参与可用性判定（composite 除外 —— 它有子通道）
     if (entry.dataCapability === DATA.NONE) return "n/a";
+
+    // 复合节点：取子节点里**最差**的通道状态（有一个不通就整体不能正常显示）
+    if (entry.dataCapability === "composite") {
+      const chs = (entry.__meta && entry.__meta.childChannels) || [];
+      if (!chs.length) return "n/a";
+      if (!DS) return "L3";
+      let worst = "L1";
+      const rank = { "L1": 0, "L2": 1, "L3": 2, "L4": 3 };
+      chs.forEach(function (c) {
+        const r = DS.resolve(c);
+        if ((rank[r.tier] || 0) > (rank[worst] || 0)) worst = r.tier;
+      });
+      return worst;
+    }
 
     const raw = entry.dataCapability === DATA.STATE
       ? (node && node.statePid) || (entry.__meta && entry.__meta.statePid) || ""
@@ -375,6 +454,7 @@
 
   function computeStats() {
     const byKind = {}, byCategory = {}, byRenderer = {}, byAvailability = {}, byVehicle = {}, bySource = {};
+    const byChannelStatus = {}, byVehicleStatus = {};
     catalog.forEach(function (e) {
       byKind[e.kind] = (byKind[e.kind] || 0) + 1;
       byCategory[e.category] = (byCategory[e.category] || 0) + 1;
@@ -382,11 +462,14 @@
       byAvailability[e.availability] = (byAvailability[e.availability] || 0) + 1;
       byVehicle[e.vehicleAvailability] = (byVehicle[e.vehicleAvailability] || 0) + 1;
       bySource[e.source] = (bySource[e.source] || 0) + 1;
+      byChannelStatus[e.channelStatus] = (byChannelStatus[e.channelStatus] || 0) + 1;
+      byVehicleStatus[e.vehicleStatus] = (byVehicleStatus[e.vehicleStatus] || 0) + 1;
     });
     return {
       total: catalog.size,
       byKind: byKind, byCategory: byCategory, byRenderer: byRenderer,
       byAvailability: byAvailability, byVehicle: byVehicle, bySource: bySource,
+      byChannelStatus: byChannelStatus, byVehicleStatus: byVehicleStatus,
       failures: [],
       builtAt: Date.now(),
     };
@@ -540,6 +623,13 @@
       return this.build();
     },
 
+    /** 由 app.js 在 init() 抛异常时调用（P2B.1）。只记录，不掩盖。 */
+    onInitFailed(err) {
+      this._initError = String(err || "unknown");
+      this._pending = false;
+      this._bootFailed = "init-error";
+    },
+
     /**
      * **诊断**：返回构建健康度与问题清单。
      *
@@ -562,6 +652,10 @@
       }
       if (this._bootFailed) {
         issues.push({ level: "error", code: "boot-" + this._bootFailed, message: "启动构建未完成：" + this._bootFailed });
+      }
+      if (this._initError) {
+        issues.push({ level: "error", code: "init-error",
+          message: "应用初始化失败（原始异常已保留）：" + String(this._initError).split("\n")[0] });
       }
       // 覆盖性自检（不能与实际列表漂移）
       if (st && st.total) {
@@ -586,6 +680,7 @@
      */
     recover() {
       this._bootFailed = null;
+      this._initError = null;   // 恢复时清掉初始化异常（否则 diagnose 永远报错）
       let st = null, err = null;
       try {
         st = this.build();
@@ -596,6 +691,107 @@
       return { ok: !err && diag.ok, stats: st, diag: diag, error: err };
     },
 
+    // ============================================================ P2B.1：诊断清单与一致性
+
+    /**
+     * **逐 key 诊断清单**（P2B.1 第一部分要求）。
+     *
+     * 每行包含全部三字段 + 旧字段，便于人工核对与测试比对。
+     * @param {Object} [filter] { kind, channelStatus, vehicleStatus, dataCapability }
+     */
+    report(filter) {
+      const f = filter || {};
+      return this.all().filter(function (e) {
+        if (f.kind && e.kind !== f.kind) return false;
+        if (f.channelStatus && e.channelStatus !== f.channelStatus) return false;
+        if (f.vehicleStatus && e.vehicleStatus !== f.vehicleStatus) return false;
+        if (f.dataCapability && e.dataCapability !== f.dataCapability) return false;
+        return true;
+      }).map(function (e) {
+        return {
+          key: e.key, name: e.name, kind: e.kind, category: e.category,
+          renderer: e.renderer, nodeType: e.nodeType,
+          dataCapability: e.dataCapability,
+          channelStatus: e.channelStatus,
+          vehicleStatus: e.vehicleStatus,
+          // 旧字段（兼容）
+          availability: e.availability,
+          vehicleAvailability: e.vehicleAvailability,
+          source: e.source,
+          channel: e.__meta.pid || e.__meta.statePid || (e.__meta.childChannels || []).join(",") || "",
+        };
+      });
+    },
+
+    /**
+     * **一致性守卫**：检查分类统计与逐条记录是否自洽。
+     *
+     * 这是 P2B.1「保证分类统计与 UI 显示结果一致」的机器化判据 ——
+     * 统计数字必须等于逐条计数之和，且每个条目的字段组合必须合法。
+     *
+     * @returns {{ok:boolean, issues:Array}}
+     */
+    checkConsistency() {
+      const issues = [];
+      const all = this.all();
+      const st = this.stats();
+
+      // 1) 统计与逐条计数一致
+      const recount = {};
+      all.forEach(function (e) {
+        recount[e.channelStatus] = (recount[e.channelStatus] || 0) + 1;
+      });
+      Object.keys(recount).forEach(function (k) {
+        if (st.byChannelStatus[k] !== recount[k]) {
+          issues.push({ level: "error", code: "stat-mismatch",
+            message: "byChannelStatus[" + k + "] 统计 " + st.byChannelStatus[k] + " != 逐条计数 " + recount[k] });
+        }
+      });
+
+      // 2) 字段组合合法性
+      const VALID_CH = ["implemented", "alias-only", "unimplemented", "unknown", "n/a"];
+      const VALID_VH = ["supported", "unsupported", "unverified"];
+      const VALID_DC = ["none", "bound", "state", "composite"];
+      all.forEach(function (e) {
+        if (VALID_CH.indexOf(e.channelStatus) < 0) {
+          issues.push({ level: "error", code: "bad-channel", message: e.key + " 非法 channelStatus=" + e.channelStatus });
+        }
+        if (VALID_VH.indexOf(e.vehicleStatus) < 0) {
+          issues.push({ level: "error", code: "bad-vehicle", message: e.key + " 非法 vehicleStatus=" + e.vehicleStatus });
+        }
+        if (VALID_DC.indexOf(e.dataCapability) < 0) {
+          issues.push({ level: "error", code: "bad-datacap", message: e.key + " 非法 dataCapability=" + e.dataCapability });
+        }
+        // 不读数据的条目不该有 channel 状态
+        if (e.dataCapability === "none" && e.channelStatus !== "n/a") {
+          issues.push({ level: "error", code: "dc-none-but-channel",
+            message: e.key + " dataCapability=none 但 channelStatus=" + e.channelStatus });
+        }
+        // 有数据能力的条目不该是 n/a
+        if (e.dataCapability !== "none" && e.channelStatus === "n/a") {
+          issues.push({ level: "error", code: "dc-but-na",
+            message: e.key + " dataCapability=" + e.dataCapability + " 但 channelStatus=n/a" });
+        }
+        // unimplemented 必须对应 unsupported
+        if (e.channelStatus === "unimplemented" && e.vehicleStatus !== "unsupported") {
+          issues.push({ level: "error", code: "unimpl-not-unsupported",
+            message: e.key + " channelStatus=unimplemented 但 vehicleStatus=" + e.vehicleStatus });
+        }
+      });
+
+      // 3) 旧字段与新字段不冲突
+      const map = { "n/a": "n/a", "L1": "implemented", "L2": "alias-only", "L4": "unimplemented" };
+      all.forEach(function (e) {
+        const expect = map[e.availability] || "unknown";
+        if (expect !== e.channelStatus) {
+          issues.push({ level: "error", code: "legacy-drift",
+            message: e.key + " 旧 availability=" + e.availability + " 与新 channelStatus=" + e.channelStatus + " 不一致" });
+        }
+      });
+
+      return { ok: issues.filter(function (i) { return i.level === "error"; }).length === 0, issues: issues };
+    },
+
     /** 测试用：清空 */
     __reset() {
       catalog.clear();
@@ -603,6 +799,7 @@
       this.lastDiagnostics = null;
       this._pending = false;
       this._bootFailed = null;
+      this._initError = null;
     },
 
     /** 分类函数本身导出，便于单测与审计 */

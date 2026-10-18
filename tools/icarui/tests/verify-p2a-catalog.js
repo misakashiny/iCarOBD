@@ -118,7 +118,12 @@ async function main(){
    // P2B：gauge_0..7 显式声明为 vehicleAvailability=unverified（App 有 std_0C 通道，
    //      但车辆是否提供转速未验证）。所以 L1 从 35 降到 27。
    //      这是**保守化**：P2B 明确要求"不要把 App 已实现 PID 直接标记为真车可用"。
-   check(C.byAvailability('L1').length===35,'byAvailability L1 works (got '+C.byAvailability('L1').length+')');
+   // P2B.1 修正：15 个 next_* 组合预设的 pid 在**子节点**上，之前只看根节点
+   // 被判成 L4（无数据）→ 误计入 L4；正确分析子通道后归为 L1（子通道 std_0C 等）。
+   // 所以 L1 从 35 增至 50、L4 从 28 降至 13。这是**修正**不是放水：
+   // 总数据条目数不变，且 verify-p2b 有专门断言守"composite 必须识别出子通道"。
+   check(C.byAvailability('L1').length===50,'byAvailability L1 works (got '+C.byAvailability('L1').length+')');
+   check(C.byAvailability('L4').length===13,'L4 is 13 after composite fix (got '+C.byAvailability('L4').length+')');
    // P2B 关键区分：gauge_0..7 的 availability=**L1**（App 有 std_0C 通道），
    // 但 vehicleAvailability=**unverified**（车辆是否真有转速未验证）。
    // 这正是"不要把 App 已实现 PID 当成真车可用"的落地。

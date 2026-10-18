@@ -289,7 +289,13 @@
   function draw() {
     var P = window.ICAR && window.ICAR.ui && window.ICAR.ui.CatalogPanel;
     var C = window.ICAR && window.ICAR.registry && window.ICAR.registry.Catalog;
-    if (P && C && C.stats().total) { P.render(); return true; }
+    if (P && C && C.stats().total) {
+      P.render();
+      /* P2B.1：新面板成为主资源入口 → 旧 #assets 默认折叠，避免两份重复列表。
+         旧面板**保留**，点资源库标题栏的 ▤ 可随时展开（经典视图）。 */
+      if (typeof P.collapseLegacy === "function") P.collapseLegacy();
+      return true;
+    }
     return false;
   }
   document.addEventListener("DOMContentLoaded", function () {

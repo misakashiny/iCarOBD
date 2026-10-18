@@ -53,7 +53,8 @@
     "verify-v27": 48,
     "verify-v28": 28,
     "verify-v291": 82,
-    "verify-p2a-catalog": 52,
-    "verify-p2b-catalog-ui": 55
+    "verify-p2a-catalog": 53,
+    "verify-p2b-catalog-ui": 55,
+    "verify-p2b1-e2e": 46
   }
 }

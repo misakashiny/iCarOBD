@@ -3481,14 +3481,27 @@
    ⚠️ 不能重写 init —— 它是函数声明（function init(){}），赋值会被忽略（实测导致 init 不跑）。
    所以用包装函数：跑完 init 再通知 Catalog。 */
 function bootAfterInit() {
+  /* ⚠️ P2B.1 修正：原来写在 finally 里**无条件**置 __ICAR_APP_READY=true，
+     于是 init() 抛异常时目录也会"就绪"—— 异常被吞成空目录/半截目录，无法诊断。
+     现在：只有 init 真正跑完才置位并通知 Catalog；失败则记录原始异常并交给
+     Catalog 的诊断链，绝不静默。 */
+  window.__ICAR_INIT_ERROR = null;
   try {
     init();
-  } finally {
-    window.__ICAR_APP_READY = true;
-    var C = window.ICAR && window.ICAR.registry && window.ICAR.registry.Catalog;
-    if (C && typeof C.onAppReady === "function") {
-      try { C.onAppReady(); } catch (e) { /* 诊断留在 Catalog.diagnose() */ }
+  } catch (e) {
+    window.__ICAR_INIT_ERROR = (e && (e.stack || e.message)) || String(e);
+    window.__ICAR_APP_READY = false;
+    var Cerr = window.ICAR && window.ICAR.registry && window.ICAR.registry.Catalog;
+    if (Cerr && typeof Cerr.onInitFailed === "function") {
+      try { Cerr.onInitFailed(window.__ICAR_INIT_ERROR); } catch (e2) { /* 忽略二次失败 */ }
     }
+    // 继续抛出：让控制台能看到，不把异常变成"看起来正常"
+    throw e;
+  }
+  window.__ICAR_APP_READY = true;
+  var C = window.ICAR && window.ICAR.registry && window.ICAR.registry.Catalog;
+  if (C && typeof C.onAppReady === "function") {
+    try { C.onAppReady(); } catch (e) { /* 诊断留在 Catalog.diagnose() */ }
   }
 }
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bootAfterInit);
