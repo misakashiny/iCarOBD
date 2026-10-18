@@ -200,6 +200,20 @@
 | **建议** | 已统一为 400；不影响默认值、序列化、渲染与存量设计 |
 | **当前处置** | 已修；P4B.1 断言 12 条 `distinctSignatures === 1` |
 
+---
+
+## D-14：`assetQuery` / `collapsed` / `panelCollapsed` 是 panels.js 闭包变量（P4P-1A 踩到）
+
+| 项 | 内容 |
+|---|---|
+| **发现于** | P4P-1A（做素材库签名时）|
+| **位置** | `tools/icarui/js/panels.js` 的 IIFE 内部 |
+| **现象** | `assetQuery`、`collapsed`、`panelCollapsed` 都是闭包里的 `const`/`let`，**外部模块访问不到**；`typeof panelCollapsed` 永远返回 `"undefined"` |
+| **性质** | 刻意封装（避免污染全局），不是缺陷 |
+| **影响面** | 任何想从外部读这些状态的代码都会静默拿到 undefined。P4P-1A 第一版把折叠态放进签名，导致 `verify-assets`/`verify-fix`/`verify-feat2` 三个套件变红 |
+| **建议** | 需要这些状态时**不要试图读闭包变量**，改为在**操作入口处**显式通知（如 `renderAssets(true)`）|
+| **当前处置** | P4P-1A 已改为 5 个入口强制刷新；签名不记录折叠态 |
+
 ## 汇总表
 
 | ID | 问题 | 类型 | 处置 |
@@ -216,7 +230,8 @@
 | D-10 | `normalizeTrackStyle()` 静默归一非法值 | 刻意防护 | 测校验须绕过 createNode |
 | D-11 | `addNode` 3 参数曾被当 1 参数调用致添加静默失效 | **真 Bug** | **P4A 已修** |
 | D-12 | `refreshAll()` 不通知并行属性面板致不同步 | 架构缺口 | **P4A.1 已修** |
-| D-13 | `t_label` 的 font.size.max=200 是 P1A 试点遗留 | 遗留占位 | **P4B.1 已统一为 400** |
+| D-13 | `t_label` 的 font.size.max=200 是 P1A 试点遗留 | 遗留占位 | **P4B.1 已统一** |
+| D-14 | `assetQuery`/`collapsed`/`panelCollapsed` 是闭包变量，外部读不到 | 刻意封装 | 入口处显式通知 |
 
 ---
 

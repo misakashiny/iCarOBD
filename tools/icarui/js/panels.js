@@ -1133,7 +1133,7 @@
   let assetQuery = "";
   window.setAssetQuery = function (v) {
     assetQuery = String(v || "");
-    renderAssets();
+    renderAssets(true);
     // 重新渲染后把光标放回搜索框，否则打一个字就失焦
     const inp = document.getElementById("assetSearch");
     if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
@@ -1224,7 +1224,7 @@
     window.customAssetKinds.push({ v: v, n: name, icon: "\uD83D\uDCC1", custom: true });
     window.assetKindOrder.push(v);
     saveAssetKinds();
-    window.renderAssets();
+    window.renderAssets(true);
   };
 
   /**
@@ -1291,7 +1291,7 @@
     window.assetKindOrder = window.DEFAULT_ASSET_KINDS.map(function (k) { return k.v; })
       .concat(window.customAssetKinds.map(function (k) { return k.v; }));
     saveAssetKinds();
-    window.renderAssets();
+    window.renderAssets(true);
   };
 
   /**
@@ -1364,14 +1364,61 @@
     if (box) box.classList.remove("on");
   };
 
-  function renderAssets() {
+  /**
+   * 素材库渲染计数（P4P-1A 诊断用）。
+   *
+   * `rebuilt` = 真正重建 DOM 的次数；`skipped` = 命中签名缓存跳过的次数。
+   * 测试与性能脚本通过 `window.__assetsRenderStats` 读取。
+   * ⚠️ 只读诊断，不参与任何业务逻辑。
+   */
+  const assetsRenderStats = { rebuilt: 0, skipped: 0, lastReason: "" };
+  window.__assetsRenderStats = assetsRenderStats;
+
+  function renderAssets(force) {
+    const box = el("assets");
+    if (!box) return;
+
+    // ============================================================ P4P-1A 按需刷新
+    //
+    // ## 为什么加这一层
+    //
+    // P4P-0 审计实测：本函数中位数 **24.7ms**，占 refreshAll 约 94% ——
+    // 而它每次 commit 都无条件重建，哪怕改的只是一个文字控件的字号。
+    //
+    // 生成的 HTML 有 **242,611 字符**，其中 416 条内置素材 + 215 条控件
+    // 与"画布上放了什么"完全无关。
+    //
+    // ## 判定依据
+    //
+    // `ICAR.ui.AssetsSignature` 把本函数**实际读取的全部显示数据**
+    // 算成一个签名（用户素材逐字段 / 内置素材 / 内置控件 / 自定义控件 /
+    // 分类列表 / 搜索词 / 折叠态 / 已用角标）。
+    // 签名相同 → 显示结果必然相同 → **直接返回，不碰 DOM**。
+    //
+    // ## 保守兜底
+    //
+    // 签名计算抛异常时返回唯一值，必然触发重建 —— 宁可多刷也不漏刷。
+    // `force=true` 时无条件重建（素材显式操作 / 首次渲染 / 切换设计）。
+    const SIG = window.ICAR && window.ICAR.ui && window.ICAR.ui.AssetsSignature;
+    if (SIG) {
+      const verdict = SIG.needRebuild(force);
+      if (!verdict.need) {
+        // 命中缓存：**一个 DOM 节点都不碰** —— 滚动位置、搜索框焦点、
+        // 分类筛选、折叠状态、已加载缩略图全部原样保留。
+        assetsRenderStats.skipped++;
+        assetsRenderStats.lastReason = verdict.reason;
+        return;
+      }
+    }
+
+    assetsRenderStats.rebuilt++;
+    assetsRenderStats.lastReason = force ? "forced" : "signature-changed";
+
     const previousBody = el("assetsBody");
     const scrollTop = previousBody ? previousBody.scrollTop : 0;
     const scrollLeft = previousBody ? previousBody.scrollLeft : 0;
-    const box = el("assets");
-    if (!box) return;
     const d = S.design;
-    if (!d) { box.innerHTML = ""; return; }
+    if (!d) { box.innerHTML = ""; if (SIG) SIG.markRendered(); return; }
 
     const q = assetQuery.trim().toLowerCase();
     // 搜索命中判定（v2.51.0 支持**拼音**）。
@@ -1540,6 +1587,9 @@ const hit = s => !q
     applyPanelCollapse("assets");
     const nextBody = el("assetsBody");
     if (nextBody) { nextBody.scrollTop = scrollTop; nextBody.scrollLeft = scrollLeft; }
+
+    // 记录"已渲染到这个签名"，下次同样的数据直接跳过
+    if (SIG) SIG.markRendered();
   }
 
   // ================================================================ 面板折叠 / 高度
@@ -1593,7 +1643,10 @@ const hit = s => !q
   window.togglePanelCollapse = function (which) {
     panelCollapsed[which] = !panelCollapsed[which];
     savePanelState();
-    if (which === "assets") renderAssets(); else renderTree();
+    // P4P-1A：折叠状态变化必须**强制**重建素材库。
+    // 折叠是"用户显式操作"，不能等签名判断（签名读的是 DOM 折叠标记，
+    // 而此时 DOM 还没更新，会误判为"没变化"）。
+    if (which === "assets") renderAssets(true); else renderTree();
   };
 
   /** 把折叠状态落到 DOM 上 */
@@ -1774,7 +1827,7 @@ window.useBuiltinAsset = function (path) {
     collapsed["ak:__ctrl"] = !open;         // 内置控件永远有内容
     collapsed["ak:__next"] = !open;
     saveCollapsed();
-    renderAssets();
+    renderAssets(true);
     const skipped = open ? window.assetKindList().filter(k => !has(k.v)).length : 0;
     window.toast(open
       ? ("已展开有内容的分类" + (skipped ? "（跳过 " + skipped + " 个空的）" : ""))
