@@ -66,6 +66,7 @@
     "verify-p4b-text-props": 114,
     "verify-p4b1-text-finalize": 55,
     "verify-p4c-container-props": 88,
-    "verify-p4p1a-assets-refresh": 43
+    "verify-p4p1a-assets-refresh": 43,
+    "verify-p4p1b-undo-persist": 40
   }
 }
