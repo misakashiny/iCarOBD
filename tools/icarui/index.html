@@ -253,6 +253,9 @@
 <script src="js/registry/controls/gauge-family.js"></script>
 <!-- P3C-2：状态灯 19 条。使用原有 image + states 三态机制，不新增节点类型。 -->
 <script src="js/registry/controls/lamp-family.js"></script>
+<!-- P3D：代码轨道 28 条（cd_*）。全部是 NODE_IMAGE，受 panels.js 的
+     prepareBuiltinImages 包装影响 —— bridge 必须在 panels.js 之后执行（已保障）。 -->
+<script src="js/registry/controls/track-family.js"></script>
 <script src="js/registry/catalog-metadata.js"></script>
 <script src="js/registry/catalog-declarations.js"></script>
 <!-- P3A：旧入口接线（BUILTIN_CONTROLS.make → Registry）。
@@ -292,6 +295,59 @@
   window.__P3C2_BRIDGE = B.bridge(["lamp_coolant","lamp_oil","lamp_batt","lamp_brake","lamp_pad",
     "lamp_tpms","lamp_airbag","lamp_belt","lamp_abs","lamp_esp","lamp_engine","lamp_fuel",
     "lamp_door","lamp_washer","lamp_service","lamp_temp","lamp_charge","lamp_lane","lamp_collision"]);
+  /* P3D：代码轨道 28 条（cd_*）。不含 bar_* —— 那是图片轨道，不迁移。 */
+  window.__P3D_BRIDGE = B.bridge(["cd_trackh","cd_trackv","cd_trackgradh","cd_trackgradv",
+    "cd_trackfadeh","cd_trackfadev","cd_trackinseth","cd_trackinsetv","cd_trackglowh","cd_trackglowv",
+    "cd_trackticksh","cd_trackticksv","cd_seg5h","cd_seg5v","cd_seg10h","cd_seg10v",
+    "cd_seg20h","cd_seg20v","cd_band3h","cd_band3v","cd_fillh","cd_fillv",
+    "cd_fillglowh","cd_fillglowv","cd_markerh","cd_markerv","cd_cursorh","cd_cursorv"]);
+
+  /* ============================================================
+     P3D：**启动顺序守卫**（第五部分第 6 条要求）
+
+     背景：panels.js 会给每个 make 包一层 prepareBuiltinImages
+     （图片控件 w 按画布宽高比缩放）。如果 bridge 在 panels.js 之前跑，
+     替换会被 panels.js 的 forEach 覆盖，**且不报任何错** ——
+     P3C-2 就是这样丢了一整天。
+
+     这条守卫把"静默失效"变成"启动时立刻可见的红字"。
+     ============================================================ */
+  (function orderGuard() {
+    var checks = [];
+    // 1) bridge 是否真的接管了
+    var st = B.status();
+    checks.push(["bridge 接管数为 0", st.bridged.length > 0]);
+    // 2) 抽查图片控件两族的 w 是否等于"原始 w × 画布宽高比"
+    try {
+      // ⚠️ 此时 app.js 的 init() 还没跑完，CanvasState.design 可能为 null ——
+      //    守卫自己不能变成故障源。取不到就跳过尺寸检查（接管检查仍然有效）。
+      var cv = (window.CanvasState && window.CanvasState.design && window.CanvasState.design.canvas) || null;
+      if (!cv) return finishGuard(checks);
+      var ratio = cv.designH / cv.designW;
+      [["cd_trackh", 240], ["cd_trackglowh", 240], ["cd_fillv", 16]].forEach(function (pair) {
+        var e = (window.BUILTIN_CONTROLS || []).find(function (c) { return c.key === pair[0]; });
+        if (!e) return;
+        var expect = pair[1] * ratio;
+        var got = e.make().w;
+        checks.push([pair[0] + " w 期望 " + expect.toFixed(3) + " 实际 " + got,
+                     Math.abs(got - expect) < 0.01]);
+      });
+    } catch (err) {
+      checks.push(["顺序守卫自身异常: " + err.message, false]);
+    }
+    finishGuard(checks);
+  })();
+
+  function finishGuard(checks) {
+    var bad = checks.filter(function (c) { return !c[1]; });
+    if (bad.length) {
+      window.__ICAR_ORDER_GUARD_FAILED = bad.map(function (c) { return c[0]; });
+      console.error("[ICAR 启动顺序守卫] 失败：\n" + bad.map(function (c) { return "  ✗ " + c[0]; }).join("\n") +
+        "\n→ bridge 必须在 panels.js 之后执行，见 index.html 注释");
+    } else {
+      window.__ICAR_ORDER_GUARD_FAILED = null;
+    }
+  }
 })();
 
 </script>

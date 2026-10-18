@@ -129,6 +129,34 @@
 | **建议** | Golden 比对时**把 `assetId` 归一化为素材路径**。这不是"忽略字段"，而是换成等价且稳定的表示 —— 素材**路径**才是语义身份 |
 | **当前处置** | 已按路径归一化；Golden 19/19 |
 
+---
+
+## D-09：`UndoStack` 首次 `commit()` 建立基准，单次撤销无可见变化
+
+| 项 | 内容 |
+|---|---|
+| **发现于** | P3D（写 undo 测试时） |
+| **位置** | `tools/icarui/js/app.js` 的 `UndoStack` 使用处 |
+| **现象** | 空设计上 `commit()` 一次 → `doUndo()` 后节点数仍是 1（未退回 0）；`commit()` 两次 → undo 退回 1 |
+| **性质** | **刻意设计**。首次 commit 把"当前状态"记为基准，撤销回到基准而非空 |
+| **影响面** | 写撤销测试若只 commit 一次会误判"undo 没生效" |
+| **建议** | 不改。测试写法约定：**要观察 undo 必须至少 commit 两次** |
+| **当前处置** | P3D 测试改为两次 commit，断言 `undo steps back exactly one node` |
+
+---
+
+## D-10：`normalizeTrackStyle()` 会把非法值静默归一
+
+| 项 | 内容 |
+|---|---|
+| **发现于** | P3D |
+| **位置** | `tools/icarui/js/model.js` `createNode` 的 `NODE_IMAGE` 分支 |
+| **现象** | `createNode(NODE_IMAGE,{trackStyle:{orient:"x"}})` → `trackStyle.orient === "h"` |
+| **性质** | **刻意防护**（保证画布不会因坏数据崩） |
+| **影响面** | 校验器**收不到**坏值 —— 若靠 `build({orient:'x'})` 造坏数据测校验，测试会假通过 |
+| **建议** | 不改防护。测试验证校验器时必须**建好后直接改字段**，不能经过 `createNode` |
+| **当前处置** | P3D 测试已按此写法修正 |
+
 ## 汇总表
 
 | ID | 问题 | 类型 | 处置 |
@@ -141,6 +169,8 @@
 | D-06 | `NODE_GAUGE` 的 `pid` 被归一化，别名在 `rawPid` | 刻意设计 | 保持 |
 | D-07 | `panels.js` 给所有 `make` 包了 `prepareBuiltinImages`（图片控件 w 被缩放） | 刻意设计 | bridge 必须在其后 |
 | D-08 | `assetId` 是运行期生成的，不能作为 Golden 字段 | 刻意设计 | 归一化为素材路径 |
+| D-09 | `UndoStack` 首次 commit 建基准，单次 undo 无可见变化 | 刻意设计 | 测试须 commit 两次 |
+| D-10 | `normalizeTrackStyle()` 静默归一非法值 | 刻意防护 | 测校验须绕过 createNode |
 
 ---
 

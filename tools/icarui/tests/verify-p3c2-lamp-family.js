@@ -50,7 +50,9 @@ async function main() {
 
     // ---------------- 一、接管 ----------------
     const bridge = JJ(await step('bridge', 'JSON.stringify(ICAR.adapter.RegistryBridge.status())'));
-    ok(bridge.bridged.length === 41, 'bridged 41 (got ' + bridge.bridged.length + ')');
+    // P3C-2 完成时是 41；P3D 又接管了 28 条轨道 → 69。
+    // 只断言"至少包含本阶段该有的 41 条"，总数由最新阶段的套件守。
+    ok(bridge.bridged.length >= 41, 'at least 41 bridged (got ' + bridge.bridged.length + ')');
     ok(KEYS.every(k => bridge.bridged.indexOf(k) >= 0), 'all 19 lamp keys bridged');
     ok(bridge.fallback.length === 0, 'no fallback');
     ok(bridge.total === 215, 'library still 215');
@@ -271,8 +273,9 @@ async function main() {
     // ---------------- 八、迁移数量 ----------------
     const src = JJ(await step('bySource', 'JSON.stringify(ICAR.registry.Catalog.stats().bySource)'));
     ok(src.declared === 8, 'declared 8 (got ' + src.declared + ')');
-    ok(src.derived === 41, 'derived 41 (got ' + src.derived + ')');
-    ok(src.probe === 166, 'probe 166 (got ' + src.probe + ')');
+    // 同前：精确数字由 verify-p3d 守，这里只验证三级存在且合计 215。
+    ok(src.derived >= 41, 'derived at least 41 (got ' + src.derived + ')');
+    ok(src.probe > 0, 'probe still present (got ' + src.probe + ')');
     ok(src.declared + src.derived + src.probe === 215, 'sum = 215');
 
     const cons = await step('consistency', 'String(ICAR.registry.Catalog.checkConsistency().ok)');
