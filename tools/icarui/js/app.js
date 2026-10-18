@@ -2740,8 +2740,23 @@
     lastPersistKey = null;
     saveUndoStack();
     updateUndoButtons();
+    // P4R-1：设计换了 → **换草稿身份**。
+    // 新建 / 打开文件 / 导入 / 恢复草稿 全都走这里，所以只改这一处。
+    // ⚠️ 不清任何既有草稿 —— 旧设计的草稿仍留着（用户可能还要恢复）。
+    if (window.ICAR && window.ICAR.ui && window.ICAR.ui.DraftManager) {
+      try { window.ICAR.ui.DraftManager.resetDesignId(); } catch (e) {}
+    }
     return true;
   }
+
+  /**
+   * P4R-1：把 `replaceDesign` 导出给草稿管理器用。
+   *
+   * ⚠️ 它是闭包里的函数；DraftManager 在**另一个模块**里，
+   * 没有这个导出就只能自己拼一套替换逻辑 —— 那会绕过项目既有的
+   * 校验（`restore` → `isUsableSnapshot`）和撤销栈基准，属于重复实现。
+   */
+  window.replaceDesign = replaceDesign;
 
   window.jsonEdited = function () {
     if (suppressJsonSync) return;
@@ -3145,6 +3160,11 @@
       ((S.design.assets || []).length > 8 ? "\n  …" : "")
       : "";
     download((S.design.name || "design") + ".json", getVal("jsonArea"));
+    // ⚠️ P4R-1：**下载不等于写盘成功**。这里只记录"导出已触发"，
+    //    **绝不据此删除草稿** —— 用户可能取消了保存对话框，也可能写盘失败。
+    if (window.ICAR && window.ICAR.ui && window.ICAR.ui.DraftManager) {
+      try { window.ICAR.ui.DraftManager.noteManualSave(); } catch (e) {}
+    }
     toast("已保存 v2 设计文件（含控件树 / 图片 / 状态）" + assetNote);
   };
 
@@ -3609,6 +3629,13 @@ function bootAfterInit() {
 }
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bootAfterInit);
 else bootAfterInit();
+
+/* P4R-1：自动恢复草稿。
+   ⚠️ 必须放在 bootAfterInit **之后** —— 它要用 replaceDesign / toast / CanvasState。
+   boot() 内部全程 Promise，**不阻塞**启动；不可用时静默降级，不影响手动保存。 */
+if (window.ICAR && window.ICAR.ui && window.ICAR.ui.DraftManager) {
+  try { window.ICAR.ui.DraftManager.boot(); } catch (e) { console.warn("[草稿] 启动异常（已忽略）", e); }
+}
 
   // ================================================================ 素材数据懒加载（v2.30.0）
   //

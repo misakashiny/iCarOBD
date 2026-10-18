@@ -1088,3 +1088,48 @@ main { grid-template-columns: 280px minmax(0, 1fr) 340px; gap: 10px; padding: 10
   border-radius: 4px; border: 1px solid #2a3441; background: #151c25; color: #cfdae7; }
 .spColorWrap input[type="text"]:focus { outline: none; border-color: #4ea8ff; }
 .spColorWrap input[type="text"].spInvalid { border-color: #ff5e6e; background: rgba(255,94,110,0.08); }
+/* ============================================================ P4R-1 草稿 UI */
+/* 恢复提示条：非模态，贴顶，不遮挡工具条操作 */
+.draftRecoveryBar {
+  position: fixed; left: 0; right: 0; top: 0; z-index: 9000;
+  display: none; justify-content: center;
+  padding: 8px 12px; box-sizing: border-box;
+  background: linear-gradient(180deg, #1d3550 0%, #16293d 100%);
+  border-bottom: 1px solid #2f5f8f;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .45);
+  font: 12px/1.5 system-ui, "Segoe UI", sans-serif; color: #dbe7f3;
+}
+.drbInner {
+  display: flex; align-items: center; gap: 16px;
+  max-width: 1400px; width: 100%;
+}
+.drbText { flex: 1 1 auto; min-width: 0; }
+.drbTitle { font-weight: 600; font-size: 13px; margin-bottom: 2px; color: #eaf3ff; }
+.drbMeta { font-size: 12px; color: #a8bed6; }
+.drbMeta b { color: #eaf3ff; }
+.drbWarn { color: #ffb454; margin-left: 8px; }
+.drbBtns { display: flex; gap: 8px; flex: 0 0 auto; }
+.drbBtns button {
+  font: inherit; padding: 5px 14px; cursor: pointer;
+  border-radius: 5px; border: 1px solid #3a6b9d;
+  background: #24425e; color: #dbe7f3;
+}
+.drbBtns button:hover { background: #2e5379; }
+.drbBtns button.primary { background: #1f6feb; border-color: #388bfd; color: #fff; }
+.drbBtns button.primary:hover { background: #2b7fff; }
+.drbBtns button.danger { background: #4a2027; border-color: #7d3038; color: #ffb3ba; }
+.drbBtns button.danger:hover { background: #632a33; }
+
+/* 草稿状态徽标：右下角小字，不抢注意力 */
+.draftBadge {
+  position: fixed; right: 10px; bottom: 10px; z-index: 8000;
+  padding: 3px 10px; border-radius: 10px;
+  font: 11px/1.4 system-ui, "Segoe UI", sans-serif;
+  background: rgba(20, 30, 42, .82); color: #8fa0b8;
+  border: 1px solid rgba(120, 150, 180, .25);
+  pointer-events: none; user-select: none;
+}
+.draftBadge.hidden { display: none; }
+.draftBadge.ok { color: #39d98a; border-color: rgba(57, 217, 138, .35); }
+.draftBadge.dirty { color: #ffb454; border-color: rgba(255, 180, 84, .35); }
+.draftBadge.warn { color: #ff4d4f; border-color: rgba(255, 77, 79, .4); }
