@@ -250,6 +250,22 @@
       const META = ICAR.registry.CatalogMeta;
       const decl = META ? META.get(c.key) : null;
 
+      // ---- P3A：优先从 Control Registry 派生元数据（避免两套配置漂移）----
+      // 已经定义了 Registry 的控件，name/category/render 都从定义读，
+      // 不再需要在 CatalogMeta 里重复手写一份。
+      const regDef = ICAR.registry.Control
+        ? (ICAR.registry.Control.get(c.key) || ICAR.registry.Control.byLegacyKey(c.key))
+        : null;
+      const derived = regDef
+        ? {
+            name: regDef.name,
+            category: regDef.category,
+            nodeType: "text",                       // render.mode=text → text 节点
+            renderer: regDef.render && regDef.render.mode === "text" ? "text" : undefined,
+            kind: "control",
+          }
+        : null;
+
       // ---- 静态元数据优先：声明过的条目**不调用 make()**，零副作用 ----
       // P2B 第一部分要求：「优先采用静态元数据注册机制，
       // 不允许控件目录扫描修改用户当前设计」。
@@ -267,11 +283,17 @@
 
       const entry = {
         key: c.key,
-        name: (decl && decl.name) || c.name || "",
+        name: (decl && decl.name) || (derived && derived.name) || c.name || "",
         kind: kind,
-        category: decl && decl.category ? decl.category : categoryOf(node, cls),
-        nodeType: decl && decl.nodeType ? decl.nodeType : (node ? node.type : "error"),
-        renderer: decl && decl.renderer ? decl.renderer : cls.renderer,
+        category: (decl && decl.category) ? decl.category
+          : (derived && derived.category) ? derived.category
+          : categoryOf(node, cls),
+        nodeType: (decl && decl.nodeType) ? decl.nodeType
+          : (derived && derived.nodeType) ? derived.nodeType
+          : (node ? node.type : "error"),
+        renderer: (decl && decl.renderer) ? decl.renderer
+          : (derived && derived.renderer) ? derived.renderer
+          : cls.renderer,
         legacyKey: (decl && decl.legacyKey) || c.key,
         // ⚠️ P2B.1：复合节点（next_*）**不再预设 bound** ——
         //    它们的 pid 在子节点里，必须由 analyzeDataOf 分析，
@@ -329,10 +351,21 @@
         : entry.availability === "L2" ? "alias-only"
         : entry.availability === "L4" ? "unimplemented"
         : "unknown";
-      // vehicleStatus：三态。App 有通道 → unverified（**不是** supported）
-      entry.vehicleStatus = entry.channelStatus === "n/a" ? "unverified"
-        : entry.channelStatus === "unimplemented" ? "unsupported"
-        : "unverified";
+      // vehicleStatus：三态（P3A 第五部分修正）
+      //
+      // ⚠️⚠️ **绝不能用 "App 未实现" 推断出 "车辆不支持"**。
+      //
+      // 两者是不同的事实层：
+      //   · channelStatus=unimplemented  = **App 侧**没有这条数据通道
+      //   · vehicleStatus=unsupported    = **车辆**不能提供这个数据
+      //
+      // 前者推不出后者：可能是 App 还没做、也可能是车确实没有，**没有实车证据就不能下结论**。
+      // 更不允许把 "静态文字控件（不读数据）" 标成 unsupported。
+      //
+      // 所以规则极简：**没有实车证据 → 一律 unverified**。
+      // 将来接入真车验证后，才有资格把某条标成 supported/unsupported。
+      entry.vehicleStatus = "unverified";
+
       if (decl) {
         entry.__meta.pid = entry.__meta.pid || decl.pid || "";
         entry.__meta.statePid = entry.__meta.statePid || decl.statePid || "";
@@ -772,10 +805,17 @@
           issues.push({ level: "error", code: "dc-but-na",
             message: e.key + " dataCapability=" + e.dataCapability + " 但 channelStatus=n/a" });
         }
-        // unimplemented 必须对应 unsupported
-        if (e.channelStatus === "unimplemented" && e.vehicleStatus !== "unsupported") {
-          issues.push({ level: "error", code: "unimpl-not-unsupported",
-            message: e.key + " channelStatus=unimplemented 但 vehicleStatus=" + e.vehicleStatus });
+        // ⚠️ P3A 第五部分修正后，**不能再要求 unimplemented → unsupported**：
+        //     "App 没实现通道" 推不出 "车辆不支持"，无实车证据一律 unverified。
+        // 改为反向守卫：**任何 unsupported 都必须有明确证据**（当前没有证据来源，
+        // 所以 unsupported 数量必须为 0；将来接入实车验证后再放宽）。
+        if (e.vehicleStatus === "unsupported") {
+          issues.push({ level: "error", code: "unsupported-without-evidence",
+            message: e.key + " 被标为 unsupported 但没有实车证据支持" });
+        }
+        if (e.vehicleStatus === "supported") {
+          issues.push({ level: "error", code: "supported-without-evidence",
+            message: e.key + " 被标为 supported 但没有实车证据支持" });
         }
       });
 

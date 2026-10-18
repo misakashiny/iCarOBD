@@ -237,11 +237,30 @@
 <script src="js/presets.js"></script>
 <!-- 注册表必须在 presets.js 之后：adapter 要读 BUILTIN_CONTROLS 做等价比对；
      控件定义里的 build() 要用 schema.js 的 createNode/NODE_TEXT。 -->
+<!-- P3A：旧入口接线（BUILTIN_CONTROLS.make → Registry）。
+     必须在 presets.js 之后（此时数组已构造完）且在任何调用 make() 之前。 -->
 <script src="js/registry/datasource-registry.js"></script>
 <script src="js/registry/control-registry.js"></script>
 <script src="js/registry/controls/t_label.js"></script>
+<!-- P3A：文字控件族 12 条。在 t_label.js 之后 —— t_label 由 P1A 注册，
+     本文件跳过它，避免重复 key 抛错。 -->
+<script src="js/registry/controls/text-family.js"></script>
 <script src="js/registry/catalog-metadata.js"></script>
 <script src="js/registry/catalog-declarations.js"></script>
+<!-- P3A：旧入口接线（BUILTIN_CONTROLS.make → Registry）。
+     必须在 presets.js（数组已构造）、control-registry.js、text-family.js 全部之后。
+     Catalog 构建时会调 make()，所以也要在 catalog.js 之前。 -->
+<script src="js/adapter/registry-bridge.js"></script>
+<script>
+/* P3A：执行接管 —— 把 12 个文字控件的旧 make() 换成 Registry 实现。
+   放在这里（而非某个模块内部）是为了让"接管了哪些 key"在页面源码里一目了然。 */
+(function () {
+  var B = window.ICAR && window.ICAR.adapter && window.ICAR.adapter.RegistryBridge;
+  if (!B) return;
+  window.__P3A_BRIDGE = B.bridge(["text","t_title","t_label","t_unit","t_big","t_small",
+                                   "t_warn","t_ok","t_bigunit","box_h1","box_h2","box_note"]);
+})();
+</script>
 <script src="js/registry/catalog.js"></script>
 <script src="js/adapter/legacy-adapter.js"></script>
 <script src="js/canvas.js"></script>
