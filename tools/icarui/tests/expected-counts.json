@@ -72,6 +72,7 @@
     "verify-p4r11-draft-hardening": 26,
     "verify-p4r12-live-draft": 33,
     "verify-p4r2a-anchor-prototype": 19,
-    "verify-p4r2b-history-restore": 41
+    "verify-p4r2b-history-restore": 41,
+    "verify-p4r2v-integration": 36
   }
 }

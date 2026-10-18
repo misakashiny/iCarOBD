@@ -131,6 +131,8 @@
     openDb: null,
     openPromise: null,
     conflicts: 0,
+    historyRejected: 0,
+    lastHistoryRejectReason: null,
     sessionId: SESSION_ID,
   };
 
@@ -415,8 +417,43 @@
               // ---- P4R-2B：同一事务内写匹配的撤销历史 ----
               // p.history 存在时必须是"这次草稿版本的历史"；
               // 调用方已算好 historyAvailable/unavailableReason。
+              // ==================== P4R-2V：写入前锚点校验 ====================
+              //
+              // ## 为什么存储层也要校验
+              //
+              // 实测（P4R-2V 故障注入）：调用方传入 stack:'NOT-AN-ARRAY'
+              // 这类结构非法的历史时，旧实现照样 put 成功、返回 ok:true ——
+              // 库里会留下一条"看起来可用、实际不可恢复"的历史。
+              // 任务要求：**不能留下 revision 不一致却被误判为有效的记录**。
+              //
+              // 判据只做"能与草稿配对"的最低要求（完整语义校验仍由
+              // DraftManager/UndoAnchor 在恢复时做）：
+              //   · designId / draftRevision 必须与本次草稿严格一致
+              //   · stack 必须是数组且非空
+              //   · index 必须是栈内整数
+              //   · historyAvailable 必须为 true
+              // 不合法 → **降级为仅草稿可用**（删除旧历史），而不是写脏数据。
+              var histToWrite = null;
               if (p.history) {
-                tx.objectStore(HIST_STORE).put(p.history);
+                var hb = p.history;
+                var anchorOk = !!(
+                  hb &&
+                  hb.designId === p.designId &&
+                  hb.draftRevision === (p.revision || 0) &&
+                  Array.isArray(hb.stack) && hb.stack.length > 0 &&
+                  Number.isInteger(hb.index) &&
+                  hb.index >= 0 && hb.index < hb.stack.length &&
+                  hb.historyAvailable === true
+                );
+                if (anchorOk) {
+                  histToWrite = hb;
+                } else {
+                  state.historyRejected = (state.historyRejected || 0) + 1;
+                  state.lastHistoryRejectReason = "anchor-mismatch";
+                }
+              }
+              if (histToWrite) {
+                tx.objectStore(HIST_STORE).put(histToWrite);
               } else {
                 // 没有可保存的历史 → **删除旧历史**，避免下一会话
                 // 把上一版本的旧历史误当成当前版本的历史。
