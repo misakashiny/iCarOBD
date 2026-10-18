@@ -1045,12 +1045,46 @@
    * @param kind    分类
    * @param onDone  回调（拿到 asset 对象）
    */
+  /**
+   * 单个素材内联进草稿的原图 dataURL 上限（P4R-FIX-01）。
+   *
+   * 4 MiB base64 ≈ 3 MiB 原图。超过就不内联：草稿体积会暴涨，
+   * 且 IndexedDB 事务可能因单条记录过大失败 —— 宁可**明确降级**并告知用户，
+   * 也不要静默糊图或写爆配额。
+   */
+  const ASSET_DATA_MAX = 4 * 1024 * 1024;
+
+  /**
+   * 读原图为 dataURL（P4R-FIX-01）。
+   *
+   * 用 FileReader 读原始字节转 base64，**不经 canvas 重采样** ——
+   * 这样 `asset.data` 就是真正的原图，分辨率与原文件一致。
+   *
+   * 失败（读不动 / 超限）时回退为 null，调用方退化为"仅缩略图"。
+   */
+  function readOriginal(file, cb) {
+    try {
+      const fr = new FileReader();
+      fr.onload = function () {
+        const url = typeof fr.result === "string" ? fr.result : "";
+        if (!url) { cb(null, 0, 0); return; }
+        // 量原图尺寸（供素材库显示真实分辨率）
+        const im = new Image();
+        im.onload = function () { cb(url, im.naturalWidth, im.naturalHeight); };
+        im.onerror = function () { cb(url, 0, 0); };
+        im.src = url;
+      };
+      fr.onerror = function () { cb(null, 0, 0); };
+      fr.readAsDataURL(file);
+    } catch (e) { cb(null, 0, 0); }
+  }
+
   function importAsset(file, kind, onDone) {
     if (!file || !/^image\//.test(file.type)) {
       alert("只能导入图片文件（当前：" + (file ? file.type || "未知类型" : "空") + "）");
       return;
     }
-    makeThumb(file, (dataUrl, w, h) => {
+    readOriginal(file, (originalDataUrl, ow, oh) => makeThumb(file, (dataUrl, w, h) => {
       const id = window.newId("as");
       // 路径：设计文件同目录下的 assets/ —— 与 App 的模型一致
       const safe = file.name.replace(/[\\/:*?"<>|]/g, "_");
@@ -1059,7 +1093,30 @@
         name: file.name,
         kind: kind || "custom",
         path: "assets/" + safe,
-        w: w, h: h, bytes: file.size,
+        /**
+         * **原图尺寸**（不是缩略图尺寸）—— P4R-FIX-01。
+         * 原来这里写的是 makeThumb 量出来的 w/h（缩略图 64px 的尺寸），
+         * 会让新导入的素材在素材库里显示成 64×64。
+         */
+        w: ow || w, h: oh || h, bytes: file.size,
+        /**
+         * 原图 dataURL（P4R-FIX-01 新增）。
+         *
+         * ## 为什么必须有它
+         *
+         * 原来只存 `rawFile: file`（File 对象）。File 被 `JSON.stringify`
+         * 序列化成 `{}`，所以草稿里 `rawFile` 恒为空对象、`data` 不存在 ——
+         * 刷新后只剩 64px 缩略图，**图片就糊了**（实测复现）。
+         *
+         * data 是 dataURL 字符串，能原样写进草稿 designJson 并跨会话恢复，
+         * 不依赖本地 `assets/` 路径（那条路径浏览器其实读不到）。
+         *
+         * 体积：JPEG 原图 base64 约为原文件 1.34 倍；
+         * 超过 ASSET_DATA_MAX 的图不内联，退化为"仅缩略图"并明确告警。
+         */
+        data: (originalDataUrl && originalDataUrl.length <= ASSET_DATA_MAX) ? originalDataUrl : "",
+        /** 内联失败原因（空 = 正常内联），恢复时用来告知用户 */
+        dataSkipped: (originalDataUrl && originalDataUrl.length > ASSET_DATA_MAX) ? "too-large" : "",
         /**
          * **留着原始 File 对象**（v2.79.0，为「导出设计包」）。
          *
@@ -1086,16 +1143,36 @@
       };
       if (dataUrl) { thumbs[id] = dataUrl; saveThumbs(); }
       // 本机预览：立刻用 objectURL 显示真实图片
+      // 本机预览用 objectURL（最真实）；持久化靠上面已写入的 asset.data
       window.loadAssetImage(id, URL.createObjectURL(file));
       onDone && onDone(asset);
-    });
+    }));
   }
   window.importAsset = importAsset;
 
   /** 从缩略图缓存恢复预览（重开设计文件时） */
+  /**
+   * 从 localStorage 的缩略图缓存恢复**预览**（P4R-FIX-01 修正）。
+   *
+   * ## 原来错在哪
+   *
+   * 旧实现把 64px 缩略图直接写进 `S.assetUrls[id]` —— 那是**正式绘制缓存**的主槽。
+   * 于是 `syncAssetImages()` 的 `if (S.assetUrls[a.id]) return;` 认为"已经加载过"，
+   * **永久跳过高清加载**，画布一直画 64px（实测复现）。
+   *
+   * ## 现在怎么做
+   *
+   * 缩略图只登记到 `thumbUrls[id]`，**不碰 assetUrls**。
+   * 只有 `syncAssetImages()` 找不到任何原图来源时，才把缩略图作为
+   * **明确降级**写进 assetUrls（并标记 degraded）。
+   */
+  /** 缩略图（**只用于降级**，不占正式绘制缓存）—— P4R-FIX-01 */
+  const thumbUrls = {};
+  window.__assetThumbUrls = thumbUrls;
+
   function restoreThumbs() {
     Object.entries(thumbs).forEach(([id, dataUrl]) => {
-      if (!S.assetUrls[id]) window.loadAssetImage(id, dataUrl);
+      if (dataUrl) thumbUrls[id] = dataUrl;
     });
   }
   window.restoreThumbs = restoreThumbs;
@@ -1121,11 +1198,85 @@
     if (!d || !d.assets) return;
     d.assets.forEach(a => {
       const original = window.NEXT_LIBRARY && window.NEXT_LIBRARY.assets.find(b => b.path === a.path);
-      if (!a.data && original) a.data = original.data;
-      if (S.assetUrls[a.id]) return;                 // 已有（导入的 objectURL / 缩略图）
-      const url = a.data || a.path;
-      if (url) window.loadAssetImage(a.id, url);
+      // 内置素材：始终用库里的内嵌数据（最高优先，避免被旧草稿的空 data 覆盖）
+      if (original && original.data) { a.data = original.data; }
+      // ================= P4R-FIX-01：区分「原图 / 缩略图 / 未加载」 =================
+      //
+      // 原来只有一句 `if (S.assetUrls[a.id]) return;` —— 只要槽里有任何 URL
+      // （哪怕是 64px 缩略图）就认为高清已加载，**永久跳过**。
+      // 现在按**来源等级**判断，只允许向上升级，绝不降级。
+      //
+      //   等级 3 = 原图（dataURL / objectURL / 内嵌库数据）
+      //   等级 2 = 本地 path（可能是高清文件，但浏览器读不到 → 尝试后通常会失败）
+      //   等级 1 = 缩略图（64px，**仅降级展示**）
+      const currentLevel = assetLevel[a.id] || 0;
+      const hadUrl = !!S.assetUrls[a.id];
+
+      // ① 原图优先：asset.data（草稿持久化的原图）
+      if (a.data) {
+        if (currentLevel < 3 || S.assetUrls[a.id] !== a.data) {
+          window.loadAssetImage(a.id, a.data);
+          assetLevel[a.id] = 3;
+        }
+        return;
+      }
+      // ② 已经是原图等级就不动
+      if (currentLevel >= 3) return;
+      // ③ 退而用 path（内置素材或同目录文件）
+      if (a.path) {
+        if (!hadUrl || currentLevel < 2) {
+          window.loadAssetImage(a.id, a.path);
+          assetLevel[a.id] = 2;
+        }
+        return;
+      }
+      // ④ 最后才用缩略图 —— **明确降级**，并标记，便于 UI/诊断区分
+      const th = thumbUrls[a.id] || thumbs[a.id];
+      if (th && !hadUrl) {
+        window.loadAssetImage(a.id, th);
+        assetLevel[a.id] = 1;
+        degradedAssets[a.id] = true;
+      } else if (!hadUrl && !th) {
+        // 连缩略图都没有（旧草稿且本地文件已失效）→ 记录为缺失，供 UI 提示
+        assetLevel[a.id] = 0;
+        missingAssets[a.id] = true;
+      }
     });
+  };
+
+  /**
+   * 旧草稿兼容诊断（P4R-FIX-01）。
+   *
+   * 旧版草稿里 `asset.data` 恒为空、`rawFile` 是 `{}` —— 原图字节从未落盘，
+   * 只剩 64px 缩略图。这类素材**无法事后恢复高清**，只能如实告知用户。
+   *
+   * 返回：
+   *   · `legacyCount`   —— 需要重新导入原图的素材数
+   *   · `missingCount`  —— 连缩略图都没有的素材数
+   *   · `ids`           —— 具体 id 列表（UI 可据此高亮）
+   */
+  window.__assetCompatReport = function () {
+    const d = S.design;
+    const legacy = [];
+    const missing = [];
+    if (d && Array.isArray(d.assets)) {
+      d.assets.forEach(a => {
+        const lvl = assetLevel[a.id] || 0;
+        if (lvl === 1) legacy.push(a.id);
+        else if (lvl === 0 && missingAssets[a.id]) missing.push(a.id);
+      });
+    }
+    return { legacyCount: legacy.length, missingCount: missing.length, ids: legacy.concat(missing) };
+  };
+
+  /** 每个素材当前绘制源的等级（3=原图 2=path 1=缩略图）—— P4R-FIX-01 */
+  const assetLevel = {};
+  /** 明确处于降级（用缩略图）的素材 —— P4R-FIX-01 */
+  const degradedAssets = {};
+  /** 完全没有可用图源的素材 —— P4R-FIX-01 */
+  const missingAssets = {};
+  window.__assetDrawStats = function () {
+    return { level: Object.assign({}, assetLevel), degraded: Object.keys(degradedAssets) };
   };
 
   /** 素材库面板 */
