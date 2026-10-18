@@ -38,3 +38,12 @@ dist/
 
 # Local iteration snapshot (contains embedded project documents)
 tools/iteration-board/index.html
+# ---- P4E-04-GH-01：本地交接/同步产物，**不公开上传** ----
+# history.bundle (13.4MB) / 交接包 zip (16.6MB) / MANIFEST / 校验清单
+history.bundle
+MANIFEST.json
+SHA256SUMS.txt
+iCarOBD2_*.zip
+*开发交接包*.zip
+# 用户私人测试图片（仅本地测试素材）
+tools/icarui/assets/*_2026-*.jpg
