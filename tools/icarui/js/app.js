@@ -3477,8 +3477,22 @@
     });
   }
 
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
-  else init();
+  /* P2B：应用就绪 → 显式触发 Catalog 构建（首选路径，替代盲轮询）。
+   ⚠️ 不能重写 init —— 它是函数声明（function init(){}），赋值会被忽略（实测导致 init 不跑）。
+   所以用包装函数：跑完 init 再通知 Catalog。 */
+function bootAfterInit() {
+  try {
+    init();
+  } finally {
+    window.__ICAR_APP_READY = true;
+    var C = window.ICAR && window.ICAR.registry && window.ICAR.registry.Catalog;
+    if (C && typeof C.onAppReady === "function") {
+      try { C.onAppReady(); } catch (e) { /* 诊断留在 Catalog.diagnose() */ }
+    }
+  }
+}
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bootAfterInit);
+else bootAfterInit();
 
   // ================================================================ 素材数据懒加载（v2.30.0）
   //

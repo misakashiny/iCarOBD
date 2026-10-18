@@ -247,44 +247,82 @@
     if (S0 && S0.design && !Array.isArray(S0.design.assets)) S0.design.assets = [];
 
     src.forEach(function (c, idx) {
-      const probeResult = probe(function () { return c.make(); });
-      const node = probeResult.node;
-      const err = probeResult.error;
-      if (err) failures.push({ key: c.key, error: err });
+      const META = ICAR.registry.CatalogMeta;
+      const decl = META ? META.get(c.key) : null;
 
-      const cls = classify(node);
-      const kind = c.next ? KIND.PRESET : cls.kind;   // next_* 是组合预设（结构已证明 group+children）
+      // ---- 静态元数据优先：声明过的条目**不调用 make()**，零副作用 ----
+      // P2B 第一部分要求：「优先采用静态元数据注册机制，
+      // 不允许控件目录扫描修改用户当前设计」。
+      let node = null, err = null, cls = null;
+      if (decl && decl.nodeType) {
+        // 已声明结构：跳过探测。node 保持 null，后续用 decl 兜底。
+      } else {
+        const probeResult = probe(function () { return c.make(); });
+        node = probeResult.node;
+        err = probeResult.error;
+        if (err) failures.push({ key: c.key, error: err });
+        cls = classify(node);
+      }
+      const kind = decl && decl.kind ? decl.kind : (c.next ? KIND.PRESET : cls.kind);
 
       const entry = {
         key: c.key,
-        name: c.name || "",
+        name: (decl && decl.name) || c.name || "",
         kind: kind,
-        category: categoryOf(node, cls),
-        nodeType: node ? node.type : "error",
-        renderer: cls.renderer,
-        legacyKey: c.key,                    // 目前与 key 相同；迁移期用于映射
-        dataCapability: c.next ? DATA.BOUND : cls.dataCapability,
-        availability: "unknown",             // 由 availabilityOf() 按数据源判定填充
+        category: decl && decl.category ? decl.category : categoryOf(node, cls),
+        nodeType: decl && decl.nodeType ? decl.nodeType : (node ? node.type : "error"),
+        renderer: decl && decl.renderer ? decl.renderer : cls.renderer,
+        legacyKey: (decl && decl.legacyKey) || c.key,
+        dataCapability: decl && decl.dataCapability ? decl.dataCapability
+          : (c.next ? DATA.BOUND : cls.dataCapability),
+        // ⚠️ 数据能力 ≠ 车辆可用性（P2B 第二部分）。
+        // declared 可以直接给 vehicleAvailability；否则按数据源判定。
+        availability: "unknown",
+        vehicleAvailability: (decl && decl.vehicleAvailability) || "unknown",
+        source: decl ? "declared" : "probe",   // 便于统计"还有多少条在走探测"
         tags: [],
-        thumbnail: thumbnailOf(node, cls),
+        thumbnail: (decl && decl.thumbnail) || thumbnailOf(node, cls),
         // 附加诊断信息（不参与分类判定，便于审计）
         __meta: {
           index: idx,
-          reason: cls.reason,
+          reason: cls ? cls.reason : ((decl && decl.note) || "declared"),
           next: !!c.next,
           semanticId: c.semanticId || "",
           variant: c.variant || "",
-          parts: (node && node.parts && node.parts.length) || 0,
-          children: (node && node.children && node.children.length) || 0,
+          parts: (node && node.parts && node.parts.length) || (decl && decl.parts) || 0,
+          children: (node && node.children && node.children.length) || (decl && decl.children) || 0,
           pid: (node && node.pid) || "",
           statePid: (node && node.statePid) || "",
           style: node && node.style !== undefined ? node.style : null,
           assetId: (node && node.assetId) || "",
           makeError: err,
+          declared: !!decl,
         },
       };
-      entry.tags = tagsOf(entry, node, cls);
-      entry.availability = availabilityOf(entry, node);
+      entry.tags = tagsOf(entry, node, cls || { renderer: entry.renderer, kind: entry.kind });
+      // ⚠️ 声明条目没有 node，但 availability 仍应按"它绑什么通道"计算 ——
+      //    否则 gauge_0（绑 std_0C）会被误判成 L4（实测踩到）。
+      //    通道来源：声明里的 pid/statePid，或旧实现 make() 后我们会拿到；
+      //    这里用声明里的 dataCapability + 从旧条目探测到的 pid 兜底。
+      // 声明条目**不调 make()**：通道信息由声明直接给出（decl.pid / decl.statePid）。
+      // 这是 P2B「静态元数据注册机制」的核心 —— 声明过的条目零探测。
+      const availNode = node || (decl ? { pid: decl.pid || "", statePid: decl.statePid || "" } : null);
+      entry.availability = availabilityOf(entry, availNode);
+      if (decl) {
+        entry.__meta.pid = entry.__meta.pid || decl.pid || "";
+        entry.__meta.statePid = entry.__meta.statePid || decl.statePid || "";
+      }
+      // 探测路径的车辆可用性由 availabilityOf 的结果推导（声明路径已自带，不覆盖）
+      if (!(decl && decl.vehicleAvailability)) {
+        const META2 = ICAR.registry.CatalogMeta;
+        const V2 = META2 ? META2.VEHICLE : null;
+        entry.vehicleAvailability = !V2 ? entry.availability
+          : entry.availability === "L1" ? V2.IMPLEMENTED
+          : entry.availability === "L2" ? V2.ALIAS_ONLY
+          : entry.availability === "L4" ? V2.UNIMPLEMENTED
+          : entry.availability === "n/a" ? V2.NA
+          : V2.UNVERIFIED;
+      }
       catalog.set(c.key, entry);
     });
 
@@ -303,32 +341,54 @@
    * 可用性判定（P2A 要求：不能把"别名可解析"当"设备可用"）。
    * 复用 P1A 的 DataSource Registry 四层语义。
    */
+  /**
+   * 可用性判定。
+   *
+   * ⚠️⚠️ **P2B 第二部分硬要求**：不要把「App 已实现 PID」当成「真车可用」。
+   *
+   * 两个概念必须分开：
+   *   · dataCapability     —— 这个控件**读不读数据**（结构事实）
+   *   · vehicleAvailability —— 这条数据**在车上能不能拿到**（证据事实）
+   *
+   * 本函数返回的是**车辆可用性**（四层），依据 P1A 的 DataSource Registry。
+   * L1 的含义严格限定为「App 已实现该通道」，**不代表车辆实际支持** —— 这一点
+   * 在 UI 文案与 tags 里都会明确写出来。
+   */
   function availabilityOf(entry, node) {
     const DS = ICAR.registry.DataSource;
-    if (!node) return "L4";                       // 建不出来 = 完全不可用
-    if (entry.dataCapability === DATA.STATE) {
-      return DS ? DS.resolve(node.statePid).tier : "L4";
-    }
-    if (entry.dataCapability === DATA.BOUND && node.pid) {
-      // 组合预设的数据在其子节点里，这里按 pid 判
-      return DS ? DS.resolve(node.pid).tier : "L4";
-    }
-    // 不读数据的条目（素材/文字/容器）：可用性 = 素材是否存在，此处标 n/a
-    return "n/a";
+    // 不读数据的条目不参与可用性判定
+    if (entry.dataCapability === DATA.NONE) return "n/a";
+
+    const raw = entry.dataCapability === DATA.STATE
+      ? (node && node.statePid) || (entry.__meta && entry.__meta.statePid) || ""
+      : (node && node.pid) || (entry.__meta && entry.__meta.pid) || "";
+
+    if (!raw) return "L4";
+    if (!DS) return "L3";
+
+    const r = DS.resolve(raw);
+    if (r.tier === "L1") return "L1";
+    if (r.tier === "L2") return "L2";
+    if (r.tier === "L4") return "L4";
+    return "L3";
   }
 
   function computeStats() {
-    const byKind = {}, byCategory = {}, byRenderer = {}, byAvailability = {};
+    const byKind = {}, byCategory = {}, byRenderer = {}, byAvailability = {}, byVehicle = {}, bySource = {};
     catalog.forEach(function (e) {
       byKind[e.kind] = (byKind[e.kind] || 0) + 1;
       byCategory[e.category] = (byCategory[e.category] || 0) + 1;
       byRenderer[e.renderer] = (byRenderer[e.renderer] || 0) + 1;
       byAvailability[e.availability] = (byAvailability[e.availability] || 0) + 1;
+      byVehicle[e.vehicleAvailability] = (byVehicle[e.vehicleAvailability] || 0) + 1;
+      bySource[e.source] = (bySource[e.source] || 0) + 1;
     });
     return {
       total: catalog.size,
-      byKind: byKind, byCategory: byCategory, byRenderer: byRenderer, byAvailability: byAvailability,
+      byKind: byKind, byCategory: byCategory, byRenderer: byRenderer,
+      byAvailability: byAvailability, byVehicle: byVehicle, bySource: bySource,
       failures: [],
+      builtAt: Date.now(),
     };
   }
 
@@ -421,10 +481,128 @@
       return { ok: missing.length === 0 && dupes.length === 0, missing: missing, dupes: dupes, total: src.length };
     },
 
+    // ============================================================ P2B：就绪触发与诊断
+
+    /** 最近一次构建的诊断（失败/耗时/来源统计） */
+    lastDiagnostics: null,
+
+    /**
+     * **应用就绪触发**（P2B 第一部分要求：减少对固定时长轮询的依赖）。
+     *
+     * 现状问题：P2A 用 `setTimeout` 轮询等 `CanvasState.design`，
+     * 最多 50 次 × 100ms = 5s，超时就静默放弃。
+     *
+     * 本函数改为：
+     *   1. 若设计已就绪 → **立即构建**（同步返回）
+     *   2. 否则登记一个"待构建"，由 app.js 在 init 完成后**显式调用** `Catalog.onAppReady()`
+     *   3. 保留一个**兜底轮询**（次数少、间隔长），用于没人调 onAppReady 的场景
+     *
+     * @returns {{ready:boolean, built:boolean, stats?:Object}}
+     */
+    bootstrap() {
+      const ready = !!(window.CanvasState && window.CanvasState.design);
+      if (ready) {
+        const st = this.build();
+        return { ready: true, built: true, stats: st };
+      }
+      this._pending = true;
+      const self = this;
+      let tries = 0;
+      /**
+       * 兜底轮询。
+       *
+       * ⚠️ 为什么 P2B 实测后把次数从 3 调回 20、间隔 100ms：
+       * 启动时 `design` 要等 app.js 的 init() 跑完（含异步素材加载），
+       * 实测约 1~2s。3 x 300ms = 0.9s 太短，会只建出部分目录（实测 total=15）。
+       * 真正的解法是 onAppReady() 显式触发；轮询只是**没人调时的保险**。
+       */
+      (function tick() {
+        if (!self._pending) return;              // 已被 onAppReady 抢先
+        if (window.CanvasState && window.CanvasState.design) {
+          self._pending = false;
+          self.build();
+          return;
+        }
+        if (++tries >= 20) { self._pending = false; self._bootFailed = "timeout"; return; }
+        setTimeout(tick, 100);
+      })();
+      return { ready: false, built: false };
+    },
+
+    /** 由 app.js 在设计初始化完成后显式调用（**首选路径**） */
+    onAppReady() {
+      if (this.stats() && this.stats().total > 0 && !this._forceRebuildOnReady) {
+        // 已构建过：幂等，不重复探测
+        this._pending = false;
+        return this.stats();
+      }
+      this._pending = false;
+      return this.build();
+    },
+
+    /**
+     * **诊断**：返回构建健康度与问题清单。
+     *
+     * @returns {{ok:boolean, total:number, declared:number, probed:number, failed:number, issues:Array}}
+     */
+    diagnose() {
+      const st = this.stats();
+      const issues = [];
+      if (!st || !st.total) {
+        issues.push({ level: "error", code: "empty", message: "目录为空：可能未初始化（design 未就绪）" });
+      }
+      const declared = (st.bySource && st.bySource.declared) || 0;
+      const probed = (st.bySource && st.bySource.probe) || 0;
+      const failed = (st.failures || []).length;
+      if (failed) {
+        issues.push({
+          level: "warn", code: "probe-failed",
+          message: failed + " 个条目 make() 失败，已降级为控件（详见 failures）",
+        });
+      }
+      if (this._bootFailed) {
+        issues.push({ level: "error", code: "boot-" + this._bootFailed, message: "启动构建未完成：" + this._bootFailed });
+      }
+      // 覆盖性自检（不能与实际列表漂移）
+      if (st && st.total) {
+        const cov = this.verifyCoverage();
+        if (!cov.ok) {
+          if (cov.missing.length) issues.push({ level: "error", code: "missing", message: "缺少 " + cov.missing.length + " 条：" + cov.missing.slice(0, 5).join(",") });
+          if (cov.dupes.length) issues.push({ level: "error", code: "dupes", message: "重复 key：" + cov.dupes.slice(0, 5).join(",") });
+        }
+      }
+      return {
+        ok: issues.filter(function (i) { return i.level === "error"; }).length === 0,
+        total: (st && st.total) || 0,
+        declared: declared, probed: probed, failed: failed,
+        issues: issues,
+        builtAt: (st && st.builtAt) || null,
+      };
+    },
+
+    /**
+     * **恢复**：重建目录并返回诊断。用于初始化失败或状态可疑时。
+     * @returns {{ok:boolean, stats:Object, diag:Object}}
+     */
+    recover() {
+      this._bootFailed = null;
+      let st = null, err = null;
+      try {
+        st = this.build();
+      } catch (e) {
+        err = e && e.message ? e.message : String(e);
+      }
+      const diag = this.diagnose();
+      return { ok: !err && diag.ok, stats: st, diag: diag, error: err };
+    },
+
     /** 测试用：清空 */
     __reset() {
       catalog.clear();
       stats = null;
+      this.lastDiagnostics = null;
+      this._pending = false;
+      this._bootFailed = null;
     },
 
     /** 分类函数本身导出，便于单测与审计 */

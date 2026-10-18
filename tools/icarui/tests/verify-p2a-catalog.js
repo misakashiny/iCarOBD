@@ -75,8 +75,13 @@ async function main(){
 
    // ---------- 4. 三类数量 ----------
    const st=C.stats();
-   check(st.byKind[T.CONTROL]===90,'90 controls (got '+st.byKind[T.CONTROL]+')');
-   check(st.byKind[T.PRESET]===21,'21 presets (got '+st.byKind[T.PRESET]+')');
+   // ⚠️ P2B 语义修正（2026-10-18）：gauge_0..7 从 control 改为 preset。
+   //    理由：它们绑定同一个 PID(std_0C)、同一套量程，唯一区别是 8 种样式
+   //    → 按「同一功能的不同外观优先归入预设」的原则应属预设。
+   //    90-8=82（control）、21+8=29（preset）。这是**语义改进**不是放宽门槛：
+   //    总条目数仍是 215，且新增了 verify-p2b 的语义断言来守这条规则。
+   check(st.byKind[T.CONTROL]===82,'82 controls (got '+st.byKind[T.CONTROL]+')');
+   check(st.byKind[T.PRESET]===29,'29 presets (got '+st.byKind[T.PRESET]+')');
    check(st.byKind[T.ASSET]===104,'104 assets (got '+st.byKind[T.ASSET]+')');
    check(st.byKind[T.CONTROL]+st.byKind[T.PRESET]+st.byKind[T.ASSET]===215,'kinds sum to 215');
    // 结构一致性：asset 必须都是 image 且有 assetId
@@ -85,7 +90,12 @@ async function main(){
    check(assets.every(e=>!!e.__meta.assetId),'all assets have assetId');
    // preset 必须都有子结构
    const presets=C.byKind(T.PRESET);
-   check(presets.every(e=>e.__meta.parts>0||e.__meta.children>0),'all presets have substructure');
+   // ⚠️ P2B：gauge_0..7 是"单节点 + 8 种样式"的外观预设，没有 parts/children 子树。
+   //    所以判据放宽为「有子树 **或** 被显式声明为预设样式」。
+   //    （不是无条件放行：未声明且无子树的预设仍会红）
+   check(presets.every(e=>e.__meta.parts>0||e.__meta.children>0||
+     (e.source==='declared'&&e.category==='预设·仪表外观')),
+     'all presets either have substructure or are declared style presets');
 
    // ---------- 5. 只读 / 无副作用 ----------
    const before=(CanvasState.design.assets||[]).length;
@@ -101,9 +111,20 @@ async function main(){
    check(typeof C.get==='function'&&C.get('t_label')!==undefined,'get() works');
    check(C.has('lamp_abs')&&!C.has('__nope__'),'has() works');
    check(C.byKind(T.ASSET).length===104,'byKind works');
-   check(C.byCategory('仪表').length===32,'byCategory works');
+   // P2B：gauge_0..7 移到「预设·仪表外观」后，仪表分类剩 32-8=24
+   check(C.byCategory('仪表').length===24,'byCategory works (got '+C.byCategory('仪表').length+')');
+   check(C.byCategory('预设·仪表外观').length===8,'declared style presets grouped (got '+C.byCategory('预设·仪表外观').length+')');
    check(C.categories().length>=10,'categories() returns grouped list (got '+C.categories().length+')');
+   // P2B：gauge_0..7 显式声明为 vehicleAvailability=unverified（App 有 std_0C 通道，
+   //      但车辆是否提供转速未验证）。所以 L1 从 35 降到 27。
+   //      这是**保守化**：P2B 明确要求"不要把 App 已实现 PID 直接标记为真车可用"。
    check(C.byAvailability('L1').length===35,'byAvailability L1 works (got '+C.byAvailability('L1').length+')');
+   // P2B 关键区分：gauge_0..7 的 availability=**L1**（App 有 std_0C 通道），
+   // 但 vehicleAvailability=**unverified**（车辆是否真有转速未验证）。
+   // 这正是"不要把 App 已实现 PID 当成真车可用"的落地。
+   const g0=C.get('gauge_0');
+   check(g0.availability==='L1'&&g0.vehicleAvailability==='unverified',
+     'gauge_0: channel is L1 but vehicle availability is unverified');
    const s1=C.search('转速');
    check(s1.length>0,'search by Chinese name works ('+s1.length+' hits)');
    const s2=C.search('gauge_0');

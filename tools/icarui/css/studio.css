@@ -951,3 +951,102 @@ main { grid-template-columns: 280px minmax(0, 1fr) 340px; gap: 10px; padding: 10
   .toolbarGroup + .toolbarGroup { padding-left: 0; border-left: 0; }
   header .spacer { display: none; }
 }
+
+/* ==========================================================================
+   P2B：资源库新界面（控件 / 预设 / 素材）
+   ==========================================================================
+   设计取向：仿专业设计工具的紧凑资源面板 —— 高信息密度、低视觉噪音。
+   与旧 #assets 面板共存，样式前缀统一用 cp- 避免冲突。 */
+
+#catalog { display: flex; flex-direction: column; overflow: hidden; }
+
+.cpTabs { display: flex; gap: 2px; padding: 4px 6px 0; border-bottom: 1px solid var(--line, #2a3441); }
+.cpTab {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 4px;
+  padding: 5px 4px; font-size: 12px; color: #8b9bad; cursor: pointer;
+  background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+}
+.cpTab:hover { color: #cfdae7; background: rgba(255,255,255,0.03); }
+.cpTab.on { color: #4ea8ff; border-bottom-color: #4ea8ff; }
+.cpTabN {
+  font-size: 10px; padding: 0 4px; border-radius: 8px;
+  background: rgba(255,255,255,0.08); color: #7f8ea0; line-height: 14px;
+}
+.cpTab.on .cpTabN { background: rgba(78,168,255,0.18); color: #7cc0ff; }
+
+.cpSearch { padding: 6px; }
+.cpSearch input {
+  width: 100%; box-sizing: border-box; font-size: 12px; padding: 4px 8px;
+  border-radius: 4px; border: 1px solid #2a3441; background: #151c25; color: #cfdae7;
+}
+.cpSearch input:focus { outline: none; border-color: #4ea8ff; }
+
+.cpBody { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 0 6px 10px; }
+
+.cpCat { margin-top: 2px; }
+.cpCatHead {
+  display: flex; align-items: center; gap: 5px; padding: 5px 2px 4px;
+  font-size: 11px; color: #7f8ea0; cursor: pointer; user-select: none;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.cpCatHead:hover { color: #cfdae7; }
+.cpCaret { font-size: 9px; width: 10px; }
+.cpCatN { margin-left: auto; font-size: 10px; color: #5c6b7d; }
+
+.cpGrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; padding: 5px 0 3px; }
+
+.cpItem {
+  display: flex; align-items: center; gap: 5px; padding: 4px 5px;
+  border: 1px solid #232c38; border-radius: 4px; background: #141a22;
+  cursor: grab; position: relative; overflow: hidden;
+}
+.cpItem:hover { border-color: #3a4a5e; background: #1a222c; }
+.cpItem:active { cursor: grabbing; }
+.cpItem.cpDragging { opacity: 0.5; }
+/* L4：App 未实现数据源 —— 视觉上明显弱化，但**仍可拖拽**（保留历史能力） */
+.cpItem.cpItemL4 { opacity: 0.62; border-style: dashed; }
+
+.cpThumb {
+  width: 24px; height: 24px; flex: 0 0 24px; display: flex;
+  align-items: center; justify-content: center; border-radius: 4px;
+  background: #0e141b; color: #5c6b7d; font-size: 12px; overflow: hidden;
+}
+.cpThumbImg { width: 100%; height: 100%; object-fit: contain; }
+.cpThumbPh { font-size: 12px; }
+
+.cpMeta { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.cpName {
+  font-size: 11px; color: #cfdae7; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.cpKey {
+  font-size: 9px; color: #5c6b7d; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; font-family: Consolas, monospace;
+}
+
+.cpBadge {
+  font-size: 9px; padding: 1px 4px; border-radius: 3px; white-space: nowrap;
+  flex: 0 0 auto; line-height: 13px;
+}
+.vb-l1 { background: rgba(78,168,255,0.16); color: #7cc0ff; }
+.vb-l2 { background: rgba(255,180,74,0.16); color: #ffb44a; }
+.vb-l3 { background: rgba(255,255,255,0.08); color: #8b9bad; }
+.vb-l4 { background: rgba(255,94,110,0.16); color: #ff5e6e; }
+
+.cpEmpty { padding: 18px 8px; text-align: center; font-size: 12px; color: #5c6b7d; }
+.cpErr {
+  padding: 14px 10px; font-size: 12px; color: #ff5e6e; line-height: 1.7;
+}
+.cpErr b { color: #ff8a95; }
+/* --------------------------------------------------------------------------
+   P2B 布局修正：左栏现在是三个面板（catalog / assets / tree），
+   原来只有两个、且 #assets 用了 calc(100% - 160px)。
+   直接加第三个面板会把这个算式撑爆 → verify-features 的
+   「控件库与图层不互相挤压」在 1024/600/390 三种宽度全部失败（实测）。
+   改为：三面板共享弹性高度，各自可滚动，#assets 不再用固定扣减。
+   -------------------------------------------------------------------------- */
+.libraryColumn { display: flex; flex-direction: column; min-height: 0; }
+.libraryColumn > .panel.grow { flex: 1 1 0; min-height: 0; }
+.libraryColumn #catalog { flex: 1.4 1 0; max-height: none; }
+.libraryColumn #assets { max-height: none; flex: 1 1 0; }
+.libraryColumn #tree  { flex: 0.7 1 0; max-height: none; }
