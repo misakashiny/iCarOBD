@@ -47,8 +47,11 @@ async function main(){
    // P3B：来源从二级改为**三级**（declared / derived / probe）。
    // 之前把"已由 Registry 接管的条目"也算进 probe，是不准确的。
    // 现在：declared 8（CatalogMeta 声明）+ derived 16（Registry 派生）+ probe 191 = 215。
-   check(st.bySource.declared===8&&st.bySource.derived===16&&st.bySource.probe===191,
-     'source split 8/16/191 (got '+JSON.stringify(st.bySource)+')');
+   // P3C-1：6 个仪表从 probe 迁到 derived → 8/22/185。
+   // 本断言只验证"三级来源存在且合计 215"，具体数字由各阶段自己的套件守，
+   // 避免每迁一个族就要改这条（数字校验放在 verify-p3c1 / verify-p3b 里）。
+   check(st.bySource.declared>0&&st.bySource.derived>0&&st.bySource.probe>0,
+     'three source tiers all present (got '+JSON.stringify(st.bySource)+')');
    check(st.bySource.declared+st.bySource.derived+st.bySource.probe===215,
      'three sources sum to 215');
    check(C.verifyCoverage().ok,'coverage ok across both sources');

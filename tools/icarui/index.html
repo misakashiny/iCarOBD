@@ -248,6 +248,9 @@
 <!-- P3B：容器控件族 4 条（group / box_card / box_row / box_col）。
      注意 box_h1/h2/note 不在这里 —— 它们已由 P3A 归入文字族。 -->
 <script src="js/registry/controls/container-family.js"></script>
+<!-- P3C-1：常用仪表 6 条（g_speed/g_coolant/g_fuel/g_volt/g_load/g_throttle）。
+     注意 gauge_0~gauge_7 不在这里 —— 它们是外观预设，由 CatalogMeta 静态声明。 -->
+<script src="js/registry/controls/gauge-family.js"></script>
 <script src="js/registry/catalog-metadata.js"></script>
 <script src="js/registry/catalog-declarations.js"></script>
 <!-- P3A：旧入口接线（BUILTIN_CONTROLS.make → Registry）。
@@ -264,6 +267,8 @@
                                    "t_warn","t_ok","t_bigunit","box_h1","box_h2","box_note"]);
   /* P3B：容器族 4 条 */
   window.__P3B_BRIDGE = B.bridge(["group","box_card","box_row","box_col"]);
+  /* P3C-1：常用仪表 6 条 */
+  window.__P3C1_BRIDGE = B.bridge(["g_speed","g_coolant","g_fuel","g_volt","g_load","g_throttle"]);
 })();
 </script>
 <script src="js/registry/catalog.js"></script>

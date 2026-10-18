@@ -49,7 +49,9 @@ async function main() {
 
     // ---------------- 一、接管 ----------------
     const bridge = JJ(await step('bridge status', 'JSON.stringify(ICAR.adapter.RegistryBridge.status())'));
-    ok(bridge.bridged.length === 16, '16 controls bridged total (got ' + bridge.bridged.length + ')');
+    // P3B 完成时是 16；P3C-1 又接管了 6 个仪表 → 22。
+    // 这里只断言"至少包含本阶段该有的 16 条"，总数由最新阶段的套件守。
+    ok(bridge.bridged.length >= 16, 'at least 16 bridged (got ' + bridge.bridged.length + ')');
     ok(KEYS.every(k => bridge.bridged.indexOf(k) >= 0), 'all 4 container keys bridged');
     ok(bridge.fallback.length === 0, 'no fallback');
     ok(bridge.total === 215, 'library still 215 entries');
@@ -145,8 +147,10 @@ async function main() {
     // ---------------- 五、Catalog 三级来源 ----------------
     const src = JJ(await step('bySource', 'JSON.stringify(ICAR.registry.Catalog.stats().bySource)'));
     ok(src.declared === 8, 'declared 8 (got ' + src.declared + ')');
-    ok(src.derived === 16, 'derived 16 (got ' + src.derived + ')');
-    ok(src.probe === 191, 'probe 191 (got ' + src.probe + ')');
+    // P3B 时 derived=16/probe=191；P3C-1 后为 22/185。
+    // 断言"三级来源都存在且合计 215"，具体数字由 verify-p3c1 守。
+    ok(src.derived >= 16, 'derived at least 16 (got ' + src.derived + ')');
+    ok(src.probe > 0, 'probe still present (got ' + src.probe + ')');
     ok(src.declared + src.derived + src.probe === 215, 'three sources sum to 215');
 
     // ---------------- 六、vehicleStatus 语义 ----------------

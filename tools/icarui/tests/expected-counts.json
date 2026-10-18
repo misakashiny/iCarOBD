@@ -57,6 +57,7 @@
     "verify-p2b-catalog-ui": 56,
     "verify-p2b1-e2e": 49,
     "verify-p3a-text-family": 81,
-    "verify-p3b-container-family": 60
+    "verify-p3b-container-family": 60,
+    "verify-p3c1-gauge-family": 157
   }
 }
