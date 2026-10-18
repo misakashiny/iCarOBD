@@ -54,6 +54,41 @@
    * `set(node, "trackStyle.orient", "v")` → 写回去（中间层不存在时**不**自动创建对象，
    * 避免把一条没有 trackStyle 的图片节点意外变成轨道）
    */
+  /**
+   * 状态灯的 **statePid 双字段同步**（P4D-01）。
+   *
+   * ## 为什么必须同步
+   *
+   * 状态灯有两个绑定字段，语义不同（见 lamp-family.js 文件头）：
+   *   · `node.rawStatePid` —— 用户写的**别名**（`obd.coolant`），回显用
+   *   · `node.statePid`    —— 解析后的**通道 id**（`std_05`），App 端判定用
+   *
+   * 而 `nodeToJson()` 对 NODE_IMAGE **只序列化 statePid**，且写的是**别名**
+   * （`ALIAS_OF[id]`）。所以：
+   *
+   *   · 只改 rawStatePid → statePid 仍是旧通道 → **App 侧仍按旧数据判定**
+   *   · 只改 statePid 成别名 → 内部查表拿到别名而非 id → 取不到值
+   *
+   * 历史事故（lamp-family.js:12-24 记录）：写错字段导致灯**永远是暗的**，
+   * 用户以为车没问题。所以这里是**数据契约问题**，不是 UI 细节。
+   *
+   * ## 返回
+   *   true  = 已按语义规范化
+   *   false = 不是状态灯，调用方按普通路径写
+   */
+  function normalizeStateLampBinding(node, path, value) {
+    if (!node || path !== "statePid") return false;
+    const st = node.states;
+    if (!st || typeof st !== "object") return false;   // 不是状态灯
+    const alias = String(value == null ? "" : value);
+    const resolved = typeof window.resolvePid === "function" ? window.resolvePid(alias) : null;
+    // 无论能否解析，别名都要如实保留（用户可能先写别名再修正）
+    node.rawStatePid = alias;
+    // 解析不出来就保持原 statePid，不写字面别名（否则内部查表拿不到 id）
+    if (resolved) node.statePid = resolved;
+    return true;
+  }
+
   const PropertyAccessor = {
     get(obj, path) {
       if (!obj || !path) return undefined;
@@ -74,6 +109,10 @@
      */
     set(obj, path, value) {
       if (!obj || !path) return false;
+      // P4D-01：状态灯的 statePid 有双字段语义，交给专用规范化
+      if (normalizeStateLampBinding(obj, path, value)) {
+        return true;   // 已处理（是否真的变化由调用方 commit 决定）
+      }
       const parts = String(path).split(".");
       let cur = obj;
       for (let i = 0; i < parts.length - 1; i++) {
@@ -314,6 +353,29 @@
     /** 持久化能力：文字节点 */
     isText(node) { return isTextNode(node); },
 
+    /**
+     * 持久化能力：**状态灯**（P4D-01）。
+     *
+     * ## 为什么不能只看 __controlKey
+     *
+     * `__controlKey` **不进序列化**（nodeToJson 白名单里没有），
+     * 所以保存重载后必然丢失。必须用**持久化字段特征**判断：
+     *
+     *   · type === "image"
+     *   · 有 states 对象，且含 normal / warn / critical 三态
+     *   · 没有 trackStyle（那是条形轨道，另一族）
+     *
+     * 这三条同时成立就是状态灯。实测 19 个灯 build 出来全部满足，
+     * 而普通图片节点没有 states → 不会误判。
+     */
+    isStateLamp(node) {
+      if (!node || node.type !== "image") return false;
+      if (node.trackStyle !== null && typeof node.trackStyle === "object") return false;
+      const st = node.states;
+      if (!st || typeof st !== "object" || Array.isArray(st)) return false;
+      return !!(st.normal || st.warn || st.critical);
+    },
+
     /** 持久化能力：普通图片（含 bar_* 图片轨道） */
     isPlainImage(node) {
       return !!node && node.type === "image" && (node.trackStyle === null || node.trackStyle === undefined);
@@ -358,6 +420,18 @@
           };
         }
         return { family: "text", editable: EDITABLE.text.slice(), fields: def.schema };
+      }
+
+      // ---- 状态灯族（P4D-01）----
+      if (this.isStateLamp(node)) {
+        const def = stateLampSchemaFor(node);
+        if (!def) {
+          return {
+            family: "imageState", editable: [], fields: [],
+            error: "Control Registry 中没有状态灯族的定义（注册未执行？）",
+          };
+        }
+        return { family: "imageState", editable: EDITABLE.imageState.slice(), fields: def.schema };
       }
 
       if (!this.isTrack(node)) return null;
@@ -406,6 +480,32 @@
   }
 
   /**
+   * 取状态灯族的**代表定义**（P4D-01）。
+   *
+   * 19 个灯 schema 实测完全一致（审计：distinctSignatures === 1），
+   * 所以任取一条即可。仍然从 Registry 取，不在 UI 层复制 schema
+   * （P4A.1 消除 Schema 双源的教训）。
+   */
+  function stateLampSchemaFor(node) {
+    const Reg = ICAR.registry && ICAR.registry.Control;
+    if (!Reg || !Reg.all) return null;
+
+    // ① 新建节点带 __controlKey → 精确
+    const key = node && node.__controlKey;
+    if (key && Reg.get) {
+      const own = Reg.get(key);
+      if (own && own.schema && own.render && own.render.mode === "state") return own;
+    }
+    // ② 回退：任一 state 模式定义（19 条已实测 schema 一致）
+    const all = Reg.all();
+    for (let i = 0; i < all.length; i++) {
+      const d = all[i];
+      if (d && d.schema && d.render && d.render.mode === "state") return d;
+    }
+    return null;
+  }
+
+  /**
    * 各族的"本阶段开放编辑字段"。
    * 只存路径清单，不碰字段定义（label/type/range 全部来自 Registry）。
    * 推广到新族时只需在此加一行。
@@ -417,6 +517,27 @@
     // P4C：容器族开 6 个通用变换/图层字段。
     // ⚠️ schema 里还有 scale（第 7 个字段），本阶段**不开放编辑**（按任务只开 6 个）。
     container: ["w", "h", "rotation", "alpha", "locked", "visible"],
+    /**
+     * P4D-01：状态灯族（19 条）开放字段。
+     *
+     * ## 为什么是这 9 个
+     *
+     * Schema 定义里有 11 个字段，但：
+     *  · `statePid`   用户改的是**绑定别名**，改完必须同时刷新 statePid/rawStatePid
+     *  · `stateWarn` / `stateCritical` 阈值，null = 从 PID 库推断
+     *  · 三态素材 3 个 assetId —— 用户可换图
+     *  · `states.normal.alpha` / `states.warn.blink` / `states.critical.blink`
+     *  · `w` / `h` 尺寸
+     *
+     * ⚠️ `states.*.blinkMs` **刻意不开放**：WCAG 2.3.1 要求闪烁 ≤3Hz，
+     *    开放后用户可把它调到红线以下（历史教训见 schema.js:1313）。
+     */
+    imageState: [
+      "statePid", "stateWarn", "stateCritical",
+      "states.normal.assetId", "states.warn.assetId", "states.critical.assetId",
+      "states.normal.alpha", "states.warn.blink", "states.critical.blink",
+      "w", "h",
+    ],
   };
   // ============================================================ 四、PropertyUpdate
 
