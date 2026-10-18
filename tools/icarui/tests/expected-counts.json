@@ -60,6 +60,7 @@
     "verify-p3b-container-family": 60,
     "verify-p3c1-gauge-family": 157,
     "verify-p3c2-lamp-family": 260,
-    "verify-p3d-track-family": 64
+    "verify-p3d-track-family": 64,
+    "verify-p4a-schema-props": 72
   }
 }

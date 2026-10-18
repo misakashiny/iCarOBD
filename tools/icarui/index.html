@@ -172,7 +172,10 @@
     <!-- 属性面板 + 拖拽手柄。手柄必须放在 #props **外面** ——
          renderProps() 会重写 #props 的 innerHTML，放在里面会被冲掉 -->
     <div class="propsWrap">
-      <div class="panel" id="props"></div>
+      <!-- P4A：Schema 属性面板（只读→受控编辑试点，仅接管 cd_* 轨道）。
+     与下方旧 #props 面板**并行**：旧面板保留全部编辑能力。 -->
+    <div class="panel" id="schemaProps"></div>
+    <div class="panel" id="props"></div>
       <div class="panelResize" onpointerdown="beginPanelResize(event,'props')" title="拖动调整属性面板高度"></div>
     </div>
 
@@ -384,7 +387,27 @@
 <script src="js/control-files.js"></script>
 <script src="js/app.js"></script>
 <!-- P2B：资源库新界面。放最后 —— 它只读取 Catalog 与既有全局，不改变任何旧行为。 -->
+<!-- P4A：统一插入适配层。三个添加入口（双击/点击/拖拽）共用。
+     必须在 catalog-panel.js 之前（后者依赖 ICAR.ui.insertControl）。 -->
+<script src="js/ui/insert-control.js"></script>
+<!-- P4A：Schema 驱动属性编辑框架 -->
+<script src="js/ui/schema-props.js"></script>
+<script src="js/ui/schema-panel.js"></script>
 <script src="js/ui/catalog-panel.js"></script>
+<script>
+/* P4A：初始化 Schema 属性面板（就绪后） */
+(function () {
+  function boot() {
+    try {
+      if (window.ICAR && window.ICAR.ui && window.ICAR.ui.SchemaPanel) {
+        window.ICAR.ui.SchemaPanel.init();
+      }
+    } catch (e) { /* 不影响主编辑器 */ }
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
+})();
+</script>
 <script>
 /* 初始化渲染：Catalog 就绪后再画一次（就绪时它是空的） */
 (function () {

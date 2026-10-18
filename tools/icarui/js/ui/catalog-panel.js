@@ -328,25 +328,29 @@ function bindDrag() {
      *   1. `window.addControlKey`（若存在）
      *   2. 退化为调用该条目的 `make()` + `window.addNode`（若存在）
      */
+    /**
+     * 双击/点击添加。
+     *
+     * ⚠️⚠️ **P4A 修的一个重要 bug**：原实现调 `window.addNode(node)`（1 个参数），
+     * 而 `model.js` 的签名是 `addNode(nodes, node, parentId)`（3 个参数）。
+     * 于是 `nodes` 拿到的是节点对象、`node` 是 undefined → `nodes.push(undefined)`
+     * 抛错 → 被 catch 吞掉 → **静默返回 false，什么也没添加**。
+     *
+     * 之所以长期没被发现：P2B 的端到端测试只覆盖了**拖拽**（drop 事件），
+     * 没测双击/点击添加。
+     *
+     * 现在的做法：**统一走"插入适配层"**，三个入口
+     * （双击 / 点击 / 拖拽）共用同一套语义。
+     */
     addToCanvas(key) {
       const entry = (window.BUILTIN_CONTROLS || []).find(function (c) { return c.key === key; });
       if (!entry) { if (window.toast) window.toast("找不到控件：" + key); return false; }
       try {
-        if (typeof window.addControlByKey === "function") { window.addControlByKey(key); return true; }
-        const node = entry.make();
-        if (typeof window.addNode === "function") { window.addNode(node); return true; }
-        if (typeof window.commit === "function" && window.CanvasState) {
-          window.commit(function () { window.CanvasState.design.nodes.push(node); }, "添加：" + entry.name);
-          if (window.CanvasState) window.CanvasState.selection = [node.id];
-          if (window.refreshAll) window.refreshAll();
-          return true;
-        }
+        return ICAR.ui.insertControl(key, { source: "catalog" }) !== null;
       } catch (e) {
         if (window.toast) window.toast("添加失败：" + e.message);
         return false;
       }
-      if (window.toast) window.toast("当前环境不支持直接添加，请用左侧拖拽");
-      return false;
     },
 
     /** 折叠旧面板（新面板成为主入口） */

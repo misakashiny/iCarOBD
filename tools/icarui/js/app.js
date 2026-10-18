@@ -1002,6 +1002,13 @@
   S.selectedPart = -1;
     if (window.renderTree) window.renderTree();
     if (window.renderProps) window.renderProps();
+    // P4A：Schema 属性面板（并行，只接管轨道；旧面板照常渲染）
+    // ⚠️ 放在 renderProps() **之后** —— 不干扰旧面板，也保证旧面板先拿到 DOM。
+    try {
+      if (window.ICAR && window.ICAR.ui && window.ICAR.ui.SchemaPanel) {
+        window.ICAR.ui.SchemaPanel.onSelectionChanged();
+      }
+    } catch (e) { /* Schema 面板出错不影响旧面板 */ }
     if (window.draw) window.draw();
   };
   window.onNodeChanged = function () { };
