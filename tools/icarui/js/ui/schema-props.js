@@ -265,12 +265,51 @@
     }
     return best;
   }
+  /**
+   * 按**持久化能力**判断是不是容器节点（P4C）。
+   *
+   * ## 识别范围审计（P4C 第二部分）
+   *
+   * `node.type === "group"` 是**节点能力**，不等于"来源是四个基础容器 key"。
+   * 全库实测 215 条里有 **19 条**产 group：
+   *
+   * | 来源 | 条数 | 子节点 | 说明 |
+   * |---|---|---|---|
+   * | `derived`（Registry 接管）| **4** | 0 | group / box_card / box_row / box_col |
+   * | `probe`（旧工厂）| **15** | **2** | 全部 `next_*` 组合预设 |
+   *
+   * 另有**运行时产生**的 group：
+   *   · 用户手动"组合"（`model.js:489` 的 `groupNodes`）
+   *   · 历史设计文件里的 group
+   *   · 嵌套 group
+   *
+   * ## 为什么六个属性对所有 group 都安全
+   *
+   * `w` / `h` / `rotation` / `alpha` / `locked` / `visible` **全都是
+   * `createNode()` 的通用基础字段**（见 `model.js` 的 `base` 对象），
+   * 任何节点类型都有，不是容器专有：
+   *
+   *   w: num(o.w, 120), h: num(o.h, 120),
+   *   rotation: num(o.rotation, 0), alpha: clampInt(...), locked, visible,
+   *
+   * 所以它们对 **group / next_* / 手动组合 / 历史 group** 语义完全一致，
+   * 不存在"某类 group 不能改 alpha"这种情况。
+   *
+   * ⚠️ 因此**不需要**按 key 分派，也**不需要**持久化控件来源字段
+   *    （任务明确禁止新增）。`type === "group"` 一个判据就够。
+   */
+  function isContainerNode(node) {
+    return !!node && node.type === "group";
+  }
   const SchemaResolver = {
     /** 持久化能力：代码轨道 = image + 有 trackStyle */
     isTrack(node) {
       return !!node && node.type === "image" && node.trackStyle !== null &&
         typeof node.trackStyle === "object";
     },
+
+    /** 持久化能力：容器节点（group） */
+    isContainer(node) { return isContainerNode(node); },
 
     /** 持久化能力：文字节点 */
     isText(node) { return isTextNode(node); },
@@ -297,6 +336,18 @@
     },
 
     resolve(node) {
+      // ---- 容器族（P4C）----
+      if (isContainerNode(node)) {
+        const def = containerSchemaFor(node);
+        if (!def) {
+          return {
+            family: "container", editable: [], fields: [],
+            error: "Control Registry 中没有容器族的定义（注册未执行？）",
+          };
+        }
+        return { family: "container", editable: EDITABLE.container.slice(), fields: def.schema };
+      }
+
       // ---- 文字族（P4B）----
       if (isTextNode(node)) {
         const def = textSchemaFor(node);
@@ -329,6 +380,32 @@
   };
 
   /**
+   * 取容器族的**代表定义**（四个 key 的 schema 实测 distinctSignatures === 1）。
+   *
+   * ⚠️ 仍然从 Registry 取，**不在 UI 层复制一份 CONTAINER_SCHEMA**
+   *    （P4A.1 消除 Schema 双源的教训）。
+   */
+  function containerSchemaFor(node) {
+    const Reg = ICAR.registry && ICAR.registry.Control;
+    if (!Reg || !Reg.all) return null;
+
+    // ① 精确定位：新建节点带 __controlKey
+    const key = node && node.__controlKey;
+    if (key && Reg.get) {
+      const own = Reg.get(key);
+      if (own && own.schema && own.render && own.render.mode === "container") return own;
+    }
+
+    // ② 回退：Registry 里任一 container 定义（四个 key 的 schema 已实测一致）
+    const all = Reg.all();
+    for (let i = 0; i < all.length; i++) {
+      const d = all[i];
+      if (d && d.schema && d.render && d.render.mode === "container") return d;
+    }
+    return null;
+  }
+
+  /**
    * 各族的"本阶段开放编辑字段"。
    * 只存路径清单，不碰字段定义（label/type/range 全部来自 Registry）。
    * 推广到新族时只需在此加一行。
@@ -337,6 +414,9 @@
     track: ["trackStyle.orient", "trackStyle.segments", "trackStyle.glow", "trackStyle.fill"],
     // P4B：文字族第一批只开这 5 个；w/h/rotation/alpha 等仍走旧面板
     text: ["text", "font.size", "font.weight", "font.color", "font.align"],
+    // P4C：容器族开 6 个通用变换/图层字段。
+    // ⚠️ schema 里还有 scale（第 7 个字段），本阶段**不开放编辑**（按任务只开 6 个）。
+    container: ["w", "h", "rotation", "alpha", "locked", "visible"],
   };
   // ============================================================ 四、PropertyUpdate
 

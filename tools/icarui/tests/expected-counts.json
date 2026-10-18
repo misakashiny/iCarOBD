@@ -64,6 +64,7 @@
     "verify-p4a-schema-props": 72,
     "verify-p4a1-hardening": 85,
     "verify-p4b-text-props": 114,
-    "verify-p4b1-text-finalize": 55
+    "verify-p4b1-text-finalize": 55,
+    "verify-p4c-container-props": 88
   }
 }

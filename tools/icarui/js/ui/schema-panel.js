@@ -360,16 +360,16 @@
         window.__ICAR_SCHEMA_ERROR = null;
         window.__ICAR_SCHEMA_ERROR_COUNT = 0;
       } catch (e) {
-        const info = {
-          where: "SchemaPanel.refresh",
-          message: (e && e.message) || String(e),
-          stack: (e && e.stack) || "",
-          at: new Date().toISOString(),
-          count: (window.__ICAR_SCHEMA_ERROR_COUNT || 0) + 1,
-        };
-        window.__ICAR_SCHEMA_ERROR = info;
-        window.__ICAR_SCHEMA_ERROR_COUNT = info.count;
-        console.error("[ICAR Schema 面板] refresh 内部异常", e);
+        // ⚠️ P4C 修正（第八部分第 1 项）：**不在这里计数**。
+        //
+        // 原来这里也 +1 并写 __ICAR_SCHEMA_ERROR，而 refreshAll 外层**又**记一次
+        // → 同一次逻辑故障被算成 2 次，排查时会误以为发生了两次独立故障。
+        //
+        // 现在：这里只**打标记**（说明异常来自面板内部），交给外层统一计数。
+        // 堆栈信息不会丢 —— 外层的 recordSchemaError 记的是同一个 e。
+        if (e && typeof e === "object") {
+          try { e.__icarSchemaOrigin = "SchemaPanel.refresh"; } catch (err) { /* 冻结对象忽略 */ }
+        }
         throw e;
       }
     },
