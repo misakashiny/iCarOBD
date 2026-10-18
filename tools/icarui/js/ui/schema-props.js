@@ -89,6 +89,57 @@
     return true;
   }
 
+  /**
+   * 仪表 **pid 双字段同步**（P4E-02 批次 A）。
+   *
+   * ## 根因（P4E-01 R1 审计证据）
+   *
+   * 仪表与状态灯一样有两个绑定字段：
+   *   · `node.rawPid` —— 用户写的**别名**（`obd.speed`），下拉回显用
+   *   · `node.pid`    —— 解析后的**通道 id**（`std_0D`），渲染/查表用
+   *
+   * 而 `nodeToJson()` 写的是 `ALIAS_OF[n.pid] || n.pid`，直接反查别名表。
+   * 所以若有人只写 `node.pid = 'obd.rpm'`（别名）：
+   *
+   *   改前: pid=std_0D  rawPid=obd.speed
+   *   写入 'obd.rpm' 后: pid=obd.rpm（**别名进了通道位**）、rawPid 仍是 obd.speed
+   *   重载后: pid=obd.rpm, rawPid=obd.rpm  ← **两个字段同时错**
+   *
+   * 旧面板走 `assignControlBinding()`（data-bindings.js:36）**是正确的**：
+   *   `n.rawPid = raw; n.pid = resolvePid(raw);`
+   * 这里把同样的语义搬到 PropertyAccessor 入口，让两条路径行为一致。
+   *
+   * ## 关于"无效 PID"与"自定义 PID"（任务要求不得静默误绑定）
+   *
+   * `resolvePid(name) = PID_ALIASES[name] || name` —— **永远不返回空**。
+   * 所以无法靠返回值判断"这是不是合法 PID"。规则：
+   *
+   *   · 空串 → 两边都清空（未绑定），与原面板「未绑定」语义一致
+   *   · 已知 id/别名 → 正常解析
+   *   · 未知值 → **原样保留**在两边（自定义 PID 是旧面板支持的合法用法，
+   *     不能未经评审就禁掉；App 端没有任何数据源时会显示 `--`）
+   *
+   * 唯一"看起来奇怪"的情况是未知值进了 pid 通道位 —— 但这与旧面板
+   * `assignControlBinding` 的行为**完全相同**，属于既有契约，本批次不改。
+   *
+   * @returns true=已按仪表语义处理；false=不是仪表，调用方走普通路径
+   */
+  function normalizeGaugePidBinding(node, path, value) {
+    if (!node || path !== "pid") return false;
+    if (node.type !== "gauge") return false;          // 只接管仪表
+    const raw = String(value == null ? "" : value).trim();
+    if (!raw) {
+      // 未绑定：两边都清空（与 bindingPidOptions 的「未绑定」一致）
+      node.rawPid = "";
+      node.pid = "";
+      return true;
+    }
+    const resolved = typeof window.resolvePid === "function" ? window.resolvePid(raw) : raw;
+    node.rawPid = raw;
+    node.pid = resolved || raw;
+    return true;
+  }
+
   const PropertyAccessor = {
     get(obj, path) {
       if (!obj || !path) return undefined;
@@ -112,6 +163,10 @@
       // P4D-01：状态灯的 statePid 有双字段语义，交给专用规范化
       if (normalizeStateLampBinding(obj, path, value)) {
         return true;   // 已处理（是否真的变化由调用方 commit 决定）
+      }
+      // P4E-02：仪表的 pid 同样是双字段语义
+      if (normalizeGaugePidBinding(obj, path, value)) {
+        return true;
       }
       const parts = String(path).split(".");
       let cur = obj;
@@ -354,6 +409,28 @@
     isText(node) { return isTextNode(node); },
 
     /**
+     * 持久化能力：**仪表**（P4E-02 批次 B）。
+     *
+     * ## 为什么不能只看 __controlKey
+     *
+     * 与状态灯同理：`__controlKey` 不进 `nodeToJson` 白名单，重载后必丢。
+     * 必须用**持久化字段特征**：
+     *
+     *   · type === "gauge"
+     *   · 没有 states（那是状态灯，虽然状态灯是 image 类型，这里双保险）
+     *   · 没有 trackStyle（那是条形轨道）
+     *
+     * `type === "gauge"` 本身就是持久化字段（JSON 里有 type），
+     * 已足够唯一；后两条是防误判的冗余判据。
+     */
+    isGauge(node) {
+      if (!node || node.type !== "gauge") return false;
+      if (node.states && typeof node.states === "object") return false;
+      if (node.trackStyle !== null && typeof node.trackStyle === "object") return false;
+      return true;
+    },
+
+    /**
      * 持久化能力：**状态灯**（P4D-01）。
      *
      * ## 为什么不能只看 __controlKey
@@ -408,6 +485,18 @@
           };
         }
         return { family: "container", editable: EDITABLE.container.slice(), fields: def.schema };
+      }
+
+      // ---- 仪表族（P4E-02 批次 B）----
+      if (this.isGauge(node)) {
+        const def = gaugeSchemaFor(node);
+        if (!def) {
+          return {
+            family: "gauge", editable: [], fields: [],
+            error: "Control Registry 中没有仪表族的定义（注册未执行？）",
+          };
+        }
+        return { family: "gauge", editable: EDITABLE.gauge.slice(), fields: def.schema };
       }
 
       // ---- 文字族（P4B）----
@@ -480,6 +569,31 @@
   }
 
   /**
+   * 取仪表族的**代表定义**（P4E-02 批次 B）。
+   *
+   * 6 个仪表 schema 实测完全一致（12 字段），任取一条即可。
+   * 仍然从 Registry 取，**不在 UI 层复制 schema**（P4A.1 消除双源的教训）。
+   */
+  function gaugeSchemaFor(node) {
+    const Reg = ICAR.registry && ICAR.registry.Control;
+    if (!Reg || !Reg.all) return null;
+
+    // ① 新建节点带 __controlKey → 精确
+    const key = node && node.__controlKey;
+    if (key && Reg.get) {
+      const own = Reg.get(key);
+      if (own && own.schema && own.render && own.render.mode === "gauge") return own;
+    }
+    // ② 回退：任一 gauge 模式定义（6 条已实测 schema 一致）
+    const all = Reg.all();
+    for (let i = 0; i < all.length; i++) {
+      const d = all[i];
+      if (d && d.schema && d.render && d.render.mode === "gauge") return d;
+    }
+    return null;
+  }
+
+  /**
    * 取状态灯族的**代表定义**（P4D-01）。
    *
    * 19 个灯 schema 实测完全一致（审计：distinctSignatures === 1），
@@ -532,6 +646,18 @@
      * ⚠️ `states.*.blinkMs` **刻意不开放**：WCAG 2.3.1 要求闪烁 ≤3Hz，
      *    开放后用户可把它调到红线以下（历史教训见 schema.js:1313）。
      */
+    /**
+     * P4E-02 批次 B：仪表族（6 条）第一批**只开 8 个字段**。
+     *
+     * ⚠️ 刻意**不开放**这 4 个（P4E-01 审计 R3）：
+     *    `label` / `unit` / `font.size` / `font.color`
+     * 它们在 Registry schema 里声明了，但 `nodeToJson()` **不写**、
+     * `parseNode()` **不读** —— 开放出来就是"改了保存不住"的静默失效。
+     *
+     * 外观类（card*、neonPreset、ringStyle/ringSegments）也不在本批
+     * —— 它们不在 schema 的 12 字段内，属扩范围，留给后续批次评审。
+     */
+    gauge: ["pid", "style", "min", "max", "warnLow", "warnHigh", "w", "h"],
     imageState: [
       "statePid", "stateWarn", "stateCritical",
       "states.normal.assetId", "states.warn.assetId", "states.critical.assetId",

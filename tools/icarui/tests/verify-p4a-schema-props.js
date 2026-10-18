@@ -137,10 +137,16 @@ async function main() {
     ok(ro.editables === 4, 'exactly 4 editable fields (got ' + ro.editables + ')');
     ok(ro.hasOrientText === true, 'panel shows field labels');
 
-    // 只读面板：切到非轨道
+    // 只读面板：切到**尚未被 Schema 接管**的节点类型
+    //
+    // ⚠️ P4E-02 修正：原来这里用的是 `g_speed`（仪表）作为"非轨道"样本，
+    //    断言它 resolve 成 null。但仪表族在 P4E-02 已正式接入 Schema 面板，
+    //    该断言的前提本身失效了 —— 不是行为退化。
+    //    改用**普通图片节点**：图片族至今未接入（仍走旧面板），
+    //    语义与本断言想验证的"未接管 → 回退旧面板"完全一致。
     const roGauge = JJ(await step('non-track',
       "JSON.stringify((function(){" + SETUP +
-      "var R=ICAR.registry.Control;sel(R.byLegacyKey('g_speed').build());" +
+      "sel(window.createNode(window.NODE_IMAGE,{name:'普通图',assetId:'x',w:100,h:100}));" +
       "var box=document.getElementById('schemaProps');" +
       "return {family:ICAR.ui.SchemaPanel.currentFamily()," +
       "fallbackText:box.textContent.indexOf('继续用下方旧面板')>=0};})())"));
