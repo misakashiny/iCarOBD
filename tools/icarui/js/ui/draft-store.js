@@ -79,6 +79,14 @@
   const STORE = "drafts";
   const META = "meta";
 
+  /**
+   * 本编辑会话 ID（P4R-1.2）。
+   *
+   * 每个标签页/每次页面加载生成一个，用来识别"这次写入来自哪个会话"。
+   * 它不参与冲突判定（判定靠 lastKnownRevision），只用于诊断与提示。
+   */
+  const SESSION_ID = "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
   /** 运行时状态（供 getStatus 与 UI 显示） */
   const state = {
     available: null,        // null = 未探测；true/false
@@ -89,7 +97,10 @@
     failures: 0,
     openDb: null,
     openPromise: null,
+    conflicts: 0,
+    sessionId: SESSION_ID,
   };
+
 
   /** 简单校验和（不是加密哈希，只用来发现截断/篡改） */
   function checksumOf(str) {
@@ -227,6 +238,28 @@
         return { ok: false, reason: "tombstoned" };
       }
 
+      // ============================================ P4R-1.2 乐观并发控制
+      //
+      // ## 为什么光有"单调 revision 比较"不够
+      //
+      // 旧逻辑：`库里 revision > 本次 revision` 就放弃写入。
+      // 这只能防"旧盖新"，**防不住两个标签页各自 ++ 到同一个数字**：
+      //
+      //   标签页 A：见到 rev=5 → 生成 rev=6 → 写入
+      //   标签页 B：见到 rev=5 → 生成 rev=6 → 写入（**覆盖 A，无提示**）
+      //
+      // 两者 rev 相同，比较不成立，于是"后写的赢"且无人知道。
+      //
+      // ## 现在怎么做：compare-and-swap
+      //
+      // 调用方传 `lastKnownRevision`（它上次成功读到/写入的版本）。
+      // 在**同一个事务里**读出库中当前 revision，必须**严格等于**它才允许写。
+      //   · `lastKnownRevision === null` → 首次写入，库里必须没有记录
+      //   · 不等 → 返回 `{ ok:false, reason:"conflict", currentRevision }`
+      //
+      // 这样"两个标签页各自 ++ 到 6"的情况会**明确失败**，而不是静默覆盖。
+      const lastKnown = (p.lastKnownRevision === undefined) ? null : p.lastKnownRevision;
+
       const rec = {
         draftId: draftId,
         designId: p.designId,
@@ -276,17 +309,44 @@
         // 如果它的 revision **大于**本次要写的，就**放弃写入**。
         // 因为 IndexedDB 事务是串行的，这个检查是原子的。
         let rejectReason = null;
+        let currentRevision = null;
         try {
           const store = tx.objectStore(STORE);
           const curReq = store.get(draftId);
           curReq.onsuccess = function () {
             const cur = curReq.result;
-            const curRev = (cur && typeof cur.revision === "number") ? cur.revision : -1;
-            // 库里的版本更新 → 不覆盖
-            if (curRev > (rec.revision || 0)) {
-              rejectReason = "stale-write";
-              return;                      // 不 put，事务自然完成但不写
+            const exists = !!(cur && cur.complete === true);
+            currentRevision = exists && typeof cur.revision === "number" ? cur.revision : null;
+
+            // ============ 乐观并发控制：compare-and-swap ============
+            //
+            // 期望值必须**严格等于**库中当前值：
+            //   · 库里有记录 → 期望必须等于它的 revision
+            //   · 库里没记录 → 期望必须是 null（首次写入）
+            //
+            // 不等 → 说明有人在我们观察之后改过 → **明确失败**，不覆盖。
+            if (exists) {
+              if (lastKnown !== null && lastKnown !== currentRevision) {
+                rejectReason = "conflict";
+                return;
+              }
+              // 调用方以为"这是新草稿"（lastKnown=null），但库里已经有记录
+              // → 说明身份撞了（或记录被别处创建）→ **一律冲突**，不覆盖。
+              //
+              // ⚠️ 早期版本用 p.expectNew 放行「另存为独立草稿」，
+              //    结果同一个新身份第二次写也能成功，等于没保护 —— 已去掉这个例外。
+              if (lastKnown === null) {
+                rejectReason = "conflict";
+                return;
+              }
+            } else {
+              // 库里没有，但调用方以为有 → 冲突（可能被别处删了）
+              if (lastKnown !== null) {
+                rejectReason = "conflict";
+                return;
+              }
             }
+
             try {
               store.put(rec);
             } catch (e) {
@@ -296,8 +356,8 @@
             }
           };
           curReq.onerror = function () {
-            // 读失败 → 保守：仍然写（宁可覆盖也不要丢数据）
-            try { store.put(rec); } catch (e) { rejectReason = "put"; }
+            // 读失败 → 保守：不写（宁可本次失败，也不要覆盖别人的数据）
+            rejectReason = "read-failed";
           };
         } catch (e) {
           state.failures++;
@@ -307,13 +367,20 @@
         }
 
         tx.oncomplete = function () {
-          if (rejectReason === "stale-write") {
-            // ⚠️ 不算失败：库里已经有更新的版本，这是我们想要的最终状态
-            resolve({ ok: true, stale: true, bytes: rec.byteSize, savedAt: rec.savedAt });
+          if (rejectReason === "conflict") {
+            // ⚠️ **明确冲突**：不覆盖、不删除本地内容，交给上层提示用户
+            state.conflicts++;
+            resolve({
+              ok: false,
+              reason: "conflict",
+              currentRevision: currentRevision,
+              expectedRevision: lastKnown,
+              sessionId: SESSION_ID,
+            });
             return;
           }
           if (rejectReason) {
-            resolve({ ok: false, reason: rejectReason });
+            resolve({ ok: false, reason: rejectReason, currentRevision: currentRevision });
             return;
           }
           state.writes++;
@@ -465,6 +532,8 @@
       failures: state.failures,
       schemaVersion: DRAFT_SCHEMA_VERSION,
       dbName: DB_NAME,
+      sessionId: SESSION_ID,
+      conflicts: state.conflicts,
     };
   }
 
@@ -496,6 +565,8 @@
     countNodes: countNodes,
     DB_NAME: DB_NAME,
     SCHEMA_VERSION: DRAFT_SCHEMA_VERSION,
+    SESSION_ID: SESSION_ID,
+    getConflicts: function () { return state.conflicts; },
     __clearAll: __clearAll,
     /** 测试钩子：查墓碑 / 清墓碑 */
     __isTombstoned: isTombstoned,

@@ -108,6 +108,10 @@
      * **不能标记为 clean**（否则新编辑就永远不落盘了）。
      */
     revision: 0,
+    /** 上次**成功写入/读取**的 revision（P4R-1.2 乐观并发控制的期望值） */
+    lastPersistedRevision: null,
+    /** 检测到冲突时存下详情（用于提示用户） */
+    conflict: null,
     /** 正在写入中的版本（用于诊断） */
     inflight: 0,
     dirty: false,
@@ -132,9 +136,17 @@
     return state.designId;
   }
 
-  /** 设计换了（新建 / 打开文件 / 恢复草稿）→ 换身份 */
+  /**
+   * 设计换了（新建 / 打开文件 / 恢复草稿）→ 换身份。
+   *
+   * ⚠️ P4R-1.2：必须同时把 `lastPersistedRevision` 重置为 `null` ——
+   * 新身份在库里**还没有记录**，CAS 的期望值必须是"不存在"。
+   * 不重置的话，新设计的第一次写入会被误判成冲突（实测踩过）。
+   */
   function resetDesignId() {
     state.designId = newDesignId();
+    state.lastPersistedRevision = null;
+    state.conflict = null;
     return state.designId;
   }
 
@@ -166,6 +178,41 @@
   }
 
   /**
+   * 实时编辑期间标记"有未保存改动"（P4R-1.2 新增）。
+   *
+   * ## 为什么需要它
+   *
+   * P4R-1.2 关卡 A 实测：用户持续 `setLive`（连续打字、拖滑块）**8 秒**，
+   * `setLive` 调用 20 次、模型在变，但**草稿写盘 0 次** ——
+   * 因为 `setLive` 只改模型 + 重绘，**不走 `commit()`**，
+   * 而 `markDirty` 原来只挂在 `commit` 上。
+   *
+   * 后果：用户打了半天字，一崩溃全丢（因为 endLive 才触发写入）。
+   *
+   * ## 它与 markDirty 的区别
+   *
+   * | | markDirty | markLiveDirty |
+   * |---|---|---|
+   * | 调用者 | commit（已压栈）| setLive（**不压栈**）|
+   * | UndoStack | 已有一条记录 | **不创建记录** |
+   * | 草稿 | 标脏 | **标脏** |
+   *
+   * ⚠️ 关键：**不创建 UndoStack 记录** —— 撤销栈语义完全不变。
+   *    「一个属性的一次拖动」在撤销栈里仍然只有一条记录（由 endLive 压实）。
+   *
+   * ## 性能
+   *
+   * 只做三件事：置 dirty、++revision、起定时器。**不序列化**。
+   * 真正的序列化发生在防抖/最长间隔到期后 —— 不会被每个字符触发。
+   */
+  function markLiveDirty() {
+    if (!state.enabled) return;
+    // 已经在 dirty 状态就不用重复起定时器（避免每字符都重排定时器）
+    if (state.dirty) return;
+    markDirty();
+  }
+
+  /**
    * 立即写草稿。
    * @param {string} reason 触发原因（诊断用）
    */
@@ -189,6 +236,8 @@
     state.dirtySince = 0;
     state.inflight = myRev;
 
+    // P4R-1.2：乐观并发控制 —— 告诉存储层"我上次见到的版本是多少"。
+    // 只有库里当前版本**严格等于**它才允许写入，否则返回 conflict。
     return DS.saveDraft({
       designId: myDesignId,
       designName: myDesign.name || "",
@@ -196,15 +245,37 @@
       selection: S.selection || [],
       manualSavedAt: state.manualSavedAt,
       revision: myRev,
+      lastKnownRevision: state.lastPersistedRevision,
     }).then(function (r) {
       state.inflight = 0;
       state.lastSaveAt = Date.now();
       state.lastSaveOk = !!r.ok;
-      if (r.ok) state.saveCount++;
+
+      // ================================================ 冲突处理（P4R-1.2）
+      //
+      // 任务要求：不覆盖对方数据、不删本地内容、给明确提示、
+      // 提供"另存为独立草稿"、不擅自合并、不强刷画布。
+      if (r && r.ok === false && r.reason === "conflict") {
+        state.dirty = true;                       // 本地仍有未保存内容
+        state.conflict = {
+          at: Date.now(),
+          expected: r.expectedRevision,
+          current: r.currentRevision,
+          sessionId: r.sessionId,
+        };
+        state.lastSaveOk = false;
+        console.warn("[草稿] 检测到多标签页冲突：本页期望 rev=" + r.expectedRevision +
+          "，库中已是 rev=" + r.currentRevision + "。**未覆盖对方数据**。");
+        showConflictBar();
+        updateBadge();
+        return r;
+      }
 
       if (r.ok) {
-        // 写入成功 —— 但如果期间又有新编辑，**必须重新标脏**，
-        // 否则那些新改动会一直等不到下一次触发（任务第四部分明确要求）。
+        state.saveCount++;
+        state.lastPersistedRevision = myRev;      // 成功 → 更新期望值
+        state.conflict = null;
+        // 但如果期间又有新编辑，**必须重新标脏**
         if (state.revision !== myRev) {
           state.dirty = true;
           if (!state.dirtySince) state.dirtySince = Date.now();
@@ -216,7 +287,6 @@
           }
         }
       } else {
-        // ⚠️ 失败时**不删任何草稿**，只是标记 dirty 以便下次重试
         state.dirty = true;
         if (!state.dirtySince) state.dirtySince = Date.now();
         console.warn("[草稿] 保存失败：" + r.reason);
@@ -429,6 +499,88 @@
     if (bar) bar.style.display = "none";
   }
 
+  /**
+   * 冲突提示条（P4R-1.2）。
+   *
+   * 任务要求：不覆盖对方数据、不删本地内容、明确提示、
+   * 提供「另存为独立草稿」、不擅自合并、不强刷画布。
+   */
+  function showConflictBar() {
+    const c = state.conflict;
+    if (!c) return;
+    let bar = document.getElementById("draftConflictBar");
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "draftConflictBar";
+      bar.className = "draftConflictBar";
+      document.body.appendChild(bar);
+    }
+    bar.innerHTML =
+      '<div class="drbInner">' +
+      '<div class="drbText">' +
+      '<div class="drbTitle">⚠️ 检测到草稿冲突（另一个标签页改了同一份草稿）</div>' +
+      '<div class="drbMeta">' +
+      '本页基于 <b>rev ' + esc(String(c.expected)) + '</b>，' +
+      '但存储里已经是 <b>rev ' + esc(String(c.current)) + '</b>。' +
+      '<br>**对方的数据没有被覆盖，你当前的编辑也还在画布上。**' +
+      '可以选择把本页存成一份独立草稿，避免丢失。' +
+      '</div>' +
+      '</div>' +
+      '<div class="drbBtns">' +
+      '<button class="primary" onclick="ICAR.ui.DraftManager.saveAsIndependentDraft()">另存为独立草稿</button>' +
+      '<button onclick="ICAR.ui.DraftManager.dismissConflict()">稍后处理</button>' +
+      '</div>' +
+      '</div>';
+    bar.style.display = "flex";
+  }
+
+  function hideConflictBar() {
+    const bar = document.getElementById("draftConflictBar");
+    if (bar) bar.style.display = "none";
+  }
+
+  /** 用户点「稍后处理」—— 只隐藏提示，**不丢任何数据** */
+  function dismissConflict() {
+    hideConflictBar();
+    window.toast && window.toast("冲突提示已隐藏；本页改动仍在画布上，未保存进草稿");
+  }
+
+  /**
+   * 「另存为独立草稿」：把当前画布存成**新身份**的草稿。
+   *
+   * 这样对方那份不受影响，本页的编辑也保住了。
+   * **不做任何合并**（任务要求：不擅自合并两个不同设计）。
+   */
+  function saveAsIndependentDraft() {
+    const S = window.CanvasState;
+    if (!S || !S.design) return Promise.resolve(false);
+    // 换一个新身份 —— 之后的写入就落到新建的那条记录上
+    const newId = resetDesignId();
+    state.lastPersistedRevision = null;   // 新记录，期望值应为 null
+    state.conflict = null;
+    hideConflictBar();
+    return DS.saveDraft({
+      designId: newId,
+      designName: (S.design.name || "未命名设计") + " (冲突副本)",
+      design: S.design,
+      selection: S.selection || [],
+      manualSavedAt: state.manualSavedAt,
+      revision: state.revision,
+      lastKnownRevision: null,
+    }).then(function (r) {
+      if (r.ok) {
+        state.lastPersistedRevision = state.revision;
+        state.dirty = false;
+        state.saveCount++;
+        window.toast && window.toast("已另存为独立草稿，对方的版本不受影响");
+      } else {
+        window.toast && window.toast("另存失败：" + r.reason + "（数据仍在画布上）");
+      }
+      updateBadge();
+      return r.ok;
+    });
+  }
+
   /** 用户点「稍后再说」—— **绝不删数据** */
   function dismissPending() {
     state.pendingDesign = null;
@@ -580,12 +732,15 @@
     boot: boot,
     install: install,
     markDirty: markDirty,
+    markLiveDirty: markLiveDirty,
     flush: flush,
     noteManualSave: noteManualSave,
     checkForDraft: checkForDraft,
     restorePending: restorePending,
     selectDraft: selectDraft,
     exportDraftRaw: exportDraftRaw,
+    dismissConflict: dismissConflict,
+    saveAsIndependentDraft: saveAsIndependentDraft,
     exportPendingRaw: function () { return state.pendingDesign ? exportDraftRaw(state.pendingDesign.draftId) : false; },
     dismissPending: dismissPending,
     deletePending: deletePending,

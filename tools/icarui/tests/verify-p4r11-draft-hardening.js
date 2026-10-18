@@ -129,13 +129,14 @@ async function main() {
       "(function(){var DS=ICAR.ui.DraftStore,S=CanvasState;" +
       "S.design=createDesign({name:'verA'});S.design.nodes=[];" +
       "S.design.nodes.push(ICAR.registry.Control.byLegacyKey('t_title').build());" +
-      "DS.saveDraft({designId:'VER',designName:'verA',design:S.design,revision:10})" +
-      ".then(function(){return DS.saveDraft({designId:'VER',designName:'verA',design:S.design,revision:5});})" +
+      "DS.saveDraft({designId:'VER',designName:'verA',design:S.design,revision:10,lastKnownRevision:null})" +
+      ".then(function(){return DS.saveDraft({designId:'VER',designName:'verA',design:S.design,revision:5,lastKnownRevision:9});})" +
       ".then(function(second){return DS.getDraft('draft_VER').then(function(g){" +
-      "window.__sw=JSON.stringify({secondOk:second.ok,stale:!!second.stale,storedRev:g.record.revision});});});" +
+      "window.__sw=JSON.stringify({secondOk:second.ok,conflict:second.reason==='conflict',storedRev:g.record.revision});});});" +
       "})()", '__sw');
-    ok(stale && stale.secondOk === true, '过期写入不报错（库里已有更新版本，这就是目标状态）');
-    ok(stale && stale.stale === true, '过期写入被标记 stale');
+    // P4R-1.2：语义从"静默放弃(stale)"升级为"明确冲突(conflict)"
+    ok(stale && stale.secondOk === false, '过期的写入被**拒绝**（P4R-1.2 乐观并发控制）');
+    ok(stale && stale.conflict === true, '拒绝原因是 conflict（不再静默丢弃）');
     ok(stale && stale.storedRev === 10, '**旧写入没有覆盖新草稿**（库里仍是 rev=10）');
 
     // ================= 五、删除墓碑 =================
@@ -166,9 +167,13 @@ async function main() {
       "for(var i=0;i<6;i++){d.nodes.push(R.byLegacyKey('t_title').build());}" +
       "window.replaceDesign(d,'建A');" +
       "window.commit(function(){CanvasState.design.nodes[0].alpha=88;},'A');})()");
-    // 确保 A 的草稿**确实写进库**再切走（否则防抖还没到期就被 B 覆盖）
-    await cdp.eval("ICAR.ui.DraftManager.flush('force')");
-    await sleep(1200);
+    // 确保 A 的草稿**确实写进库**再切走（await 等待 Promise 完成，不是 sleep 猜）
+    const flushRes = await cdp.eval("(function(){var D=ICAR.ui.DraftManager;" +
+      "var r=D.flush('force');" +
+      "if(r&&typeof r.then==='function'){return r.then(function(x){return JSON.stringify(x||{});});}" +
+      "return JSON.stringify({sync:true});})()");
+    console.log('  [diag] flush = ' + flushRes);
+    await sleep(600);
     const idA = await cdp.eval("ICAR.ui.DraftManager.currentDesignId()");
     const draftA = JJ(await cdp.eval("ICAR.ui.DraftStore.listDrafts().then(function(l){" +
       "var a=l.find(function(x){return x.designId===" + JSON.stringify(idA) + ";});" +

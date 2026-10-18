@@ -269,6 +269,21 @@
 | **修法** | 在 `doUndo`/`doRedo` 成功后显式调 `DraftManager.markDirty()`（+10 行）|
 | **当前处置** | ✅ **P4R-1.1 已修** |
 
+---
+
+## D-19：setLive 不走 commit，实时编辑期间草稿零保存（P4R-1.2 已修）
+
+| 项 | 内容 |
+|---|---|
+| **发现于** | P4R-1.2（关卡 A 只读验证）|
+| **位置** | `schema-props.js` 的 `PropertyUpdate.setLive` |
+| **现象** | `setLive` 只做 `PropertyAccessor.set` + `requestDraw()`，**不经过 `commit()`**。而草稿的 `markDirty` 原本只挂在 `commit` 上 → 持续实时编辑时**草稿一次都不写** |
+| **实测** | 持续 setLive 6 秒（15 次调用，模型 font.size 10→25）：写盘 **0 次**，IndexedDB 保持 rev=1 |
+| **后果** | 用户连续打字 30 秒不失焦，一崩溃全丢 |
+| **性质** | **功能缺陷**（数据安全）|
+| **修法** | 新增 `DraftManager.markLiveDirty()`（标脏但**不创建 UndoStack 记录**），在 `setLive` 末尾调用 |
+| **当前处置** | ✅ **P4R-1.2 已修**（撤销栈语义完全不变）|
+
 ## 汇总表
 
 | ID | 问题 | 类型 | 处置 |
@@ -291,6 +306,7 @@
 | D-16 | 设计无自动保存；设计名不能作唯一身份 | **功能缺陷** | **P4R-1 已部分解决**（草稿+designId）|
 | D-17 | P4R-0「剥离 asset.data」建议错误 | **方案缺陷** | ✅ P4R-1 已纠正 |
 | D-18 | `doUndo`/`doRedo` 不走 commit，撤销后草稿不更新 | **功能缺陷** | ✅ **P4R-1.1 已修** |
+| D-19 | `setLive` 不走 commit，实时编辑草稿零保存 | **功能缺陷** | ✅ **P4R-1.2 已修** |
 
 ---
 

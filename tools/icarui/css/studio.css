@@ -1152,3 +1152,16 @@ main { grid-template-columns: 280px minmax(0, 1fr) 340px; gap: 10px; padding: 10
 .drbWhen { color: #8fa8c2; }
 .drbSum { color: #7d92aa; }
 .drbBad { color: #ff8080; font-weight: 600; }
+
+/* P4R-1.2：草稿冲突提示条 */
+.draftConflictBar {
+  position: fixed; left: 0; right: 0; top: 0; z-index: 9100;
+  display: none; justify-content: center;
+  padding: 8px 12px; box-sizing: border-box;
+  background: linear-gradient(180deg, #4a2027 0%, #36171d 100%);
+  border-bottom: 1px solid #7d3038;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .5);
+  font: 12px/1.5 system-ui, "Segoe UI", sans-serif; color: #ffd9dc;
+}
+.draftConflictBar .drbTitle { color: #ffb3ba; }
+.draftConflictBar .drbMeta b { color: #fff; }

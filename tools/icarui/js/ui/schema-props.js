@@ -456,6 +456,26 @@
       liveEdit.lastValue = clone(value);
       if (window.requestDraw) window.requestDraw();
       else if (window.draw) window.draw();
+      // P4R-1.2：实时编辑期间也要让草稿系统知道"有未保存改动"。
+      //
+      // ## 为什么要在这里
+      //
+      // 原来 markDirty 只挂在 commit 上，而 setLive **不走 commit**
+      // （它只改模型 + 重绘，撤销记录由 endLive 压实）——
+      // 实测「持续打字 8 秒，草稿写盘 0 次」。
+      //
+      // ## 为什么用 markLiveDirty 而不是 markDirty
+      //
+      // markLiveDirty **只标脏 + 起定时器，不创建 UndoStack 记录**，
+      // 撤销栈语义完全不变（一次拖动仍只有一条记录）。
+      //
+      // ## 为什么不会每个字符都序列化
+      //
+      // 它内部只在"这次是从 clean 变 dirty"时才起定时器，
+      // 序列化发生在防抖(1200ms)/最长间隔(5000ms)到期后。
+      if (window.ICAR && window.ICAR.ui && window.ICAR.ui.DraftManager) {
+        try { window.ICAR.ui.DraftManager.markLiveDirty(); } catch (e) {}
+      }
       return true;
     },
 
