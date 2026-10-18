@@ -988,6 +988,16 @@
     // 控制库（实测 60 个控件时 8.8ms，占一次滚轮事件 17.8ms 的一半）。
     // 缩放期间跳过，收尾时 canvas.js 的 wheelEndTimer 会补一次完整刷新。
     if (!S.suppressPanelRender && window.renderPanels) window.renderPanels();
+    // P4A.1：同步 Schema 属性面板（并行面板，只刷新值、不重建 DOM）。
+    // ⚠️ 旧面板改字段后走的是 refreshAll，若这里不同步，新面板会显示旧值。
+    // 放在 renderPanels 之后、draw 之前：与旧面板同一次刷新里完成。
+    if (!S.suppressPanelRender) {
+      try {
+        if (window.ICAR && window.ICAR.ui && window.ICAR.ui.SchemaPanel) {
+          window.ICAR.ui.SchemaPanel.refresh();
+        }
+      } catch (e) { /* Schema 面板出错不影响主流程 */ }
+    }
     if (window.draw) window.draw();
     // 装饰动画预览（T-UI-HUD-01）：设计一变就重新判断要不要跑时钟。
     // 放在最后 —— 它内部会再 draw 一次，前面那次负责静态内容立刻可见。

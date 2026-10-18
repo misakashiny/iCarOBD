@@ -161,67 +161,79 @@
   /**
    * 根据**节点能力**查找属性 Schema。
    *
-   * ⚠️ 识别只看持久化字段（见文件头注释），不看 `__controlKey`。
-   *    原因：`__controlKey` 不进 JSON，保存重载/历史导入后必然丢失。
+   * ## 单一事实源（P4A.1 修正）
+   *
+   * P4A 初版这里内置了一份 TRACK_SCHEMA，同时 resolve 又会优先读 Registry 的定义
+   * —— 于是同一族有**两套字段表**：
+   *
+   *   新建节点（有 __controlKey） 读 Registry 的 schema[]
+   *   重载节点（无 __controlKey） 读内置 TRACK_SCHEMA
+   *
+   * 两份已经产生偏差（内置那份多了 nullable 标记）。
+   * 这正是任务第三部分要消除的"重复维护独立配置"。
+   *
+   * ## 现在怎么做的
+   *
+   * **只保留 Registry 一处定义。** 持久化能力（type + trackStyle）只用来判断
+   * "这是哪一族"，具体字段表一律回 Registry 取。
+   * 这样新增字段时只改 Registry 一处，面板自动跟上。
    */
   const SchemaResolver = {
-    /** 代码轨道：image + 有 trackStyle */
+    /** 持久化能力：代码轨道 = image + 有 trackStyle */
     isTrack(node) {
       return !!node && node.type === "image" && node.trackStyle !== null &&
         typeof node.trackStyle === "object";
     },
 
-    /** 普通图片（含 bar_* 图片轨道）：image + trackStyle 为 null */
+    /** 持久化能力：普通图片（含 bar_* 图片轨道） */
     isPlainImage(node) {
       return !!node && node.type === "image" && (node.trackStyle === null || node.trackStyle === undefined);
     },
 
     /**
-     * 返回该节点适用的 schema；不支持时返回 null。
-     *
-     * 目前**只接管轨道** —— 其它控件继续走旧面板（任务明确要求不批量迁移）。
+     * 从 Registry 里找**代表定义**（同族任一条即可，它们的 schema 相同）。
+     * 不依赖 __controlKey —— 只按持久化能力挑一条定义。
      */
-    resolve(node) {
-      if (this.isTrack(node)) {
-        // Schema 从 Registry 的定义派生（如果注册过），否则用内置声明
-        const key = node.__controlKey;
-        if (key && ICAR.registry.Control) {
-          const def = ICAR.registry.Control.get(key);
-          if (def && def.schema) {
-            // Registry 的 schema 含全部 11 个字段；P4A 只开放 4 个可编辑
-            return {
-              family: "track",
-              editable: ["trackStyle.orient", "trackStyle.segments", "trackStyle.glow", "trackStyle.fill"],
-              fields: def.schema,
-            };
-          }
-        }
-        // 没有 __controlKey（保存重载后）→ 用内置的轨道 schema
-        return {
-          family: "track",
-          editable: ["trackStyle.orient", "trackStyle.segments", "trackStyle.glow", "trackStyle.fill"],
-          fields: TRACK_SCHEMA,
-        };
+    _representative(family) {
+      const Reg = ICAR.registry && ICAR.registry.Control;
+      if (!Reg || !Reg.all) return null;
+      const all = Reg.all();
+      for (let i = 0; i < all.length; i++) {
+        const d = all[i];
+        if (!d || !d.schema || !d.render) continue;
+        if (family === "track" && d.render.mode === "track") return d;
       }
       return null;
     },
+
+    resolve(node) {
+      if (!this.isTrack(node)) return null;
+
+      const rep = this._representative("track");
+      if (!rep) {
+        return {
+          family: "track",
+          editable: [],
+          fields: [],
+          error: "Control Registry 中没有轨道族的定义（注册未执行？）",
+        };
+      }
+      return {
+        family: "track",
+        editable: EDITABLE.track.slice(),
+        fields: rep.schema,
+      };
+    },
   };
 
-  /** 轨道族的 schema（与 track-family.js 的声明保持一致；用于无语义 key 时） */
-  const TRACK_SCHEMA = [
-    { key: "trackStyle.orient", label: "方向", type: "enum", values: ["h", "v"], group: "轨道" },
-    { key: "trackStyle.radius", label: "圆角", type: "number", nullable: true, group: "轨道" },
-    { key: "trackStyle.inset", label: "内凹", type: "boolean", group: "轨道" },
-    { key: "trackStyle.gradient", label: "渐变", type: "enum", values: [null, "gloss", "fade"], group: "轨道" },
-    { key: "trackStyle.glow", label: "发光", type: "boolean", group: "轨道" },
-    { key: "trackStyle.segments", label: "分段数", type: "number", min: 0, group: "轨道" },
-    { key: "trackStyle.ticks", label: "刻度数", type: "number", min: 0, group: "轨道" },
-    { key: "trackStyle.band", label: "三段色带", type: "boolean", group: "轨道" },
-    { key: "trackStyle.fill", label: "填充比例", type: "number", min: 0, max: 1, nullable: true, group: "轨道" },
-    { key: "w", label: "宽度", type: "number", min: 1, group: "变换" },
-    { key: "h", label: "高度", type: "number", min: 1, group: "变换" },
-  ];
-
+  /**
+   * 各族的"本阶段开放编辑字段"。
+   * 只存路径清单，不碰字段定义（label/type/range 全部来自 Registry）。
+   * 推广到新族时只需在此加一行。
+   */
+  const EDITABLE = {
+    track: ["trackStyle.orient", "trackStyle.segments", "trackStyle.glow", "trackStyle.fill"],
+  };
   // ============================================================ 四、PropertyUpdate
 
   /**
