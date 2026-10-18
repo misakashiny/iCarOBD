@@ -83,15 +83,21 @@ async function main() {
       "var srel=SP.SchemaResolver.resolve(back.design.nodes[0]);" +
       "var frel=srel.fields.filter(function(x){return x.key==='font.size';})[0];" +
       "return {tLabelMax:tl,tTitleMax:tt,reloadedTLabelMax:frel?frel.max:null};})())"));
-    ok(dispatch.tLabelMax === 200, 't_label uses its OWN schema (font.size max=200)');
+    // ⚠️ P4B.1 统一了文字族字号上限：t_label 从 P1A 试点遗留的 200 改为 400
+    //    （审计依据：旧属性面板 panels.js:980 的输入框只有 min="1"、无 max；
+    //     normalizeFont 也只判 size > 0。200 是 P1A 占位值，从未生效。）
+    //    所以现在三处应当**全部一致**为 400。
+    ok(dispatch.tLabelMax === 400, 't_label font.size.max = 400 (P4B.1 unified, was 200)');
     ok(dispatch.tTitleMax === 400, 'other 11 use text-family schema (max=400)');
-    ok(dispatch.reloadedTLabelMax === 400, 'reloaded t_label falls back to widest (max=400)');
+    ok(dispatch.reloadedTLabelMax === 400, 'reloaded t_label also 400 (consistent before/after save)');
 
-    // 三种控件的 schema 不是同一个对象（证明分派真实生效）
-    const notSame = await step('distinct schemas',
+    // 内容一致性：P4B.1 统一后 12 条 schema **结构完全相同**
+    // （对象仍各自独立 —— t_label 由 t_label.js 定义，其余由 text-family.js 的工厂产出，
+    //  所以这里比内容而不是比引用）
+    const sameSig = await step('schema signatures equal',
       "String((function(){var R=ICAR.registry.Control;" +
-      "return R.byLegacyKey('t_label').schema!==R.byLegacyKey('t_title').schema;})())");
-    ok(notSame === 'true', 't_label and t_title have DISTINCT schema objects (dispatch is real)');
+      "return JSON.stringify(R.byLegacyKey('t_label').schema)===JSON.stringify(R.byLegacyKey('t_title').schema);})())");
+    ok(sameSig === 'true', 't_label and t_title schema CONTENT is identical (P4B.1 unified)');
 
     // ================= 三、5 个字段安全编辑 =================
     // text：允许空字符串

@@ -348,7 +348,32 @@
 
   ICAR.ui.SchemaPanel = {
     init: init,
-    refresh: refresh,
+    /**
+     * 对外暴露的 refresh —— **出错时记录而不吞掉**（P4B.1）。
+     *
+     * 内部真实现是 `refresh`；这里包一层把异常转成可观察状态后**继续抛出**，
+     * 由调用方（refreshAll）决定是否记录/降级。
+     */
+    refresh: function () {
+      try {
+        refresh();
+        window.__ICAR_SCHEMA_ERROR = null;
+        window.__ICAR_SCHEMA_ERROR_COUNT = 0;
+      } catch (e) {
+        const info = {
+          where: "SchemaPanel.refresh",
+          message: (e && e.message) || String(e),
+          stack: (e && e.stack) || "",
+          at: new Date().toISOString(),
+          count: (window.__ICAR_SCHEMA_ERROR_COUNT || 0) + 1,
+        };
+        window.__ICAR_SCHEMA_ERROR = info;
+        window.__ICAR_SCHEMA_ERROR_COUNT = info.count;
+        console.error("[ICAR Schema 面板] refresh 内部异常", e);
+        throw e;
+      }
+    },
+    __refreshRaw: refresh,
     onSelectionChanged: onSelectionChanged,
     /** 测试用 */
     supportedFields: function () { return SUPPORTED_EDIT.slice(); },

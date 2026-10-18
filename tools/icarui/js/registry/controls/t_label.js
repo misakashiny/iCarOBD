@@ -88,10 +88,33 @@
       return node;
     },
 
-    /** 属性 Schema —— P1A **只登记、不驱动 UI**（面板仍走 panels.js 手写逻辑） */
+    /**
+     * 属性 Schema。
+     *
+     * ## font.size.max 的统一（P4B.1）
+     *
+     * 这里原来是 `max: 200` —— P1A 试点期的**占位值**（当时注释写着
+     * "只登记、不驱动 UI"，面板走 panels.js 手写逻辑，这个上限从未生效）。
+     * P3A 写 `text-family.js` 时用了 `max: 400`，于是同族出现两个上限。
+     *
+     * 审计结论（P4B.1）：
+     *   · 旧属性面板 `panels.js:980` 的输入框是 `min="1"` **且没有 max** ——
+     *     真实产品语义**本来就没有上限**
+     *   · 渲染侧 `normalizeFont()` 只判 `size > 0`，也没有上限
+     *   · 两个 200/400 都是人为加的，200 更是试点占位
+     *
+     * 所以统一为 **400**（与同族其余 11 条一致）。
+     *
+     * ⚠️ 本次只改 Schema 声明，**不影响**：
+     *   · 默认字号（在 `fontDefaults.size = 7`，与 schema 无关）
+     *   · 默认颜色 / 字重
+     *   · 序列化（`nodeToJson` 白名单里没有 schema）
+     *   · 渲染（`normalizeFont` 未改）
+     *   · 存量设计内容
+     */
     schema: [
       { key: "text", label: "文字内容", type: "string", group: "文字" },
-      { key: "font.size", label: "字号", type: "number", group: "字体", min: 1, max: 200 },
+      { key: "font.size", label: "字号", type: "number", group: "字体", min: 1, max: 400 },
       { key: "font.weight", label: "字重", type: "enum", values: [400, 500, 600, 700, 900], group: "字体" },
       { key: "font.color", label: "颜色", type: "color", group: "字体" },
       { key: "font.align", label: "对齐", type: "enum", values: ["left", "center", "right"], group: "字体" },

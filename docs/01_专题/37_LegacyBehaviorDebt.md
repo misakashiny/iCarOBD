@@ -185,6 +185,21 @@
 | **建议** | 已修：在 `refreshAll()` 里追加 `SchemaPanel.refresh()`（放在 renderPanels 之后、draw 之前） |
 | **当前处置** | 已修并加入 P4A.1 验收套件（6 项同步断言） |
 
+---
+
+## D-13：t_label 的 font.size.max=200 是 P1A 试点遗留（P4B.1 已统一为 400）
+
+| 项 | 内容 |
+|---|---|
+| **发现于** | P4B.1（文字族 Schema 一致性审计） |
+| **位置** | `tools/icarui/js/registry/controls/t_label.js`（**已修**）|
+| **现象** | 同族 12 条文字控件出现两种 font.size.max：t_label=200，其余=400 |
+| **根因** | t_label 的 schema 写于 P1A 试点（提交 4346908），当时注释为「只登记、不驱动 UI」，200 是占位值从未生效；P3A 写 text-family.js 时用了 400 |
+| **审计证据** | 旧属性面板 panels.js:980 的输入框只有 min="1"、**没有 max**；normalizeFont 也只判 size > 0 |
+| **影响面** | P4B 接入面板后，重载的 t_label 因 __controlKey 丢失会回退到 400，导致「保存前后校验规则不一致」|
+| **建议** | 已统一为 400；不影响默认值、序列化、渲染与存量设计 |
+| **当前处置** | 已修；P4B.1 断言 12 条 `distinctSignatures === 1` |
+
 ## 汇总表
 
 | ID | 问题 | 类型 | 处置 |
@@ -201,6 +216,7 @@
 | D-10 | `normalizeTrackStyle()` 静默归一非法值 | 刻意防护 | 测校验须绕过 createNode |
 | D-11 | `addNode` 3 参数曾被当 1 参数调用致添加静默失效 | **真 Bug** | **P4A 已修** |
 | D-12 | `refreshAll()` 不通知并行属性面板致不同步 | 架构缺口 | **P4A.1 已修** |
+| D-13 | `t_label` 的 font.size.max=200 是 P1A 试点遗留 | 遗留占位 | **P4B.1 已统一为 400** |
 
 ---
 

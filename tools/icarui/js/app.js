@@ -979,6 +979,34 @@
     window.commit(() => { pg.name = (name || "").trim() || pg.name; }, "重命名页面");
   };
 
+  /**
+   * 记录 Schema 面板异常（P4B.1）。
+   *
+   * 三条要求：
+   *   ① 控制台输出错误和堆栈
+   *   ② 记录可读取的 `__ICAR_SCHEMA_ERROR`
+   *   ③ 成功恢复后清理错误状态（见 refreshAll 里的成功分支）
+   *
+   * ⚠️ 不重写全局错误处理 —— 只针对 Schema 面板这一处。
+   */
+  function recordSchemaError(err, where) {
+    const info = {
+      where: where || "unknown",
+      message: (err && err.message) || String(err),
+      stack: (err && err.stack) || "",
+      at: new Date().toISOString(),
+      count: (window.__ICAR_SCHEMA_ERROR_COUNT || 0) + 1,
+    };
+    window.__ICAR_SCHEMA_ERROR = info;
+    window.__ICAR_SCHEMA_ERROR_COUNT = info.count;
+    // 控制台：第一次和每 20 次各打一条，避免狂刷
+    if (info.count === 1 || info.count % 20 === 0) {
+      console.error("[ICAR Schema 面板] 刷新失败（第 " + info.count + " 次，位置：" + info.where + "）", err);
+    }
+    return info;
+  }
+  window.__ICAR_recordSchemaError = recordSchemaError;
+
   function refreshAll() {
     // 画布绘制前同步素材位图 —— 内置素材只有 path，不挂上去画布会画大 X
     if (window.syncAssetImages) window.syncAssetImages();
@@ -992,11 +1020,22 @@
     // ⚠️ 旧面板改字段后走的是 refreshAll，若这里不同步，新面板会显示旧值。
     // 放在 renderPanels 之后、draw 之前：与旧面板同一次刷新里完成。
     if (!S.suppressPanelRender) {
+      // P4B.1：**不再空 catch 静默吞异常**。
+      // Schema 面板是并行增量面板，它出错**不能**拖垮旧属性面板（上面 renderPanels 已经跑完），
+      // 但也**必须留下可观察的证据** —— 否则用户看到"面板不动"却查不出原因。
       try {
         if (window.ICAR && window.ICAR.ui && window.ICAR.ui.SchemaPanel) {
           window.ICAR.ui.SchemaPanel.refresh();
+          if (window.__ICAR_SCHEMA_ERROR) {
+            // 恢复了 → 清掉错误状态，并把恢复事件留在控制台（便于排查间歇性故障）
+            console.info("[ICAR Schema 面板] 已恢复正常（此前有错误）", window.__ICAR_SCHEMA_ERROR);
+            window.__ICAR_SCHEMA_ERROR = null;
+            window.__ICAR_SCHEMA_ERROR_COUNT = 0;
+          }
         }
-      } catch (e) { /* Schema 面板出错不影响主流程 */ }
+      } catch (e) {
+        recordSchemaError(e, "refreshAll");
+      }
     }
     if (window.draw) window.draw();
     // 装饰动画预览（T-UI-HUD-01）：设计一变就重新判断要不要跑时钟。
