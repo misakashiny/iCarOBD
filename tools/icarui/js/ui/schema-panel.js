@@ -59,7 +59,10 @@
     const head = document.createElement("div");
     head.className = "panelBar";
     head.innerHTML = '<span class="pbTitle">属性（Schema 试点）</span>' +
-      '<span class="pbCount">' + (schema ? (schema.family === "text" ? "文字" : "轨道") : "无") + "</span>";
+      '<span class="pbCount">' + (schema ? (schema.family === "text" ? "文字"
+        : schema.family === "gauge" ? "仪表"
+        : schema.family === "imageState" ? "状态灯"
+        : schema.family === "container" ? "容器" : "轨道") : "无") + "</span>";
     container.appendChild(head);
 
     if (!schema) {
@@ -75,7 +78,46 @@
     const body = document.createElement("div");
     body.className = "spBody";
     container.appendChild(body);
-    return SP.SchemaRenderer.mount(body, schema, { readonly: false });
+    const view = SP.SchemaRenderer.mount(body, schema, { readonly: false });
+
+    // ---- P4E-03 批次 C：仪表族的「按 PID 库回填」动作 ----
+    //
+    // 旧面板有这个按钮（gaugeFields 末尾 → applyPidDefaults）。
+    // 本面板原来**没有按钮机制**（字段列表由 SchemaRenderer 按 fields 渲染）。
+    // 这里加一个**最小动作区**，直接调用既有的 `window.applyPidDefaults()` ——
+    // 不复制任何 PID 默认参数库（任务要求），也不改 SchemaRenderer。
+    if (schema && schema.family === "gauge") {
+      container.appendChild(buildGaugeActions());
+    }
+    return view;
+  }
+
+  /**
+   * 仪表族的动作按钮区（P4E-03）。
+   *
+   * ⚠️ 只做"调用既有函数 + 刷新面板"，业务逻辑全在 `applyPidDefaults` 里：
+   *    · 它自己走 `window.commit(...)` → **撤销栈自动有一条记录**（可 Undo/Redo）
+   *    · 它只改 min/max/warnLow/warnHigh 四个字段，**不碰外观**
+   *    · PID 不在内置库时它会 alert 提示，不静默改数据
+   */
+  function buildGaugeActions() {
+    const wrap = document.createElement("div");
+    wrap.className = "spActions";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "spActionBtn";
+    btn.textContent = "按 PID 库回填量程与阈值";
+    btn.title = "把 min / max / warnLow / warnHigh 换成该 PID 在内置库里的默认值";
+    btn.addEventListener("click", function () {
+      // 复用既有实现 —— 不复制一套默认参数
+      if (typeof window.applyPidDefaults !== "function") return;
+      window.applyPidDefaults();
+      // 回填后同步刷新面板与画布（任务要求）
+      refresh(true);
+      if (window.refreshAll) window.refreshAll();
+    });
+    wrap.appendChild(btn);
+    return wrap;
   }
 
   /**

@@ -76,6 +76,7 @@
     "verify-p4r2v-integration": 36,
     "verify-p4rfix01-asset-hd": 19,
     "verify-p4d01-lamp-schema": 32,
-    "verify-p4e02-gauge-schema": 38
+    "verify-p4e02-gauge-schema": 38,
+    "verify-p4e03-gauge-advanced": 46
   }
 }

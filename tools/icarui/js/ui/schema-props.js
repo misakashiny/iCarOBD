@@ -211,6 +211,23 @@
         return { ok: false, value: false, error: "需要布尔值" };
       }
 
+      // ---- 数组型文本字段（P4E-03）----
+      //
+      // 数据是 string[]，面板用逗号分隔的单行输入编辑（与旧面板一致）。
+      // 归一化规则**复用既有函数**，不另造一套：
+      //   · valueLabels → window.normalizeValueLabels（去尾部空项、截断 32、空表返 null）
+      //   · extraPids   → split(',').map(trim).filter(Boolean)（与 setNodeExtras 一致）
+      if (t === "list") {
+        const txt = raw === null || raw === undefined ? "" : String(raw);
+        const parts = txt.split(",").map(function (x) { return x.trim(); });
+        if (field.key === "valueLabels") {
+          const v = window.normalizeValueLabels(parts);
+          return { ok: true, value: v, error: null };
+        }
+        const arr = parts.filter(function (x) { return !!x; });
+        return { ok: true, value: arr.length ? arr : [], error: null };
+      }
+
       if (t === "number") {
         // ⚠️ 空字符串 → null（表示"不设"），不能变成 0，也不能变成 NaN
         if (raw === "" || raw === null || raw === undefined) {
@@ -657,7 +674,11 @@
      * 外观类（card*、neonPreset、ringStyle/ringSegments）也不在本批
      * —— 它们不在 schema 的 12 字段内，属扩范围，留给后续批次评审。
      */
-    gauge: ["pid", "style", "min", "max", "warnLow", "warnHigh", "w", "h"],
+    gauge: [
+      "pid", "style", "min", "max", "warnLow", "warnHigh", "w", "h",
+      // P4E-03 批次 A/B：文本型数据绑定字段（格式与旧面板一致）
+      "valueLabels", "extraPids",
+    ],
     imageState: [
       "statePid", "stateWarn", "stateCritical",
       "states.normal.assetId", "states.warn.assetId", "states.critical.assetId",
@@ -887,6 +908,11 @@
               const lower = s.toLowerCase();
               if (pk.value !== lower) pk.value = lower;
             }
+          } else if (f.type === "list") {
+            // P4E-03：数组 → 逗号串回显（不能依赖 String(array) 的隐式行为）
+            const s = listToText(v);
+            // ⚠️ 正在输入的框不要改值（会打断光标）—— 由调用方传 skipPath
+            if (el.value !== s) el.value = s;
           } else {
             const s = v === null || v === undefined ? "" : String(v);
             // ⚠️ 正在输入的框不要改值（会打断光标）—— 由调用方传 skipPath
@@ -903,6 +929,16 @@
     if (v === null) return "null";
     if (v === undefined) return "无值";
     if (typeof v === "boolean") return v ? "是" : "否";
+    return String(v);
+  }
+
+  /**
+   * 数组 → 逗号串（P4E-03）。回显用。
+   * 非数组/空值 → ""，避免显示 "undefined"。
+   */
+  function listToText(v) {
+    if (!v) return "";
+    if (Array.isArray(v)) return v.join(",");
     return String(v);
   }
 

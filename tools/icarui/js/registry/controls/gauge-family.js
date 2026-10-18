@@ -90,6 +90,21 @@
       { key: "h", label: "高度", type: "number", group: "变换", min: 1 },
       { key: "font.size", label: "字号", type: "number", group: "字体", min: 1 },
       { key: "font.color", label: "颜色", type: "color", group: "字体" },
+      // ==== P4E-03：把**一直在数据里、但没登记进 schema** 的两个字段补上 ====
+      //
+      // 它们本来就在 model.js 的白名单里（extraPids 解构于 parseNode:71、
+      // 序列化于 nodeToJson:830；valueLabels 同理 78/836），
+      // 也存在 Android 契约里（GaugeItem.extraPids / valueLabels）。
+      // 只是 Registry schema 没声明 —— 于是 Schema 面板**看不到**它们。
+      //
+      // ⚠️ 这是**补登记**，不是新增数据契约：字段名、类型、序列化路径全都没变。
+      //
+      // type 用 "list"：数据是 string[]，面板用**逗号分隔的单行输入**编辑
+      // （与旧面板一致；属性面板有"行高 ≤ 40px"的排版约束，不能用 textarea）。
+      { key: "valueLabels", label: "数值映射", type: "list", group: "数据",
+        hint: "逗号分隔，索引 = round(值)，如 P,R,N,1,2" },
+      { key: "extraPids", label: "副参数", type: "list", group: "数据",
+        hint: "逗号分隔的 PID 别名，如 obd.coolant,obd.intake" },
     ];
   }
 

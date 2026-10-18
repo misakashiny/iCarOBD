@@ -31,9 +31,15 @@ async function main(){
   })()`));
   ok(A.length===6,'A1 6 个仪表控件全部存在');
   ok(A.every(x=>x.family==='gauge'),'A2 **6/6 识别为 gauge 族**');
-  ok(A.every(x=>x.fields===12),'A3 每个仪表 12 个 schema 字段');
-  const EXP=['pid','style','min','max','warnLow','warnHigh','w','h'];
-  ok(JSON.stringify(A[0].editable)===JSON.stringify(EXP),'A4 可编辑字段恰为 8 个：'+EXP.join(','));
+  ok(A.every(x=>x.fields===14),'A3 每个仪表 14 个 schema 字段（P4E-03 补登记 2 个）');
+  // ⚠️ P4E-03 演进：gauge schema 由 12 字段扩展为 14 ——
+  //    P4E-03 为 valueLabels / extraPids **补登记**了 schema 声明
+  //    （两个字段本来就在 model.js 白名单和 Android 契约里，只是没进 Registry schema）。
+  //    可编辑字段由 8 个扩展为 10 个（新增的正是这两个）。
+  //    这不是 P4E-02 契约被破坏，而是后续任务按计划扩大开放范围。
+  const BASE=['pid','style','min','max','warnLow','warnHigh','w','h'];
+  const EXP=BASE.concat(['valueLabels','extraPids']);
+  ok(JSON.stringify(A[0].editable)===JSON.stringify(EXP),'A4 可编辑字段恰为 10 个：'+EXP.join(','));
 
   // ---------- B. 重载后识别 ----------
   const B=JJ(await cdp.eval(`(function(){
