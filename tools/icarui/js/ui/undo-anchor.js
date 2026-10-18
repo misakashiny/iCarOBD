@@ -124,8 +124,14 @@
     if (!bundle || typeof bundle !== "object") {
       return { ok: false, reason: "empty" };
     }
-    if (bundle.schema !== HISTORY_SCHEMA) {
-      return { ok: false, reason: "schema-mismatch", detail: bundle.schema };
+    // ⚠️ P4R-2B：正式记录用 `historyFormatVersion`（与草稿 schemaVersion 区分），
+    //    原型用的是 `schema`。两者都接受，缺一即拒绝 —— 早期只认 `schema`
+    //    导致所有正式历史被判 schema-mismatch、永远恢复不了（实测踩过）。
+    const ver = (typeof bundle.historyFormatVersion === "number")
+      ? bundle.historyFormatVersion
+      : bundle.schema;
+    if (ver !== HISTORY_SCHEMA) {
+      return { ok: false, reason: "schema-mismatch", detail: ver };
     }
     if (!Array.isArray(bundle.stack) || !bundle.stack.length) {
       return { ok: false, reason: "no-stack" };

@@ -74,7 +74,7 @@
 
   const DB_NAME = "icar-studio-drafts";
   // P4R-2A：新增 tombstones object store，需要触发一次 IndexedDB schema upgrade。
-  const DB_VERSION = 2;
+  const DB_VERSION = 3;
   /** 草稿格式版本。改结构时 +1，旧草稿仍可按旧版本读取 */
   const DRAFT_SCHEMA_VERSION = 1;
   const STORE = "drafts";
@@ -102,6 +102,14 @@
    * 只有用户显式"恢复/重新新建"同一身份时才清除。
    */
   const TOMB_STORE = "tombstones";
+  /**
+   * 撤销历史（P4R-2B）。
+   *
+   * 与草稿**同一个数据库**，因此可以和 drafts 进同一个 readwrite transaction，
+   * 做到「草稿 + 匹配历史」原子提交或一起失败。
+   * keyPath = designId（一份设计一份历史）。
+   */
+  const HIST_STORE = "undoHistory";
   const META = "meta";
 
   /**
@@ -191,6 +199,10 @@
           // P4R-2A：持久化删除墓碑
           if (!db.objectStoreNames.contains(TOMB_STORE)) {
             db.createObjectStore(TOMB_STORE, { keyPath: "draftId" });
+          }
+          // P4R-2B：撤销历史（与草稿同库 → 可同事务原子写）
+          if (!db.objectStoreNames.contains(HIST_STORE)) {
+            db.createObjectStore(HIST_STORE, { keyPath: "designId" });
           }
         } catch (e) { /* 已存在 */ }
       };
@@ -320,8 +332,10 @@
       return new Promise(function (resolve) {
         let tx;
         try {
-          // 草稿 + 墓碑都进同一事务（查墓碑与写草稿原子）
-          tx = db.transaction([STORE, TOMB_STORE], "readwrite");
+          // 草稿 + 墓碑 + 撤销历史都进**同一事务**（P4R-2B 关卡 A）。
+          // 这样「查墓碑 → CAS → 写草稿 → 写匹配历史」是一个原子单元：
+          // 任何一步失败，草稿与历史都不会只成功一半。
+          tx = db.transaction([STORE, TOMB_STORE, HIST_STORE], "readwrite");
         } catch (e) {
           state.failures++;
           state.lastError = "transaction: " + e.message;
@@ -398,6 +412,16 @@
 
             try {
               store.put(rec);
+              // ---- P4R-2B：同一事务内写匹配的撤销历史 ----
+              // p.history 存在时必须是"这次草稿版本的历史"；
+              // 调用方已算好 historyAvailable/unavailableReason。
+              if (p.history) {
+                tx.objectStore(HIST_STORE).put(p.history);
+              } else {
+                // 没有可保存的历史 → **删除旧历史**，避免下一会话
+                // 把上一版本的旧历史误当成当前版本的历史。
+                tx.objectStore(HIST_STORE).delete(p.designId);
+              }
             } catch (e) {
               state.failures++;
               state.lastError = "put: " + e.message;
@@ -450,6 +474,47 @@
           state.lastError = "aborted";
           resolve({ ok: false, reason: "aborted" });
         };
+      });
+    });
+  }
+
+  /**
+   * 读取某设计的撤销历史（P4R-2B）。
+   *
+   * ⚠️ 只读。校验由调用方（DraftManager + UndoAnchor）做，
+   * 这里**不**判断历史是否与草稿匹配 —— 存储层只管取回来。
+   */
+  function getHistory(designId) {
+    return open().then(function (db) {
+      if (!db) return null;
+      return new Promise(function (resolve) {
+        let tx;
+        try { tx = db.transaction([HIST_STORE], "readonly"); }
+        catch (e) { resolve(null); return; }
+        const req = tx.objectStore(HIST_STORE).get(designId);
+        req.onsuccess = function () { resolve(req.result || null); };
+        req.onerror = function () { resolve(null); };
+      });
+    });
+  }
+
+  /**
+   * 删除某设计的撤销历史（P4R-2B）。
+   *
+   * ⚠️ 只在**用户明确操作**或历史已确认不可用时调用；
+   * 不得在"历史校验失败"时自动删除 —— 任务第五部分要求
+   * 「不自动删除损坏的原始记录」。
+   */
+  function deleteHistory(designId) {
+    return open().then(function (db) {
+      if (!db) return { ok: false, reason: "unavailable" };
+      return new Promise(function (resolve) {
+        let tx;
+        try { tx = db.transaction([HIST_STORE], "readwrite"); }
+        catch (e) { resolve({ ok: false, reason: "transaction" }); return; }
+        tx.objectStore(HIST_STORE).delete(designId);
+        tx.oncomplete = function () { resolve({ ok: true }); };
+        tx.onerror = function () { resolve({ ok: false, reason: "delete" }); };
       });
     });
   }
@@ -562,8 +627,12 @@
       return new Promise(function (resolve) {
         let tx;
         try {
-          // 两个 store 进**同一个事务** → 原子
-          tx = db.transaction([STORE, TOMB_STORE], "readwrite");
+          // 草稿 + 墓碑 + 撤销历史进**同一个事务** → 原子
+          //
+          // ⚠️ P4R-2B：请求第八/九部分要求历史不能绕过 tombstone。
+          //    实测只删草稿时，历史记录仍留在库里（writeOk=false 但
+          //    getHistory 还能取到）—— 所以必须**同事务一并删除历史**。
+          tx = db.transaction([STORE, TOMB_STORE, HIST_STORE], "readwrite");
         } catch (e) {
           resolve({ ok: false, reason: "transaction" });
           return;
@@ -576,6 +645,8 @@
             sessionId: SESSION_ID,
             reason: "user-delete",
           });
+          // 同一个 draftId 形如 "draft_<designId>"
+          tx.objectStore(HIST_STORE).delete(draftId.replace(/^draft_/, ""));
         } catch (e) {
           resolve({ ok: false, reason: "delete" });
           return;
@@ -655,6 +726,8 @@
     listDrafts: listDrafts,
     deleteDraft: deleteDraft,
     isPersistentlyDeleted: isPersistentlyDeleted,
+    getHistory: getHistory,
+    deleteHistory: deleteHistory,
     validateDraft: validateDraft,
     getStatus: getStatus,
     checksumOf: checksumOf,

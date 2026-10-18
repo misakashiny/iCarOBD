@@ -166,7 +166,7 @@ v1 stores=`drafts,meta`；升级后 v2=`drafts,meta,tombstones`。原 draft rev=
 
 ## 七、18 类恢复矩阵
 
-隔离原型 18/18 通过：首次编辑、十次普通编辑、连续实时事务、coalesce 拖动、undo/redo、redo 分支、编辑截断 redo、持久化/内存预算、同名不同设计、designId 不匹配、revision 不匹配、当前 digest 不匹配、部分历史损坏、草稿有历史无、历史有版本未知、跨标签页 revision 分歧、大图片设计、恢复后继续编辑与导出。
+隔离原型 **18/18 场景** 通过（套件共 19 条断言 = 18 场景 + 1 条模块加载检查）：首次编辑、十次普通编辑、连续实时事务、coalesce 拖动、undo/redo、redo 分支、编辑截断 redo、持久化/内存预算、同名不同设计、designId 不匹配、revision 不匹配、当前 digest 不匹配、部分历史损坏、草稿有历史无、历史有版本未知、跨标签页 revision 分歧、大图片设计、恢复后继续编辑与导出。
 
 这是隔离原型覆盖，不是正式启动自动恢复功能验证。
 

@@ -236,6 +236,11 @@
     state.dirtySince = 0;
     state.inflight = myRev;
 
+    // P4R-2B 关卡 A：把**匹配当前 revision 的撤销历史**和草稿一起提交。
+    // buildHistoryForSave 内部已处理"历史不可保存"的降级（返回 null，
+    // 存储层会删除旧历史，避免下一会话误用上一版本历史）。
+    const history = buildHistoryForSave(myDesignId, myRev, myDesign);
+
     // P4R-1.2：乐观并发控制 —— 告诉存储层"我上次见到的版本是多少"。
     // 只有库里当前版本**严格等于**它才允许写入，否则返回 conflict。
     return DS.saveDraft({
@@ -246,6 +251,7 @@
       manualSavedAt: state.manualSavedAt,
       revision: myRev,
       lastKnownRevision: state.lastPersistedRevision,
+      history: history,
     }).then(function (r) {
       state.inflight = 0;
       state.lastSaveAt = Date.now();
@@ -294,6 +300,195 @@
       updateBadge();
       return r;
     });
+  }
+
+  // ============================================================ P4R-2B 历史
+
+  /** 历史记录的格式版本（与草稿 schemaVersion 分开演进） */
+  const HISTORY_FORMAT_VERSION = 2;
+
+  /** 持久化历史的步数/字节上限（与 app.js 的 localStorage 策略一致） */
+  const HISTORY_MAX = 40;
+  const HISTORY_BUDGET = 1200 * 1024;
+
+  /** 最近一次历史保存/恢复的结果（用于 UI 与诊断） */
+  const histState = {
+    lastSaveAvailable: null,     // 当前 revision 是否成功带上历史
+    lastSaveReason: null,        // 不可用原因
+    lastRestore: null,           // { ok, reason, usable, index }
+  };
+
+  /**
+   * 构建"要和草稿一起提交"的历史包。
+   *
+   * ## 返回 null 的三种情况（**草稿照常保存，历史降级**）
+   *
+   *  1. UndoStack 不存在 / 栈为空
+   *  2. 单条快照超过预算（P4R-2A 发现的场景：大图设计）
+   *  3. 累计超过预算或步数上限后**一条都装不下**
+   *
+   * ## 为什么从 index 往回取
+   *
+   * 与 `saveUndoStack` 同一语义：只保存"当前及之前"的记录，
+   * **redo 分支不跨会话**（P4R-2A 已确认的既有语义，本阶段保持不变）。
+   */
+  function buildHistoryForSave(designId, draftRevision, design) {
+    const A = window.ICAR && window.ICAR.ui && window.ICAR.ui.UndoAnchor;
+    const undo = window.__undoStack;
+    if (!A || !undo || !Array.isArray(undo.stack) || !undo.stack.length) {
+      histState.lastSaveAvailable = false;
+      histState.lastSaveReason = "no-undo-stack";
+      return null;
+    }
+    const index = undo.index;
+    if (!Number.isInteger(index) || index < 0) {
+      histState.lastSaveAvailable = false;
+      histState.lastSaveReason = "bad-index";
+      return null;
+    }
+    // 从 index 往回收集，受步数与字节双限制
+    const picked = [];
+    let bytes = 0;
+    for (let i = index; i >= 0 && picked.length < HISTORY_MAX; i--) {
+      const it = undo.stack[i];
+      if (!it || typeof it.state !== "string") continue;
+      const digest = A.digestOfSnapshot(it.state);
+      if (!digest) continue;
+      const one = { state: it.state, label: it.label, digest: digest };
+      const cost = it.state.length + 64;   // 估算 JSON 开销
+      if (bytes + cost > HISTORY_BUDGET) {
+        if (!picked.length) {
+          // 单条就超预算 —— 典型是大图设计
+          histState.lastSaveAvailable = false;
+          histState.lastSaveReason = "too-large";
+          return null;
+        }
+        break;
+      }
+      picked.unshift(one);
+      bytes += cost;
+    }
+    if (!picked.length) {
+      histState.lastSaveAvailable = false;
+      histState.lastSaveReason = "empty";
+      return null;
+    }
+    // ⚠️ 裁剪后**必须重算 index**：picked 的最后一条才是当前设计
+    const newIndex = picked.length - 1;
+    const currentDigest = A.designDigest(design);
+    histState.lastSaveAvailable = true;
+    histState.lastSaveReason = null;
+    return {
+      designId: designId,
+      draftRevision: draftRevision,
+      schemaVersion: 1,
+      historyFormatVersion: HISTORY_FORMAT_VERSION,
+      stack: picked,
+      index: newIndex,
+      currentDesignDigest: currentDigest,
+      historyAvailable: true,
+      unavailableReason: null,
+      savedAt: Date.now(),
+      // 跨会话能恢复多少步、redo 是否可恢复 —— 写进记录便于诊断
+      persistedSteps: newIndex,
+      redoPersisted: false,
+    };
+  }
+
+  /**
+   * 恢复草稿后，尝试恢复匹配的撤销历史。
+   *
+   * ## 顺序（任务第七部分）
+   *
+   * 设计**已经**恢复成功 → 读历史 → 严格校验 → 匹配则套用 / 不匹配则重建基准。
+   * 本函数**绝不**抛异常打断调用方；失败只返回原因并 reset。
+   */
+  function restoreHistoryFor(designId, draftRevision, design) {
+    const A = window.ICAR && window.ICAR.ui && window.ICAR.ui.UndoAnchor;
+    const undo = window.__undoStack;
+    const resetBaseline = function (label) {
+      try { undo && undo.reset(window.__commitState(), label); } catch (e) {}
+    };
+    if (!A || !undo) {
+      histState.lastRestore = { ok: false, reason: "no-module" };
+      return Promise.resolve(histState.lastRestore);
+    }
+    return DS.getHistory(designId).then(function (rec) {
+      if (!rec) {
+        resetBaseline("初始");
+        histState.lastRestore = { ok: false, reason: "no-history" };
+        return histState.lastRestore;
+      }
+      // ---- 严格校验（任务第五部分 10 条）----
+      if (rec.historyFormatVersion !== HISTORY_FORMAT_VERSION) {
+        resetBaseline("初始");
+        histState.lastRestore = { ok: false, reason: "format-mismatch",
+          detail: rec.historyFormatVersion };
+        return histState.lastRestore;
+      }
+      if (rec.historyAvailable !== true) {
+        resetBaseline("初始");
+        histState.lastRestore = { ok: false, reason: "history-unavailable",
+          detail: rec.unavailableReason || null };
+        return histState.lastRestore;
+      }
+      const v = A.validate(rec, {
+        designId: designId,
+        draftRevision: draftRevision,
+        design: design,
+      });
+      if (!v.ok) {
+        resetBaseline("初始");
+        histState.lastRestore = { ok: false, reason: v.reason, detail: v.detail || null };
+        return histState.lastRestore;
+      }
+      // ---- 校验通过：套用到 UndoStack ----
+      // ⚠️ 这里**必须**用恢复后的设计与历史当前条一致（validate 已确认），
+      //    但 selection 可能不同 —— 所以以历史记录里的 state 为准。
+      const restored = [];
+      rec.stack.forEach(function (it) {
+        if (it && typeof it.state === "string" && window.isUsableSnapshot(it.state)) {
+          restored.push({ state: it.state, label: it.label });
+        }
+      });
+      if (!restored.length) {
+        resetBaseline("初始");
+        histState.lastRestore = { ok: false, reason: "empty-after-filter" };
+        return histState.lastRestore;
+      }
+      undo.stack = restored;
+      undo.index = restored.length - 1;   // 裁剪/过滤后重算，不沿用旧 index
+      undo.lastKey = null;                // 不跨会话延续合并序列
+      try { window.updateUndoButtons && window.updateUndoButtons(); } catch (e) {}
+      histState.lastRestore = {
+        ok: true,
+        reason: null,
+        usable: restored.length,
+        index: undo.index,
+        redoPersisted: false,             // 如实告知：redo 不跨会话
+      };
+      return histState.lastRestore;
+    }).catch(function (e) {
+      resetBaseline("初始");
+      histState.lastRestore = { ok: false, reason: "exception", detail: String(e && e.message) };
+      return histState.lastRestore;
+    });
+  }
+
+  /** 历史不可恢复原因 → 给用户看的一句话 */
+  function historyReasonText(reason) {
+    switch (reason) {
+      case "no-history": return "这份草稿没有历史记录";
+      case "history-unavailable": return "保存时历史超出容量，未保存";
+      case "revision-mismatch": return "历史与草稿版本不一致";
+      case "current-mismatch": return "历史与恢复后的设计内容不一致";
+      case "record-digest-mismatch":
+      case "bad-record": return "历史记录已损坏";
+      case "index-mismatch": return "历史索引异常";
+      case "format-mismatch": return "历史格式版本不兼容";
+      case "too-large": return "历史过大，超出容量";
+      default: return "无法验证历史";
+    }
   }
 
   /** 手动导出文件后调用（**不得据此删除草稿** —— 下载不等于写盘成功） */
@@ -647,16 +842,37 @@
         window.toast && window.toast("草稿恢复失败（校验未通过），原数据仍保留");
         return false;
       }
-      // 只恢复草稿身份及 CAS 期望 revision。**不调用 loadUndoStack**，
-      // 旧历史没有可靠 designId，P4R-2A 尚在做隔离验证。
+      // 只恢复草稿身份及 CAS 期望 revision。
+      // ⚠️ 不调用旧 `loadUndoStack`（它按设计名匹配、没有可靠身份）。
       state.designId = g.record.designId;
       state.lastPersistedRevision = Number.isInteger(g.record.revision) ? g.record.revision : null;
       state.conflict = null;
       state.dirty = false;
-      state.pendingDesign = null;
-      hideRecoveryBar();
-      window.toast && window.toast("已恢复草稿「" + (design.name || "未命名设计") + "」");
-      return true;
+
+      // ---- P4R-2B 关卡 B：设计**已经恢复成功**，此时才尝试恢复历史 ----
+      // 历史失败只 reset 基准，绝不影响上面已恢复的设计。
+      return restoreHistoryFor(
+        g.record.designId,
+        g.record.revision,
+        design
+      ).then(function (hr) {
+        // 刷新撤销按钮与计数（历史套用后 index/可用步数变了）
+        try { window.updateUndoButtons && window.updateUndoButtons(); } catch (e) {}
+        if (hr && hr.ok) {
+          window.toast && window.toast(
+            "已恢复草稿「" + (design.name || "未命名设计") + "」及 " +
+            hr.usable + " 步撤销历史");
+        } else {
+          // 如实告知：设计已恢复，历史不可用
+          window.toast && window.toast(
+            "已恢复草稿「" + (design.name || "未命名设计") + "」" +
+            "（撤销历史不可恢复：" + historyReasonText(hr && hr.reason) + "）");
+        }
+        // 只有设计恢复成功后才收掉提示条
+        state.pendingDesign = null;
+        hideRecoveryBar();
+        return true;
+      });
     });
   }
 
@@ -742,6 +958,9 @@
     noteManualSave: noteManualSave,
     checkForDraft: checkForDraft,
     restorePending: restorePending,
+    restoreHistoryFor: restoreHistoryFor,
+    buildHistoryForSave: buildHistoryForSave,
+    getHistoryState: function () { return JSON.parse(JSON.stringify(histState)); },
     selectDraft: selectDraft,
     exportDraftRaw: exportDraftRaw,
     dismissConflict: dismissConflict,
