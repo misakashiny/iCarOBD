@@ -245,6 +245,9 @@
 <!-- P3A：文字控件族 12 条。在 t_label.js 之后 —— t_label 由 P1A 注册，
      本文件跳过它，避免重复 key 抛错。 -->
 <script src="js/registry/controls/text-family.js"></script>
+<!-- P3B：容器控件族 4 条（group / box_card / box_row / box_col）。
+     注意 box_h1/h2/note 不在这里 —— 它们已由 P3A 归入文字族。 -->
+<script src="js/registry/controls/container-family.js"></script>
 <script src="js/registry/catalog-metadata.js"></script>
 <script src="js/registry/catalog-declarations.js"></script>
 <!-- P3A：旧入口接线（BUILTIN_CONTROLS.make → Registry）。
@@ -259,6 +262,8 @@
   if (!B) return;
   window.__P3A_BRIDGE = B.bridge(["text","t_title","t_label","t_unit","t_big","t_small",
                                    "t_warn","t_ok","t_bigunit","box_h1","box_h2","box_note"]);
+  /* P3B：容器族 4 条 */
+  window.__P3B_BRIDGE = B.bridge(["group","box_card","box_row","box_col"]);
 })();
 </script>
 <script src="js/registry/catalog.js"></script>

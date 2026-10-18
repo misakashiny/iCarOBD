@@ -54,8 +54,9 @@
     "verify-v28": 28,
     "verify-v291": 82,
     "verify-p2a-catalog": 53,
-    "verify-p2b-catalog-ui": 55,
+    "verify-p2b-catalog-ui": 56,
     "verify-p2b1-e2e": 49,
-    "verify-p3a-text-family": 80
+    "verify-p3a-text-family": 81,
+    "verify-p3b-container-family": 60
   }
 }

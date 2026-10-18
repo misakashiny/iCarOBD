@@ -308,7 +308,11 @@
         vehicleStatus: "unverified",
         availability: "unknown",              // 旧字段（= channelStatus 的 L1~L4 写法）
         vehicleAvailability: (decl && decl.vehicleAvailability) || "unknown",  // 旧字段
-        source: decl ? "declared" : "probe",   // 便于统计"还有多少条在走探测"
+        // P3B：三级来源（不得把"剩余旧条目"一律算作 probe）
+        //   declared = CatalogMeta 显式声明
+        //   derived  = 由 Control Registry 定义派生（已正式迁移）
+        //   probe    = 仍在调旧 make() 探测
+        source: decl ? "declared" : (derived ? "derived" : "probe"),
         tags: [],
         thumbnail: (decl && decl.thumbnail) || thumbnailOf(node, cls),
         // 附加诊断信息（不参与分类判定，便于审计）
@@ -362,9 +366,16 @@
       // 前者推不出后者：可能是 App 还没做、也可能是车确实没有，**没有实车证据就不能下结论**。
       // 更不允许把 "静态文字控件（不读数据）" 标成 unsupported。
       //
-      // 所以规则极简：**没有实车证据 → 一律 unverified**。
-      // 将来接入真车验证后，才有资格把某条标成 supported/unsupported。
-      entry.vehicleStatus = "unverified";
+      // 所以规则：**没有实车证据 → unverified**。
+      //
+      // ⚠️ P3B 第六部分补充：**不读数据的静态控件**（dataCapability=none）
+      // 与"车辆"毫无关系 —— 把它们标成 unverified 等于说"这辆车可能不支持一个
+      // 纯装饰文字"，语义上说不通。这类应为 `n/a`。
+      //
+      // 判据：
+      //   dataCapability=none        → n/a（不涉及车辆数据）
+      //   bound / state / composite  → unverified（有数据需求，但无实车证据）
+      entry.vehicleStatus = entry.dataCapability === DATA.NONE ? "n/a" : "unverified";
 
       if (decl) {
         entry.__meta.pid = entry.__meta.pid || decl.pid || "";
@@ -783,7 +794,7 @@
 
       // 2) 字段组合合法性
       const VALID_CH = ["implemented", "alias-only", "unimplemented", "unknown", "n/a"];
-      const VALID_VH = ["supported", "unsupported", "unverified"];
+      const VALID_VH = ["supported", "unsupported", "unverified", "n/a"];
       const VALID_DC = ["none", "bound", "state", "composite"];
       all.forEach(function (e) {
         if (VALID_CH.indexOf(e.channelStatus) < 0) {

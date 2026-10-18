@@ -37,7 +37,8 @@ async function main() {
       '  var out=[],check=function(v,m){out.push([!!v,m]);};' +
       '  var C=ICAR.registry.Catalog, R=ICAR.registry.Control, B=ICAR.adapter.RegistryBridge, S=CanvasState;' +
       '  var KEYS=' + JSON.stringify(KEYS) + ';' +
-      '  check(B.status().bridged.length===12,"12 text controls bridged (got "+B.status().bridged.length+")");' +
+      '  check(B.status().bridged.length>=12,"at least 12 text controls bridged (got "+B.status().bridged.length+")");' +
+      '  check(KEYS.every(function(k){return B.status().bridged.indexOf(k)>=0;}),"all 12 text keys in bridged list");' +
       '  check(B.status().fallback.length===0,"no fallback needed");' +
       '  check((window.__P3A_BRIDGE&&window.__P3A_BRIDGE.missing||[]).length===0,"no missing keys");' +
       '  KEYS.forEach(function(k){ check(R.byLegacyKey(k)!==undefined,"Registry owns "+k); });' +
@@ -62,8 +63,10 @@ async function main() {
       '  var vs={}; C.all().forEach(function(e){ vs[e.vehicleStatus]=(vs[e.vehicleStatus]||0)+1; });' +
       '  check(!vs.supported,"nothing marked supported without evidence");' +
       '  check(!vs.unsupported,"nothing marked unsupported without evidence");' +
-      '  check(vs.unverified===215,"all 215 unverified (got "+vs.unverified+")");' +
-      '  KEYS.forEach(function(k){ check(C.get(k).vehicleStatus==="unverified",k+" is unverified not unsupported"); });' +
+      // P3B 第六部分：不读数据的静态控件 vehicleStatus=n/a（不是 unverified）。
+      // 文字控件 slots=[] → 不涉及车辆数据 → n/a。
+      '  check(!vs.supported&&!vs.unsupported,"no supported/unsupported");' +
+      '  KEYS.forEach(function(k){ check(C.get(k).vehicleStatus==="n/a",k+" is n/a (static, no vehicle data needed)"); });' +
       '  check(C.get("t_label").vehicleAvailability!==undefined,"legacy vehicleAvailability kept");' +
       '  check(C.get("t_label").availability!==undefined,"legacy availability kept");' +
       '  KEYS.forEach(function(k){ check(C.get(k).category==="文字","catalog category for "+k+" is 文字 (got "+C.get(k).category+")"); });' +

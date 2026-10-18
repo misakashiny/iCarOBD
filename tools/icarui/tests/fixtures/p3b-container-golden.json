@@ -1,0 +1,50 @@
+{
+  "group": {
+    "type": "group",
+    "name": "分组",
+    "x": 40,
+    "y": 40,
+    "w": 160,
+    "h": 160,
+    "rotation": 0,
+    "scale": 1,
+    "alpha": 255,
+    "z": 99
+  },
+  "box_card": {
+    "type": "group",
+    "name": "卡片容器（放一组相关读数的底板）",
+    "x": 40,
+    "y": 40,
+    "w": 320,
+    "h": 200,
+    "rotation": 0,
+    "scale": 1,
+    "alpha": 255,
+    "z": 99
+  },
+  "box_row": {
+    "type": "group",
+    "name": "横向分组（左右排列的几个控件）",
+    "x": 40,
+    "y": 40,
+    "w": 340,
+    "h": 100,
+    "rotation": 0,
+    "scale": 1,
+    "alpha": 255,
+    "z": 99
+  },
+  "box_col": {
+    "type": "group",
+    "name": "纵向分组（上下排列的几个控件）",
+    "x": 40,
+    "y": 40,
+    "w": 140,
+    "h": 320,
+    "rotation": 0,
+    "scale": 1,
+    "alpha": 255,
+    "z": 99
+  }
+}

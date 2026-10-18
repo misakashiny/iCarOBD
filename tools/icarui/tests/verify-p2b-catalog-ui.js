@@ -44,7 +44,13 @@ async function main(){
    // ---------- 2. 探测兜底仍工作 ----------
    const st=C.stats();
    check(st.total===215,'total 215 with mixed sources (got '+st.total+')');
-   check(st.bySource.declared===8&&st.bySource.probe===207,'source split 8/207 (got '+JSON.stringify(st.bySource)+')');
+   // P3B：来源从二级改为**三级**（declared / derived / probe）。
+   // 之前把"已由 Registry 接管的条目"也算进 probe，是不准确的。
+   // 现在：declared 8（CatalogMeta 声明）+ derived 16（Registry 派生）+ probe 191 = 215。
+   check(st.bySource.declared===8&&st.bySource.derived===16&&st.bySource.probe===191,
+     'source split 8/16/191 (got '+JSON.stringify(st.bySource)+')');
+   check(st.bySource.declared+st.bySource.derived+st.bySource.probe===215,
+     'three sources sum to 215');
    check(C.verifyCoverage().ok,'coverage ok across both sources');
 
    // ---------- 3. 就绪/诊断/恢复 ----------
