@@ -123,8 +123,12 @@ async function main(){
   ok(F.every(function(x){return x.editable===17;}),'F3 6/6 可编辑字段均为 17');
   const styles=F.map(function(x){return x.style;});
   // ⚠️ 实测：6 个仪表的 style 并非两两不同 —— g_coolant 与 g_fuel 都是 0（圆表）。
-  //    本项目要验证的是「多个样式档位下外观字段都可用」，不是「6 个全不同」。
-  ok(new Set(styles).size>=4,'F4 覆盖 4 种以上样式档位（实测 '+JSON.stringify(styles)+'）');
+  //
+  // ⚠️ P4E-05 收紧：原文是 `new Set(styles).size >= 4` —— 那是**弱断言**
+  //    （某个仪表默认 style 被改错、档位从 4 掉到 3，它仍然会通过）。
+  //    默认 style 是 Registry 里的**固定值**，应当精确断言。
+  ok(JSON.stringify(styles)==='[1,0,0,4,2,3]',
+    'F4 6 个仪表默认 style 精确为 [1,0,0,4,2,3]（实测 '+JSON.stringify(styles)+'）');
 
   // ---------- G. 【专项】extraPids = [] 真实行为 ----------
   const G=JJ(await cdp.eval(`(function(){
