@@ -221,8 +221,14 @@
         return { ok: false, reason: "serialize" };
       }
 
+      const draftId = "draft_" + p.designId;
+      // ⚠️ 已经删除的草稿不允许被飞行中的写入复活（P4R-1.1）
+      if (isTombstoned(draftId)) {
+        return { ok: false, reason: "tombstoned" };
+      }
+
       const rec = {
-        draftId: "draft_" + p.designId,
+        draftId: draftId,
         designId: p.designId,
         designName: String(p.designName || ""),
         savedAt: Date.now(),
@@ -234,6 +240,14 @@
         byteSize: designJson.length,
         checksum: checksumOf(designJson),
         manualSavedAt: p.manualSavedAt || 0,
+        /**
+         * 单调递增的编辑版本号（P4R-1.1）。
+         *
+         * 用来判断"这次写入的内容是不是比库里更新"。
+         * 写入方（DraftManager）每次 markDirty 时 ++revision。
+         * 读取方（恢复 / 多标签页）可以据此判断草稿新旧。
+         */
+        revision: p.revision || 0,
         complete: true,
       };
 
@@ -247,15 +261,61 @@
           resolve({ ok: false, reason: "transaction" });
           return;
         }
+
+        // ==================================================== P4R-1.1 版本保护
+        //
+        // ## 防的是"旧写入覆盖新草稿"
+        //
+        // 写入是**异步**的。可能出现：
+        //   ① 发起写（rev=3，内容 A）
+        //   ② 用户又编辑（rev=4，内容 B）
+        //   ③ 发起写（rev=4，内容 B）
+        //   ④ **③ 先完成，① 后完成** → 库里变成了内容 A（旧）
+        //
+        // 修法：**同一个读改写事务里**先读出库里现有记录的 revision，
+        // 如果它的 revision **大于**本次要写的，就**放弃写入**。
+        // 因为 IndexedDB 事务是串行的，这个检查是原子的。
+        let rejectReason = null;
         try {
-          tx.objectStore(STORE).put(rec);
+          const store = tx.objectStore(STORE);
+          const curReq = store.get(draftId);
+          curReq.onsuccess = function () {
+            const cur = curReq.result;
+            const curRev = (cur && typeof cur.revision === "number") ? cur.revision : -1;
+            // 库里的版本更新 → 不覆盖
+            if (curRev > (rec.revision || 0)) {
+              rejectReason = "stale-write";
+              return;                      // 不 put，事务自然完成但不写
+            }
+            try {
+              store.put(rec);
+            } catch (e) {
+              state.failures++;
+              state.lastError = "put: " + e.message;
+              rejectReason = "put";
+            }
+          };
+          curReq.onerror = function () {
+            // 读失败 → 保守：仍然写（宁可覆盖也不要丢数据）
+            try { store.put(rec); } catch (e) { rejectReason = "put"; }
+          };
         } catch (e) {
           state.failures++;
           state.lastError = "put: " + e.message;
           resolve({ ok: false, reason: "put" });
           return;
         }
+
         tx.oncomplete = function () {
+          if (rejectReason === "stale-write") {
+            // ⚠️ 不算失败：库里已经有更新的版本，这是我们想要的最终状态
+            resolve({ ok: true, stale: true, bytes: rec.byteSize, savedAt: rec.savedAt });
+            return;
+          }
+          if (rejectReason) {
+            resolve({ ok: false, reason: rejectReason });
+            return;
+          }
           state.writes++;
           state.lastWriteAt = rec.savedAt;
           state.lastWriteBytes = rec.byteSize;
@@ -333,6 +393,9 @@
               byteSize: rec.byteSize,
               schemaVersion: rec.schemaVersion,
               manualSavedAt: rec.manualSavedAt || 0,
+              // P4R-1.1：列表也要带 revision —— 判断草稿新旧 / 验证写入顺序都要它
+              revision: typeof rec.revision === "number" ? rec.revision : 0,
+              complete: rec.complete === true,
               problem: draftProblem(rec),
             };
           });
@@ -344,10 +407,35 @@
     });
   }
 
+  /**
+   * 已删除草稿的"墓碑"（P4R-1.1）。
+   *
+   * ## 防的是什么
+   *
+   * 用户删掉草稿后，如果**还有一个写入正在飞行中**（IndexedDB 事务尚未完成），
+   * 它完成后会把这条记录**重新创建出来** —— 用户看到"删了又回来"。
+   *
+   * 做法：删除时把 draftId 记进墓碑表（带时间戳）；`saveDraft` 前先查墓碑，
+   * 命中就**拒绝写入**。墓碑有 TTL，避免无限增长。
+   *
+   * ⚠️ 只在内存里 —— 刷新后墓碑没了，但刷新后也不会有飞行中的写入。
+   */
+  const tombstones = new Map();      // draftId -> 删除时间
+  const TOMBSTONE_TTL = 60 * 1000;   // 60 秒
+
+  function isTombstoned(draftId) {
+    const t = tombstones.get(draftId);
+    if (!t) return false;
+    if (Date.now() - t > TOMBSTONE_TTL) { tombstones.delete(draftId); return false; }
+    return true;
+  }
+
   /** 删除草稿。**只在用户明确确认后调用** */
   function deleteDraft(draftId) {
     return open().then(function (db) {
       if (!db) return { ok: false, reason: "unavailable" };
+      // ⚠️ 先立墓碑，再删 —— 防止飞行中的写入把记录复活
+      tombstones.set(draftId, Date.now());
       return new Promise(function (resolve) {
         let tx;
         try { tx = db.transaction([STORE], "readwrite"); } catch (e) { resolve({ ok: false }); return; }
@@ -409,5 +497,8 @@
     DB_NAME: DB_NAME,
     SCHEMA_VERSION: DRAFT_SCHEMA_VERSION,
     __clearAll: __clearAll,
+    /** 测试钩子：查墓碑 / 清墓碑 */
+    __isTombstoned: isTombstoned,
+    __clearTombstones: function () { tombstones.clear(); },
   };
 })();

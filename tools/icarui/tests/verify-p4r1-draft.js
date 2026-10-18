@@ -208,8 +208,11 @@ async function main() {
     ok(bar.exists === true, '恢复提示条已创建');
     ok(bar.visible === true, '检测到草稿时提示条可见');
     if (bar.text) {
-      ok(/恢复草稿/.test(bar.text) && /稍后再说/.test(bar.text) && /删除草稿/.test(bar.text),
-        '提示条含三个操作按钮');
+      const btns = JSON.parse(await cdp.eval("(function(){var b=document.getElementById('draftRecoveryBar');" +
+        "if(!b)return '[]';" +
+        "return JSON.stringify(Array.from(b.querySelectorAll('.drbBtns button')).map(function(x){return x.textContent;}));})()"));
+      ok(btns.length >= 3 && btns.indexOf('稍后再说') >= 0 && btns.indexOf('删除草稿') >= 0,
+        '提示条含操作按钮：' + JSON.stringify(btns));
     }
 
     // ================= 八、稍后再说 / 删除确认 =================

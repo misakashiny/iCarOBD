@@ -1133,3 +1133,22 @@ main { grid-template-columns: 280px minmax(0, 1fr) 340px; gap: 10px; padding: 10
 .draftBadge.ok { color: #39d98a; border-color: rgba(57, 217, 138, .35); }
 .draftBadge.dirty { color: #ffb454; border-color: rgba(255, 180, 84, .35); }
 .draftBadge.warn { color: #ff4d4f; border-color: rgba(255, 77, 79, .4); }
+
+/* P4R-1.1：多草稿列表 */
+.drbList {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin: 6px 0 8px 0; max-height: 96px; overflow-y: auto;
+}
+.drbItem {
+  display: flex; flex-direction: column; gap: 1px;
+  padding: 4px 10px; border-radius: 5px; cursor: pointer;
+  background: #1b3247; border: 1px solid #2f4f6d;
+  font-size: 11px; line-height: 1.35; min-width: 128px;
+}
+.drbItem:hover { background: #24435e; }
+.drbItem.selected { border-color: #388bfd; background: #1f4a78; }
+.drbItem.bad { border-color: #7d3038; background: #3a2027; }
+.drbName { color: #eaf3ff; font-weight: 600; }
+.drbWhen { color: #8fa8c2; }
+.drbSum { color: #7d92aa; }
+.drbBad { color: #ff8080; font-weight: 600; }

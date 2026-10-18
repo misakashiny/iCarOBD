@@ -63,15 +63,60 @@
    */
   const DEBOUNCE_MS = 1200;
 
+  /**
+   * **最长未保存时长**（P4R-1.1 新增）。
+   *
+   * ## 为什么必须有它
+   *
+   * 原来只有「防抖」：每次 `markDirty()` 都 `clearTimeout` 再重新计时。
+   * 用户在**持续编辑**（打字、拖动、连续改属性）时，定时器**永远被重置** ——
+   * 实测连续编辑 6 秒、20 次 commit，**保存次数为 0**，结束时仍然 dirty。
+   *
+   * 这是防抖的固有缺陷：它假设"用户会停下来"，但连续编辑 60 秒的用户
+   * 期间**一个草稿都没有**，一旦崩溃就全丢。
+   *
+   * ## 参数为什么是 5000ms
+   *
+   * | 候选 | 理由 |
+   * |---|---|
+   * | 2000ms | 写入太频繁（连续编辑时每 2 秒写一次 1MB）|
+   * | **5000ms** | **选它**：连续编辑时每 5 秒落一次，最坏丢失窗口 5 秒 |
+   * | 10000ms | 丢 10 秒太多，且没有明显收益 |
+   *
+   * 依据：实测写草稿 1.0ms（60 控件）/ 10ms（100 张图），
+   * 5 秒一次的写入开销完全可以接受。任务建议 5~10 秒，取偏保守的 5 秒。
+   */
+  const MAX_UNSAVED_MS = 5000;
+
   const state = {
     designId: null,
     timer: null,
+    /** 最长未保存计时器（P4R-1.1）—— **不随 markDirty 重置** */
+    maxTimer: null,
+    /** 第一次变脏的时间（用于 MAX_UNSAVED_MS 判定） */
+    dirtySince: 0,
+    /**
+     * 单调递增的草稿版本号（P4R-1.1）。
+     *
+     * ## 防的是什么
+     *
+     * 异步写入可能**乱序完成**：先发起的写（旧内容）后完成，
+     * 把后发起的写（新内容）覆盖掉 —— 草稿就退回到旧版本。
+     *
+     * 做法：每次 `markDirty()` **++revision**；发起写入时记下这次的 rev；
+     * 写入完成时如果 `rev !== state.revision`，说明期间又有新编辑，
+     * **不能标记为 clean**（否则新编辑就永远不落盘了）。
+     */
+    revision: 0,
+    /** 正在写入中的版本（用于诊断） */
+    inflight: 0,
     dirty: false,
     lastSaveAt: 0,
     lastSaveOk: null,
     saveCount: 0,
     manualSavedAt: 0,       // 上次手动导出文件的时间
     pendingDesign: null,    // 待恢复的草稿（启动时检测到）
+    allDrafts: [],          // 全部草稿（P4R-1.1 多草稿列表）
     uiMounted: false,
     enabled: false,
   };
@@ -97,11 +142,27 @@
   function markDirty() {
     if (!state.enabled) return;
     state.dirty = true;
+    state.revision++;                      // P4R-1.1：单调递增
+    if (!state.dirtySince) state.dirtySince = Date.now();
+
+    // ① 普通防抖（短时连续操作合并）
     if (state.timer) clearTimeout(state.timer);
     state.timer = setTimeout(function () {
       state.timer = null;
       flush("debounce");
     }, DEBOUNCE_MS);
+
+    // ② **最长未保存兜底**（P4R-1.1）
+    //
+    // ⚠️ 关键：这个定时器**不随 markDirty 重置** —— 只在第一次变脏时启动。
+    //    否则就退化成第二个防抖，连续编辑时照样永远不触发。
+    if (!state.maxTimer) {
+      state.maxTimer = setTimeout(function () {
+        state.maxTimer = null;
+        // 到这里说明已经连续编辑 MAX_UNSAVED_MS 了，必须落盘一次
+        if (state.dirty) flush("max-interval");
+      }, MAX_UNSAVED_MS);
+    }
   }
 
   /**
@@ -115,21 +176,49 @@
     if (!S || !S.design) return Promise.resolve({ ok: false, reason: "no-design" });
 
     if (state.timer) { clearTimeout(state.timer); state.timer = null; }
+    if (state.maxTimer) { clearTimeout(state.maxTimer); state.maxTimer = null; }
+
+    // ⚠️ P4R-1.1：记下**发起写入时**的版本与身份。
+    //    写入是异步的，完成时可能已经：
+    //      · 有更新的编辑（revision 变大）→ 不能标 clean
+    //      · 换了设计（designId 变了）→ 结果属于旧设计，不能影响新设计的 dirty
+    const myRev = state.revision;
+    const myDesignId = currentDesignId();
+    const myDesign = S.design;
     state.dirty = false;
+    state.dirtySince = 0;
+    state.inflight = myRev;
 
     return DS.saveDraft({
-      designId: currentDesignId(),
-      designName: S.design.name || "",
-      design: S.design,
+      designId: myDesignId,
+      designName: myDesign.name || "",
+      design: myDesign,
       selection: S.selection || [],
       manualSavedAt: state.manualSavedAt,
+      revision: myRev,
     }).then(function (r) {
+      state.inflight = 0;
       state.lastSaveAt = Date.now();
       state.lastSaveOk = !!r.ok;
       if (r.ok) state.saveCount++;
-      if (!r.ok) {
+
+      if (r.ok) {
+        // 写入成功 —— 但如果期间又有新编辑，**必须重新标脏**，
+        // 否则那些新改动会一直等不到下一次触发（任务第四部分明确要求）。
+        if (state.revision !== myRev) {
+          state.dirty = true;
+          if (!state.dirtySince) state.dirtySince = Date.now();
+          if (!state.maxTimer) {
+            state.maxTimer = setTimeout(function () {
+              state.maxTimer = null;
+              if (state.dirty) flush("max-interval");
+            }, MAX_UNSAVED_MS);
+          }
+        }
+      } else {
         // ⚠️ 失败时**不删任何草稿**，只是标记 dirty 以便下次重试
         state.dirty = true;
+        if (!state.dirtySince) state.dirtySince = Date.now();
         console.warn("[草稿] 保存失败：" + r.reason);
       }
       updateBadge();
@@ -188,14 +277,88 @@
    *   · 检测到旧草稿时，新建空白设计**不能**自动覆盖那份旧草稿
    *   · 稍后再说**绝不删除数据**
    */
+  /**
+   * 启动时检测草稿。
+   *
+   * P4R-1.1：**列出全部草稿**（含损坏的），不再只取最新一份 ——
+   * 用户应能查看、选择、恢复任意一份（任务第六部分）。
+   * 损坏的草稿单独标出，**不影响其它正常草稿的恢复**。
+   */
   function checkForDraft() {
     return DS.listDrafts().then(function (list) {
+      if (!list.length) return null;
+      state.allDrafts = list;
       const usable = list.filter(function (d) { return !d.problem; });
-      if (!usable.length) return null;
-      // 只提示最新那份
-      state.pendingDesign = usable[0];
-      showRecoveryBar(usable[0], usable.length);
-      return usable[0];
+      // 默认选中第一份**可用**的（若全坏则选第一份，用来展示错误）
+      state.pendingDesign = usable.length ? usable[0] : list[0];
+      showRecoveryBar(state.pendingDesign, list.length, list);
+      return state.pendingDesign;
+    });
+  }
+
+  /** 选择要恢复的草稿（多草稿列表用） */
+  function selectDraft(draftId) {
+    const d = (state.allDrafts || []).find(function (x) { return x.draftId === draftId; });
+    if (!d) return false;
+    state.pendingDesign = d;
+    showRecoveryBar(d, (state.allDrafts || []).length, state.allDrafts);
+    return true;
+  }
+
+  /**
+   * 导出草稿原始数据（P4R-1.1 任务第八部分）。
+   *
+   * 草稿校验失败时，给用户一个**自救入口** —— 把能拿到的原始记录原样下载下来。
+   * ⚠️ 导出失败不会删除草稿；导出成功也**不会**删除草稿（用户可能还要再试）。
+   */
+  function exportDraftRaw(draftId) {
+    return DS.getDraft(draftId).then(function (g) {
+      if (!g || !g.record) {
+        window.toast && window.toast("导出失败：读不到草稿记录（草稿未被删除）");
+        return false;
+      }
+      const rec = g.record;
+      const payload = {
+        // —— 诊断信息 ——
+        _diagnostic: {
+          exportedAt: new Date().toISOString(),
+          draftId: rec.draftId,
+          designId: rec.designId,
+          designName: rec.designName,
+          savedAt: rec.savedAt ? new Date(rec.savedAt).toISOString() : null,
+          schemaVersion: rec.schemaVersion,
+          revision: rec.revision,
+          nodeCount: rec.nodeCount,
+          assetCount: rec.assetCount,
+          byteSize: rec.byteSize,
+          complete: rec.complete,
+          /** 校验失败的**原因**（null = 完好） */
+          problem: g.problem,
+          /** 期望的校验和 vs 实际算出来的 */
+          checksumStored: rec.checksum,
+          checksumActual: typeof rec.designJson === "string"
+            ? DS.checksumOf(rec.designJson) : null,
+          note: "这是自动恢复草稿的原始记录。designJson 为原始字符串，" +
+            "可能无法直接作为设计文件导入 —— 但它是唯一可救的数据。",
+        },
+        // —— 原始记录（原样，不解析）——
+        raw: rec,
+      };
+      try {
+        const text = JSON.stringify(payload, null, 2);
+        const blob = new Blob([text], { type: "application/json;charset=utf-8" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "draft-rescue-" + (rec.designName || "unnamed") + "-" +
+          (rec.savedAt || Date.now()) + ".json";
+        a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+        window.toast && window.toast("已导出草稿原始数据（草稿仍保留）");
+        return true;
+      } catch (e) {
+        window.toast && window.toast("导出失败：" + e.message + "（草稿未被删除）");
+        return false;
+      }
     });
   }
 
@@ -206,7 +369,7 @@
   }
 
   /** 顶部提示条（非模态，不打断） */
-  function showRecoveryBar(draft, total) {
+  function showRecoveryBar(draft, total, allDrafts) {
     let bar = document.getElementById("draftRecoveryBar");
     if (!bar) {
       bar = document.createElement("div");
@@ -231,8 +394,29 @@
       problem +
       '</div>' +
       '</div>' +
+      (function () {
+        // 多草稿列表（P4R-1.1）：显示全部草稿，可切换选择
+        const list = allDrafts || [];
+        if (list.length <= 1) return '';
+        let h = '<div class="drbList">';
+        list.forEach(function (d) {
+          const sel = d.draftId === draft.draftId ? ' selected' : '';
+          const bad = d.problem ? ' bad' : '';
+          h += '<div class="drbItem' + sel + bad + '" onclick="ICAR.ui.DraftManager.selectDraft(\'' +
+            esc(d.draftId) + '\')">' +
+            '<span class="drbName">' + esc(d.designName || '未命名设计') + '</span>' +
+            '<span class="drbWhen">' + esc(relTime(d.savedAt)) + '</span>' +
+            '<span class="drbSum">' + d.nodeCount + ' 控件 · ' + d.assetCount + ' 素材</span>' +
+            (d.problem ? '<span class="drbBad">⚠ 损坏</span>' : '') +
+            '</div>';
+        });
+        h += '</div>';
+        return h;
+      })() +
       '<div class="drbBtns">' +
-      '<button class="primary" onclick="ICAR.ui.DraftManager.restorePending()">恢复草稿</button>' +
+      (draft.problem
+        ? '<button class="primary" onclick="ICAR.ui.DraftManager.exportPendingRaw()">导出原始数据</button>'
+        : '<button class="primary" onclick="ICAR.ui.DraftManager.restorePending()">恢复草稿</button>') +
       '<button onclick="ICAR.ui.DraftManager.dismissPending()">稍后再说</button>' +
       '<button class="danger" onclick="ICAR.ui.DraftManager.deletePending()">删除草稿</button>' +
       '</div>' +
@@ -281,7 +465,9 @@
       }
       if (g.problem) {
         // ⚠️ 恢复失败**不得清除唯一可用副本**
-        window.toast && window.toast("草稿已损坏（" + g.problem + "），未做任何更改");
+        // P4R-1.1：引导用户导出原始数据自救
+        window.toast && window.toast(
+          "草稿已损坏（" + g.problem + "），未做任何更改。可用「导出原始数据」抢救。");
         return false;
       }
       let design = null;
@@ -398,6 +584,9 @@
     noteManualSave: noteManualSave,
     checkForDraft: checkForDraft,
     restorePending: restorePending,
+    selectDraft: selectDraft,
+    exportDraftRaw: exportDraftRaw,
+    exportPendingRaw: function () { return state.pendingDesign ? exportDraftRaw(state.pendingDesign.draftId) : false; },
     dismissPending: dismissPending,
     deletePending: deletePending,
     currentDesignId: currentDesignId,
@@ -411,5 +600,6 @@
       };
     },
     DEBOUNCE_MS: DEBOUNCE_MS,
+    MAX_UNSAVED_MS: MAX_UNSAVED_MS,
   };
 })();

@@ -794,6 +794,12 @@
     toast(r.removed > 0
       ? "已撤销：" + r.label + "（跳过 " + r.removed + " 条坏记录）"
       : "已撤销：" + r.label);
+    // P4R-1.1：撤销**不改走 commit**（它直接 restore 快照），所以必须在这里
+    // 手动通知草稿管理器 —— 否则撤销后的状态永远不会写进草稿，
+    // 刷新恢复出来的是**撤销之前**的内容（实测过：内存 alpha=11，IndexedDB 里还是 22）。
+    if (window.ICAR && window.ICAR.ui && window.ICAR.ui.DraftManager) {
+      try { window.ICAR.ui.DraftManager.markDirty(); } catch (e) {}
+    }
   };
   window.doRedo = function () {
     if (undo.canRedo() && !confirmJsonReplace("重做")) return;
@@ -805,6 +811,10 @@
     toast(r.removed > 0
       ? "已重做：" + r.label + "（跳过 " + r.removed + " 条坏记录）"
       : "已重做：" + r.label);
+    // P4R-1.1：同 doUndo —— 重做也不走 commit，必须手动通知草稿
+    if (window.ICAR && window.ICAR.ui && window.ICAR.ui.DraftManager) {
+      try { window.ICAR.ui.DraftManager.markDirty(); } catch (e) {}
+    }
   };
 
   /**
