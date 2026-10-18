@@ -1,0 +1,648 @@
+{
+  "lamp_coolant": {
+    "type": "image",
+    "name": "水温灯",
+    "x": 40,
+    "y": 40,
+    "w": 35,
+    "h": 56,
+    "rotation": 0,
+    "scale": 1,
+    "alpha": 255,
+    "z": 96,
+    "assetId": "PATH:assets/warning/lamp-coolant-off.png",
+    "statePid": "obd.coolant",
+    "states": {
+      "normal": {
+        "assetId": "PATH:assets/warning/lamp-coolant-off.png",
+        "alpha": 120,
+        "blink": false,
+        "blinkMs": 400
+      },
+      "warn": {
+        "assetId": "PATH:assets/warning/lamp-coolant-warn.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 600
+      },
+      "critical": {
+        "assetId": "PATH:assets/warning/lamp-coolant-crit.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 400
+      }
+    }
+  },
+  "lamp_oil": {
+    "type": "image",
+    "name": "机油灯",
+    "x": 40,
+    "y": 40,
+    "w": 35,
+    "h": 56,
+    "rotation": 0,
+    "scale": 1,
+    "alpha": 255,
+    "z": 96,
+    "assetId": "PATH:assets/warning/lamp-oil-off.png",
+    "statePid": "tpl_oilPressure",
+    "states": {
+      "normal": {
+        "assetId": "PATH:assets/warning/lamp-oil-off.png",
+        "alpha": 120,
+        "blink": false,
+        "blinkMs": 400
+      },
+      "warn": {
+        "assetId": "PATH:assets/warning/lamp-oil-warn.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 600
+      },
+      "critical": {
+        "assetId": "PATH:assets/warning/lamp-oil-crit.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 400
+      }
+    }
+  },
+  "lamp_batt": {
+    "type": "image",
+    "name": "电池灯",
+    "x": 40,
+    "y": 40,
+    "w": 35,
+    "h": 56,
+    "rotation": 0,
+    "scale": 1,
+    "alpha": 255,
+    "z": 96,
+    "assetId": "PATH:assets/warning/lamp-batt-off.png",
+    "statePid": "obd.voltage",
+    "states": {
+      "normal": {
+        "assetId": "PATH:assets/warning/lamp-batt-off.png",
+        "alpha": 120,
+        "blink": false,
+        "blinkMs": 400
+      },
+      "warn": {
+        "assetId": "PATH:assets/warning/lamp-batt-warn.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 600
+      },
+      "critical": {
+        "assetId": "PATH:assets/warning/lamp-batt-crit.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 400
+      }
+    }
+  },
+  "lamp_brake": {
+    "type": "image",
+    "name": "制动灯",
+    "x": 40,
+    "y": 40,
+    "w": 35,
+    "h": 56,
+    "rotation": 0,
+    "scale": 1,
+    "alpha": 255,
+    "z": 96,
+    "assetId": "PATH:assets/warning/lamp-brake-off.png",
+    "statePid": "obd.brakeFluid",
+    "states": {
+      "normal": {
+        "assetId": "PATH:assets/warning/lamp-brake-off.png",
+        "alpha": 120,
+        "blink": false,
+        "blinkMs": 400
+      },
+      "warn": {
+        "assetId": "PATH:assets/warning/lamp-brake-warn.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 600
+      },
+      "critical": {
+        "assetId": "PATH:assets/warning/lamp-brake-crit.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 400
+      }
+    }
+  },
+  "lamp_pad": {
+    "type": "image",
+    "name": "刹车片",
+    "x": 40,
+    "y": 40,
+    "w": 35,
+    "h": 56,
+    "rotation": 0,
+    "scale": 1,
+    "alpha": 255,
+    "z": 96,
+    "assetId": "PATH:assets/warning/lamp-pad-off.png",
+    "statePid": "obd.brakePad",
+    "states": {
+      "normal": {
+        "assetId": "PATH:assets/warning/lamp-pad-off.png",
+        "alpha": 120,
+        "blink": false,
+        "blinkMs": 400
+      },
+      "warn": {
+        "assetId": "PATH:assets/warning/lamp-pad-warn.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 600
+      },
+      "critical": {
+        "assetId": "PATH:assets/warning/lamp-pad-crit.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 400
+      }
+    }
+  },
+  "lamp_tpms": {
+    "type": "image",
+    "name": "胎压灯",
+    "x": 40,
+    "y": 40,
+    "w": 35,
+    "h": 56,
+    "rotation": 0,
+    "scale": 1,
+    "alpha": 255,
+    "z": 96,
+    "assetId": "PATH:assets/warning/lamp-tpms-off.png",
+    "statePid": "obd.tpms",
+    "states": {
+      "normal": {
+        "assetId": "PATH:assets/warning/lamp-tpms-off.png",
+        "alpha": 120,
+        "blink": false,
+        "blinkMs": 400
+      },
+      "warn": {
+        "assetId": "PATH:assets/warning/lamp-tpms-warn.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 600
+      },
+      "critical": {
+        "assetId": "PATH:assets/warning/lamp-tpms-crit.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 400
+      }
+    }
+  },
+  "lamp_airbag": {
+    "type": "image",
+    "name": "气囊灯",
+    "x": 40,
+    "y": 40,
+    "w": 35,
+    "h": 56,
+    "rotation": 0,
+    "scale": 1,
+    "alpha": 255,
+    "z": 96,
+    "assetId": "PATH:assets/warning/lamp-airbag-off.png",
+    "statePid": "obd.airbag",
+    "states": {
+      "normal": {
+        "assetId": "PATH:assets/warning/lamp-airbag-off.png",
+        "alpha": 120,
+        "blink": false,
+        "blinkMs": 400
+      },
+      "warn": {
+        "assetId": "PATH:assets/warning/lamp-airbag-warn.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 600
+      },
+      "critical": {
+        "assetId": "PATH:assets/warning/lamp-airbag-crit.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 400
+      }
+    }
+  },
+  "lamp_belt": {
+    "type": "image",
+    "name": "安全带灯",
+    "x": 40,
+    "y": 40,
+    "w": 35,
+    "h": 56,
+    "rotation": 0,
+    "scale": 1,
+    "alpha": 255,
+    "z": 96,
+    "assetId": "PATH:assets/warning/lamp-belt-off.png",
+    "statePid": "obd.seatbelt",
+    "states": {
+      "normal": {
+        "assetId": "PATH:assets/warning/lamp-belt-off.png",
+        "alpha": 120,
+        "blink": false,
+        "blinkMs": 400
+      },
+      "warn": {
+        "assetId": "PATH:assets/warning/lamp-belt-warn.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 600
+      },
+      "critical": {
+        "assetId": "PATH:assets/warning/lamp-belt-crit.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 400
+      }
+    }
+  },
+  "lamp_abs": {
+    "type": "image",
+    "name": "ABS 灯",
+    "x": 40,
+    "y": 40,
+    "w": 35,
+    "h": 56,
+    "rotation": 0,
+    "scale": 1,
+    "alpha": 255,
+    "z": 96,
+    "assetId": "PATH:assets/warning/lamp-abs-off.png",
+    "statePid": "obd.abs",
+    "states": {
+      "normal": {
+        "assetId": "PATH:assets/warning/lamp-abs-off.png",
+        "alpha": 120,
+        "blink": false,
+        "blinkMs": 400
+      },
+      "warn": {
+        "assetId": "PATH:assets/warning/lamp-abs-warn.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 600
+      },
+      "critical": {
+        "assetId": "PATH:assets/warning/lamp-abs-crit.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 400
+      }
+    }
+  },
+  "lamp_esp": {
+    "type": "image",
+    "name": "ESP 灯",
+    "x": 40,
+    "y": 40,
+    "w": 35,
+    "h": 56,
+    "rotation": 0,
+    "scale": 1,
+    "alpha": 255,
+    "z": 96,
+    "assetId": "PATH:assets/warning/lamp-esp-off.png",
+    "statePid": "obd.esp",
+    "states": {
+      "normal": {
+        "assetId": "PATH:assets/warning/lamp-esp-off.png",
+        "alpha": 120,
+        "blink": false,
+        "blinkMs": 400
+      },
+      "warn": {
+        "assetId": "PATH:assets/warning/lamp-esp-warn.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 600
+      },
+      "critical": {
+        "assetId": "PATH:assets/warning/lamp-esp-crit.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 400
+      }
+    }
+  },
+  "lamp_engine": {
+    "type": "image",
+    "name": "发动机灯",
+    "x": 40,
+    "y": 40,
+    "w": 35,
+    "h": 56,
+    "rotation": 0,
+    "scale": 1,
+    "alpha": 255,
+    "z": 96,
+    "assetId": "PATH:assets/warning/lamp-engine-off.png",
+    "statePid": "obd.engineFault",
+    "states": {
+      "normal": {
+        "assetId": "PATH:assets/warning/lamp-engine-off.png",
+        "alpha": 120,
+        "blink": false,
+        "blinkMs": 400
+      },
+      "warn": {
+        "assetId": "PATH:assets/warning/lamp-engine-warn.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 600
+      },
+      "critical": {
+        "assetId": "PATH:assets/warning/lamp-engine-crit.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 400
+      }
+    }
+  },
+  "lamp_fuel": {
+    "type": "image",
+    "name": "燃油报警",
+    "x": 40,
+    "y": 40,
+    "w": 35,
+    "h": 56,
+    "rotation": 0,
+    "scale": 1,
+    "alpha": 255,
+    "z": 96,
+    "assetId": "PATH:assets/warning/lamp-fuel-off.png",
+    "statePid": "obd.fuel_level",
+    "states": {
+      "normal": {
+        "assetId": "PATH:assets/warning/lamp-fuel-off.png",
+        "alpha": 120,
+        "blink": false,
+        "blinkMs": 400
+      },
+      "warn": {
+        "assetId": "PATH:assets/warning/lamp-fuel-warn.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 600
+      },
+      "critical": {
+        "assetId": "PATH:assets/warning/lamp-fuel-crit.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 400
+      }
+    }
+  },
+  "lamp_door": {
+    "type": "image",
+    "name": "车门未关",
+    "x": 40,
+    "y": 40,
+    "w": 35,
+    "h": 56,
+    "rotation": 0,
+    "scale": 1,
+    "alpha": 255,
+    "z": 96,
+    "assetId": "PATH:assets/warning/lamp-door-off.png",
+    "statePid": "obd.door",
+    "states": {
+      "normal": {
+        "assetId": "PATH:assets/warning/lamp-door-off.png",
+        "alpha": 120,
+        "blink": false,
+        "blinkMs": 400
+      },
+      "warn": {
+        "assetId": "PATH:assets/warning/lamp-door-warn.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 600
+      },
+      "critical": {
+        "assetId": "PATH:assets/warning/lamp-door-crit.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 400
+      }
+    }
+  },
+  "lamp_washer": {
+    "type": "image",
+    "name": "玻璃水",
+    "x": 40,
+    "y": 40,
+    "w": 35,
+    "h": 56,
+    "rotation": 0,
+    "scale": 1,
+    "alpha": 255,
+    "z": 96,
+    "assetId": "PATH:assets/warning/lamp-washer-off.png",
+    "statePid": "obd.washer",
+    "states": {
+      "normal": {
+        "assetId": "PATH:assets/warning/lamp-washer-off.png",
+        "alpha": 120,
+        "blink": false,
+        "blinkMs": 400
+      },
+      "warn": {
+        "assetId": "PATH:assets/warning/lamp-washer-warn.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 600
+      },
+      "critical": {
+        "assetId": "PATH:assets/warning/lamp-washer-crit.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 400
+      }
+    }
+  },
+  "lamp_service": {
+    "type": "image",
+    "name": "保养提示",
+    "x": 40,
+    "y": 40,
+    "w": 35,
+    "h": 56,
+    "rotation": 0,
+    "scale": 1,
+    "alpha": 255,
+    "z": 96,
+    "assetId": "PATH:assets/warning/lamp-service-off.png",
+    "statePid": "obd.service",
+    "states": {
+      "normal": {
+        "assetId": "PATH:assets/warning/lamp-service-off.png",
+        "alpha": 120,
+        "blink": false,
+        "blinkMs": 400
+      },
+      "warn": {
+        "assetId": "PATH:assets/warning/lamp-service-warn.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 600
+      },
+      "critical": {
+        "assetId": "PATH:assets/warning/lamp-service-crit.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 400
+      }
+    }
+  },
+  "lamp_temp": {
+    "type": "image",
+    "name": "水温报警",
+    "x": 40,
+    "y": 40,
+    "w": 35,
+    "h": 56,
+    "rotation": 0,
+    "scale": 1,
+    "alpha": 255,
+    "z": 96,
+    "assetId": "PATH:assets/warning/lamp-temp-off.png",
+    "statePid": "obd.coolant",
+    "states": {
+      "normal": {
+        "assetId": "PATH:assets/warning/lamp-temp-off.png",
+        "alpha": 120,
+        "blink": false,
+        "blinkMs": 400
+      },
+      "warn": {
+        "assetId": "PATH:assets/warning/lamp-temp-warn.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 600
+      },
+      "critical": {
+        "assetId": "PATH:assets/warning/lamp-temp-crit.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 400
+      }
+    }
+  },
+  "lamp_charge": {
+    "type": "image",
+    "name": "充电提示",
+    "x": 40,
+    "y": 40,
+    "w": 35,
+    "h": 56,
+    "rotation": 0,
+    "scale": 1,
+    "alpha": 255,
+    "z": 96,
+    "assetId": "PATH:assets/warning/lamp-charge-off.png",
+    "statePid": "obd.voltage",
+    "states": {
+      "normal": {
+        "assetId": "PATH:assets/warning/lamp-charge-off.png",
+        "alpha": 120,
+        "blink": false,
+        "blinkMs": 400
+      },
+      "warn": {
+        "assetId": "PATH:assets/warning/lamp-charge-warn.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 600
+      },
+      "critical": {
+        "assetId": "PATH:assets/warning/lamp-charge-crit.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 400
+      }
+    }
+  },
+  "lamp_lane": {
+    "type": "image",
+    "name": "车道辅助",
+    "x": 40,
+    "y": 40,
+    "w": 35,
+    "h": 56,
+    "rotation": 0,
+    "scale": 1,
+    "alpha": 255,
+    "z": 96,
+    "assetId": "PATH:assets/warning/lamp-lane-off.png",
+    "statePid": "obd.laneKeep",
+    "states": {
+      "normal": {
+        "assetId": "PATH:assets/warning/lamp-lane-off.png",
+        "alpha": 120,
+        "blink": false,
+        "blinkMs": 400
+      },
+      "warn": {
+        "assetId": "PATH:assets/warning/lamp-lane-warn.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 600
+      },
+      "critical": {
+        "assetId": "PATH:assets/warning/lamp-lane-crit.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 400
+      }
+    }
+  },
+  "lamp_collision": {
+    "type": "image",
+    "name": "碰撞预警",
+    "x": 40,
+    "y": 40,
+    "w": 35,
+    "h": 56,
+    "rotation": 0,
+    "scale": 1,
+    "alpha": 255,
+    "z": 96,
+    "assetId": "PATH:assets/warning/lamp-collision-off.png",
+    "statePid": "obd.collision",
+    "states": {
+      "normal": {
+        "assetId": "PATH:assets/warning/lamp-collision-off.png",
+        "alpha": 120,
+        "blink": false,
+        "blinkMs": 400
+      },
+      "warn": {
+        "assetId": "PATH:assets/warning/lamp-collision-warn.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 600
+      },
+      "critical": {
+        "assetId": "PATH:assets/warning/lamp-collision-crit.png",
+        "alpha": 255,
+        "blink": true,
+        "blinkMs": 400
+      }
+    }
+  }
+}

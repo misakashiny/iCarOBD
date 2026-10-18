@@ -45,7 +45,9 @@ async function main() {
 
     // ---------------- 一、接管 ----------------
     const bridge = JJ(await step('bridge', 'JSON.stringify(ICAR.adapter.RegistryBridge.status())'));
-    ok(bridge.bridged.length === 22, 'bridged 22 (got ' + bridge.bridged.length + ')');
+    // P3C-1 完成时是 22；P3C-2 又接管了 19 个状态灯 → 41。
+    // 这里只断言"至少包含本阶段该有的 22 条"，总数由最新阶段的套件守。
+    ok(bridge.bridged.length >= 22, 'at least 22 bridged (got ' + bridge.bridged.length + ')');
     ok(KEYS.every(k => bridge.bridged.indexOf(k) >= 0), 'all 6 gauge keys bridged');
     ok(bridge.fallback.length === 0, 'no fallback');
     ok(bridge.total === 215, 'library still 215 entries');
@@ -242,8 +244,9 @@ async function main() {
     // ---------------- 七、迁移数量 ----------------
     const src = JJ(await step('bySource', 'JSON.stringify(ICAR.registry.Catalog.stats().bySource)'));
     ok(src.declared === 8, 'declared 8 (got ' + src.declared + ')');
-    ok(src.derived === 22, 'derived 22 (got ' + src.derived + ')');
-    ok(src.probe === 185, 'probe 185 (got ' + src.probe + ')');
+    // 同前：具体数字由 verify-p3c2 守，这里只验证三级都存在且合计 215。
+    ok(src.derived >= 22, 'derived at least 22 (got ' + src.derived + ')');
+    ok(src.probe > 0, 'probe still present (got ' + src.probe + ')');
     ok(src.declared + src.derived + src.probe === 215, 'sum = 215');
 
     // gauge_0..7 的静态声明保持不变

@@ -101,6 +101,34 @@
 | **建议** | 不改行为。在 [04_架构与数据流](../04_架构与数据流.md) 的节点字段表里显式写清：<br>`pid` = 解析后 id（内部查表）；`rawPid` = 用户别名（回显/序列化） |
 | **当前处置** | P3C-1 按实际行为断言（`rawPid` 比别名、`pid` 比解析结果）；未改代码 |
 
+---
+
+## D-07：`panels.js` 给所有 `make` 包了一层 `prepareBuiltinImages`
+
+| 项 | 内容 |
+|---|---|
+| **发现于** | P3C-2（迁移状态灯时 Golden 0/19） |
+| **位置** | `tools/icarui/js/panels.js` 加载末尾的 `BUILTIN_CONTROLS.forEach` |
+| **现象** | `control.make` 被替换成 `() => prepareBuiltinImages(make(), false)`；图片控件的 `w` 被按画布宽高比缩放（56 → 56×1600/2560 = 35） |
+| **性质** | **刻意设计**。注释写"Built-in image templates describe their visual aspect, unlike saved canvas geometry" |
+| **影响面** | 任何"未包装"的创建路径（如直接调 Registry.build）都会与旧入口差一截。P3A/P3B/P3C-1 因控件不是 NODE_IMAGE 从未暴露；P3C-2 状态灯立刻踩到 |
+| **建议** | **不改 panels.js**。约束是：`registry-bridge` 的执行必须放在 `panels.js` **之后**（已在 index.html 修正）。P3F 素材族（104 条 IMAGE）会同样依赖此修复 |
+| **当前处置** | bridge 调用已移到 panels.js 之后；Golden 19/19 |
+
+---
+
+## D-08：`assetId` 是运行期生成的，不能作为 Golden 比对字段
+
+| 项 | 内容 |
+|---|---|
+| **发现于** | P3C-2 |
+| **位置** | `tools/icarui/js/panels.js` 的 `ensureBuiltinAsset()` → `window.newId("as")` |
+| **现象** | 同一控件在不同会话里拿到的 `assetId` 不同（`asbeq89` vs `asbei0j`） |
+| **性质** | 刻意设计（素材 id 与用户设计绑定，每次导入重新分配） |
+| **影响面** | Golden 里若保留 `assetId`，跨会话比较必然失败（实测 19 条全红） |
+| **建议** | Golden 比对时**把 `assetId` 归一化为素材路径**。这不是"忽略字段"，而是换成等价且稳定的表示 —— 素材**路径**才是语义身份 |
+| **当前处置** | 已按路径归一化；Golden 19/19 |
+
 ## 汇总表
 
 | ID | 问题 | 类型 | 处置 |
@@ -111,6 +139,8 @@
 | D-04 | `box_*` 节点名追加用途说明 | 刻意设计 | 保持 |
 | D-05 | `group` 库名「空分组」/ 节点名「分组」 | 刻意设计 | 保持 |
 | D-06 | `NODE_GAUGE` 的 `pid` 被归一化，别名在 `rawPid` | 刻意设计 | 保持 |
+| D-07 | `panels.js` 给所有 `make` 包了 `prepareBuiltinImages`（图片控件 w 被缩放） | 刻意设计 | bridge 必须在其后 |
+| D-08 | `assetId` 是运行期生成的，不能作为 Golden 字段 | 刻意设计 | 归一化为素材路径 |
 
 ---
 

@@ -68,8 +68,31 @@
       // 保留原实现（只读诊断用；**不用它做新旧对照**）
       entry.__legacyMake = entry.make;
 
+      /**
+       * ⚠️⚠️ **panels.js 会给每个 make 包一层 prepareBuiltinImages**（P3C-2 才发现）。
+       *
+       * panels.js 加载时执行：
+       *   control.make = () => window.prepareBuiltinImages(make(), false);
+       *
+       * 它把图片控件的 `w` 按画布宽高比缩放（56 × designH/designW = 35）。
+       * P3A/P3B/P3C-1 迁的控件都不是 NODE_IMAGE，这层对它们无副作用，一直没暴露；
+       * P3C-2 迁状态灯（NODE_IMAGE）时立刻炸出来：
+       *
+       *   旧入口 make()     → 35（包了一层）
+       *   Registry.build()  → 56（未包）
+       *
+       * **修法**：bridge 把 Registry 节点**补上这层包装**。
+       *
+       * ⚠️ 但不能直接调全局 prepareBuiltinImages —— 因为 `entry.make`（赋值前的那个）
+       *    本身已经是包装过的，再包一次会缩两次（实测 56→21.875）。
+       *    所以这里的语义是：**替换掉整条链**，由 bridge 统一负责"Registry + 一次包装"。
+       */
       entry.make = function () {
-        return Reg.build(def.key);
+        const node = Reg.build(def.key);
+        if (typeof window.prepareBuiltinImages === "function") {
+          return window.prepareBuiltinImages(node, false);
+        }
+        return node;
       };
       entry.__bridgedTo = def.key;
       bridged.push(key);

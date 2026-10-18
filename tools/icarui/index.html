@@ -251,13 +251,32 @@
 <!-- P3C-1：常用仪表 6 条（g_speed/g_coolant/g_fuel/g_volt/g_load/g_throttle）。
      注意 gauge_0~gauge_7 不在这里 —— 它们是外观预设，由 CatalogMeta 静态声明。 -->
 <script src="js/registry/controls/gauge-family.js"></script>
+<!-- P3C-2：状态灯 19 条。使用原有 image + states 三态机制，不新增节点类型。 -->
+<script src="js/registry/controls/lamp-family.js"></script>
 <script src="js/registry/catalog-metadata.js"></script>
 <script src="js/registry/catalog-declarations.js"></script>
 <!-- P3A：旧入口接线（BUILTIN_CONTROLS.make → Registry）。
      必须在 presets.js（数组已构造）、control-registry.js、text-family.js 全部之后。
      Catalog 构建时会调 make()，所以也要在 catalog.js 之前。 -->
 <script src="js/adapter/registry-bridge.js"></script>
+
+<script src="js/registry/catalog.js"></script>
+<script src="js/adapter/legacy-adapter.js"></script>
+<script src="js/canvas.js"></script>
+<script src="next-library/data.js"></script>
+<script src="js/next-controls.js"></script>
+<script src="js/data-bindings.js"></script>
+<script src="js/panels.js"></script>
+
 <script>
+/* P3A/P3B/P3C-1/P3C-2：执行接管 —— 把已迁移控件的旧 make() 换成 Registry 实现。
+   ⚠️⚠️ **必须放在 panels.js 之后**（P3C-2 踩到）：
+   panels.js 加载时会执行 `control.make = () => prepareBuiltinImages(make(), false)`，
+   把【已包装】的 make 包起来。如果 bridge 在它之前跑，替换会被这层包装覆盖，
+   结果灯类图片控件的 w 不走画布宽高比缩放（56 而非 35），与旧行为不一致。
+   放在 panels.js 之后，bridge 替换的是【已被包装】的 make，
+   再用 prepareBuiltinImages 补一次 —— 与旧路径完全等价。 */
+
 /* P3A：执行接管 —— 把 12 个文字控件的旧 make() 换成 Registry 实现。
    放在这里（而非某个模块内部）是为了让"接管了哪些 key"在页面源码里一目了然。 */
 (function () {
@@ -269,15 +288,13 @@
   window.__P3B_BRIDGE = B.bridge(["group","box_card","box_row","box_col"]);
   /* P3C-1：常用仪表 6 条 */
   window.__P3C1_BRIDGE = B.bridge(["g_speed","g_coolant","g_fuel","g_volt","g_load","g_throttle"]);
+  /* P3C-2：状态灯 19 条 */
+  window.__P3C2_BRIDGE = B.bridge(["lamp_coolant","lamp_oil","lamp_batt","lamp_brake","lamp_pad",
+    "lamp_tpms","lamp_airbag","lamp_belt","lamp_abs","lamp_esp","lamp_engine","lamp_fuel",
+    "lamp_door","lamp_washer","lamp_service","lamp_temp","lamp_charge","lamp_lane","lamp_collision"]);
 })();
+
 </script>
-<script src="js/registry/catalog.js"></script>
-<script src="js/adapter/legacy-adapter.js"></script>
-<script src="js/canvas.js"></script>
-<script src="next-library/data.js"></script>
-<script src="js/next-controls.js"></script>
-<script src="js/data-bindings.js"></script>
-<script src="js/panels.js"></script>
 <script>
 /* P2B：Catalog 初始化改为「就绪触发 + 兜底」。
    为什么放在 panels.js 之后：
