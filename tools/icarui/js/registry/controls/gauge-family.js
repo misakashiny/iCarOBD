@@ -105,6 +105,33 @@
         hint: "逗号分隔，索引 = round(值)，如 P,R,N,1,2" },
       { key: "extraPids", label: "副参数", type: "list", group: "数据",
         hint: "逗号分隔的 PID 别名，如 obd.coolant,obd.intake" },
+      // ==== P4E-04：高级外观字段补登记 ====
+      //
+      // 这 7 个字段**一直有完整持久化支持**（model.js 序列化/解析、
+      // Android GaugeItem + DesignNode.CardOverride 都认），但 Registry
+      // schema 从没声明过 —— 于是 Schema 面板看不到。
+      //
+      // ⚠️ **补登记，不是新增契约**：字段名、类型、取值范围、序列化路径全没变。
+      //
+      // 取值范围严格对照旧面板实现（app.js 的 setCardNumLive / setNodeCard）：
+      //   · cardStyle   ：null 或 1..3（0 在旧面板里被归一成 null）
+      //   · card.alpha  ：0..255，可为 null（= 跟随主题）
+      //   · card.radius ：0..120，可为 null（= 跟随主题）
+      //   · ringStyle   ：0(无) / 1(外圈刻度)
+      //   · ringSegments：默认 40
+      { key: "cardStyle", label: "卡片外框", type: "enum",
+        values: [0, 1, 2, 3], group: "外观" },
+      { key: "card.show", label: "画底框", type: "boolean", group: "外观" },
+      { key: "card.alpha", label: "底框透明度", type: "number", nullable: true,
+        min: 0, max: 255, group: "外观" },
+      { key: "card.radius", label: "底框圆角", type: "number", nullable: true,
+        min: 0, max: 120, group: "外观" },
+      { key: "neonPreset", label: "霓虹档位", type: "enum",
+        values: [null, "关闭", "克制", "标准", "强烈", "夸张"], group: "外观" },
+      { key: "ringStyle", label: "指针环", type: "enum",
+        values: [0, 1], group: "外观" },
+      { key: "ringSegments", label: "环段数", type: "number", min: 1,
+        group: "外观" },
     ];
   }
 

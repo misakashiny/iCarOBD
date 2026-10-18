@@ -140,6 +140,42 @@
     return true;
   }
 
+  /**
+   * `card.*` 子字段的自动建对象/清理（P4E-04）。
+   *
+   * ## 为什么需要
+   *
+   * `node.card` 的默认值是 **null**（= 跟随主题）。而
+   * `PropertyAccessor.set` 要求中间层必须是**已存在的对象**，
+   * 否则拒绝写入 —— 于是 `card.show` / `card.alpha` / `card.radius`
+   * 在全新仪表上**永远写不进去**。
+   *
+   * 旧面板用 `ensureCard()` 解决（app.js），这里做同一件事：
+   *   · 写之前：card 不是对象就建一个 { show: true, alpha: null, radius: null }
+   *   · 写之后：三个字段全是默认值就还原成 null（= 跟随主题）
+   *
+   * ⚠️ 语义与 app.js 的 `ensureCard` / `tidyCard` **逐条一致**，
+   *    这样新旧面板写出来的 `card` 结构完全等价。
+   *
+   * @returns true=已处理（调用方不再走普通路径）
+   */
+  function normalizeCardPath(node, path, value) {
+    if (!node || typeof path !== "string" || path.indexOf("card.") !== 0) return false;
+    // 先确保对象存在（与 app.js ensureCard 同构）
+    if (!node.card || typeof node.card !== "object") {
+      node.card = { show: true, alpha: null, radius: null };
+    }
+    const key = path.slice("card.".length);
+    node.card[key] = value;
+    // 再清理：全是默认值就还原 null（与 app.js tidyCard 同构）
+    const c = node.card;
+    const hasShow = typeof c.show === "boolean" && c.show !== true;
+    const hasAlpha = c.alpha !== null && c.alpha !== undefined;
+    const hasRadius = c.radius !== null && c.radius !== undefined;
+    if (!hasShow && !hasAlpha && !hasRadius) node.card = null;
+    return true;
+  }
+
   const PropertyAccessor = {
     get(obj, path) {
       if (!obj || !path) return undefined;
@@ -166,6 +202,10 @@
       }
       // P4E-02：仪表的 pid 同样是双字段语义
       if (normalizeGaugePidBinding(obj, path, value)) {
+        return true;
+      }
+      // P4E-04：card.* 需要自动建对象（默认 null）
+      if (normalizeCardPath(obj, path, value)) {
         return true;
       }
       const parts = String(path).split(".");
@@ -678,6 +718,9 @@
       "pid", "style", "min", "max", "warnLow", "warnHigh", "w", "h",
       // P4E-03 批次 A/B：文本型数据绑定字段（格式与旧面板一致）
       "valueLabels", "extraPids",
+      // P4E-04：高级外观字段（补登记后开放）
+      "cardStyle", "card.show", "card.alpha", "card.radius",
+      "neonPreset", "ringStyle", "ringSegments",
     ],
     imageState: [
       "statePid", "stateWarn", "stateCritical",

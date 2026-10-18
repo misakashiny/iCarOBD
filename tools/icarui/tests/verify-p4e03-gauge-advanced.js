@@ -31,7 +31,9 @@ async function main(){
   ok(A.editable.indexOf('extraPids')>=0,'A2 extraPids 已登记进 gauge 可编辑字段');
   ok(A.types.valueLabels==='list','A3 valueLabels 类型为 list（数组）');
   ok(A.types.extraPids==='list','A4 extraPids 类型为 list（数组）');
-  ok(A.editable.length===10,'A5 可编辑字段 = 8 基础 + 2 新增 = 10');
+  // ⚠️ P4E-04 演进：又开放了 7 个高级外观字段 → 可编辑 10 → 17。
+  //    本套件验证的「valueLabels/extraPids 已接入」不受影响（A1/A2 仍逐项检查）。
+  ok(A.editable.length===17,'A5 可编辑字段 = 8 基础 + 2 绑定 + 7 外观 = 17');
 
   // ---------- B. valueLabels 设置/清空/持久化 ----------
   const B=JJ(await cdp.eval(`(function(){
@@ -212,7 +214,7 @@ async function main(){
     return JSON.stringify(out);
   })()`));
   ok(K.length===6,'K1 6 个仪表都在');
-  ok(K.every(function(x){return x.ok&&x.ed===10;}),'K2 **6/6 均可编辑 10 个字段**');
+  ok(K.every(function(x){return x.ok&&x.ed===17;}),'K2 **6/6 均可编辑 17 个字段**（P4E-04 后）');
 
   // ---------- L. 其它族无回归 ----------
   const L=JJ(await cdp.eval(`(function(){
