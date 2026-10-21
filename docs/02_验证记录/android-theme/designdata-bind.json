@@ -1,0 +1,176 @@
+{
+  "meta": {
+    "name": "P5A-M01 数据绑定测试",
+    "author": "P5A-M01 自动化",
+    "description": "全部代码绘制（仪表+轨道），不依赖素材文件；用于验证离线模拟 PID 数据源驱动真实渲染"
+  },
+  "schema": "icar.ui/2",
+  "name": "P5A-M01 数据绑定测试",
+  "author": "P5A-M01 自动化",
+  "description": "全部代码绘制（仪表+轨道），不依赖素材文件",
+  "themeId": "",
+  "pages": [
+    {
+      "id": "pg0",
+      "name": "主页面",
+      "nodes": [
+        {
+          "id": "g_rpm",
+          "type": "gauge",
+          "name": "转速",
+          "pid": "obd.rpm",
+          "x": 10,
+          "y": 10,
+          "w": 100,
+          "h": 60,
+          "label": "转速",
+          "unit": "",
+          "cardStyle": 0,
+          "neonPreset": 0,
+          "ringStyle": 0,
+          "ringSegments": 1
+        },
+        {
+          "id": "g_speed",
+          "type": "gauge",
+          "name": "车速",
+          "pid": "obd.speed",
+          "x": 130,
+          "y": 10,
+          "w": 100,
+          "h": 60,
+          "label": "车速",
+          "unit": "",
+          "cardStyle": 0,
+          "neonPreset": 0,
+          "ringStyle": 0,
+          "ringSegments": 1
+        },
+        {
+          "id": "g_coolant",
+          "type": "gauge",
+          "name": "水温",
+          "pid": "obd.coolant",
+          "x": 250,
+          "y": 10,
+          "w": 100,
+          "h": 60,
+          "label": "水温",
+          "unit": "",
+          "cardStyle": 0,
+          "neonPreset": 0,
+          "ringStyle": 0,
+          "ringSegments": 1
+        },
+        {
+          "id": "t_speed",
+          "type": "image",
+          "name": "车速条",
+          "pid": "obd.speed",
+          "x": 10,
+          "y": 90,
+          "w": 160,
+          "h": 30,
+          "trackStyle": {
+            "orient": "h",
+            "radius": 15,
+            "band": false,
+            "gradient": null,
+            "inset": false,
+            "glow": false,
+            "ticks": 0,
+            "segments": 0,
+            "fill": 0.6
+          }
+        },
+        {
+          "id": "t_rpm",
+          "type": "image",
+          "name": "转速条",
+          "pid": "obd.rpm",
+          "x": 190,
+          "y": 90,
+          "w": 160,
+          "h": 30,
+          "trackStyle": {
+            "orient": "h",
+            "radius": 10,
+            "band": true,
+            "gradient": null,
+            "inset": false,
+            "glow": false,
+            "ticks": 0,
+            "segments": 0,
+            "fill": null
+          }
+        },
+        {
+          "id": "t_load",
+          "type": "image",
+          "name": "负荷条",
+          "pid": "obd.load",
+          "x": 10,
+          "y": 140,
+          "w": 160,
+          "h": 30,
+          "trackStyle": {
+            "orient": "h",
+            "radius": 10,
+            "band": false,
+            "gradient": "gloss",
+            "inset": false,
+            "glow": false,
+            "ticks": 0,
+            "segments": 0,
+            "fill": 0.4
+          }
+        },
+        {
+          "id": "t_throttle",
+          "type": "image",
+          "name": "节气门",
+          "pid": "obd.throttle",
+          "x": 190,
+          "y": 140,
+          "w": 160,
+          "h": 30,
+          "trackStyle": {
+            "orient": "h",
+            "radius": 10,
+            "band": false,
+            "gradient": "fade",
+            "inset": false,
+            "glow": false,
+            "ticks": 0,
+            "segments": 0,
+            "fill": 0.3
+          }
+        },
+        {
+          "id": "t_vspeed",
+          "type": "image",
+          "name": "垂直车速",
+          "pid": "obd.speed",
+          "x": 320,
+          "y": 190,
+          "w": 30,
+          "h": 60,
+          "trackStyle": {
+            "orient": "v",
+            "radius": 10,
+            "band": false,
+            "gradient": null,
+            "inset": false,
+            "glow": false,
+            "ticks": 0,
+            "segments": 0,
+            "fill": 0.5
+          }
+        }
+      ]
+    }
+  ],
+  "pageIndex": 0,
+  "assets": [],
+  "canvases": []
+}

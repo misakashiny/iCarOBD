@@ -49,6 +49,33 @@ class TrackView @JvmOverloads constructor(
 
     private var track: TrackStyle? = null
 
+    /**
+     * 实时值（P5A-M01 阶段 C 修复）。
+     *
+     * ## 修的是什么
+     *
+     * P4F-M01 引入 `TrackView` 时只接了`trackStyle`（**静态外观**），
+     * 没有接 PID 值 —— 于是条形轨道**能画出来，但永远画成设计时那个比例**，
+     * 数据怎么变都不动。
+     *
+     * 实测：模拟数据从 60 km/h 变到 141 km/h，5 条轨道的区域像素差异
+     * 是 **0.00%**，而同屏仪表的差异是 2.5%~8%。这不是"没渲染"，
+     * 是"渲染了但没接数据"。
+     *
+     * ## 映射规则
+     *
+     * `value` 与 `minValue`/`maxValue` 一起用，算出 0..1 的填充比例，
+     * 覆盖 `trackStyle.fill`（那个只是**没有数据时**的静态示意值）。
+     *
+     * `value == null`（无数据 / 断开）→ 回落到 `trackStyle.fill`
+     * —— 与仪表显示 `--` 的语义一致：**不假装有值**。
+     */
+    private var liveValue: Float? = null
+
+    /** 值的量程（来自绑定的 PID 定义）；null 时不做映射，直接用 fill */
+    private var valueMin: Float? = null
+    private var valueMax: Float? = null
+
     /** 主题回落的两个色（由渲染器注入，避免依赖 GaugeView 体系） */
     private var themeTrackColor: Int = Color.parseColor("#2A3441")
     private var themeAccentColor: Int = Color.parseColor("#4EA8FF")
@@ -71,6 +98,42 @@ class TrackView @JvmOverloads constructor(
         themeTrackColor = trackColor
         themeAccentColor = accentColor
         invalidate()
+    }
+
+    /**
+     * 设置实时值（由 `DashRenderer` 的 5Hz 时钟推入）。
+     *
+     * 视图**自己不去读总线**（红线 4.1.5：值由渲染层取好再传进来）。
+     */
+    fun setValue(v: Float?) {
+        if (liveValue == v) return
+        liveValue = v
+        invalidate()
+    }
+
+    /**
+     * 设置值的量程（来自绑定 PID 的 min/max）。
+     *
+     * 不设或设成相同值时，退回「直接用 trackStyle.fill」的旧行为 ——
+     * 老主题（没绑 PID / 没量程）完全不受影响。
+     */
+    fun setValueRange(min: Float?, max: Float?) {
+        if (valueMin == min && valueMax == max) return
+        valueMin = min
+        valueMax = max
+        invalidate()
+    }
+
+    /** 当前应画出的填充比例：有实时值就用映射值，否则用静态 fill */
+    internal fun effectiveFill(): Float? {
+        val t = track ?: return null
+        val v = liveValue
+        val lo = valueMin
+        val hi = valueMax
+        if (v != null && lo != null && hi != null && hi > lo) {
+            return ((v - lo) / (hi - lo)).coerceIn(0f, 1f)
+        }
+        return t.fill
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -193,7 +256,8 @@ class TrackView @JvmOverloads constructor(
         }
 
         // ---- 6. 填充
-        val f = t.fill
+        // P5A-M01：优先用实时值映射出的比例；无数据时回落 trackStyle.fill
+        val f = effectiveFill()
         if (f != null) {
             val ff = f.coerceIn(0f, 1f)
             val fw = if (vertical) w else w * ff

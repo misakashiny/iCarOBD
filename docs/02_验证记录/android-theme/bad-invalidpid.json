@@ -1,0 +1,1 @@
+﻿{"schema":"icar.ui/2","meta":{"name":"无效PID"},"pages":[{"id":"p0","name":"主页面","nodes":[{"id":"g1","type":"gauge","name":"表","x":10,"y":10,"w":100,"h":100,"pid":"totally_not_a_pid"}]}],"assets":[]}

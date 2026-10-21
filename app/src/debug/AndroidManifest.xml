@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug 变体专用 manifest（P5A-M01 阶段 B3）。
+
+  ## 这里只做一件事
+
+  声明一个空的 ContentProvider，让系统在 Application.onCreate() 之前
+  自动实例化它 —— 它内部会把模拟数据源的广播接收器注册上。
+
+  这样生产代码（App.kt）一行都不用改，而 Release 变体
+  **不会合并这个文件**（它只在 app/src/debug/ 下）。
+
+  ## 安全
+
+  - `exported="false"`：外部应用不能访问
+  - `enabled="true"`：debug 构建下总是启用
+  - Provider 本身不提供任何数据
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+
+        <provider
+            android:name="com.icar.obd.sim.SimInitProvider"
+            android:authorities="${applicationId}.siminit"
+            android:exported="false"
+            android:enabled="true" />
+
+    </application>
+
+</manifest>

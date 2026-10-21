@@ -1,0 +1,77 @@
+{
+  "generatedAt": "2026-10-21T16:30:31.576Z",
+  "device": "emulator-5554 (1080x2400@420)",
+  "phases": [
+    {
+      "phase": "startup",
+      "mem": {
+        "pssKB": 68781,
+        "javaHeapKB": 10776,
+        "nativeHeapKB": 19224
+      }
+    },
+    {
+      "phase": "high-frequency",
+      "mem": {
+        "pssKB": 76320,
+        "javaHeapKB": 13376,
+        "nativeHeapKB": 19248
+      },
+      "gfx": {
+        "totalFrames": 388,
+        "jankyFrames": 2,
+        "jankyPct": null,
+        "p50": 21,
+        "p90": 23,
+        "p99": 25
+      }
+    },
+    {
+      "phase": "sustained-60s",
+      "mem": {
+        "pssKB": 77707,
+        "javaHeapKB": 13856,
+        "nativeHeapKB": 19856
+      },
+      "growthKB": 8926
+    },
+    {
+      "phase": "page-switch",
+      "before": {
+        "pssKB": 75647,
+        "javaHeapKB": 11916,
+        "nativeHeapKB": 19864
+      },
+      "after": {
+        "pssKB": 79711,
+        "javaHeapKB": 13676,
+        "nativeHeapKB": 22120
+      }
+    },
+    {
+      "phase": "pause-resume",
+      "bg": {
+        "pssKB": 77808,
+        "javaHeapKB": 12180,
+        "nativeHeapKB": 21760
+      },
+      "fg": {
+        "pssKB": 78327,
+        "javaHeapKB": 12744,
+        "nativeHeapKB": 21712
+      }
+    },
+    {
+      "phase": "exceptions",
+      "fatals": 0,
+      "anr": 0
+    }
+  ],
+  "summary": {
+    "basePssKB": 68781,
+    "finalPssKB": 77828,
+    "totalGrowthKB": 9047,
+    "pass": 12,
+    "fail": 0
+  }
+}

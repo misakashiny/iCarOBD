@@ -91,6 +91,8 @@
     "verify-p4fm03-input-undefined": 23,
     "verify-p4fm04-crossend-quality": 24,
     "verify-p4fm04-defect-behavior": 24,
-    "verify-p4fm04-input-stability": 14
+    "verify-p4fm04-input-stability": 14,
+    "verify-p5a01-data-binding": 8,
+    "verify-p5a01-multires": 14
   }
 }

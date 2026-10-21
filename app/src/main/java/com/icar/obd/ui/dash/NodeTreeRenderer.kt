@@ -95,6 +95,23 @@ class NodeTreeRenderer(private val context: Context) {
     val gauges = ArrayList<GaugeCell>()
     val stateCells = ArrayList<StateCell>()
 
+    /**
+     * 一条会随数据变化的条形轨道（P5A-M01 阶段 C）。
+     *
+     * `pidId` 来自节点自己的 `pid`（轨道节点用 `pid` 字段绑定，与图片/仪表一致）。
+     * `min`/`max` 取自 PID 定义的量程 —— 拿不到就退化成「静态 fill」。
+     */
+    class TrackCell(
+        val node: DesignNode,
+        val view: com.icar.obd.ui.view.TrackView,
+        val pidId: String,
+        val min: Float?,
+        val max: Float?
+    )
+
+    /** 需要 5Hz 推值的轨道（由 [com.icar.obd.ui.dash.DashRenderer.pushValues] 驱动） */
+    val trackViews = ArrayList<TrackCell>()
+
     /** 用子部件拼装的仪表（v2.12.0）。它们的值由 5Hz tick 推入 */
     val partsViews = ArrayList<GaugePartsView>()
 
@@ -269,6 +286,7 @@ class NodeTreeRenderer(private val context: Context) {
     fun build(nodes: List<DesignNode>, parent: ViewGroup, design: DesignFile, cw: Int, ch: Int): Int {
         gauges.clear()
         stateCells.clear()
+        trackViews.clear()
         rptNoPid.clear(); rptUnknown.clear(); rptAssets.clear()
         t = computeViewport(design.scaleMode, cw, ch)
         val n = buildInto(nodes, parent, design)
@@ -349,6 +367,18 @@ class NodeTreeRenderer(private val context: Context) {
         // 主题色回落：与工具侧 readCanvasColors() 的 track / accent 同义
         tv.setThemeColors(lastTheme.track, lastTheme.accent)
         tv.setTrack(node.trackStyle)
+
+        // P5A-M01 阶段 C 修复：轨道也要吃数据。
+        //
+        // 原来这里**只设了静态 trackStyle**，没有把节点登记的 PID 交出去，
+        // 于是轨道永远画成设计时的那个比例（实测数据变化时像素差异 0.00%）。
+        // 现在把它登记进 [trackViews]，由 5Hz 时钟推值 + 设量程。
+        val pidId = node.statePid
+        if (pidId.isNotEmpty()) {
+            val def = Store.findPid(pidId)
+            tv.setValueRange(def?.minVal, def?.maxVal)
+            trackViews.add(TrackCell(node, tv, pidId, def?.minVal, def?.maxVal))
+        }
         return tv
     }
 

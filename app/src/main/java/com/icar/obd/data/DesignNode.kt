@@ -492,7 +492,14 @@ data class DesignNode(
                 }
                 TYPE_IMAGE -> {
                     assetId = o.optString("assetId", "")
-                    statePid = DesignFile.resolvePid(o.optString("statePid", ""))
+                    // P5A-M01：轨道节点用 `pid` 绑定数据源。
+                    // image 节点原本只有 `statePid`（状态灯的 PID），
+                    // 所以这里**先读 pid、再回落 statePid** ——
+                    // 两者语义都是「这个 image 节点绑哪个 PID」，共用一个字段即可，
+                    // 不新增字段、不改既有设计文件的含义。
+                    statePid = DesignFile.resolvePid(
+                        o.optString("pid", "").ifEmpty { o.optString("statePid", "") }
+                    )
                     stateWarn = optFloatOrNull(o, "stateWarn", "$path.stateWarn", warnings)
                     stateCritical = optFloatOrNull(o, "stateCritical", "$path.stateCritical", warnings)
                     states = NodeState.parseAll(o.optJSONObject("states"), path, warnings, assetIds)

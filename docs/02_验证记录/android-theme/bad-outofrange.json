@@ -1,0 +1,1 @@
+﻿{"schema":"icar.ui/2","meta":{"name":"超范围"},"pages":[{"id":"p0","name":"主页面","nodes":[{"id":"g1","type":"gauge","name":"表","x":9999,"y":9999,"w":100,"h":100,"pid":"obd.rpm"}]}],"assets":[]}

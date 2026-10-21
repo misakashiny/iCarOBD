@@ -410,6 +410,12 @@ class DashRenderer(
                 cell.view?.updateHistory(VehicleBus.historyOf(cell.item.pidId))
             }
         }
+        // ---- 条形轨道：把 PID 值推给 TrackView（P5A-M01 阶段 C）
+        nodeRenderer.trackViews.forEach { tc ->
+            val v = VehicleBus.value(tc.pidId)?.takeIf { it.isFinite() }
+            tc.view.setValue(v)
+        }
+
         // ---- 子部件拼装的仪表：值由 5Hz 推入（部件视图不是 BaseGaugeView）
         nodeRenderer.partsViews.forEach { pv ->
             // **一次取齐它需要的全部 PID**（多指针表可能有多个）
