@@ -110,7 +110,8 @@ async function main() {
     ok(sot.s1IsRegistry === true, 'path A (with __controlKey) uses Registry schema');
     ok(sot.s2IsRegistry === true, 'path B (reloaded, no __controlKey) ALSO uses Registry schema');
     ok(sot.fields === 11, 'schema has 11 fields from Registry');
-    ok(sot.editable.length === 4, 'exactly 4 editable fields');
+    // ⚠️ P4F-02 演进：track 族可编辑字段 4 → 11（补齐 7 个标量字段）。
+  ok(sot.editable.length === 11, 'exactly 11 editable fields after P4F-02 (got ' + sot.editable.length + ')');
 
     // 持久化能力识别（不依赖 __controlKey）
     const ident = JJ(await step('capability identify',

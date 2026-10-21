@@ -78,6 +78,7 @@
     "verify-p4d01-lamp-schema": 32,
     "verify-p4e02-gauge-schema": 38,
     "verify-p4e03-gauge-advanced": 46,
-    "verify-p4e04-gauge-appearance": 44
+    "verify-p4e04-gauge-appearance": 44,
+    "verify-p4f02-track-schema": 38
   }
 }

@@ -682,7 +682,38 @@
    * 推广到新族时只需在此加一行。
    */
   const EDITABLE = {
-    track: ["trackStyle.orient", "trackStyle.segments", "trackStyle.glow", "trackStyle.fill"],
+    /**
+     * P4F-02：track 族 4 → 11 字段（全量开放）。
+     *
+     * ## 为什么这 7 个能安全开放（审计结论）
+     *
+     * 全部是**标量**，不是对象/数组：
+     *   · radius   number 0..64（默认 short/2）
+     *   · inset    boolean
+     *   · gradient enum null / "fade" / "gloss"
+     *   · ticks    number 0..MAX_TRACK_TICKS(64)
+     *   · band     boolean
+     *   · w / h    number ≥1
+     *
+     * 且 `normalizeTrackStyle()`（schema.js）是**唯一真源**，
+     * Registry schema 的 values / min / max 与它逐条一致 —— UI 层不再复制规则。
+     *
+     * ## 为什么不需要"自动建对象"
+     *
+     * 与 gauge 的 `card`（默认 null）不同：track 控件**默认就带完整 trackStyle 对象**
+     * （`{orient,radius,inset,glow,band,gradient,segments,ticks,fill,color,accent}`），
+     * 所以 `PropertyAccessor.set` 可以直接写子路径，无需 ensureCard 那类逻辑。
+     *
+     * ⚠️ `trackStyle.color` / `accent` **刻意不开放**：P3D 已明确标记
+     *    "字段存在但无 UI 编辑入口"，属未实现功能，本阶段不扩范围。
+     */
+    track: [
+      "trackStyle.orient", "trackStyle.segments", "trackStyle.glow", "trackStyle.fill",
+      // P4F-02 新增 7 个
+      "trackStyle.radius", "trackStyle.inset", "trackStyle.gradient",
+      "trackStyle.ticks", "trackStyle.band",
+      "w", "h",
+    ],
     // P4B：文字族第一批只开这 5 个；w/h/rotation/alpha 等仍走旧面板
     text: ["text", "font.size", "font.weight", "font.color", "font.align"],
     // P4C：容器族开 6 个通用变换/图层字段。

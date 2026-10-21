@@ -134,7 +134,9 @@ async function main() {
       "hasOrientText:box.textContent.indexOf('方向')>=0};})())"));
     ok(ro.family === 'track', 'schema panel resolves track family');
     ok(ro.rows === 11, '11 property rows rendered (got ' + ro.rows + ')');
-    ok(ro.editables === 4, 'exactly 4 editable fields (got ' + ro.editables + ')');
+    // ⚠️ P4F-02 演进：track 族可编辑字段由 4 扩到 11（补齐 radius/inset/gradient/
+  //    ticks/band/w/h）。原断言写死 4，现改为**精确清单比对**（比数量断言更严）。
+  ok(ro.editables === 11, 'exactly 11 editable fields after P4F-02 (got ' + ro.editables + ')');
     ok(ro.hasOrientText === true, 'panel shows field labels');
 
     // 只读面板：切到**尚未被 Schema 接管**的节点类型

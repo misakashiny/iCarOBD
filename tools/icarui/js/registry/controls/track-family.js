@@ -143,7 +143,7 @@
   function trackSchema() {
     return [
       { key: "trackStyle.orient", label: "方向", type: "enum", values: ["h", "v"], group: "轨道" },
-      { key: "trackStyle.radius", label: "圆角", type: "number", group: "轨道" },
+      { key: "trackStyle.radius", label: "圆角", type: "number", group: "轨道", min: 0, max: 64 },
       { key: "trackStyle.inset", label: "内凹", type: "boolean", group: "轨道" },
       { key: "trackStyle.gradient", label: "渐变", type: "enum", values: [null, "gloss", "fade"], group: "轨道" },
       { key: "trackStyle.glow", label: "发光", type: "boolean", group: "轨道" },
