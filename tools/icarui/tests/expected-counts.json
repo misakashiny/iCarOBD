@@ -82,6 +82,9 @@
     "verify-p4f02-track-schema": 38,
     "verify-p4f03-image-schema": 43,
     "verify-p4f04-text-container-schema": 37,
-    "verify-p4fm01-arrays-track": 51
+    "verify-p4fm01-arrays-track": 51,
+    "verify-p4fm02-complex-gauge": 31,
+    "verify-p4fm02-image-draft": 26,
+    "verify-p4fm02-ui-panel": 30
   }
 }

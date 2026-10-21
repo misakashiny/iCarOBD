@@ -219,6 +219,27 @@ window.PART_KINDS = [
   { v: "decor", n: "装饰", icon: "✦" },
 ];
 
+/**
+ * 部件种类的**中文名**（P4F-M02 修复）。
+ *
+ * ## 为什么补这个函数
+ *
+ * `panels.js` 的嵌套部件行（`partRows`，depth > 0 时递归）调用了
+ * `window.partKindName(q.kind)`，但**该函数从未定义** ——
+ * 只有在「部件带有嵌套 children」时才会走到那一行，于是：
+ *
+ *   · 普通单层部件 → 正常
+ *   · **一旦设置嵌套子部件 → `TypeError: window.partKindName is not a function`**
+ *     → `renderProps` 抛异常 → 整个属性面板白屏
+ *
+ * 这是 P4F-M02 阶段 B2「嵌套 children 不丢失」自动化测试发现的真实缺陷。
+ * 实现与 `PART_KINDS` 同源，不复制一份名字表。
+ */
+window.partKindName = function (kind) {
+  const k = window.PART_KINDS.find(function (x) { return x.v === kind; });
+  return k ? k.n : String(kind);
+};
+
 /** 指针部件的默认扫描范围（度，0 = 正右，顺时针）。与经典表盘一致 */
 window.PART_DEFAULT_SWEEP = { from: 135, to: 405 };
 
