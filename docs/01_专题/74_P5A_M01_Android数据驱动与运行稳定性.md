@@ -312,7 +312,15 @@ adb shell am broadcast -a com.icar.obd.SIM --es dump 1        # 打印总线值
 
 ## 十一、GitHub 完整提交 Hash 与远程验证
 
-见提交后补记。
+**`379826f3d2853d9648ce6be502ca79a7ca4aeef2`**
+
+| 项 | 值 |
+|---|---|
+| 本地 HEAD | `379826f3d2853d9648ce6be502ca79a7ca4aeef2` |
+| 远程 origin/main | `379826f3d2853d9648ce6be502ca79a7ca4aeef2` |
+| 一致性 | ✅ **完全一致** |
+| Push | ✅ `d849ac1..379826f` |
+| 提交链接 | https://github.com/misakashiny/iCarOBD/commit/379826f3d2853d9648ce6be502ca79a7ca4aeef2 |
 
 ---
 
