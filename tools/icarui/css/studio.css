@@ -1088,6 +1088,43 @@ main { grid-template-columns: 280px minmax(0, 1fr) 340px; gap: 10px; padding: 10
   border-radius: 4px; border: 1px solid #2a3441; background: #151c25; color: #cfdae7; }
 .spColorWrap input[type="text"]:focus { outline: none; border-color: #4ea8ff; }
 .spColorWrap input[type="text"].spInvalid { border-color: #ff5e6e; background: rgba(255,94,110,0.08); }
+
+/* ============================================================ P4F-M01 数组编辑器 */
+/* 多段色带 / 子部件：对象数组必须用结构化行列表，不能用文本输入框 */
+.spArrayWrap { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.spArrBar { display: flex; flex-wrap: wrap; gap: 4px; }
+.spArrBtn {
+  font-size: 10px; padding: 2px 7px; border-radius: 4px; cursor: pointer;
+  border: 1px solid #2a3441; background: #1a2430; color: #cfdae7;
+}
+.spArrBtn:hover { border-color: #4ea8ff; color: #e8f2ff; }
+.spArrBtn.danger { border-color: #5a2a30; color: #ff8b96; }
+.spArrBtn.danger:hover { border-color: #ff5e6e; color: #ffb3ba; }
+.spArrBtn.mini { padding: 1px 5px; font-size: 11px; line-height: 1.4; }
+.spArrRow {
+  display: flex; align-items: center; gap: 3px; min-width: 0;
+  padding: 3px 4px; border-radius: 4px; background: #141b24;
+  border: 1px solid #222c38;
+}
+.spArrRow.spArrRowPart { flex-wrap: wrap; }
+.spArrIdx { flex: 0 0 auto; font-size: 10px; color: #5c6b7d; min-width: 16px; }
+.spArrNum {
+  flex: 1 1 44px; min-width: 0; font-size: 10px; padding: 2px 4px;
+  border-radius: 4px; border: 1px solid #2a3441; background: #151c25; color: #cfdae7;
+}
+.spArrNum:focus { outline: none; border-color: #4ea8ff; }
+.spArrColor {
+  flex: 0 0 22px; width: 22px; height: 18px; padding: 0;
+  border: 1px solid #2a3441; border-radius: 4px; background: #151c25; cursor: pointer;
+}
+.spArrSelect {
+  flex: 1 1 58px; min-width: 0; font-size: 10px; padding: 2px 3px;
+  border-radius: 4px; border: 1px solid #2a3441; background: #151c25; color: #cfdae7;
+}
+.spArrSelect:focus { outline: none; border-color: #4ea8ff; }
+.spArrText { font-size: 10px; color: #8b9bb0; }
+.spArrHint { font-size: 10px; color: #5c6b7d; line-height: 1.6; padding: 1px 2px; }
+
 /* ============================================================ P4R-1 草稿 UI */
 /* 恢复提示条：非模态，贴顶，不遮挡工具条操作 */
 .draftRecoveryBar {

@@ -31,7 +31,8 @@ async function main(){
   })()`));
   ok(A.length===6,'A1 6 个仪表控件全部存在');
   ok(A.every(x=>x.family==='gauge'),'A2 **6/6 识别为 gauge 族**');
-  ok(A.every(x=>x.fields===21),'A3 每个仪表 21 个 schema 字段（P4E-03 +2 / P4E-04 +7）');
+  // P4F-M01 演进：又补登记了 bands / parts（21 -> 23 字段）
+  ok(A.every(x=>x.fields===23),'A3 每个仪表 23 个 schema 字段（P4E-03 +2 / P4E-04 +7 / P4F-M01 +2）');
   // ⚠️ P4E-03 演进：gauge schema 由 12 字段扩展为 14 ——
   //    P4E-03 为 valueLabels / extraPids **补登记**了 schema 声明
   //    （两个字段本来就在 model.js 白名单和 Android 契约里，只是没进 Registry schema）。
@@ -40,8 +41,9 @@ async function main(){
   const BASE=['pid','style','min','max','warnLow','warnHigh','w','h'];
   const EXP=BASE.concat(['valueLabels','extraPids',
     'cardStyle','card.show','card.alpha','card.radius',
-    'neonPreset','ringStyle','ringSegments']);
-  ok(JSON.stringify(A[0].editable)===JSON.stringify(EXP),'A4 可编辑字段恰为 17 个：'+EXP.join(','));
+    'neonPreset','ringStyle','ringSegments',
+    'bands','parts']);
+  ok(JSON.stringify(A[0].editable)===JSON.stringify(EXP),'A4 可编辑字段恰为 19 个：'+EXP.join(','));
 
   // ---------- B. 重载后识别 ----------
   const B=JJ(await cdp.eval(`(function(){

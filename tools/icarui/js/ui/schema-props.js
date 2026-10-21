@@ -869,6 +869,8 @@
       // P4E-04：高级外观字段（补登记后开放）
       "cardStyle", "card.show", "card.alpha", "card.radius",
       "neonPreset", "ringStyle", "ringSegments",
+      // P4F-M01：复杂数组字段（对象数组，用局部编辑组件，不当文本写）
+      "bands", "parts",
     ],
     /**
      * 普通图片族（P4F-03）。
@@ -1117,6 +1119,12 @@
               const lower = s.toLowerCase();
               if (pk.value !== lower) pk.value = lower;
             }
+          } else if (f.type === "bands") {
+            // P4F-M01：色带是对象数组，每次回显重建行
+            renderBandEditor(el, node, path, v);
+          } else if (f.type === "parts") {
+            // P4F-M01：子部件同上
+            renderPartEditor(el, node, path, v);
           } else if (f.type === "asset") {
             // P4F-03：素材下拉的选项是**动态的**（素材库会变），每次回显都重建
             renderAssetOptions(el, v);
@@ -1142,6 +1150,231 @@
     if (v === undefined) return "无值";
     if (typeof v === "boolean") return v ? "是" : "否";
     return String(v);
+  }
+
+  // ============================================================ 复杂数组编辑器
+  //
+  // P4F-M01：多段色带与子部件都是**对象数组**，必须用结构化行编辑器。
+  //
+  // ## 设计原则（与任务要求对齐）
+  //
+  // | 要求 | 做法 |
+  // |---|---|
+  // | 不把数组当文本写 | 每行是结构化输入框/下拉，绝不出现 JSON 文本框 |
+  // | 复用现有归一化 | 全部走 window.normalizeBands / window.normalizePart |
+  // | 不复制默认值 | 新增项用旧面板同样的规则（见 addBand / addPart 语义）|
+  // | 支持增删与排序 | 按钮调既有 window.addBand / delBand / movePart 等 |
+  // | Undo/Redo | 所有操作都经 window.commit()（既有函数内部已如此）|
+  // | 保留旧面板 | 这里只是另一种入口，panels.js 未改 |
+  //
+  // ⚠️ **不重新实现业务逻辑**：按钮直接调用 app.js 里既有的
+  //    addBand / delBand / setBandField / addPart / delPart / movePart / setPart…
+  //    这样"改一处逻辑要改两个地方"的风险为零。
+
+  /**
+   * 通用：建一个按钮。所有操作都调既有的 window.* 函数。
+   */
+  function mkBtn(label, title, onClick, cls) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "spArrBtn" + (cls ? " " + cls : "");
+    b.textContent = label;
+    if (title) b.title = title;
+    b.addEventListener("click", function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      onClick();
+      // 操作后同步刷新面板与画布（既有的提交链路已改模型）
+      refresh(true);
+      if (window.refreshAll) window.refreshAll();
+    });
+    return b;
+  }
+
+  /** 通用：建一个只读文本 */
+  function mkText(txt, cls) {
+    const d = document.createElement("span");
+    d.className = cls || "spArrText";
+    d.textContent = txt;
+    return d;
+  }
+
+  /** 通用：数字输入框（change 时回调） */
+  function mkNum(val, title, onCommit, attrs) {
+    const i = document.createElement("input");
+    i.type = "number";
+    i.step = "any";
+    i.className = "spArrNum";
+    i.value = val === null || val === undefined ? "" : String(val);
+    if (title) i.title = title;
+    if (attrs) Object.keys(attrs).forEach(function (k) { i.setAttribute(k, attrs[k]); });
+    i.addEventListener("change", function () { onCommit(i.value); });
+    return i;
+  }
+
+  /** 通用：颜色输入框 */
+  function mkColor(val, title, onCommit) {
+    const i = document.createElement("input");
+    i.type = "color";
+    i.className = "spArrColor";
+    i.value = (val && /^#[0-9a-fA-F]{6}$/.test(val)) ? val : (window.BAND_DEFAULT_COLOR || "#FF4D4F");
+    if (title) i.title = title;
+    i.addEventListener("change", function () { onCommit(i.value); });
+    return i;
+  }
+
+  /** 通用：下拉 */
+  function mkSelect(options, cur, onCommit, title) {
+    const sel = document.createElement("select");
+    sel.className = "spArrSelect";
+    if (title) sel.title = title;
+    options.forEach(function (o) {
+      const opt = document.createElement("option");
+      opt.value = o.v;
+      opt.textContent = o.n;
+      if (String(cur) === String(o.v)) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener("change", function () { onCommit(sel.value); });
+    return sel;
+  }
+
+  /** 取当前选中节点（编辑器操作都要先确认节点还在） */
+  function curNode() {
+    const S = window.CanvasState;
+    if (!S || !S.selection || S.selection.length !== 1) return null;
+    return window.findNode ? window.findNode(S.design.nodes, S.selection[0]) : null;
+  }
+
+  /**
+   * 多段色带编辑器（P4F-M01）。
+   *
+   * 结构：工具栏（按阈值生成 / 加一段 / 清空）+ 每段一行（起点/终点/颜色/透明度/删除）
+   *
+   * ⚠️ 语义提示必须显示：**色带只决定画出来的分区，报警判定仍只看 warnLow / warnHigh**。
+   *    否则用户会以为"加了色带就会报警"。
+   */
+  function renderBandEditor(box, node, path, bands) {
+    const list = Array.isArray(bands) ? bands : [];
+    box.innerHTML = "";
+
+    // ---- 工具栏
+    const bar = document.createElement("div");
+    bar.className = "spArrBar";
+    bar.appendChild(mkBtn("按阈值生成", "把 warnLow / warnHigh 描述的红区转成色带（画面不变）",
+      function () { if (window.bandsFromWarn) window.bandsFromWarn(); }));
+    bar.appendChild(mkBtn("＋加一段", "最多 " + (window.MAX_BANDS || 8) + " 段",
+      function () { if (window.addBand) window.addBand(); }));
+    if (list.length) {
+      bar.appendChild(mkBtn("清空", "删除全部色带（回到按 warnLow/warnHigh 画）",
+        function () { if (window.clearBands) window.clearBands(); }, "danger"));
+    }
+    box.appendChild(bar);
+
+    // ---- 空状态说明
+    if (!list.length) {
+      box.appendChild(mkText("没有色带：红区按 warnLow / warnHigh 画（与旧版本一致）。", "spArrHint"));
+      box.appendChild(mkText("色带只决定画出来的分区；报警判定仍只看 warnLow / warnHigh。", "spArrHint"));
+      return;
+    }
+
+    // ---- 每段一行
+    list.forEach(function (z, i) {
+      const row = document.createElement("div");
+      row.className = "spArrRow";
+
+      row.appendChild(mkText("#" + (i + 1), "spArrIdx"));
+      row.appendChild(mkNum(window.r2 ? window.r2(z.from) : z.from, "第 " + (i + 1) + " 段起点",
+        function (v) { if (window.setBandField) window.setBandField(i, "from", v); }));
+      row.appendChild(mkNum(window.r2 ? window.r2(z.to) : z.to, "第 " + (i + 1) + " 段终点",
+        function (v) { if (window.setBandField) window.setBandField(i, "to", v); }));
+      row.appendChild(mkColor(z.color, "第 " + (i + 1) + " 段颜色",
+        function (v) { if (window.setBandField) window.setBandField(i, "color", v); }));
+      row.appendChild(mkNum(z.alpha, "透明度 0..255（空 = 255）",
+        function (v) { if (window.setBandField) window.setBandField(i, "alpha", v); },
+        { min: "0", max: "255", placeholder: "255" }));
+      row.appendChild(mkBtn("✕", "删掉第 " + (i + 1) + " 段",
+        function () { if (window.delBand) window.delBand(i); }, "mini"));
+
+      box.appendChild(row);
+    });
+
+    box.appendChild(mkText("每行：起点 / 终点 / 颜色 / 透明度。最多 " +
+      (window.MAX_BANDS || 8) + " 段；写出量程会自动夹住，终点≤起点的段会被丢掉。", "spArrHint"));
+  }
+
+  /**
+   * 子部件编辑器（P4F-M01）。
+   *
+   * 结构：工具栏（加部件）+ 每个部件一行（种类 / 素材 / x / y / w / h / 上移 / 下移 / 删除）
+   *
+   * ⚠️ 列表顺序 = 绘制顺序（先画的在下层）。这一点必须写在提示里。
+   * ⚠️ 有部件时**不再用 style 程序化绘制**，完全按列表拼装。
+   */
+  function renderPartEditor(box, node, path, parts) {
+    const list = Array.isArray(parts) ? parts : [];
+    box.innerHTML = "";
+
+    // ---- 工具栏
+    const bar = document.createElement("div");
+    bar.className = "spArrBar";
+    bar.appendChild(mkBtn("＋加部件", "新增一个表盘部件（记得选素材）",
+      function () { if (window.addPart) window.addPart(); }));
+    box.appendChild(bar);
+
+    // ---- 空状态
+    if (!list.length) {
+      box.appendChild(mkText("（空）保持空着就用「样式」程序化绘制；加了部件就完全按列表拼装。", "spArrHint"));
+      return;
+    }
+
+    // ---- 素材下拉选项（与 imageFields 同口径）
+    const assets = (window.CanvasState && window.CanvasState.design)
+      ? (window.CanvasState.design.assets || []) : [];
+    const assetOpts = [{ v: "", n: "（未选）" }].concat(assets.map(function (a) {
+      return { v: a.id, n: String(a.name || a.id) };
+    }));
+
+    list.forEach(function (raw, i) {
+      const q = window.normalizePart ? window.normalizePart(raw) : raw;
+      const row = document.createElement("div");
+      row.className = "spArrRow spArrRowPart";
+
+      row.appendChild(mkText("#" + (i + 1), "spArrIdx"));
+
+      // 种类
+      const kinds = (window.PART_KINDS || []).map(function (k) { return { v: k.v, n: k.n }; });
+      row.appendChild(mkSelect(kinds, q.kind, function (v) {
+        if (window.setPart) window.setPart(i, "kind", v);
+      }, "部件种类"));
+
+      // 素材（value 类型不画素材，但仍显示下拉，保持列对齐）
+      row.appendChild(mkSelect(assetOpts, q.assetId || "", function (v) {
+        if (window.setPart) window.setPart(i, "assetId", v);
+      }, "部件素材"));
+
+      // 位置与尺寸
+      ["x", "y", "w", "h"].forEach(function (k) {
+        row.appendChild(mkNum(q[k], "部件 " + k, function (v) {
+          if (window.setPartNum) window.setPartNum(i, k, v);
+        }));
+      });
+
+      // 排序与删除
+      row.appendChild(mkBtn("↑", "上移（画得更早，在下层）", function () {
+        if (window.movePart) window.movePart(i, -1);
+      }, "mini"));
+      row.appendChild(mkBtn("↓", "下移（画得更晚，在上层）", function () {
+        if (window.movePart) window.movePart(i, 1);
+      }, "mini"));
+      row.appendChild(mkBtn("✕", "删除", function () {
+        if (window.delPart) window.delPart(i);
+      }, "mini"));
+
+      box.appendChild(row);
+    });
+
+    box.appendChild(mkText("列表顺序 = 绘制顺序（先画的在下层）。有部件时不再用样式画法。", "spArrHint"));
   }
 
   /**
@@ -1259,6 +1492,19 @@
       el = document.createElement("select");
       el.setAttribute("data-role", "asset");
       return el;
+    }
+    // ---- 复杂数组：多段色带 / 子部件（P4F-M01）----
+    //
+    // 数据是**对象数组**，绝不能用文本输入 —— 一个 band 有 4 个字段、
+    // 一个 part 有 8~12 个字段，文本根本无法表达且极易破坏结构。
+    //
+    // 这里只建**容器**；具体行由 renderBandEditor / renderPartEditor 填充，
+    // 每次 update 时重建（数组长度会变）。
+    if (f.type === "bands" || f.type === "parts") {
+      const wrap = document.createElement("div");
+      wrap.className = "spArrayWrap";
+      wrap.setAttribute("data-role", f.type);
+      return wrap;
     }
     el = document.createElement("input");
     el.type = "text";         // 不用 number —— 会吞掉空值语义

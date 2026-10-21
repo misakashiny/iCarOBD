@@ -31,8 +31,9 @@ async function main(){
       missing:t.filter(function(x){return r.editable.indexOf(x)<0;})});
   })()`));
   ok(A.missing.length===0,'A1 **7 个外观字段全部已登记并可编辑**');
-  ok(A.fields===21,'A2 gauge schema 由 14 扩展为 21 字段');
-  ok(A.editable===17,'A3 可编辑字段 10 → 17');
+  // P4F-M01 演进：再补登记 bands / parts -> 23 字段
+  ok(A.fields===23,'A2 gauge schema 由 14 扩展为 23 字段（P4E-04 +7 / P4F-M01 +2）');
+  ok(A.editable===19,'A3 可编辑字段 10 → 19（P4F-M01）');
 
   // ---------- B. 枚举取值范围 ----------
   const B=JJ(await cdp.eval(`(function(){
@@ -120,7 +121,7 @@ async function main(){
   })()`));
   ok(F.length===6,'F1 6 个仪表都在');
   ok(F.every(function(x){return x.allAppearanceEditable;}),'F2 **6/6 仪表 7 个外观字段都可用**');
-  ok(F.every(function(x){return x.editable===17;}),'F3 6/6 可编辑字段均为 17');
+  ok(F.every(function(x){return x.editable===19;}),'F3 6/6 可编辑字段均为 19');
   const styles=F.map(function(x){return x.style;});
   // ⚠️ 实测：6 个仪表的 style 并非两两不同 —— g_coolant 与 g_fuel 都是 0（圆表）。
   //

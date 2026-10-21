@@ -132,6 +132,17 @@
         values: [0, 1], group: "外观" },
       { key: "ringSegments", label: "环段数", type: "number", min: 1,
         group: "外观" },
+      // ==== P4F-M01：复杂数组字段 ====
+      //
+      // 两者**早已在 model.js 的白名单与 Android 契约中**，
+      // 只是 Registry schema 从未声明 —— 补登记，不是新增契约。
+      //
+      // type 用 "bands" / "parts"：数据是对象数组，**不能用文本输入**，
+      // 由 schema-props.js 的局部编辑组件（行列表）渲染。
+      { key: "bands", label: "多段色带", type: "bands", group: "数据",
+        hint: "只决定画出来的分区；报警判定仍只看 warnLow / warnHigh" },
+      { key: "parts", label: "子部件", type: "parts", group: "外观",
+        hint: "有部件时不再用样式画法，完全按列表顺序拼装" },
     ];
   }
 

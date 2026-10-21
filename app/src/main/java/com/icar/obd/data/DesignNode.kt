@@ -263,6 +263,14 @@ data class DesignNode(
     val stateCritical: Float? = null,
     val states: Map<String, NodeState>? = null,
 
+    /**
+     * 条形轨道外观（P4F-M01）。
+     *
+     * null = 不是轨道（或老文件没有该字段）→ 走 `buildImage()` 贴底图，
+     * 与旧行为**逐像素一致**。非 null 时改用代码绘制（`buildTrack()`）。
+     */
+    val trackStyle: TrackStyle? = null,
+
     // ---- type == "text"
     val text: String = "",
     val font: GaugeFont = GaugeFont()
@@ -413,6 +421,7 @@ data class DesignNode(
             var stateWarn: Float? = null
             var stateCritical: Float? = null
             var states: Map<String, NodeState>? = null
+            var trackStyle: TrackStyle? = null
             var text = ""
             var font = GaugeFont()
 
@@ -487,6 +496,8 @@ data class DesignNode(
                     stateWarn = optFloatOrNull(o, "stateWarn", "$path.stateWarn", warnings)
                     stateCritical = optFloatOrNull(o, "stateCritical", "$path.stateCritical", warnings)
                     states = NodeState.parseAll(o.optJSONObject("states"), path, warnings, assetIds)
+                    // P4F-M01：条形轨道外观（向后兼容 —— 缺失时为 null，行为不变）
+                    trackStyle = TrackStyle.parse(o.optJSONObject("trackStyle"))
                     if (assetId.isNotEmpty() && assetIds.isNotEmpty() && assetId !in assetIds) {
                         warnings.add("$path 引用的素材 `$assetId` 不在 `assets` 清单里 —— 请重新导入")
                     }
@@ -537,6 +548,7 @@ data class DesignNode(
                 stateWarn = stateWarn,
                 stateCritical = stateCritical,
                 states = states,
+                trackStyle = trackStyle,
                 text = text,
                 font = font
             )
@@ -864,6 +876,106 @@ data class GaugePart(
  * @param alpha  0..255
  * @param radius 圆角半径，**画布单位**（不是像素）
  */
+/**
+ * 条形轨道外观（P4F-M01 / TRACK-APP-001）。
+ *
+ * ## 背景
+ *
+ * ICarUI 编辑器里 `type == "image"` 且 `trackStyle != null` 的节点是
+ * **代码绘制的条形轨道**（28 个 track 控件）。此前 Android 端完全没有
+ * 解析这个字段，一律走 `buildImage()` 贴底图 —— 于是用户在 Windows 上
+ * 调好的圆角 / 渐变 / 刻度 / 色带，在平板上完全看不到。
+ *
+ * ## 兼容策略（**纯增量，不改任何既有字段含义**）
+ *
+ * · 字段全部可空，缺省 = 不画（回落到贴底图，与旧行为完全一致）
+ * · 解析失败不抛异常，只记 warning
+ * · 不改变主题文件格式版本
+ *
+ * 字段语义与工具侧 `normalizeTrackStyle()` **逐条对齐**。
+ */
+data class TrackStyle(
+    /** "h" 水平 / "v" 垂直 */
+    val orient: String = "h",
+    /** 圆角；null = 取短边一半 */
+    val radius: Float? = null,
+    /** 内凹（凹陷观感） */
+    val inset: Boolean = false,
+    /** 发光 */
+    val glow: Boolean = false,
+    /** 三段色带（绿/黄/红，语义色） */
+    val band: Boolean = false,
+    /** null / "fade" 沿长边淡出 / "gloss" 沿短边明暗 */
+    val gradient: String? = null,
+    /** 分段数 0..64 */
+    val segments: Int = 0,
+    /** 刻度数 0..64 */
+    val ticks: Int = 0,
+    /** 填充比例 0..1；null = 不画填充 */
+    val fill: Float? = null,
+    /** 轨道底色；null = 跟主题 */
+    val color: String? = null,
+    /** 填充/发光强调色；null = 跟主题 */
+    val accent: String? = null
+) {
+    val isVertical: Boolean get() = orient == "v"
+
+    companion object {
+        const val MAX_SEGMENTS = 64
+        const val MAX_TICKS = 64
+        const val MAX_RADIUS = 64f
+
+        private val HEX = Regex("^#[0-9a-fA-F]{6}$")
+
+        fun parse(o: JSONObject?): TrackStyle? {
+            if (o == null) return null
+            val orient = if (o.optString("orient", "h") == "v") "v" else "h"
+
+            val radius = if (o.has("radius") && !o.isNull("radius")) {
+                o.optDouble("radius", 0.0).toFloat().coerceIn(0f, MAX_RADIUS)
+            } else null
+
+            var gradient: String? = null
+            if (o.has("gradient") && !o.isNull("gradient")) {
+                val g = o.optString("gradient", "")
+                if (g == "fade" || g == "gloss") gradient = g
+                // 不认的写法 -> null（跟随主题），与工具侧一致
+            }
+
+            fun count(key: String, max: Int): Int {
+                if (!o.has(key) || o.isNull(key)) return 0
+                val n = o.optDouble(key, 0.0)
+                if (!n.isFinite() || n <= 0) return 0
+                return n.toInt().coerceIn(0, max)
+            }
+
+            val fill = if (o.has("fill") && !o.isNull("fill")) {
+                o.optDouble("fill", 0.0).toFloat().coerceIn(0f, 1f)
+            } else null
+
+            fun hexOrNull(key: String): String? {
+                if (!o.has(key) || o.isNull(key)) return null
+                val v = o.optString(key, "")
+                return if (HEX.matches(v)) v else null
+            }
+
+            return TrackStyle(
+                orient = orient,
+                radius = radius,
+                inset = o.optBoolean("inset", false),
+                glow = o.optBoolean("glow", false),
+                band = o.optBoolean("band", false),
+                gradient = gradient,
+                segments = count("segments", MAX_SEGMENTS),
+                ticks = count("ticks", MAX_TICKS),
+                fill = fill,
+                color = hexOrNull("color"),
+                accent = hexOrNull("accent")
+            )
+        }
+    }
+}
+
 data class CardOverride(
     val show: Boolean? = null,
     val alpha: Int? = null,

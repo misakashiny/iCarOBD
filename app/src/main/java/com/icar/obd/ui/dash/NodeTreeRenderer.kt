@@ -23,6 +23,7 @@ import com.icar.obd.ui.view.DashboardBackground
 import com.icar.obd.ui.view.GaugeTheme
 import com.icar.obd.ui.view.GaugePartsView
 import com.icar.obd.ui.view.GaugeViewFactory
+import com.icar.obd.ui.view.TrackView
 import com.icar.obd.obd.VehicleBus
 import kotlin.math.max
 import kotlin.math.min
@@ -315,6 +316,9 @@ class NodeTreeRenderer(private val context: Context) {
 
     private fun buildNode(node: DesignNode, design: DesignFile): View? = when {
         node.isGroup -> buildGroup(node, design)
+        // P4F-M01：带 trackStyle 的 image 是**代码绘制的条形轨道**，
+        // 优先走 buildTrack()；否则回落 buildImage() 贴底图（旧行为完全不变）。
+        node.isImage && node.trackStyle != null -> buildTrack(node)
         node.isImage -> buildImage(node)
         node.isText -> buildText(node)
         node.isGauge -> buildGauge(node)
@@ -332,6 +336,20 @@ class NodeTreeRenderer(private val context: Context) {
         g.clipChildren = false
         buildInto(node.children, g, design)
         return g
+    }
+
+    /**
+     * 条形轨道（P4F-M01 / TRACK-APP-001）。
+     *
+     * 纯增量：只有 `trackStyle != null` 的 image 节点会走到这里；
+     * 其它 image（普通图、状态灯）仍走 `buildImage()`，行为完全不变。
+     */
+    private fun buildTrack(node: DesignNode): View {
+        val tv = TrackView(context)
+        // 主题色回落：与工具侧 readCanvasColors() 的 track / accent 同义
+        tv.setThemeColors(lastTheme.track, lastTheme.accent)
+        tv.setTrack(node.trackStyle)
+        return tv
     }
 
     private fun buildImage(node: DesignNode): View {
