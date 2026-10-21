@@ -72,7 +72,8 @@ async function main() {
     ['group', 'box_card', 'box_row', 'box_col'].forEach(function (k) {
       ok(scope.fourKeys[k].isContainer === true, k + ' identified as container');
       ok(scope.fourKeys[k].family === 'container', k + ' resolves to container family');
-      ok(scope.fourKeys[k].editable === 6, k + ' has exactly 6 editable fields');
+      // P4F-04 演进：container 族补齐 scale → 可编辑字段 6 → 7
+      ok(scope.fourKeys[k].editable === 7, k + ' has exactly 7 editable fields after P4F-04');
     });
     ok(scope.nextCount === 15, '15 next_* presets found (got ' + scope.nextCount + ')');
     ok(scope.nextAllGroup === true, 'all 15 next_* produce group nodes');
@@ -97,7 +98,8 @@ async function main() {
     ok(sig.distinctSignatures === 1, 'all 4 container schemas are IDENTICAL (got ' +
       sig.distinctSignatures + ' distinct)');
     ok(sig.fields.length === 7, 'schema has 7 fields (got ' + sig.fields.length + ')');
-    ok(sig.fields.indexOf('scale') >= 0, 'schema includes scale (declared but NOT editable this phase)');
+    // P4F-04：scale 已由「声明但不可编辑」变为**可编辑**
+    ok(sig.fields.indexOf('scale') >= 0, 'schema includes scale (editable since P4F-04)');
     ok(sig.defaults.group.w === 160 && sig.defaults.box_card.w === 320 &&
       sig.defaults.box_row.w === 340 && sig.defaults.box_col.w === 140,
       'container default sizes unchanged (160/320/340/140)');

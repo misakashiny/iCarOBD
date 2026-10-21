@@ -164,7 +164,8 @@ async function main() {
       "(function(){var b=document.getElementById('schemaProps');var all=b.querySelectorAll('input,select');" +
       "var out=[];for(var i=0;i<all.length;i++){out.push(all[i].getAttribute('data-path')+'/'+(all[i].getAttribute('data-role')||'-'));}" +
       "return JSON.stringify({order:out});})()"));
-    ok(orderList.order.length === 6, 'text panel has 6 focusable controls (got ' + orderList.order.length + ')');
+    // P4F-04: text family gained w/h -> 2 more focusable controls (6 -> 8).
+  ok(orderList.order.length === 8, 'text panel has 8 focusable controls after P4F-04 (got ' + orderList.order.length + ')');
 
     await cdp.eval("(function(){var e=window.__spInp('text');if(e)e.focus();})()");
     await sleep(100);

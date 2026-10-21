@@ -59,7 +59,8 @@ async function main() {
       ok(r.isText === true, k + ' identified as text (persisted type === "text")');
       ok(r.family === 'text', k + ' resolves to text family');
       ok(r.fields === 7, k + ' schema has 7 fields (got ' + r.fields + ')');
-      ok(r.editable === 5, k + ' exactly 5 editable fields (got ' + r.editable + ')');
+      // P4F-04 演进：text 族补齐 w/h → 可编辑字段 5 → 7
+      ok(r.editable === 7, k + ' exactly 7 editable fields after P4F-04 (got ' + r.editable + ')');
     }
 
     // 不依赖 __controlKey：重载后仍识别

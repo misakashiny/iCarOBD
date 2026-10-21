@@ -813,10 +813,29 @@
       "w", "h",
     ],
     // P4B：文字族第一批只开这 5 个；w/h/rotation/alpha 等仍走旧面板
-    text: ["text", "font.size", "font.weight", "font.color", "font.align"],
+    /**
+     * 文字族（P4B + P4F-04 补齐）。
+     *
+     * P4F-04 新增 `w` / `h`：两者**早已在 schema 与序列化中**，
+     * 只是没进可编辑清单。补齐后 12 个文字控件全部可调尺寸。
+     *
+     * ⚠️ 审计确认：**本项目没有文字自动测量函数**
+     *    （measureText / autoSizeText / fitText 均不存在），
+     *    没有任何既有布局逻辑会被直接改 w/h 破坏。
+     */
+    text: ["text", "font.size", "font.weight", "font.color", "font.align", "w", "h"],
     // P4C：容器族开 6 个通用变换/图层字段。
     // ⚠️ schema 里还有 scale（第 7 个字段），本阶段**不开放编辑**（按任务只开 6 个）。
-    container: ["w", "h", "rotation", "alpha", "locked", "visible"],
+    /**
+     * 容器族（P4C + P4F-04 补齐）。
+     *
+     * P4F-04 新增 `scale`：语义见 model.js
+     * 「scale 是 w/h 之上的**额外**倍率」，默认 1，下限 0.05。
+     *
+     * ⚠️ 只开放属性，**不改变换逻辑**：localMatrix 仍是唯一矩阵来源，
+     *    子节点保持绝对坐标，容器缩放只影响绘制与命中，不改子节点 x/y。
+     */
+    container: ["w", "h", "rotation", "scale", "alpha", "locked", "visible"],
     /**
      * P4D-01：状态灯族（19 条）开放字段。
      *

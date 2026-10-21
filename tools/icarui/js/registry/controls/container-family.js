@@ -46,7 +46,7 @@
       { key: "w", label: "宽度", type: "number", group: "变换", min: 1 },
       { key: "h", label: "高度", type: "number", group: "变换", min: 1 },
       { key: "rotation", label: "旋转", type: "number", group: "变换" },
-      { key: "scale", label: "缩放", type: "number", group: "变换", min: 0.01 },
+      { key: "scale", label: "缩放", type: "number", group: "变换", min: 0.05 },
       { key: "alpha", label: "不透明度", type: "number", group: "图层", min: 0, max: 255 },
       { key: "locked", label: "锁定", type: "boolean", group: "图层" },
       { key: "visible", label: "可见", type: "boolean", group: "图层" },
