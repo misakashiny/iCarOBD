@@ -85,6 +85,9 @@
     "verify-p4fm01-arrays-track": 51,
     "verify-p4fm02-complex-gauge": 31,
     "verify-p4fm02-image-draft": 26,
-    "verify-p4fm02-ui-panel": 30
+    "verify-p4fm02-ui-panel": 30,
+    "verify-p4fm03-compare": 32,
+    "verify-p4fm03-indexeddb-draft": 34,
+    "verify-p4fm03-input-undefined": 23
   }
 }

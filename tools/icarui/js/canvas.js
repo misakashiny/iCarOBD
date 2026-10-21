@@ -955,6 +955,29 @@ function uniformMatrix(m, w, h) {
   window.drawTrackNode = drawTrackNode;
 
   /**
+   * 素材的可用图片 URL（P4F-M03 修复）。
+   *
+   * `catalog-panel.js` 用它给控件库面板掉缩略图：
+   *
+   *     const src = typeof window.assetBitmapUrl === "function"
+   *       ? window.assetBitmapUrl(e.__meta.assetId) : null;
+   *     if (src) return '<img ...>';
+   *     return '<span class="cpThumbPh">□</span>';   // 占位符
+   *
+   * 但 **该函数从来没有定义** —— 每次都落到占位符分支。
+   * 这里用已有的 `S.assetUrls` / `S.thumbs`（与 drawImage 同一套取图链路），
+   * 不新建缓存。取不到就返回 null → 调用方自己回退占位符。
+   */
+  window.assetBitmapUrl = function (assetId) {
+    if (!assetId) return null;
+    const S2 = window.CanvasState;
+    if (!S2) return null;
+    const url = (S2.assetUrls && S2.assetUrls[assetId]) ||
+                (S2.thumbs && S2.thumbs[assetId]) || null;
+    return url || null;
+  };
+
+  /**
    * 文字控件。字体来自 `n.font`（family / size / weight / italic /
    * letterSpacing / align / color），用 `fontShort` 拼 canvas 的 font 简写。
    *

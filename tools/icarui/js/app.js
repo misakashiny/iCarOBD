@@ -1107,6 +1107,40 @@
     if (window.__ensureAnimPreview) window.__ensureAnimPreview();
   }
   window.refreshAll = refreshAll;
+
+  /**
+   * 请求重绘画布（P4F-M03 修复）。
+   *
+   * ## 为什么要补这个
+   *
+   * `schema-panel.js` 与 `schema-props.js` 共 3 处写了：
+   *
+   *     if (window.requestDraw) window.requestDraw();
+   *
+   * 但 **`window.requestDraw` 从来没有定义** —— 这三处永远不会执行。
+   * 结果：Schema 面板改值后靠 `refreshAll()` 附带重绘，
+   * 但那些只想「画一下」的路径完全失效。
+   *
+   * 这是 P4F-M03 目标 D「未定义 window.* 函数扫描」抓到的真实缺陷。
+   * 实现用最小改动：直接转发到已有的 `draw()`，不新建绘制链路。
+   */
+  window.requestDraw = function () {
+    try {
+      if (typeof window.draw === "function") window.draw();
+    } catch (e) { /* 绘制失败不应把上层业务也带崩 */ }
+  };
+
+  /**
+   * 暴露撤销/重做按钮状态同步（P4F-M03 修复）。
+   *
+   * `updateUndoButtons` 在本文件内是**函数声明**（闭包内），
+   * 但 `draft-manager.js` 用 `window.updateUndoButtons && window.updateUndoButtons()` 访问。
+   * 因为没挂到 `window`，那两处永远短路 ——
+   * **草稿恢复后撤销按钮状态不会更新**。
+   */
+  window.updateUndoButtons = function () {
+    try { updateUndoButtons(); } catch (e) {}
+  };
   // 供 refreshAll 内部调用（定义在后面，用 window 挂接避免前后顺序耦合）
   window.__ensureAnimPreview = ensureAnimPreview;
 
