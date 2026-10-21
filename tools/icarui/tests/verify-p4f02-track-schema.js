@@ -190,7 +190,9 @@ async function main(){
       text:(SP.resolve(txt)||{}).family,
       container:(SP.resolve(cont)||{}).family});
   })()`));
-  ok(I.plain==='null','I1 普通图片不被判为 track');
+  // P4F-03: plain image now resolves to the new image family.
+  // Real intent: plain image must NOT be misclassified as track.
+  ok(I.plain==='image','I1 plain image belongs to image family (not track)');
   ok(I.lamp==='imageState','I2 状态灯仍是 imageState');
   ok(I.gauge==='gauge','I3 仪表仍是 gauge');
   ok(I.text==='text','I4 文字仍是 text');

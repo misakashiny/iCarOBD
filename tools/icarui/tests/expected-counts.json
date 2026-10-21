@@ -79,6 +79,7 @@
     "verify-p4e02-gauge-schema": 38,
     "verify-p4e03-gauge-advanced": 46,
     "verify-p4e04-gauge-appearance": 44,
-    "verify-p4f02-track-schema": 38
+    "verify-p4f02-track-schema": 38,
+    "verify-p4f03-image-schema": 43
   }
 }

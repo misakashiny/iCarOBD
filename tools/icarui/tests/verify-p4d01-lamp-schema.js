@@ -221,7 +221,10 @@ async function main(){
       trackIsState:trackNode?SP.isStateLamp(trackNode):null});
   })()`));
   ok(J.plainIsState===false,'J1 普通图片不判为状态灯');
-  ok(J.plainFamily==='null','J2 普通图片仍由旧面板处理（Schema 未接管）');
+  // P4F-03: plain image now resolves to the new image family.
+  // This assertion's real intent is "plain image is NOT misclassified as a lamp",
+  // so assert its exact family name instead of null.
+  ok(J.plainFamily==='image','J2 plain image belongs to image family (not imageState)');
   ok(J.trackIsState===false,'J3 条形轨道不判为状态灯');
 
   // ---------- K. 旧属性面板并行 ----------

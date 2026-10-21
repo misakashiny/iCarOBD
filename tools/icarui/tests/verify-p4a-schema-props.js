@@ -146,14 +146,19 @@ async function main() {
     //    该断言的前提本身失效了 —— 不是行为退化。
     //    改用**普通图片节点**：图片族至今未接入（仍走旧面板），
     //    语义与本断言想验证的"未接管 → 回退旧面板"完全一致。
+    //
+    // ⚠️ P4F-03 再次演进：普通图片**也接入 Schema 了**（image 族）。
+    //    本条断言的真正意图是「**未被任何族接管**的节点 → 回退旧面板」，
+    //    所以改用一个人为构造的、没有任何族认领的节点。
     const roGauge = JJ(await step('non-track',
       "JSON.stringify((function(){" + SETUP +
-      "sel(window.createNode(window.NODE_IMAGE,{name:'普通图',assetId:'x',w:100,h:100}));" +
+      "var _n=window.createNode(window.NODE_IMAGE,{name:'无族图',assetId:'x',w:100,h:100});" +
+      "_n.type='__no_family__';sel(_n);" +
       "var box=document.getElementById('schemaProps');" +
       "return {family:ICAR.ui.SchemaPanel.currentFamily()," +
       "fallbackText:box.textContent.indexOf('继续用下方旧面板')>=0};})())"));
-    ok(roGauge.family === null, 'non-track resolved to null family');
-    ok(roGauge.fallbackText === true, 'non-track shows fallback hint to legacy panel');
+    ok(roGauge.family === null, 'unclaimed node resolved to null family');
+    ok(roGauge.fallbackText === true, 'unclaimed node shows fallback hint to legacy panel');
 
     // 保存重载后仍识别
     const reload = JJ(await step('reload still track',

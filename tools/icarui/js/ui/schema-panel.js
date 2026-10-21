@@ -62,6 +62,7 @@
       '<span class="pbCount">' + (schema ? (schema.family === "text" ? "文字"
         : schema.family === "gauge" ? "仪表"
         : schema.family === "imageState" ? "状态灯"
+        : schema.family === "image" ? "图片"
         : schema.family === "container" ? "容器" : "轨道") : "无") + "</span>";
     container.appendChild(head);
 
@@ -323,10 +324,18 @@
       t.classList.remove("spInvalid");
       t.title = "";
 
-      if (field.type === "boolean" || field.type === "enum") {
+      if (field.type === "boolean" || field.type === "enum" || field.type === "asset") {
         SP.PropertyUpdate.setOnce(node, path, r.value);
         editingPath = null;
         refresh();
+        // ⚠️ P4F-03：素材切换后**必须重绘**，否则画布还显示旧素材。
+        //
+        // refresh() 只重建属性面板；画布要等 refreshAll() 里的既有链路：
+        //   syncAssetImages() 按**新 assetId** 重新解析图片并更新绘图缓存，
+        //   P4R-FIX-01 的「原图优先于缩略图」逻辑也走这条链路。
+        //
+        // 这里**只触发既有刷新**：不碰 asset.data、不改 IndexedDB、不动持久化政策。
+        if (field.type === "asset" && window.refreshAll) window.refreshAll();
       } else {
         // 数值/text：change 表示失焦或回车 —— 收尾 live 事务
         SP.PropertyUpdate.endLive(node, path);

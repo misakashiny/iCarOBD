@@ -201,7 +201,9 @@ async function main(){
   ok(K.track===false,'K2 条形轨道不判为仪表');
   ok(K.lamp===false,'K3 状态灯不判为仪表');
   ok(K.text===false,'K4 文字控件不判为仪表');
-  ok(K.plainFam==='null','K5 普通图片仍走旧面板');
+  // P4F-03: plain image now resolves to the new image family.
+  // Real intent: plain image must NOT be misclassified as gauge.
+  ok(K.plainFam==='image','K5 plain image belongs to image family (not gauge)');
 
   // ---------- L. 既有族无回归 ----------
   const L=JJ(await cdp.eval(`(function(){

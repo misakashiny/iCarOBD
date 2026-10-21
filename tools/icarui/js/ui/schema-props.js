@@ -510,9 +510,35 @@
       return !!(st.normal || st.warn || st.critical);
     },
 
-    /** 持久化能力：普通图片（含 bar_* 图片轨道） */
+    /**
+     * 持久化能力：**普通图片**（P4F-03）。
+     *
+     * ## 判定优先级（必须严格按此顺序）
+     *
+     * 带 `type === "image"` 的节点有**三种**语义，不能只看 type：
+     *
+     * | 节点 | 判据 | 族 |
+     * |---|---|---|
+     * | 状态灯 | `states` 是含 normal/warn/critical 的对象 | `imageState` |
+     * | 条形轨道 | `trackStyle` 是对象 | `track` |
+     * | **普通图片** | 两者都不满足 | **`image`** |
+     *
+     * `resolve()` 里状态灯分支在**前**，所以这里其实不会被状态灯走到；
+     * 但本函数也可能被别处单独调用，**必须自己排除 states**，不能靠调用顺序兜底。
+     *
+     * ⚠️ P4F-03 修正：原实现只查 `trackStyle`，
+     *    导致状态灯（states≠null, trackStyle=null）也被判为普通图片。
+     */
     isPlainImage(node) {
-      return !!node && node.type === "image" && (node.trackStyle === null || node.trackStyle === undefined);
+      if (!node || node.type !== "image") return false;
+      // 有 trackStyle 对象 → 是轨道，不是普通图片
+      if (node.trackStyle !== null && typeof node.trackStyle === "object") return false;
+      // 有 states 对象（含三态之一）→ 是状态灯，不是普通图片
+      const st = node.states;
+      if (st && typeof st === "object" && !Array.isArray(st)) {
+        if (st.normal || st.warn || st.critical) return false;
+      }
+      return true;
     },
 
     /**
@@ -580,6 +606,22 @@
         return { family: "imageState", editable: EDITABLE.imageState.slice(), fields: def.schema };
       }
 
+      // ---- 普通图片族（P4F-03）----
+      //
+      // ⚠️ 位置很关键：必须放在**状态灯分支之后**。
+      //    状态灯与普通图片都是 type==="image"，靠 states 区分；
+      //    isPlainImage 自己也会排除 states，这里是双保险。
+      if (this.isPlainImage(node)) {
+        const def = imageSchemaFor(node);
+        if (!def) {
+          return {
+            family: "image", editable: [], fields: [],
+            error: "Control Registry 中没有图片族的定义（注册未执行？）",
+          };
+        }
+        return { family: "image", editable: EDITABLE.image.slice(), fields: def.schema };
+      }
+
       if (!this.isTrack(node)) return null;
 
       const rep = this._representative("track");
@@ -623,6 +665,62 @@
       if (d && d.schema && d.render && d.render.mode === "container") return d;
     }
     return null;
+  }
+
+  /**
+   * 普通图片族的内置 schema（P4F-03）。
+   *
+   * ## 为什么是"内置"而不是 Registry 第 70 条
+   *
+   * 普通图片**不是预置控件**：它由用户从素材库拖入或导入产生，
+   * 没有 `__controlKey`、也不该出现在控件库里。
+   * 因此 Registry 里**没有** image 模式的定义。
+   *
+   * ⚠️ 关键约束：**不能为了这个功能往 Registry 加条目** ——
+   *    Registry = 69 是既定契约（catalog declared 8 / derived 69 / probe 138），
+   *    加一条会连带破坏大量既有断言，属于改契约、须先批准。
+   *
+   * 所以这里的 schema 与 `EDITABLE.image` **一一对应**，只声明这 6 个字段，
+   * 类型/范围严格照抄 model.js 的既有持久化能力：
+   *
+   * | 字段 | 类型 | 范围 | 依据 |
+   * |---|---|---|---|
+   * | assetId | string | — | nodeToJson 通用块 |
+   * | w / h | number | ≥1 | 同 container |
+   * | rotation | number | 任意 | 同 container |
+   * | scale | number | >0 | 同 container |
+   * | alpha | number | 0..255 | 同 container（clampInt(0,255)）|
+   *
+   * ⚠️ 若将来 Registry 真的增加了 image 模式定义，优先用 Registry 的（下方 ① 分支）。
+   */
+  function imageSchemaFor(node) {
+    const Reg = ICAR.registry && ICAR.registry.Control;
+    // ① 将来若有人注册了 image 模式控件，优先用它（保持"从 Registry 取"的原则）
+    if (Reg && Reg.all) {
+      const key = node && node.__controlKey;
+      if (key && Reg.get) {
+        const own = Reg.get(key);
+        if (own && own.schema && own.render && own.render.mode === "image") return own;
+      }
+      const all = Reg.all();
+      for (let i = 0; i < all.length; i++) {
+        const d = all[i];
+        if (d && d.schema && d.render && d.render.mode === "image") return d;
+      }
+    }
+    // ② 内置定义（普通图片无 Registry 条目时的唯一来源）
+    return {
+      key: "__plain_image__",
+      name: "图片",
+      schema: [
+        { key: "assetId", label: "素材", type: "asset", group: "图片" },
+        { key: "w", label: "宽度", type: "number", group: "变换", min: 1 },
+        { key: "h", label: "高度", type: "number", group: "变换", min: 1 },
+        { key: "rotation", label: "旋转", type: "number", group: "变换" },
+        { key: "scale", label: "缩放", type: "number", group: "变换" },
+        { key: "alpha", label: "透明度", type: "number", group: "变换", min: 0, max: 255 },
+      ],
+    };
   }
 
   /**
@@ -753,6 +851,24 @@
       "cardStyle", "card.show", "card.alpha", "card.radius",
       "neonPreset", "ringStyle", "ringSegments",
     ],
+    /**
+     * 普通图片族（P4F-03）。
+     *
+     * ## 为什么是这 7 个
+     *
+     * 全部**已被 nodeToJson / parseNode 持久化**，且旧面板 `imageFields` 已有的功能：
+     *
+     * | 字段 | 序列化位置 |
+     * |---|---|
+     * | `assetId` | nodeToJson 通用块 |
+     * | `w` / `h` | nodeToJson 通用块 |
+     * | `rotation` / `scale` / `alpha` | nodeToJson 通用块 |
+     * | `locked` / `visible` | nodeToJson 条件块 |
+     *
+     * ⚠️ `locked` / `visible` 没放进来：它们属于"通用布局"而非"图片属性"，
+     *    且容器族 (P4C) 已用同样口径开放。这里保持一致口径，**只开 6 个**。
+     */
+    image: ["assetId", "w", "h", "rotation", "scale", "alpha"],
     imageState: [
       "statePid", "stateWarn", "stateCritical",
       "states.normal.assetId", "states.warn.assetId", "states.critical.assetId",
@@ -982,6 +1098,9 @@
               const lower = s.toLowerCase();
               if (pk.value !== lower) pk.value = lower;
             }
+          } else if (f.type === "asset") {
+            // P4F-03：素材下拉的选项是**动态的**（素材库会变），每次回显都重建
+            renderAssetOptions(el, v);
           } else if (f.type === "list") {
             // P4E-03：数组 → 逗号串回显（不能依赖 String(array) 的隐式行为）
             const s = listToText(v);
@@ -1004,6 +1123,56 @@
     if (v === undefined) return "无值";
     if (typeof v === "boolean") return v ? "是" : "否";
     return String(v);
+  }
+
+  /**
+   * 重建素材 <select> 的选项（P4F-03）。
+   *
+   * 每次 update 都调用 —— 因为素材库可能在两次刷新之间被增删，
+   * 选项必须跟着变。**只在选项内容真的变了时才重建**，避免打断用户操作。
+   *
+   * 回显规则与旧面板一致：
+   *   · 当前 assetId 命中某素材 → 该项 selected
+   *   · assetId 为空 → 「（未选）」
+   *   · assetId 指向**已不存在的素材** → 额外加一项「（素材已丢失: id）」并选中，
+   *     这样用户能看见"指向丢了"，而不是被静默改成别的素材。
+   */
+  function renderAssetOptions(sel, cur) {
+    const S = window.CanvasState;
+    const assets = (S && S.design && S.design.assets) ? S.design.assets : [];
+    const want = cur === null || cur === undefined ? "" : String(cur);
+
+    // 计算期望的选项签名，没变就不重建
+    const sig = assets.map(function (a) { return a.id; }).join("\u0001") + "\u0002" + want;
+    if (sel.getAttribute("data-signature") === sig) return;
+    sel.setAttribute("data-signature", sig);
+
+    while (sel.firstChild) sel.removeChild(sel.firstChild);
+
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = "（未选）";
+    sel.appendChild(none);
+
+    let matched = false;
+    assets.forEach(function (a) {
+      const opt = document.createElement("option");
+      opt.value = a.id;
+      // 与旧面板同样显示「名称（类型）」
+      opt.textContent = String(a.name || a.id) + "（" + String(a.kind || "素材") + "）";
+      if (a.id === want) matched = true;
+      sel.appendChild(opt);
+    });
+
+    // assetId 指向不存在的素材 → 明确提示，不静默回退
+    if (want && !matched) {
+      const lost = document.createElement("option");
+      lost.value = want;
+      lost.textContent = "（素材已丢失: " + want + "）";
+      sel.appendChild(lost);
+    }
+
+    sel.value = want;
   }
 
   /**
@@ -1053,6 +1222,23 @@
         opt.textContent = v === null ? "（无）" : String(v);
         el.appendChild(opt);
       });
+      return el;
+    }
+    // ---- 素材选择（P4F-03）----
+    //
+    // 与旧面板 imageFields 的 <select> **等价**：
+    //   · 选项来自 CanvasState.design.assets
+    //   · 显示「名称（类型）」
+    //   · 第一项「（未选）」= assetId 为空
+    //
+    // ⚠️ 选项是**动态的**（素材库随时可能增删），所以不预填 values，
+    //    由 renderAssetOptions() 在每次 update 时重建。
+    //
+    // ⚠️ 为什么不用文本输入框：用户要能**直观看到有哪些素材并点选**，
+    //    而不是记住 id 字符串手敲 —— 任务明确要求不得用文本框冒充选择器。
+    if (f.type === "asset") {
+      el = document.createElement("select");
+      el.setAttribute("data-role", "asset");
       return el;
     }
     el = document.createElement("input");

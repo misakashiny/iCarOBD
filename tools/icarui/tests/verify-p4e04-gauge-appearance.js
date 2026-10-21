@@ -230,7 +230,8 @@ async function main(){
     return JSON.stringify({isGauge:SP.isGauge(plain),fam:(SP.resolve(plain)||{}).family||'null'});
   })()`));
   ok(L.isGauge===false,'L1 普通图片不判为仪表');
-  ok(L.fam==='null','L2 普通图片仍走旧面板');
+  // P4F-03: plain image now resolves to the new image family.
+  ok(L.fam==='image','L2 plain image belongs to image family (not gauge)');
  }catch(e){ok(false,e.stack||e.message);}
  finally{try{if(cdp)cdp.ws.close();}catch(e){}try{proc.kill();}catch(e){}try{require('child_process').execSync('taskkill /F /IM msedge.exe /T',{stdio:'ignore'});}catch(e){}}
  console.log('PASS='+pass+' FAIL='+fail);
