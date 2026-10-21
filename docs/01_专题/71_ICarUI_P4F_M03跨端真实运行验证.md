@@ -265,7 +265,7 @@
 | 仓库 | `https://github.com/misakashiny/iCarOBD` |
 | 分支 | `main` → `origin/main` |
 | 起点 | `4fb47c8` |
-| 本次提交 | 见提交后补记 |
+| 本次提交 | `9e75c8c13f236dcbd896b3df3f70f32c4a60b41e` |
 
 ---
 

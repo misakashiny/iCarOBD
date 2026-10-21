@@ -995,6 +995,31 @@
       liveEdit = null;
     },
 
+    /**
+     * 当前 live 事务正在编辑的节点 id（P4F-M04 修复）。
+     *
+     * ## 为什么要暴露这个
+     *
+     * `schema-panel.js` 的 `change` 处理器先取 `selectedNode()`，取不到就 return。
+     * 但用户在属性面板输入数值后，**点画布空白处失焦**是最常见的提交方式 ——
+     * 而点空白会清空 `CanvasState.selection`，于是：
+     *
+     *   selectedNode() === null  →  change 处理器提前 return
+     *   →  endLive() 永不执行    →  **这次修改没有撤销记录**（改名后无法 Ctrl+Z）
+     *
+     * 这是 P4F-M04 阶段 E 通过「真实 CDP 鼠标点击 + 键盘输入」实测发现的真实缺陷。
+     *
+     * 修复思路：选中丢了，但 live 事务还在 —— 用事务里记下的 nodeId 兜底。
+     */
+    currentNodeId() {
+      return liveEdit ? liveEdit.nodeId : null;
+    },
+
+    /** 当前 live 事务正在编辑的路径 */
+    currentPath() {
+      return liveEdit ? liveEdit.path : null;
+    },
+
     /** 单次离散修改（下拉框 / 复选框）：直接一次事务 */
     setOnce(node, path, value) {
       if (!node) return false;

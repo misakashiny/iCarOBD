@@ -88,6 +88,9 @@
     "verify-p4fm02-ui-panel": 30,
     "verify-p4fm03-compare": 32,
     "verify-p4fm03-indexeddb-draft": 34,
-    "verify-p4fm03-input-undefined": 23
+    "verify-p4fm03-input-undefined": 23,
+    "verify-p4fm04-crossend-quality": 24,
+    "verify-p4fm04-defect-behavior": 24,
+    "verify-p4fm04-input-stability": 14
   }
 }

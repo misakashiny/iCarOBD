@@ -308,7 +308,13 @@
       const t = ev.target;
       const path = t.getAttribute && t.getAttribute("data-path");
       if (!path) return;
-      const node = selectedNode();
+      // ⚠️ P4F-M04 修复：选中可能已丢失（点画布空白处失焦会清空 selection），
+      //    但 live 事务还在 —— 用事务里的 nodeId 兜底，否则本次修改没有撤销记录。
+      let node = selectedNode();
+      if (!node) {
+        const liveId = SP.PropertyUpdate.currentNodeId();
+        if (liveId) node = SP.__findNodeById(liveId);
+      }
       if (!node) return;
       const field = findField(path);
       if (!field) return;
@@ -350,7 +356,12 @@
       const path = t.getAttribute && t.getAttribute("data-path");
       if (!path) return;
       if (editingPath === path) {
-        const node = selectedNode();
+        // ⚠️ P4F-M04 修复：同样允许选中丢失后用 live 事务的 nodeId 兜底
+        let node = selectedNode();
+        if (!node) {
+          const liveId = SP.PropertyUpdate.currentNodeId();
+          if (liveId) node = SP.__findNodeById(liveId);
+        }
         if (node) SP.PropertyUpdate.endLive(node, path);
         editingPath = null;
         refresh();

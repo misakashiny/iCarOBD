@@ -1,0 +1,497 @@
+{
+  "total": 64,
+  "cntB": 41,
+  "cntV": 3,
+  "cntU": 2,
+  "cntNone": 18,
+  "autoCovered": 44,
+  "autoRate": "68.75",
+  "totalCovered": 46,
+  "totalRate": "71.88",
+  "remaining": 62,
+  "cards": [
+    {
+      "id": "P4D-GUI-001",
+      "items": [
+        {
+          "num": "①",
+          "idx": 1,
+          "title": "拖入状态灯后 Schema 面板正确显示 11 个字段",
+          "k": "B",
+          "src": "verify-p4f01-* / verify-p4d01-lamp-schema (11 字段断言)"
+        },
+        {
+          "num": "②",
+          "idx": 2,
+          "title": "修改 `statePid` 后下拉回显正确",
+          "k": "B",
+          "src": "verify-p4d01-lamp-schema (statePid 回显)"
+        },
+        {
+          "num": "③",
+          "idx": 3,
+          "title": "三态素材选择器能打开并选中",
+          "k": "-",
+          "src": ""
+        },
+        {
+          "num": "④",
+          "idx": 4,
+          "title": "改属性后画布立即更新（视觉确认）",
+          "k": "-",
+          "src": "（B1-7b 验证的是仪表 cardStyle 像素变化，非状态灯；证据不对应）"
+        },
+        {
+          "num": "⑤",
+          "idx": 5,
+          "title": "三种状态实际渲染效果（含闪烁）",
+          "k": "-",
+          "src": ""
+        },
+        {
+          "num": "⑥",
+          "idx": 6,
+          "title": "保存 → 刷新 → 恢复后属性仍在",
+          "k": "B",
+          "src": "verify-p4fm02-image-draft B3-7 (真实刷新)"
+        },
+        {
+          "num": "⑦",
+          "idx": 7,
+          "title": "导出设计文件 → 真机 App 读取正常",
+          "k": "-",
+          "src": ""
+        }
+      ]
+    },
+    {
+      "id": "P4E-GUI-001",
+      "items": [
+        {
+          "num": "①",
+          "idx": 1,
+          "title": "6 个仪表拖入后 Schema 面板正确显示 8 个字段",
+          "k": "B",
+          "src": "verify-p4fm02-ui-panel B1-6b (23 行真实渲染)"
+        },
+        {
+          "num": "②",
+          "idx": 2,
+          "title": "PID 下拉分组与回显正确",
+          "k": "B",
+          "src": "verify-p4e02-gauge-schema (PID 下拉分组)"
+        },
+        {
+          "num": "③",
+          "idx": 3,
+          "title": "改 PID 后画布读数与量程同步",
+          "k": "-",
+          "src": "（改 PID 后画布读数同步 —— 需真实数值驱动，未覆盖）"
+        },
+        {
+          "num": "④",
+          "idx": 4,
+          "title": "基础属性编辑即时生效",
+          "k": "B",
+          "src": "verify-p4e04-gauge-appearance (外观字段可编辑)"
+        },
+        {
+          "num": "⑤",
+          "idx": 5,
+          "title": "Undo / Redo 正常",
+          "k": "B",
+          "src": "verify-p4fm02-complex-gauge B2-7 (Undo/Redo)"
+        },
+        {
+          "num": "⑥",
+          "idx": 6,
+          "title": "保存 → 刷新 → 恢复后属性仍在",
+          "k": "B",
+          "src": "verify-p4fm02-image-draft B3-7 (刷新恢复)"
+        },
+        {
+          "num": "⑦",
+          "idx": 7,
+          "title": "未绑定与无效 PID 的显示符合预期",
+          "k": "-",
+          "src": ""
+        },
+        {
+          "num": "⑧",
+          "idx": 8,
+          "title": "导出设计文件 → 真机 App 读数正确",
+          "k": "-",
+          "src": ""
+        },
+        {
+          "num": "⑨",
+          "idx": 9,
+          "title": "数值映射在面板中设置/清空",
+          "k": "B",
+          "src": "verify-p4e03-gauge-advanced (valueLabels)"
+        },
+        {
+          "num": "⑩",
+          "idx": 10,
+          "title": "副参数在面板中编辑",
+          "k": "B",
+          "src": "verify-p4e03-gauge-advanced (extraPids)"
+        },
+        {
+          "num": "⑪",
+          "idx": 11,
+          "title": "「按 PID 库回填」按钮",
+          "k": "-",
+          "src": ""
+        },
+        {
+          "num": "⑫",
+          "idx": 12,
+          "title": "卡片外框 4 档切换",
+          "k": "B",
+          "src": "verify-p4e04-gauge-appearance (cardStyle 4 档)"
+        },
+        {
+          "num": "⑬",
+          "idx": 13,
+          "title": "底框三项（画底框 / 透明度 / 圆角）",
+          "k": "B",
+          "src": "verify-p4e04-gauge-appearance (card 三项)"
+        },
+        {
+          "num": "⑭",
+          "idx": 14,
+          "title": "霓虹档位 5 档切换",
+          "k": "B",
+          "src": "verify-p4e04-gauge-appearance (neonPreset 5 档)"
+        },
+        {
+          "num": "⑮",
+          "idx": 15,
+          "title": "指针环开关与环段数",
+          "k": "B",
+          "src": "verify-p4e04-gauge-appearance (ringStyle/ringSegments)"
+        }
+      ]
+    },
+    {
+      "id": "P4F-GUI-001",
+      "items": [
+        {
+          "num": "①",
+          "idx": 1,
+          "title": "28 个 track 控件在面板中显示 11 个字段",
+          "k": "B",
+          "src": "verify-p4fm02-ui-panel B1-3b (11 行真实渲染)"
+        },
+        {
+          "num": "②",
+          "idx": 2,
+          "title": "圆角（radius）调整后画布圆角变化",
+          "k": "B",
+          "src": "verify-p4fm02-ui-panel B1-3d (真实输入改 radius)"
+        },
+        {
+          "num": "③",
+          "idx": 3,
+          "title": "内凹（inset）勾选后画布效果变化",
+          "k": "-",
+          "src": ""
+        },
+        {
+          "num": "④",
+          "idx": 4,
+          "title": "渐变（gradient）3 档切换",
+          "k": "-",
+          "src": ""
+        },
+        {
+          "num": "⑤",
+          "idx": 5,
+          "title": "刻度（ticks）数量调整后刻度可见",
+          "k": "-",
+          "src": ""
+        },
+        {
+          "num": "⑥",
+          "idx": 6,
+          "title": "三段色带（band）勾选效果",
+          "k": "V",
+          "src": "verify-p4fm03-compare (h_band 最大 RGB 255,219)"
+        },
+        {
+          "num": "⑦",
+          "idx": 7,
+          "title": "宽度 / 高度调整后控件尺寸变化",
+          "k": "-",
+          "src": "（w/h 可编辑已验，但条目要求'画布尺寸变化'视觉确认）"
+        },
+        {
+          "num": "⑧",
+          "idx": 8,
+          "title": "撤销 / 重做",
+          "k": "B",
+          "src": "verify-p4fm02-complex-gauge B2-7 (Undo/Redo)"
+        },
+        {
+          "num": "⑨",
+          "idx": 9,
+          "title": "保存后刷新恢复 + 导出导入回读一致",
+          "k": "B",
+          "src": "verify-p4fm02-image-draft B3-4 (导出→导入一致)"
+        }
+      ]
+    },
+    {
+      "id": "P4F-GUI-002",
+      "items": [
+        {
+          "num": "①",
+          "idx": 1,
+          "title": "Schema 面板显示图片属性",
+          "k": "B",
+          "src": "verify-p4fm02-ui-panel B1-1a (image 族)"
+        },
+        {
+          "num": "②",
+          "idx": 2,
+          "title": "素材选择与替换",
+          "k": "B",
+          "src": "verify-p4fm02-ui-panel B1-1b/c/f (素材下拉+切换)"
+        },
+        {
+          "num": "③",
+          "idx": 3,
+          "title": "高清图片显示（P4R-FIX-01 核心）",
+          "k": "B",
+          "src": "verify-p4fm03-indexeddb-draft C-6 (948×949 精确)"
+        },
+        {
+          "num": "④",
+          "idx": 4,
+          "title": "宽高及变换",
+          "k": "B",
+          "src": "verify-p4fm02-ui-panel B1-1g (真实输入改宽高)"
+        },
+        {
+          "num": "⑤",
+          "idx": 5,
+          "title": "Undo / Redo",
+          "k": "B",
+          "src": "verify-p4fm02-complex-gauge B2-7 (Undo/Redo)"
+        },
+        {
+          "num": "⑥",
+          "idx": 6,
+          "title": "保存恢复",
+          "k": "B",
+          "src": "verify-p4fm03-indexeddb-draft C-4/C-5 (关闭重开恢复)"
+        },
+        {
+          "num": "⑦",
+          "idx": 7,
+          "title": "原文件路径失效后的恢复",
+          "k": "-",
+          "src": "（B3-5 验证的是 path 必填会报错，非'失效后恢复'；证据不对应）"
+        },
+        {
+          "num": "⑧",
+          "idx": 8,
+          "title": "导出导入一致性",
+          "k": "B",
+          "src": "verify-p4fm02-image-draft B3-4 (元数据往返一致)"
+        }
+      ]
+    },
+    {
+      "id": "P4F-GUI-003",
+      "items": [
+        {
+          "num": "①",
+          "idx": 1,
+          "title": "12 个文字控件显示 7 个字段",
+          "k": "B",
+          "src": "verify-p4fm02-ui-panel B1-4b (7 行真实渲染)"
+        },
+        {
+          "num": "②",
+          "idx": 2,
+          "title": "文字宽度调整",
+          "k": "B",
+          "src": "verify-p4fm04-text-container-schema C1 (宽可编辑)"
+        },
+        {
+          "num": "③",
+          "idx": 3,
+          "title": "文字高度调整",
+          "k": "B",
+          "src": "verify-p4fm04-text-container-schema C2 (高可编辑)"
+        },
+        {
+          "num": "④",
+          "idx": 4,
+          "title": "4 个容器控件显示 7 个字段",
+          "k": "B",
+          "src": "verify-p4fm02-ui-panel B1-5b (7 行真实渲染)"
+        },
+        {
+          "num": "⑤",
+          "idx": 5,
+          "title": "容器缩放",
+          "k": "B",
+          "src": "verify-p4fm02-ui-panel B1-5d (真实输入改 scale)"
+        },
+        {
+          "num": "⑥",
+          "idx": 6,
+          "title": "子节点布局不意外变化（核心）",
+          "k": "B",
+          "src": "verify-p4fm04-text-container-schema G1 (子节点坐标不变)"
+        },
+        {
+          "num": "⑦",
+          "idx": 7,
+          "title": "撤销 / 重做",
+          "k": "B",
+          "src": "verify-p4fm02-complex-gauge B2-7 (Undo/Redo)"
+        },
+        {
+          "num": "⑧",
+          "idx": 8,
+          "title": "保存恢复 + 导出导入",
+          "k": "B",
+          "src": "verify-p4fm04-text-container-schema I2 (往返一致)"
+        }
+      ]
+    },
+    {
+      "id": "P4F-GUI-004",
+      "items": [
+        {
+          "num": "①",
+          "idx": 1,
+          "title": "色带显示与编辑",
+          "k": "B",
+          "src": "verify-p4fm02-complex-gauge B2-1 (真实点击加/改/删)"
+        },
+        {
+          "num": "②",
+          "idx": 2,
+          "title": "「按阈值生成」按钮",
+          "k": "B",
+          "src": "verify-p4fm02-complex-gauge B2-2 (按阈值生成)"
+        },
+        {
+          "num": "③",
+          "idx": 3,
+          "title": "子部件列表显示",
+          "k": "B",
+          "src": "verify-p4fm02-complex-gauge B2-3a/b (列表显示)"
+        },
+        {
+          "num": "④",
+          "idx": 4,
+          "title": "子部件增删改",
+          "k": "B",
+          "src": "verify-p4fm02-complex-gauge B2-3c/d (增删改)"
+        },
+        {
+          "num": "⑤",
+          "idx": 5,
+          "title": "子部件排序（绘制层次）",
+          "k": "B",
+          "src": "verify-p4fm02-complex-gauge B2-4b (下移交换顺序)"
+        },
+        {
+          "num": "⑥",
+          "idx": 6,
+          "title": "属性修改后画布立即刷新",
+          "k": "B",
+          "src": "verify-p4fm03-input-undefined D1-5-2（真实输入→模型→画布）"
+        },
+        {
+          "num": "⑦",
+          "idx": 7,
+          "title": "Undo/Redo",
+          "k": "B",
+          "src": "verify-p4fm03-input-undefined D1-5-3 (Ctrl+Z 真实撤销)"
+        },
+        {
+          "num": "⑧",
+          "idx": 8,
+          "title": "保存恢复 + 导出导入",
+          "k": "B",
+          "src": "verify-p4fm02-complex-gauge B2-8 (导出→导入一致)"
+        },
+        {
+          "num": "⑨",
+          "idx": 9,
+          "title": "**Android 平板上的轨道外观**（技术债验证）",
+          "k": "V",
+          "src": "verify-p4fm03-compare (模拟器渲染 9/9 轨道有内容)"
+        },
+        {
+          "num": "⑩",
+          "idx": 10,
+          "title": "**Windows 与 Android 轨道效果对比**",
+          "k": "V",
+          "src": "verify-p4fm03-compare (区域特征对比 32 断言)"
+        }
+      ]
+    },
+    {
+      "id": "P4R-GUI-001",
+      "items": [
+        {
+          "num": "①",
+          "idx": 1,
+          "title": "草稿恢复提示与选择 ✅",
+          "k": "U",
+          "src": "用户亲口确认（2026-10-19）"
+        },
+        {
+          "num": "②",
+          "idx": 2,
+          "title": "设计内容及图片高清恢复 ✅",
+          "k": "U",
+          "src": "用户亲口确认「可以了清晰了」（2026-10-19）"
+        },
+        {
+          "num": "③",
+          "idx": 3,
+          "title": "Undo / Redo 历史恢复",
+          "k": "-",
+          "src": ""
+        },
+        {
+          "num": "④",
+          "idx": 4,
+          "title": "损坏或不可用历史的安全降级",
+          "k": "-",
+          "src": ""
+        },
+        {
+          "num": "⑤",
+          "idx": 5,
+          "title": "双标签页编辑冲突",
+          "k": "-",
+          "src": ""
+        },
+        {
+          "num": "⑥",
+          "idx": 6,
+          "title": "损坏草稿的安全导出",
+          "k": "-",
+          "src": ""
+        },
+        {
+          "num": "⑦",
+          "idx": 7,
+          "title": "Windows 中文输入法兼容",
+          "k": "-",
+          "src": ""
+        }
+      ]
+    }
+  ]
+}

@@ -311,7 +311,7 @@ window.addPart / delPart / movePart / setPart / setPartNum
 | 仓库 | `https://github.com/misakashiny/iCarOBD` |
 | 分支 | `main` |
 | 起点 | `92d89e6` |
-| 本次提交 | 见提交后补记 |
+| 本次提交 | `de5f0ff1df1198c7f889892c33432a06c0e68c3a` |
 
 ---
 
