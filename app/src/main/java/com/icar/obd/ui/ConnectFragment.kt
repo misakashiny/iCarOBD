@@ -24,6 +24,7 @@ import com.icar.obd.ble.ObdTransport.State
 import com.icar.obd.data.AppLog
 import com.icar.obd.data.Store
 import com.icar.obd.obd.ObdController
+import com.icar.obd.obd.ObdLinkStatus
 import com.icar.obd.obd.ObdProtocol
 import com.icar.obd.obd.VehicleBus
 import com.icar.obd.ui.adapter.DeviceAdapter
@@ -46,6 +47,9 @@ class ConnectFragment : Fragment(), ObdController.Listener {
     private lateinit var tvInitInfo: TextView
     private lateinit var tvInitSteps: TextView
     private lateinit var tvBusInfo: TextView
+    // P5A-M05 阶段 B：当前真实阶段 + 原因（蓝牙已连接 ≠ 已能采样）
+    private lateinit var tvLinkPhase: TextView
+    private lateinit var tvLinkReason: TextView
     private lateinit var tvDeviceHint: TextView
     private lateinit var spProtocol: Spinner
     private lateinit var spTransport: Spinner
@@ -78,6 +82,8 @@ class ConnectFragment : Fragment(), ObdController.Listener {
         tvInitInfo = view.findViewById(R.id.tvInitInfo)
         tvInitSteps = view.findViewById(R.id.tvInitSteps)
         tvBusInfo = view.findViewById(R.id.tvBusInfo)
+        tvLinkPhase = view.findViewById(R.id.tvLinkPhase)
+        tvLinkReason = view.findViewById(R.id.tvLinkReason)
         tvDeviceHint = view.findViewById(R.id.tvDeviceHint)
         spProtocol = view.findViewById(R.id.spProtocol)
         spTransport = view.findViewById(R.id.spTransport)
@@ -299,10 +305,56 @@ class ConnectFragment : Fragment(), ObdController.Listener {
         val ok = snap.count { it.value.ok }
         tvBusInfo.text = String.format("采样率 %.1f Hz / 成功通道 %d / 总通道 %d", VehicleBus.sampleHz, ok, snap.size)
 
+        // ---- P5A-M05 阶段 B：把「现在到底什么状态」说清楚 ----
+        // 只读取既有层（transport.state / initResult / engine.running / VehicleBus 的 TTL 结果），
+        // 不新增状态机；判定逻辑在 ObdLinkStatus（纯函数，有 23 条 JVM 用例钉着）。
+        val verdict = ObdLinkStatus.evaluate(currentLinkSnapshot())
+        tvLinkPhase.text = verdict.phase.label
+        tvLinkPhase.setTextColor(
+            if (verdict.dataLive) 0xFF2E7D32.toInt() else 0xFFB26A00.toInt()
+        )
+        tvLinkReason.text = verdict.reason
+
         btnInit.isEnabled = state == State.READY
         btnStopScan.isEnabled = state == State.SCANNING
         btnScan.isEnabled = state != State.SCANNING
     }
+
+    /**
+     * 从既有各层**只读**拼出一次快照。
+     *
+     * 刻意不缓存、不持有：每次 [refresh] 现取，避免与既有状态产生第二份真相。
+     */
+    private fun currentLinkSnapshot(): ObdLinkStatus.Snapshot {
+        val link = when (ObdController.transport.state) {
+            State.IDLE -> ObdLinkStatus.Link.IDLE
+            State.SCANNING -> ObdLinkStatus.Link.SCANNING
+            State.CONNECTING -> ObdLinkStatus.Link.CONNECTING
+            State.DISCOVERING -> ObdLinkStatus.Link.DISCOVERING
+            State.READY -> ObdLinkStatus.Link.READY
+            State.CLOSED -> ObdLinkStatus.Link.CLOSED
+        }
+        val snap = VehicleBus.snapshot()
+        val fresh = snap.count { it.value.ok }
+        return ObdLinkStatus.Snapshot(
+            link = link,
+            hasPermission = hasBluetoothPermission(),
+            initStarted = ObdController.initResult != null,
+            initOk = ObdController.initResult?.ok,
+            engineRunning = ObdController.engineRunning,
+            activePidCount = ObdController.activePidCount,
+            freshPidCount = fresh,
+            lastDataAtMs = if (fresh > 0) System.currentTimeMillis() else 0L,
+            nowMs = System.currentTimeMillis(),
+            simulated = ObdController.simulatedActive,
+            lastError = ObdController.lastErrorText
+        )
+    }
+
+    private fun hasBluetoothPermission(): Boolean =
+        android.os.Build.VERSION.SDK_INT < 31 ||
+            requireContext().checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
 
     private fun connect(dev: android.bluetooth.BluetoothDevice) {
         AppLog.i(AppLog.M_UI, "用户选择设备")

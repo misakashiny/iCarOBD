@@ -204,6 +204,41 @@ const ok = (c, m) => (c ? (pass++, console.log("  ✅ " + m)) : (fail++, console
     })()`);
     ok(b5.inPreview && b5.cleared, "B5 预览可进入也可退出（不需要 Undo：它根本不进历史）");
 
+    // ---------------------------------------------------------------- B7 换主题必须重置（P5A-M05 G3）
+    console.log("\n=== B7. 换主题 / 新建 / 导入 时预览必须重置（不能带到下一个主题）===");
+    const b7 = await cdp.eval(`(function(){
+      const out = {};
+      // ① 新建
+      window.applyScreenPreset("carwide");
+      const beforeNew = window.CanvasState.previewAspect;
+      window.newDesign();
+      out.newDesign = { before: !!beforeNew, after: window.CanvasState.previewAspect };
+
+      // ② 导入（走 replaceDesign 的唯一入口：用 parseDesign + replaceDesign 模拟导入）
+      window.applyScreenPreset("tablet");
+      const beforeImport = window.CanvasState.previewAspect;
+      const text = window.toV2Json(window.CanvasState.design);
+      const parsed = window.parseDesign(text);
+      if (parsed.design) window.replaceDesign(parsed.design, "导入");
+      out.import = { before: !!beforeImport, after: window.CanvasState.previewAspect };
+
+      // ③ 恢复草稿（同样走 replaceDesign）
+      window.applyScreenPreset("phone");
+      const beforeRestore = window.CanvasState.previewAspect;
+      const text2 = window.toV2Json(window.CanvasState.design);
+      const parsed2 = window.parseDesign(text2);
+      if (parsed2.design) window.replaceDesign(parsed2.design, "恢复草稿");
+      out.restore = { before: !!beforeRestore, after: window.CanvasState.previewAspect };
+
+      return out;
+    })()`);
+    ok(b7.newDesign.before && !b7.newDesign.after,
+      "B7 新建设计 → 预览已清除（进入时 " + b7.newDesign.before + "，之后 " + b7.newDesign.after + "）");
+    ok(b7.import.before && !b7.import.after,
+      "B7 导入设计 → 预览已清除（进入时 " + b7.import.before + "，之后 " + b7.import.after + "）");
+    ok(b7.restore.before && !b7.restore.after,
+      "B7 恢复草稿 → 预览已清除（进入时 " + b7.restore.before + "，之后 " + b7.restore.after + "）");
+
   } catch (e) {
     console.error("套件异常: " + e.message);
     fail++;

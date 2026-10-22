@@ -43,6 +43,19 @@ class SimInitProvider : android.content.ContentProvider() {
                 registered = true
                 runCatching { SimControl.register(activity.applicationContext) }
                     .onFailure { Log.w("SimInit", "注册模拟广播失败", it) }
+                // P5A-M05 B: expose simulator state to main.ObdController.simulatedActive
+                // (main cannot reference the debug source set -- see the note there)
+                runCatching {
+                    com.icar.obd.obd.ObdController.simulatedProbe = { SimPidSource.enabled }
+                    // P5A-M05 F: real polling will make the simulator yield immediately
+                    // (no 2s watchdog window). Watchdog stays as fallback.
+                    com.icar.obd.obd.ObdController.onRealPollingStarting = {
+                        if (SimPidSource.enabled) {
+                            Log.i("SimInit", "real polling starting -> simulator yields now")
+                            runCatching { SimPidSource.disable() }
+                        }
+                    }
+                }.onFailure { Log.w("SimInit", "probe hook failed", it) }
                 Log.i("SimInit", "模拟数据源已就绪：adb shell am broadcast -a " + SimControl.ACTION +
                     " --es scenario accel")
             }

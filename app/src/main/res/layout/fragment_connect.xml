@@ -220,6 +220,27 @@
                 android:text="采样率 -- Hz / 成功通道 0"
                 android:textColor="@color/text_primary"
                 android:textSize="12sp" />
+
+            <!-- P5A-M05 阶段 B：把「现在到底什么状态」说清楚。
+                 蓝牙已连接 ≠ 已能采样；数据过期不能装作实时；模拟数据必须显眼。 -->
+            <TextView
+                android:id="@+id/tvLinkPhase"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="未连接"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvLinkReason"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text=""
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
         </LinearLayout>
 
         <LinearLayout

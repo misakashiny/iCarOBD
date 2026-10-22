@@ -89,6 +89,75 @@ object ObdController {
     @Volatile
     var lastScanSummary: String = ""
 
+    // ---------------------------------------------------------------- P5A-M05 阶段 B/E
+    //
+    // 给「现在到底什么状态」用的**只读**视图。
+    // 刻意都写成 `get()`（不存副本）：状态的真源仍在 transport / engine，
+    // 这里只是把它们**暴露出来**给 UI 与诊断摘要用，避免出现第二份真相。
+
+    /** 轮询协程是否在跑（来自 [ObdEngine.running]） */
+    val engineRunning: Boolean
+        get() = try { engine.running } catch (_: Throwable) { false }
+
+    /** 当前生效的 PID 条数（来自 [ObdEngine.activePids]） */
+    val activePidCount: Int
+        get() = try { engine.activePids.size } catch (_: Throwable) { 0 }
+
+    /** 已被判定「本车不支持」的 PID 条数（来自 [ObdEngine.unsupportedPids]） */
+    val unsupportedPidCount: Int
+        get() = try { engine.unsupportedPids.size } catch (_: Throwable) { 0 }
+
+    /**
+     * 当前数据是否来自 Debug 模拟源。
+     *
+     * ## 为什么用钩子而不是直接读 `SimPidSource`
+     *
+     * `SimPidSource` 在 **debug 源集**里（`app/src/debug/...`），Release 里**不存在**。
+     * 若这里直接引用它，Release 会编译失败 —— 而 Release 隔离正是本项目的一条硬守卫
+     * （`verify-p5a02-isolation` 5/5）。
+     *
+     * 所以：main 里只留一个**可空钩子**，Release 恒为 null → 恒 false；
+     * Debug 侧在初始化时把它指到 `SimPidSource.enabled`。零成本、零泄漏。
+     */
+    @Volatile
+    var simulatedProbe: (() -> Boolean)? = null
+
+    /** 当前数据是否来自 Debug 模拟源（Release 恒为 false） */
+    val simulatedActive: Boolean
+        get() = try { simulatedProbe?.invoke() == true } catch (_: Throwable) { false }
+
+    /**
+     * **真实轮询即将启动**的即时通知钩子（P5A-M05 阶段 F）。
+     *
+     * ## 为什么需要它
+     *
+     * 原有的互斥是「模拟开启时先停真实轮询」（窗口 ≈ 0），
+     * 但**反方向**只靠 `SimPidSource` 每 2 秒一次的看门狗轮询：
+     * 真实轮询一旦起来，最坏 2 秒内两个来源会同时往同一个 PID 写值，
+     * 仪表可能在这段时间里来回跳。任务 §八 明确要求"优先寻求基于既有事件或
+     * 生命周期的即时互斥机制"。
+     *
+     * ## 为什么是钩子而不是直接调 SimPidSource
+     *
+     * `SimPidSource` 在 debug 源集，Release 不存在（同 [simulatedProbe] 的理由，
+     * Release 隔离守卫 5/5 钉着这条）。所以 main 只留可空回调：
+     * Release 恒为 null → 什么都不做；Debug 侧注册后即可**在同一次调用里**退让。
+     *
+     * 看门狗仍然保留作为兜底（钩子注册失败时不会退化成"永不让位"）。
+     */
+    @Volatile
+    var onRealPollingStarting: (() -> Unit)? = null
+
+    /** 最后一次错误的人话原因（没有则为 null） */
+    @Volatile
+    var lastErrorText: String? = null
+        private set
+
+    /** 记一条错误原因，供状态聚合与诊断摘要使用（只保留最后一条，不累积） */
+    fun noteError(text: String?) {
+        if (!text.isNullOrBlank()) lastErrorText = text
+    }
+
     /** CSV 采样节流时间戳 */
     private var lastCsvTs: Long = 0L
 
@@ -456,6 +525,10 @@ object ObdController {
     fun startPolling() {
         synchronized(CanAdapterGate.lock) {
             if (CanSniffer.busy || FrameMonitor.active || CanAdapterGate.initializing || CanAdapterGate.scanning || engine.running) return
+            // P5A-M05 阶段 F：**在启动回合内**先让 Debug 模拟源退让，
+            // 不再等 2 秒看门狗 —— 否则这段时间两个来源会同时写同一个 PID。
+            // Release 下该钩子恒为 null（debug 源集不参与编译），此处零成本。
+            runCatching { onRealPollingStarting?.invoke() }
             engine.start()
             if (Store.settings.csvEnabled && !csv.enabled) csv.start(engine.activePids.map { it.id })
         }
