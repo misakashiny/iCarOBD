@@ -444,6 +444,8 @@ class NodeTreeRenderer(private val context: Context) {
             val pv = GaugePartsView(
                 context, item, parts,
                 // 部件的 x/y/w/h 是**画布单位**，与节点同级 → 用同一套换算
+                // P5A-M02：X/Y 分别传 —— 部件原来只拿 pxY，非方形视口下横向溢出被裁
+                t.pxX,
                 t.pxY,
                 node.labelFont,
                 { id: String -> loadAsset(assetPathOfAsset(id)) }

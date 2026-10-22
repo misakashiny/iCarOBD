@@ -154,6 +154,57 @@ class SimScenarioTest {
         assertInRange(v, SimScenario.PID_VOLTAGE, 0f, 20f)
     }
 
+    // ---- P5A-M02：ALARM(warn) 与 CRITICAL 必须落在正确档位 ----
+    //
+    // 阈值来自 `NodeStateResolver.select`（**既有语义，不得自行编造**）：
+    //   warnAt     = stateWarn ?: pid.warnHigh
+    //   criticalAt = stateCritical ?: warnAt + (pid.maxVal - warnAt) * 0.5
+    //
+    //   车速：warn 120 → critical 120 + (260-120)*0.5 = 190
+    //   转速：warn 6500 → critical 6500 + (8000-6500)*0.5 = 7250
+    //   水温：warn 105 → critical 105 + (215-105)*0.5 = 160
+
+    @Test
+    fun `ALARM 落在 warn 档 不越过 critical`() {
+        val v = vals(SimScenario.ALARM, 20)
+        // 车速：应 >=120 且 <190
+        assertTrue("车速 ${v[SimScenario.PID_SPEED]} 应 >= 120", v[SimScenario.PID_SPEED]!! >= 120f)
+        assertTrue("车速 ${v[SimScenario.PID_SPEED]} 应 < 190（否则会变 critical）",
+            v[SimScenario.PID_SPEED]!! < 190f)
+        // 转速：应 >=6500 且 <7250
+        assertTrue("转速 ${v[SimScenario.PID_RPM]} 应 >= 6500", v[SimScenario.PID_RPM]!! >= 6500f)
+        assertTrue("转速 ${v[SimScenario.PID_RPM]} 应 < 7250", v[SimScenario.PID_RPM]!! < 7250f)
+        // 水温：应 >=105 且 <160
+        assertTrue("水温 ${v[SimScenario.PID_COOLANT]} 应 >= 105", v[SimScenario.PID_COOLANT]!! >= 105f)
+        assertTrue("水温 ${v[SimScenario.PID_COOLANT]} 应 < 160", v[SimScenario.PID_COOLANT]!! < 160f)
+    }
+
+    @Test
+    fun `CRITICAL 越过 critical 档`() {
+        val v = vals(SimScenario.CRITICAL, 20)
+        assertTrue("车速应 >= 190（critical）", v[SimScenario.PID_SPEED]!! >= 190f)
+        assertTrue("转速应 >= 7250（critical）", v[SimScenario.PID_RPM]!! >= 7250f)
+        assertTrue("水温应 >= 160（critical）", v[SimScenario.PID_COOLANT]!! >= 160f)
+    }
+
+    @Test
+    fun `CRITICAL 仍在量程内`() {
+        val v = vals(SimScenario.CRITICAL, 20)
+        assertInRange(v, SimScenario.PID_SPEED, 0f, 260f)
+        assertInRange(v, SimScenario.PID_RPM, 0f, 8000f)
+        assertInRange(v, SimScenario.PID_COOLANT, -40f, 215f)
+        assertInRange(v, SimScenario.PID_VOLTAGE, 0f, 20f)
+    }
+
+    @Test
+    fun `CRITICAL 的数值严格高于 ALARM`() {
+        val a = vals(SimScenario.ALARM, 20)
+        val c = vals(SimScenario.CRITICAL, 20)
+        assertTrue("车速", c[SimScenario.PID_SPEED]!! > a[SimScenario.PID_SPEED]!!)
+        assertTrue("转速", c[SimScenario.PID_RPM]!! > a[SimScenario.PID_RPM]!!)
+        assertTrue("水温", c[SimScenario.PID_COOLANT]!! > a[SimScenario.PID_COOLANT]!!)
+    }
+
     // ============================================================ 三种「无数据」语义
 
     @Test

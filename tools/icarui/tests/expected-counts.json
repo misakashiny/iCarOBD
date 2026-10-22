@@ -93,6 +93,9 @@
     "verify-p4fm04-defect-behavior": 24,
     "verify-p4fm04-input-stability": 14,
     "verify-p5a01-data-binding": 8,
-    "verify-p5a01-multires": 14
+    "verify-p5a01-multires": 14,
+    "verify-p5a02-multires": 27,
+    "verify-p5a02-parts": 19,
+    "verify-p5a02-state-lamps": 27
   }
 }

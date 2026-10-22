@@ -1,0 +1,294 @@
+{
+  "schema": "icar.ui/2",
+  "meta": {
+    "name": "P5A-M02 子部件数据绑定测试",
+    "author": "P5A-M02 自动化",
+    "description": "dial/ticks/needle/value/decor + 子部件独立 PID + 嵌套 children + 变换"
+  },
+  "name": "P5A-M02 子部件数据绑定测试",
+  "author": "P5A-M02 自动化",
+  "description": "dial/ticks/needle/value/decor + 子部件独立 PID + 嵌套 children + 变换",
+  "themeId": "",
+  "pages": [
+    {
+      "id": "pg0",
+      "name": "主页面",
+      "nodes": [
+        {
+          "id": "gA",
+          "type": "gauge",
+          "name": "单针表",
+          "pid": "obd.rpm",
+          "x": 10,
+          "y": 20,
+          "w": 150,
+          "h": 150,
+          "label": "单针表",
+          "unit": "",
+          "cardStyle": 0,
+          "neonPreset": 0,
+          "ringStyle": 0,
+          "ringSegments": 1,
+          "showLabel": false,
+          "showRange": false,
+          "parts": [
+            {
+              "kind": "dial",
+              "assetId": "a_dial",
+              "x": 0,
+              "y": 0,
+              "w": 150,
+              "h": 150
+            },
+            {
+              "kind": "ticks",
+              "assetId": "a_ticks",
+              "x": 0,
+              "y": 0,
+              "w": 150,
+              "h": 150
+            },
+            {
+              "kind": "needle",
+              "assetId": "a_needle",
+              "x": 75,
+              "y": 75,
+              "w": 130,
+              "h": 13,
+              "pivotX": 0.06,
+              "pivotY": 0.5,
+              "sweepFrom": 135,
+              "sweepTo": 405
+            },
+            {
+              "kind": "value",
+              "assetId": "",
+              "x": 25,
+              "y": 95,
+              "w": 100,
+              "h": 34,
+              "pid": "obd.rpm"
+            }
+          ],
+          "min": 0,
+          "max": 8000
+        },
+        {
+          "id": "gB",
+          "type": "gauge",
+          "name": "双针表",
+          "pid": "obd.rpm",
+          "x": 200,
+          "y": 20,
+          "w": 150,
+          "h": 150,
+          "label": "双针表",
+          "unit": "",
+          "cardStyle": 0,
+          "neonPreset": 0,
+          "ringStyle": 0,
+          "ringSegments": 1,
+          "showLabel": false,
+          "showRange": false,
+          "parts": [
+            {
+              "kind": "dial",
+              "assetId": "a_dial",
+              "x": 0,
+              "y": 0,
+              "w": 150,
+              "h": 150
+            },
+            {
+              "kind": "ticks",
+              "assetId": "a_ticks",
+              "x": 0,
+              "y": 0,
+              "w": 150,
+              "h": 150
+            },
+            {
+              "kind": "needle",
+              "assetId": "a_needle",
+              "x": 75,
+              "y": 75,
+              "w": 130,
+              "h": 13,
+              "pid": "obd.rpm",
+              "pivotX": 0.06,
+              "pivotY": 0.42,
+              "sweepFrom": 135,
+              "sweepTo": 405
+            },
+            {
+              "kind": "needle",
+              "assetId": "a_needle",
+              "x": 75,
+              "y": 75,
+              "w": 96,
+              "h": 10,
+              "pid": "obd.speed",
+              "pivotX": 0.06,
+              "pivotY": 0.58,
+              "sweepFrom": 135,
+              "sweepTo": 405
+            },
+            {
+              "kind": "value",
+              "assetId": "",
+              "x": 5,
+              "y": 100,
+              "w": 90,
+              "h": 26,
+              "pid": "obd.rpm"
+            },
+            {
+              "kind": "value",
+              "assetId": "",
+              "x": 85,
+              "y": 100,
+              "w": 60,
+              "h": 26,
+              "pid": "obd.speed"
+            }
+          ],
+          "min": 0,
+          "max": 8000
+        },
+        {
+          "id": "gC",
+          "type": "gauge",
+          "name": "嵌套表",
+          "pid": "obd.coolant",
+          "x": 105,
+          "y": 200,
+          "w": 150,
+          "h": 150,
+          "label": "嵌套表",
+          "unit": "",
+          "cardStyle": 0,
+          "neonPreset": 0,
+          "ringStyle": 0,
+          "ringSegments": 1,
+          "showLabel": false,
+          "showRange": false,
+          "parts": [
+            {
+              "kind": "dial",
+              "assetId": "a_dial",
+              "x": 0,
+              "y": 0,
+              "w": 150,
+              "h": 150
+            },
+            {
+              "kind": "ticks",
+              "assetId": "a_ticks",
+              "x": 0,
+              "y": 0,
+              "w": 150,
+              "h": 150
+            },
+            {
+              "kind": "needle",
+              "assetId": "a_needle",
+              "x": 75,
+              "y": 75,
+              "w": 120,
+              "h": 12,
+              "pid": "obd.coolant",
+              "pivotX": 0.06,
+              "pivotY": 0.5,
+              "children": [
+                {
+                  "kind": "decor",
+                  "assetId": "a_dot",
+                  "x": -12,
+                  "y": -12,
+                  "w": 24,
+                  "h": 24,
+                  "alpha": 255
+                },
+                {
+                  "kind": "decor",
+                  "assetId": "a_corner",
+                  "x": 40,
+                  "y": -8,
+                  "w": 16,
+                  "h": 16,
+                  "rotation": 45,
+                  "alpha": 200
+                }
+              ]
+            },
+            {
+              "kind": "decor",
+              "assetId": "a_corner",
+              "x": 2,
+              "y": 2,
+              "w": 22,
+              "h": 22,
+              "rotation": 30,
+              "alpha": 150
+            },
+            {
+              "kind": "value",
+              "assetId": "",
+              "x": 35,
+              "y": 100,
+              "w": 80,
+              "h": 30,
+              "pid": "obd.coolant"
+            }
+          ],
+          "min": -40,
+          "max": 215
+        }
+      ]
+    }
+  ],
+  "pageIndex": 0,
+  "assets": [
+    {
+      "id": "a_dial",
+      "name": "盘面",
+      "kind": "custom",
+      "path": "assets/dial.png",
+      "w": 256,
+      "h": 256
+    },
+    {
+      "id": "a_ticks",
+      "name": "刻度",
+      "kind": "custom",
+      "path": "assets/ticks.png",
+      "w": 256,
+      "h": 256
+    },
+    {
+      "id": "a_needle",
+      "name": "指针",
+      "kind": "custom",
+      "path": "assets/needle.png",
+      "w": 200,
+      "h": 20
+    },
+    {
+      "id": "a_dot",
+      "name": "亮点",
+      "kind": "custom",
+      "path": "assets/dot.png",
+      "w": 40,
+      "h": 40
+    },
+    {
+      "id": "a_corner",
+      "name": "角标",
+      "kind": "custom",
+      "path": "assets/corner.png",
+      "w": 48,
+      "h": 48
+    }
+  ],
+  "canvases": []
+}

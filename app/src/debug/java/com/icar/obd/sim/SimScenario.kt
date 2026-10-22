@@ -41,8 +41,27 @@ enum class SimScenario(val id: String, val label: String, val desc: String) {
     /** 暖机：冷却液温度从 20℃ 升到 90℃ */
     WARMUP("warmup", "温度升高", "水温 20℃ → 90℃（跨过 warnLow 60）"),
 
-    /** 报警：数值越过阈值 */
-    ALARM("alarm", "报警阈值", "车速 200(>120)、转速 7000(>6500)、水温 112(>105)、电压 11.0(<11.8)"),
+    /**
+     * 报警（**warn 档**）：越过 warnHigh/warnLow，但**未到 critical**。
+     *
+     * 阈值依据（审计自 `NodeStateResolver.select` + `BuiltInPids`）：
+     *
+     * | PID | warnHigh | maxVal | 自动算出的 critical |
+     * |---|---|---|---|
+     * | 车速 std_0D | 120 | 260 | 120 + (260-120)*0.5 = **190** |
+     * | 转速 std_0C | 6500 | 8000 | 6500 + 1500*0.5 = **7250** |
+     * | 水温 std_05 | 105 | 215 | 105 + 110*0.5 = **160** |
+     *
+     * 所以本场景取 150 / 6800 / 115 → 落在 `[warn, critical)` 区间。
+     */
+    ALARM("alarm", "报警(warn档)", "车速 150、转速 6800、水温 115、电压 11.0 —— 越过 warn 但未到 critical"),
+
+    /**
+     * 严重（**critical 档**）：越过自动算出的 critical 阈值。
+     *
+     * 车速 200(≥190)、转速 7400(≥7250)、水温 170(≥160)。
+     */
+    CRITICAL("critical", "严重(critical档)", "车速 200、转速 7400、水温 170 —— 越过 critical 阈值"),
 
     /** 数据断开：来源关闭，所有值 ok=false */
     DISCONNECT("disconnect", "数据断开", "关闭来源 → 所有绑定仪表显示 --、状态灯回落"),
@@ -126,13 +145,27 @@ enum class SimScenario(val id: String, val label: String, val desc: String) {
                 }
 
                 ALARM -> {
-                    // 全部越过阈值（warnHigh / warnLow）
-                    out[PID_SPEED] = 200f + wobble(t, 20, 2f)      // > 120 warnHigh
-                    out[PID_RPM] = 7000f + wobble(t, 15, 80f)      // > 6500 warnHigh
-                    out[PID_COOLANT] = 112f + wobble(t, 40, 1f)    // > 105 warnHigh
+                    // warn 档：越过 warnHigh/warnLow，但**低于**自动算出的 critical
+                    //   车速 150 ∈ [120, 190)
+                    //   转速 6800 ∈ [6500, 7250)
+                    //   水温 115 ∈ [105, 160)
+                    out[PID_SPEED] = 150f + wobble(t, 20, 1.5f)
+                    out[PID_RPM] = 6800f + wobble(t, 15, 60f)
+                    out[PID_COOLANT] = 115f + wobble(t, 40, 1f)
                     out[PID_VOLTAGE] = 11.0f + wobble(t, 50, 0.05f) // < 11.8 warnLow
                     out[PID_LOAD] = 95f
                     out[PID_THROTTLE] = 90f
+                }
+
+                CRITICAL -> {
+                    // critical 档：越过自动算出的 critical 阈值
+                    //   车速 200 ≥ 190、转速 7400 ≥ 7250、水温 170 ≥ 160
+                    out[PID_SPEED] = 200f + wobble(t, 20, 1.5f)
+                    out[PID_RPM] = 7400f + wobble(t, 15, 60f)
+                    out[PID_COOLANT] = 170f + wobble(t, 40, 1f)
+                    out[PID_VOLTAGE] = 11.0f + wobble(t, 50, 0.05f)
+                    out[PID_LOAD] = 98f
+                    out[PID_THROTTLE] = 95f
                 }
 
                 DISCONNECT -> {

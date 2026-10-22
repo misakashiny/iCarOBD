@@ -103,9 +103,11 @@ object SimControl {
             ?.filter { it.isNotEmpty() }
             ?: emptyList()
 
-        if (!SimPidSource.enabled || SimPidSource.scenario == SimScenario.DISCONNECT ||
-            sc == SimScenario.DISCONNECT
-        ) {
+        // P5A-M02：模拟源改为走 SignalSimulator（openSource 归属）。
+        //   · 首次启用 / 从断开恢复 → enable()（内部做严格互斥：先停真实轮询）
+        //   · 已在跑且目标不是 DISCONNECT → 只切场景
+        val needEnable = !SimPidSource.enabled || !SimPidSource.isSimulated()
+        if (needEnable) {
             SimPidSource.enable(sc, extra)
             if (sc == SimScenario.DISCONNECT) SimPidSource.setScenario(sc)
         } else {
@@ -115,6 +117,9 @@ object SimControl {
         val n = i.getIntExtra(EXTRA_STEP, 0)
         if (n > 0) SimPidSource.step(n)
         Log.i("SimControl", SimPidSource.statusText())
+        if (SimPidSource.lastYieldReason.isNotBlank()) {
+            Log.w("SimControl", "互斥退让：${SimPidSource.lastYieldReason}")
+        }
     }
 
     /**

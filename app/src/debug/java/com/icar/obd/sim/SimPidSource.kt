@@ -1,227 +1,281 @@
 package com.icar.obd.sim
 
-import com.icar.obd.data.PidValue
-import com.icar.obd.obd.VehicleBus
-import kotlin.math.abs
-import kotlin.math.sin
+import android.util.Log
+import com.icar.obd.obd.ObdController
+import com.icar.obd.obd.SignalSimulator
 
 /**
- * 离线 PID 模拟数据源（P5A-M01 阶段 B）。
+ * 离线 PID 模拟数据源（P5A-M02 阶段 B 重构版）。
  *
- * ## 这是干什么的
+ * ## 为什么要重写（P5A-M01 版的问题）
  *
- * 没有 OBD 适配器、没有车的时候，用它驱动**真实的**数据链路：
+ * M01 版用 `VehicleBus.put(v)`（**无来源版本**）注入。那个方法内部会
  *
+ * ```kotlin
+ * currentOwners.remove(v.pidId)   // 把该 PID 从「谁在采」表里摘掉
  * ```
- * SimPidSource ──VehicleBus.put()──> values ──> DashRenderer / NodeTreeRenderer
- *                                             / RuleEngine / 状态灯 / 仪表
- * ```
  *
- * ## 为什么不建立第二套渲染通道
+ * 后果（实测见 `VehicleBusSourceSemanticsTest`）：
  *
- * `VehicleBus` 的项目注释写得很明确：
+ * 1. 模拟值**无法被正确失效** —— 真实采集关闭时 `closeSource` 找不到归属，
+ *    于是留下一个 `ok=true` 的陈旧值，仪表继续显示「像实时」的数字。
+ * 2. 归属被摘掉之后，`openSource` 的 epoch 保护对这条 PID 失效。
  *
- * > 这是「数据层」与「渲染层」之间的唯一接口：
- * > 引擎往里写，仪表盘/规则引擎/日志器从里读。
+ * ## 现在怎么做
  *
- * 所以模拟源**只往总线写**，下游一行代码都不用改 ——
- * 「模拟能跑」与「真机能跑」走同一条路，模拟才有意义。
+ * **复用项目自 v1.5.0 就有的 [SignalSimulator]**（`openSource` + `put(source,v)`），
+ * 本类只负责两件事：
  *
- * ## 为什么用 `put(v)` 而不是 `openSource()/put(source, v)`
+ * 1. **场景 → 通道配置**：把 `normal/accel/alarm/...` 翻译成
+ *    `SignalSimulator.Channel`（常量波形 = 固定值）。
+ * 2. **严格互斥**：开模拟前先停真实轮询，关模拟后按需恢复；
+ *    运行期有看门狗，一旦发现真实轮询起来了就**自动退让**。
  *
- * `openSource` / `closeSource` / `put(source, v)` 都是 `internal`。
- * 本项目 `app/src/debug/` 与 `app/src/main/` 属于**不同编译单元**，
- * 读不到 `internal`。而本轮的红线是「**不修改生产代码**」，所以不为了
- * 测试去放宽 `VehicleBus` 的可见性。
+ * 这样归属语义、失效语义、TTL 全部由既有机制保证，**生产代码零改动**。
  *
- * 用公开的 `VehicleBus.put(v)`：
+ * ## 与真实 OBD 的关系（严格互斥，默认关闭）
  *
- * - 它走 `storeLocked()` + `notifyValues()` —— **和真实数据完全同一条下游**
- * - 它把该 PID 从 `currentOwners` 摘掉，语义是「这是个无归属的值」
+ * - 默认**不启用**，必须显式 `enable()` 或 adb 广播
+ * - 启用时先 `ObdController.engine.stop()`
+ * - 关闭时 `SignalSimulator.stop()` → `closeSource` → 所有模拟值变
+ *   `ok=false, error="采集来源已停止"`，仪表回落 `--`
+ * - 若之前真实轮询在跑，关闭后自动 `startPolling()` 恢复
+ * - 看门狗每 2 秒检查：`enabled && engine.running` → 自动 `disable()`
  *
- * 「断开」由 [SimPidSource] 自己实现：不发新值，并把每个写过的 PID
- * 补发一条 `ok = false` 的 `PidValue`。`VehicleBus.value()` / `snapshot()`
- * 都只看 `ok`，所以仪表会显示 `--`、规则引擎不会误触发 ——
- * 与真实链路断开时的下游表现**一致**（真实链路靠 `closeSource` 做同一件事）。
+ * ## 隔离
  *
- * ## 隔离（重要）
- *
- * - 本文件位于 `app/src/debug/` —— **Release 变体根本不会编译它**
- * - 不修改 `VehicleBus` / `ObdEngine` / `DashRenderer` 任何一行
- * - 不写 `Store`、不写 CSV、不写任何持久化
- * - 默认关闭，需显式 `enable()`（或 adb 广播）
- *
- * ## 可重复
- *
- * 场景的值由**确定性函数**生成（`tick` 序号 + 固定公式），
- * 不用 `Random`，所以自动化测试可以断言具体数值。
+ * 本文件在 `app/src/debug/` —— Release 变体不编译。生产代码一行未改。
  */
 object SimPidSource {
 
-    /** 模拟源是否启用。默认关闭，需显式 `enable()` */
+    private const val TAG = "SimPidSource"
+
+    /** 看门狗间隔：真实轮询起来后最多这么久模拟就退让 */
+    private const val WATCHDOG_MS = 2000L
+
     @Volatile
     var enabled: Boolean = false
         private set
 
-    /** 当前场景 */
     @Volatile
     var scenario: SimScenario = SimScenario.NORMAL
         private set
 
-    /** 已发出的 tick 数（自动化测试可读） */
     @Volatile
     var tick: Int = 0
         private set
 
-    /** 最近一次成功写入的值（自动化测试可读） */
-    private val lastWritten = LinkedHashMap<String, Float>()
+    /** 开模拟之前真实轮询是否在跑（关闭时按需恢复） */
+    @Volatile
+    private var engineWasRunning = false
 
-    /** 已经写过的全部 PID（断开时要逐个补发 ok=false） */
-    private val writtenPids = LinkedHashSet<String>()
+    /** 上一次互斥退让的原因（供 UI / 日志查询） */
+    @Volatile
+    var lastYieldReason: String = ""
+        private set
 
-    /** 额外的自定义 PID */
+    private var watchdog: Runnable? = null
+    private var watchdogHandler: android.os.Handler? = null
     private var extraPids: List<String> = emptyList()
 
     // ============================================================ 生命周期
 
-    /** 打开模拟源并立刻产出第一个 tick */
-    fun enable(s: SimScenario = SimScenario.NORMAL, extra: List<String> = emptyList()) {
-        // ⚠️ P5A-M01 修：**不清空 writtenPids**。
-        // 切到 DISCONNECT 时 SimControl 会先 enable() 再 setScenario(DISCONNECT)，
-        // 若这里清空了 writtenPids，markAllStale 就遍历空集合 → 一个 PID 都不标失效
-        // → 仪表继续挂着旧值（实测 BUSD 全是 ok=1，UI 不回落）。
-        //
-        // writtenPids 的语义应该是「本进程写过的全部 PID」，
-        // 只有显式 disable() 或进程重启才清。
+    /**
+     * 启用模拟。
+     *
+     * @return 是否真的起来了（拿不到可用 PID 时会返回 false）
+     */
+    fun enable(s: SimScenario = SimScenario.NORMAL, extra: List<String> = emptyList()): Boolean {
         scenario = s
         extraPids = extra
         tick = 0
-        lastWritten.clear()
-        enabled = true
-        emit()
+        lastYieldReason = ""
+
+        // ---- 1. 严格互斥：先停真实轮询，否则两个来源会交替写同一 PID、画面来回跳 ----
+        engineWasRunning = runCatching { ObdController.engine.running }.getOrDefault(false)
+        if (engineWasRunning) {
+            runCatching { ObdController.engine.stop() }
+                .onFailure { Log.w(TAG, "停真实轮询失败", it) }
+            Log.i(TAG, "互斥：已停止真实轮询，改由模拟源供数")
+        }
+
+        // ---- 2. 按当前启用的 PID 重建通道 ----
+        SignalSimulator.rebuildFromPids()
+
+        // ---- 3. 应用场景（写通道配置）----
+        applyScenario(s)
+
+        // ---- 4. 启动（内部 openSource + put(source,v)）----
+        SignalSimulator.start()
+        enabled = SignalSimulator.running
+        if (enabled) {
+            startWatchdog()
+            Log.i(TAG, "模拟已启用：${s.id} 通道=${SignalSimulator.channels().size}")
+        } else {
+            // 起不来就别把真实轮询也停着
+            restoreEngineIfNeeded()
+            Log.w(TAG, "模拟未启动（没有可用 PID？）")
+        }
+        return enabled
     }
 
     /**
-     * 关闭模拟源。
+     * 关闭模拟。
      *
-     * 对每个写过值的 PID 补发一条 `ok = false` ——
-     * 下游（仪表 / 状态灯 / 规则引擎）会像真实链路断开那样回落。
+     * `SignalSimulator.stop()` 内部 `VehicleBus.closeSource()` 会把本来源写过的
+     * 每个 PID 标成 `ok=false, error="采集来源已停止"` ——
+     * 这正是「停止模拟时清理自身注入的数据状态」。
      */
     fun disable() {
+        stopWatchdog()
+        SignalSimulator.stop()
         enabled = false
-        markAllStale("模拟已关闭")
-        // 真正的关闭才清历史（下次 enable 从干净状态开始）
-        writtenPids.clear()
-        lastWritten.clear()
+        restoreEngineIfNeeded()
+        Log.i(TAG, "模拟已关闭")
     }
 
-    /** 切换场景（保持连续性） */
+    private fun restoreEngineIfNeeded() {
+        val restore = engineWasRunning
+        engineWasRunning = false
+        if (restore) {
+            runCatching {
+                if (ObdController.isConnected()) ObdController.startPolling()
+            }.onFailure { Log.w(TAG, "恢复真实轮询失败", it) }
+        }
+    }
+
+    /**
+     * 切换场景。
+     *
+     * `DISCONNECT` 语义就是「数据断开」= 关掉模拟来源（触发正确失效）；
+     * 其它场景若当前没在跑，会重新起一个来源。
+     */
     fun setScenario(s: SimScenario) {
-        val wasDisconnected = scenario == SimScenario.DISCONNECT
         scenario = s
         if (s == SimScenario.DISCONNECT) {
-            enabled = false          // 断开 = 不再产出
-            markAllStale("模拟：数据断开")
-        } else {
-            if (wasDisconnected || !enabled) {
-                enabled = true
+            if (enabled) {
+                // 只关来源，不恢复真实轮询 —— 断开就是要看到"没数据"
+                SignalSimulator.stop()
+                enabled = false
             }
-            emit()
+            return
         }
+        if (!SignalSimulator.running) {
+            SignalSimulator.start()
+            enabled = SignalSimulator.running
+            if (enabled) startWatchdog()
+        }
+        applyScenario(s)
     }
 
     /**
-     * 立刻把「当前场景不再产出」的 PID 标为失效。
+     * 强制补 N 拍（自动化测试用来让画面立刻刷新一次）。
      *
-     * 场景切换后（例如 accel → normal），上个场景写过但本场景不写的 PID
-     * （如 MISSING_PID 只剩两个）会保留旧值。这个方法把它们清掉，
-     * 语义与「真实链路里那个 PID 停了」一致。
-     */
-    private fun staleUnproduced() {
-        val produced = SimScenario.values(scenario, tick, extraPids).keys
-        val now = System.currentTimeMillis()
-        writtenPids.filter { it !in produced }.forEach { pid ->
-            val last = lastWritten[pid] ?: 0f
-            VehicleBus.put(PidValue(pid, last, "", now, false, "模拟：本场景不产出", ttlMs = 0))
-        }
-    }
-
-    /**
-     * 推进 n 个 tick 并写值。
-     *
-     * 自动化测试可以直接调 `step(n)` 精确控制步数 —— 不用等真实定时器。
+     * 常量波形下数值不变，但会重新 `publish` 一轮 → UI 立即重绘，
+     * 不用干等 10Hz 定时器。
      */
     fun step(n: Int = 1) {
-        if (!enabled) return
-        repeat(n) {
+        repeat(n.coerceIn(0, 200)) {
             tick++
-            emit()
+            runCatching { SignalSimulator.tick(System.currentTimeMillis()) }
         }
     }
 
-    // ============================================================ 产出
+    // ============================================================ 场景 → 通道
 
-    private fun emit() {
-        if (!enabled) return
-        val now = System.currentTimeMillis()
+    /**
+     * 把场景翻译成通道配置。
+     *
+     * 用 `WAVE_CONSTANT` + `min == max == 目标值` 得到**固定输出**：
+     * `waveAt(CONSTANT) == 1f` → `base = lo + (hi-lo)*1 = hi = 目标值`。
+     *
+     * 场景没给的 PID 一律**禁用通道**（不发布），再 `stop + start`
+     * 让它们保持「未知」—— 这正是 `NULL_PID` / `MISSING_PID` 要的语义。
+     */
+    private fun applyScenario(s: SimScenario) {
+        val wanted = SimScenario.values(s, tick, extraPids)
+        val all = SignalSimulator.channels()
+        if (all.isEmpty()) return
 
-        SimScenario.values(scenario, tick, extraPids).forEach { (pidId, value) ->
-            if (value == null) {
-                // 「值为空」场景：写 ok=false，下游显示 --
-                VehicleBus.put(PidValue(pidId, 0f, "", now, false, "sim:null", ttlMs = 0))
-                writtenPids.add(pidId)
+        all.forEach { ch ->
+            val v = wanted[ch.pidId]
+            if (v == null || v.isNaN()) {
+                // 本场景不给这个 PID 值 → 禁用（不发布）
+                ch.enabled = false
+                SignalSimulator.update(ch)
             } else {
-                // ttlMs = 0 → VehicleBus.fresh() 不做过期判定。
-                // 模拟值不会「自己过期」，生命周期由场景显式控制。
-                VehicleBus.put(PidValue(pidId, value, "", now, true, null, ttlMs = 0))
-                lastWritten[pidId] = value
-                writtenPids.add(pidId)
+                ch.enabled = true
+                ch.wave = SignalSimulator.WAVE_CONSTANT
+                ch.periodSec = 1f
+                ch.min = v
+                ch.max = v
+                ch.noise = 0f
+                SignalSimulator.update(ch)
             }
         }
 
-        // 把「本场景不再产出」的 PID 标失效（accel → normal 之类切换时）
-        staleUnproduced()
+        // NULL_PID / MISSING_PID：必须重建来源，才能让「之前有值、现在没有」的 PID 失效
+        if (s == SimScenario.NULL_PID || s == SimScenario.MISSING_PID) {
+            SignalSimulator.stop()
+            SignalSimulator.start()
+            enabled = SignalSimulator.running
+        }
     }
+
+    // ============================================================ 看门狗
 
     /**
-     * 把所有写过的 PID 标为失效（不发 ok=true）。
+     * 真实轮询一旦起来，模拟必须**立刻退让**。
      *
-     * ⚠️ P5A-M01 修：必须遍历 [writtenPids]（**历史写过的全部**），
-     * 只遍历 [lastWritten]（**当前场景写过的**）会漏掉上一个场景的 PID ——
-     * 那些 PID 会一直挂着旧值，UI 不回落。
+     * 为什么要它：`ObdController.startPolling()` 可能被别的界面（连设备、切页面、
+     * 重新启用 PID）调起。那时如果模拟还在写，两个来源会交替覆盖同一个 PID，
+     * 表现为仪表数字来回跳 —— 用户会以为仪表坏了。
      */
-    private fun markAllStale(reason: String) {
-        val now = System.currentTimeMillis()
-        // 先算一份快照，避免遍历时被并发修改
-        val targets = writtenPids.toList()
-        targets.forEach { pid ->
-            val last = lastWritten[pid] ?: 0f
-            VehicleBus.put(PidValue(pid, last, "", now, false, reason, ttlMs = 0))
+    private fun startWatchdog() {
+        stopWatchdog()
+        val h = android.os.Handler(android.os.Looper.getMainLooper())
+        watchdogHandler = h
+        val r = object : Runnable {
+            override fun run() {
+                if (!enabled) return
+                val realRunning = runCatching { ObdController.engine.running }.getOrDefault(false)
+                if (realRunning) {
+                    lastYieldReason = "真实轮询已启动，模拟自动退让"
+                    Log.w(TAG, lastYieldReason)
+                    disable()
+                    return
+                }
+                h.postDelayed(this, WATCHDOG_MS)
+            }
         }
-        // **不清空** lastWritten：断开后若同一 PID 再恢复，还知道它上次是多少
-        // （UI 那一侧只看 ok，不看具体值）
+        watchdog = r
+        h.postDelayed(r, WATCHDOG_MS)
     }
 
-    // ============================================================ 供测试 / UI 读取
+    private fun stopWatchdog() {
+        watchdog?.let { watchdogHandler?.removeCallbacks(it) }
+        watchdog = null
+        watchdogHandler = null
+    }
 
-    /** 最近一次写入的值（只读快照） */
-    fun snapshotWritten(): Map<String, Float> = LinkedHashMap(lastWritten)
+    // ============================================================ 供测试 / UI
 
     /** 是否是「模拟数据」状态（UI 用来显示 SIMULATED 标记） */
     fun isSimulated(): Boolean = enabled
 
+    /** 当前是否有真实轮询在跑（互斥显示用） */
+    fun realPollingActive(): Boolean =
+        runCatching { ObdController.engine.running }.getOrDefault(false)
+
     /** 一行摘要，用于 Debug 面板 / logcat */
     fun statusText(): String {
         if (!enabled) return "SIM 关闭"
-        val w = lastWritten.entries.take(4).joinToString(", ") { "${it.key}=${fmt(it.value)}" }
-        return "SIM ${scenario.label} tick=$tick  $w"
+        val chans = SignalSimulator.channels().filter { it.enabled }
+        val preview = chans.take(4).joinToString(", ") { "${it.pidId}=${fmt(it.max)}" }
+        return "SIM ${scenario.label} 通道=${chans.size}  $preview"
     }
 
     private fun fmt(f: Float): String =
-        if (abs(f - Math.round(f)) < 0.01f) Math.round(f).toString()
+        if (kotlin.math.abs(f - Math.round(f)) < 0.01f) Math.round(f).toString()
         else String.format(java.util.Locale.US, "%.1f", f)
-
-    /** 供场景函数使用的小工具（保留在 object 内便于单测直接调） */
-    internal fun wobbleForTest(t: Int, period: Int, amp: Float): Float =
-        sin(2.0 * Math.PI * t / period).toFloat() * amp
 }

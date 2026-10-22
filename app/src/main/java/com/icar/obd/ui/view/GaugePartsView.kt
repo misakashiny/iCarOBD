@@ -22,10 +22,19 @@ import com.icar.obd.data.Store
  * 有 `parts` 就用它，没有就继续用 `GaugeViewFactory` 的程序化画法 ——
  * 两条路径并存，存量设计行为完全不变。
  *
- * ## 坐标系
+ * ## 坐标系（P5A-M02 修正：X/Y 分别缩放）
  *
- * 部件的 x/y/w/h 是**画布单位**（与节点同级），要乘 `pxPerUnit` 才到像素。
- * 旋转中心用部件自己的 `pivotX/pivotY`（相对自身 0..1）——
+ * 部件的 x/y/w/h 是**画布单位**（与节点同级）。原来这里只有一个
+ * `pxPerUnit`，X 和 Y 用同一个比例 —— 而 `NodeTreeRenderer` 的
+ * `Viewport` 从 v2 起就是 **pxX / pxY 分别算**（节点尺寸用
+ * `node.w*pxX` / `node.h*pxY`）。
+ *
+ * 后果（实测）：手机竖屏视口 1080×2272 → pxX=3、pxY=6.31，
+ * 部件横向被放大 2.1 倍并溢出 View 边界被裁掉 ——
+ * 「表盘和刻度画出来了、指针却不见」就是这么来的。
+ *
+ * 现在 [pxX] 管横向、[pxY] 管纵向，与节点尺寸同一套换算。
+ * 旋转中心仍是部件自身的 `pivotX/pivotY`（相对自身 0..1）——
  * **指针素材的轴心基本不在图片中心**，所以这个必须能单独设。
  *
  * 绘制顺序 = **列表顺序**（先画的在下）。
@@ -34,16 +43,34 @@ class GaugePartsView(
     context: Context,
     private val item: GaugeItem,
     private val parts: List<GaugePart>,
-    private val pxPerUnit: Float,
+    /** 横向：画布单位 → 像素 */
+    private val pxX: Float,
+    /** 纵向：画布单位 → 像素 */
+    private val pxY: Float,
     private val labelFont: GaugeFont,
     /** 取素材位图。由渲染器注入 —— View 不该自己去读文件 */
     private val bitmapOf: (String) -> Bitmap?
 ) : View(context) {
 
+    /**
+     * 单比例构造（正方形视口 / 兼容老调用）。
+     *
+     * `pxX == pxY` 时与分轴版本**逐像素一致**，所以老设计不受影响。
+     */
+    constructor(
+        context: Context,
+        item: GaugeItem,
+        parts: List<GaugePart>,
+        pxPerUnit: Float,
+        labelFont: GaugeFont,
+        bitmapOf: (String) -> Bitmap?
+    ) : this(context, item, parts, pxPerUnit, pxPerUnit, labelFont, bitmapOf)
+
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = labelFont.typeface()
-        textSize = (labelFont.size * pxPerUnit).coerceAtLeast(1f)
+        // 字号跟**纵向**比例走：与文字节点 `f.size * t.pxY` 同一套（见 NodeTreeRenderer）
+        textSize = (labelFont.size * pxY).coerceAtLeast(1f)
         color = labelFont.color
         textAlign = Paint.Align.CENTER
     }
@@ -133,8 +160,7 @@ class GaugePartsView(
     }
 
     override fun onDraw(canvas: Canvas) {
-        val k = pxPerUnit
-        parts.forEach { p -> drawPart(canvas, p, k, 0) }
+        parts.forEach { p -> drawPart(canvas, p, 0) }
     }
 
     /**
@@ -150,9 +176,11 @@ class GaugePartsView(
      *
      * 子部件**继承父的旋转** —— 父的 rotate 留在 canvas 里，子在自己的坐标系里画。
      *
+     * 横向一律乘 [pxX]、纵向一律乘 [pxY]（P5A-M02 修正）。
+     *
      * @param depth 嵌套深度。上限 5，与工具侧和 parseAll 一致
      */
-    private fun drawPart(canvas: Canvas, p: GaugePart, k: Float, depth: Int) {
+    private fun drawPart(canvas: Canvas, p: GaugePart, depth: Int) {
         if (depth > 5) return
         if (p.alpha <= 0) return
         paint.alpha = p.alpha.coerceIn(0, 255)
@@ -164,8 +192,8 @@ class GaugePartsView(
             // 数值部件用文字画 —— 它要跟着数据变
             canvas.drawText(
                 GaugePartValues.format(vr.value),
-                (p.x + p.w / 2f) * k,
-                (p.y + p.h / 2f) * k + textPaint.textSize / 3f,
+                (p.x + p.w / 2f) * pxX,
+                (p.y + p.h / 2f) * pxY + textPaint.textSize / 3f,
                 textPaint
             )
             return
@@ -187,8 +215,9 @@ class GaugePartsView(
         } else p.rotation
 
         // 旋转中心 = 部件自身的 pivot（相对自身 0..1）
-        val cx = (p.x + p.w * p.pivotX) * k
-        val cy = (p.y + p.h * p.pivotY) * k
+        // X/Y 各用各的比例（P5A-M02 修正），否则非方形视口下 pivot 会跑到 View 外
+        val cx = (p.x + p.w * p.pivotX) * pxX
+        val cy = (p.y + p.h * p.pivotY) * pxY
         val saved = canvas.save()
 
         // ---- 装饰动画（T-UI-HUD-01 原型）----
@@ -223,23 +252,23 @@ class GaugePartsView(
             paint.alpha = animAlpha.coerceIn(0, 255)
         }
 
-        canvas.translate(cx + animDx * k, cy + animDy * k)
+        canvas.translate(cx + animDx * pxX, cy + animDy * pxY)
         if (angle != 0f) canvas.rotate(angle)
         if (animAngle != 0f) canvas.rotate(animAngle)
 
         // 自身画在"以 pivot 为原点"的坐标系里
         bitmapOf(p.assetId)?.let { bmp ->
-            val left = -p.w * p.pivotX * k
-            val top = -p.h * p.pivotY * k
+            val left = -p.w * p.pivotX * pxX
+            val top = -p.h * p.pivotY * pxY
             canvas.drawBitmap(
                 bmp, null,
-                android.graphics.RectF(left, top, left + p.w * k, top + p.h * k),
+                android.graphics.RectF(left, top, left + p.w * pxX, top + p.h * pxY),
                 paint
             )
         }
 
         // 子部件在**父的 pivot 坐标系**里，继承父的旋转
-        p.children.forEach { c -> drawPart(canvas, c, k, depth + 1) }
+        p.children.forEach { c -> drawPart(canvas, c, depth + 1) }
 
         canvas.restoreToCount(saved)
     }
