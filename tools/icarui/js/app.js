@@ -1435,6 +1435,8 @@
   window.setNodeNum = function (k, v) {
     const n = sel(); if (!n) return;
     const num = Number(v);
+    // P5A-M04：用户手改量程 → 取消自动派生身份，以后换 PID 不再跟随
+    if ((k === "min" || k === "max") && window.clearRangeAuto) window.clearRangeAuto(n);
     window.commit(() => {
       n[k] = Number.isFinite(num) ? num : 0;
       if (k === "w" || k === "h") n[k] = Math.max(1, n[k]);
@@ -2042,6 +2044,8 @@
       n.min = info.min; n.max = info.max;
       n.warnLow = info.warnLow === undefined ? null : info.warnLow;
       n.warnHigh = info.warnHigh === undefined ? null : info.warnHigh;
+      // P5A-M04：这是**用户显式要求**对齐 PID → 记成派生，之后换 PID 会跟随
+      if (window.markRangeAuto) window.markRangeAuto(n, n.pid, n.min, n.max);
     }, "回填量程");
   };
 
@@ -2872,24 +2876,38 @@
   };
 
   /**
-   * 把画布尺寸设成某种常见屏幕比例（P5A-M03 阶段 C）。
+   * **临时预览**某种常见屏幕比例（P5A-M04 阶段 B 重做）。
    *
-   * ## 为什么只改 `designW/designH`，不动节点
+   * ## 与 P5A-M03 的差别（重要）
    *
-   * 任务要求「不因用户更换模式而改动节点位置或尺寸数据」。
-   * 节点坐标是 **0..360 画布单位**，与 designW/H 无关；designW/H 只决定
-   * 「画布按什么宽高比显示」。改它 = 改预览比例，**节点数据一个字节不动**。
+   * M03 版直接调 `canvasChanged()`，那会写 `S.design.canvas.designW/H` →
+   * **改到正式主题**、进 undo 栈、进草稿、并影响导出。用户点一下"看看车载宽屏长什么样"
+   * 就把主题的设计尺寸改了，这是数据安全隐患。
    *
-   * 走 `canvasChanged()` 这条既有路径（会 commit → 可撤销、会同步 JSON）。
+   * 现在：只设 `S.previewAspect`（一个临时状态），`applyCanvasSize()` 读它改画布**显示比例**，
+   * `S.design` **一个字节都不动** —— 不 commit、不进 undo、不写草稿、不影响导出。
+   *
+   * 复用既有 canvas 变换（`nodeToCanvasMatrix` 仍按 designW/H 与 360 单位算），
+   * 没有第二套渲染逻辑。
    */
   window.applyScreenPreset = function (id) {
     const p = (window.SCREEN_PRESETS || []).find(x => x.id === id);
     if (!p) return;
-    const dw = el("dW"), dh = el("dH");
-    if (dw) dw.value = String(p.w);
-    if (dh) dh.value = String(p.h);
-    window.canvasChanged();
-    window.toast && window.toast("画布尺寸已设为" + p.name + " " + p.w + "×" + p.h + "（节点位置未改）");
+    S.previewAspect = p.w / p.h;
+    S.previewName = p.name;
+    window.applyCanvasSize();
+    window.refreshScaleHint();
+    window.toast && window.toast("临时预览：" + p.name + " " + p.w + "×" + p.h +
+      "（未修改主题设计尺寸，点「恢复正式尺寸」退出预览）");
+  };
+
+  /** 退出临时预览，回到正式画布的显示比例（同样不碰设计数据） */
+  window.clearScreenPreset = function () {
+    S.previewAspect = null;
+    S.previewName = null;
+    window.applyCanvasSize();
+    window.refreshScaleHint();
+    window.toast && window.toast("已退出比例预览，回到正式画布尺寸");
   };
 
   /**
@@ -2906,8 +2924,14 @@
     const lines = t.rows.map(r =>
       icon[r.level] + " " + r.name + " " + r.screen + " — " + r.text.replace(/\*\*/g, "")
     );
-    box.textContent = "画布 " + t.designW + "×" + t.designH + " · 设为「" +
-      (window.SCALE_MODES.find(m => m.v === t.mode) || {}).n + "」时的实际效果：\n" + lines.join("\n");
+    // 预览态要**明确标出来**：用户得能分清"我在看预览"和"我改了主题"
+    const previewing = !!(S.previewAspect && S.previewAspect > 0);
+    const head = previewing
+      ? "👁 预览中：" + (S.previewName || "自定义比例") +
+        "（未修改主题设计尺寸；当前画布 " + t.designW + "×" + t.designH + "）"
+      : "画布 " + t.designW + "×" + t.designH + " · 设为「" +
+        (window.SCALE_MODES.find(m => m.v === t.mode) || {}).n + "」时的实际效果：";
+    box.textContent = head + "\n" + lines.join("\n");
   };
 
   // ---- 背景图（v1 兼容字段：只写路径，图片本身放 assets/）

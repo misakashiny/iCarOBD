@@ -2736,7 +2736,12 @@ function uniformMatrix(m, w, h) {
       chromeH += item.getBoundingClientRect().height + px(itemStyle.marginTop) + px(itemStyle.marginBottom);
     });
     const availH = Math.max(0, wrap.clientHeight - px(style.paddingTop) - px(style.paddingBottom) - chromeH);
-    const ar = S.design.canvas.designW / S.design.canvas.designH;
+    // P5A-M04：**临时预览**优先。
+    // `S.previewAspect` 只由「比例预览」按钮临时设置，**不写进设计数据**；
+    // 于是点预览不会改到正式主题的 designW/H（也就不会进草稿、不会影响导出）。
+    const ar = (S.previewAspect && S.previewAspect > 0)
+      ? S.previewAspect
+      : (S.design.canvas.designW / S.design.canvas.designH);
 
     let w = availW, h = w / ar;
     if (h > availH) { h = availH; w = h * ar; }

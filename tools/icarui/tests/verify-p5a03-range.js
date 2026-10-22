@@ -124,14 +124,28 @@ const ok = (c, m) => (c ? (pass++, console.log("  ✅ " + m)) : (fail++, console
       return n.min === 999 && n.max === 7777;
     })()`), "B5 手填 999~7777 换 PID 后仍保留");
 
-    console.log("\n=== B6. 老主题 0..100（未填过）换 PID 会跟随 ===");
+    // ⚠️ P5A-M04 语义变更：这里原来断言"老表 0~100（≠PID 量程）换 PID 会跟随"。
+    //
+    // M04 阶段 C 按任务要求改成「**只有能明确证明量程来自自动派生，才允许跟随**
+    // —— 不能仅靠数值相等就判定用户未手动设置」，实现换成内存来源标记 `__rangeAuto`。
+    // 于是「显式传了 min:0,max:100」这种**手工构造**的节点没有标记 → 不再跟随。
+    //
+    // 这不是放宽断言，而是**断言方向反了**（更保守）：用户明确写下的 0~100 现在会被保留。
+    // "派生量程仍会跟随"这条能力由 B4/B7 覆盖（createNode 不传 min/max → 有标记 → 跟随）。
+    console.log("\n=== B6. 显式 0..100 换 PID **保留**（M04 起：不猜，需显式回填）===");
     ok(await cdp.eval(`(function(){
-      // 模拟 M03 之前 createNode 建出来的表：0..100 但 PID 是转速
+      // 模拟一个"用户明确写了 0..100"的表（没有派生标记）
       const n = window.createNode(window.NODE_GAUGE, { pid: "obd.rpm", min: 0, max: 100 });
+      window.assignControlBinding(n, "obd.coolant");
+      return n.min === 0 && n.max === 100;
+    })()`), "B6 0~100 换水温后**保留** 0~100（若跟随会变 -40~215）");
+    // 对照：真正派生的表（不传 min/max）仍然会跟随
+    ok(await cdp.eval(`(function(){
+      const n = window.createNode(window.NODE_GAUGE, { pid: "obd.rpm" });   // 派生，有标记
       window.assignControlBinding(n, "obd.coolant");
       const d = window.BUILTIN_PIDS[window.resolvePid("obd.coolant")];
       return n.min === d.min && n.max === d.max;
-    })()`), "B6 0~100（≠转速量程）→ 换水温后变 -40~215");
+    })()`), "B6 对照：派生量程（不传 min/max）换水温后**跟随**为 -40~215");
 
     console.log("\n=== B7. 回填按钮仍可强制对齐 PID ===");
     ok(await cdp.eval(`(function(){

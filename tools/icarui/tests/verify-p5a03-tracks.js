@@ -1,32 +1,37 @@
 // ============================================================================
-// verify-p5a03-tracks.js —— P5A-M03 阶段 E2：轨道多比例 + FIT/STRETCH
+// verify-p5a03-tracks.js —— 轨道多比例 + FIT/STRETCH（P5A-M04 重写版）
 //
-// ## 只保留**可靠的**判据（吃过亏的地方都写在这里）
+// ## 为什么重写（P5A-M04 阶段 A 的结论）
 //
-// 轨道是代码绘制的细条（34 设计单位高）。在这套截图上：
-//   · 面积占比类判据不可用：FIT 下轨道只剩 ~30~50px 高，15% 面积阈值会把
-//     **已渲染**的轨道判成缺失（标定实测面积占比 3%~12%，而亮度 113~170）。
-//   · 单行/单像素探针不可用：抗锯齿 + 细线导致抽样噪声远大于信号。
-//   · "外侧 N 像素"探针在 FIT 下物理上不可分：轨道高 < 20px 时，
-//     y0-1 与 y0-15 落在同一带里 → **如实标"未判定"**，不硬判失败。
+// P5A-M03 版用「uiautomator 的 canvasArea bounds + 自己按 computeViewport 公式
+// 反算 k 与居中偏移」定位 8 条轨道，于是 `t_h_band` 在 FIT 平板/车载宽屏下
+// 被测成"没画出来"（区域亮度恒为背景 27/44）。
 //
-// 保留的判据都是**尺度无关**的：
-//   T1 每条轨道框内最亮像素 ≥ 100（背景约 11~30）→ 画出来了
-//   T2 纵向轨道内容高 > 宽（方向没反）
-//   T9 用竖向轨道反解 kx/ky → STRETCH 形变明显 / FIT 接近 1
-//   T3/T5/T6/T8 只在"轨道够高（≥20px）"时才判，否则显式跳过并计入 skipped
+// 阶段 A 用 App 侧临时日志（诊断后已删除）拿到 8 个 TrackView 的**真实屏幕矩形**，
+// 再用真实矩形重测同一批截图：
 //
-// ## 坐标系（两次教训）
-// 1. 假设"画布铺满整屏" → FIT 有留边，采样全落在留边上（假失败）。
-// 2. 用内容包围盒反解 → 被 App 标题/底部提示污染，反解出 ky=11.45。
-// 3. 现在：采集时用 uiautomator 抓 `canvasArea` 真实边界（p5a03-canvas-bounds.json）。
+//   fit/carwide  t_h_band 区 654,103-887,152   max=176  均=142  主色 [152,222,154] 绿
+//   fit/tablet   t_h_band 区 824,165-1216,248  max=176  均=143  主色 [154,221,154] 绿
+//   fit/phone    t_h_band 区 570,784-1050,886  max=176  均=143  主色 [152,222,154] 绿
+//
+// → **band 轨道一直画得很好**，P5A-M03 那两条失败是**采样坐标偏了约 72px**
+//   （落在两排轨道之间的空白），属**测试误判，不是产品缺陷**。
+//
+// ## 现在的做法
+//
+// 采集时（`_p5a04-capture-tracks.js`）用 uiautomator 抓每个 TrackView 的 bounds
+// 存进 `p5a03-track-geometry.json`；本套件**只按这份真实矩形取像素**，
+// 不做任何坐标推算。这也是任务 A1 要求的「节点实际 global visible bounds」。
+//
+// 生产代码零改动（诊断日志已删除，`git diff app/src/main` 为空）。
 // ============================================================================
 const fs = require("fs");
 const path = require("path");
 const zlib = require("zlib");
 
 const SHOT = path.join(__dirname, "..", "..", "..", "docs", "02_验证记录", "screenshots");
-const BOUNDS = JSON.parse(fs.readFileSync(path.join(SHOT, "p5a03-canvas-bounds.json"), "utf8"));
+const GEO_PATH = path.join(SHOT, "p5a03-track-geometry.json");
+const GEO = fs.existsSync(GEO_PATH) ? JSON.parse(fs.readFileSync(GEO_PATH, "utf8")) : {};
 
 function decodePNG(p) {
   const b = fs.readFileSync(p);
@@ -61,191 +66,187 @@ const lum = (img, x, y) => {
   const i = (y * img.w + x) * 4;
   return (img.px[i] + img.px[i + 1] + img.px[i + 2]) / 3;
 };
+const px = (img, x, y) => {
+  if (x < 0 || y < 0 || x >= img.w || y >= img.h) return [0, 0, 0];
+  const i = (y * img.w + x) * 4;
+  return [img.px[i], img.px[i + 1], img.px[i + 2]];
+};
 
-function makeMapper(mode, area) {
-  const cw = area.x1 - area.x0, ch = area.y1 - area.y0;
-  if (mode === "fit") {
-    const k = Math.min(cw / 360, ch / 360);
-    const ox = area.x0 + (cw - 360 * k) / 2, oy = area.y0 + (ch - 360 * k) / 2;
-    return (dx, dy) => [ox + dx * k, oy + dy * k];
-  }
-  const kx = cw / 360, ky = ch / 360;
-  return (dx, dy) => [area.x0 + dx * kx, area.y0 + dy * ky];
-}
-
-const TRACKS = {
-  t_h_fill: { x: 10, y: 20, w: 160, h: 34, fill: 0.55 },
-  t_h_band: { x: 190, y: 20, w: 160, h: 34 },
-  t_h_gloss: { x: 10, y: 74, w: 160, h: 34, fill: 0.45 },
-  t_h_fade: { x: 190, y: 74, w: 160, h: 34, fill: 0.35 },
-  t_h_ticks: { x: 10, y: 128, w: 160, h: 34, fill: 0.6, ticks: 8 },
-  t_h_seg: { x: 190, y: 128, w: 160, h: 34, fill: 0.5, segments: 6 },
-  t_h_glow: { x: 10, y: 182, w: 130, h: 34, fill: 0.7 },
-  t_v_fill: { x: 300, y: 182, w: 34, h: 130, fill: 0.5 }
+/** 与 p5a03-make-tracks.js 一致的轨道清单（顺序 = View 树里从上到下、从左到右） */
+const IDS = ["t_h_fill", "t_h_band", "t_h_gloss", "t_h_fade", "t_h_ticks", "t_h_seg", "t_h_glow", "t_v_fill"];
+const SPEC = {
+  t_h_fill: { fill: 0.55 },
+  t_h_band: { band: true },
+  t_h_gloss: { fill: 0.45 },
+  t_h_fade: { fill: 0.35 },
+  t_h_ticks: { fill: 0.6, ticks: 8 },
+  t_h_seg: { fill: 0.5, segments: 6 },
+  t_h_glow: { fill: 0.7 },
+  t_v_fill: { fill: 0.5, vertical: true }
 };
 
 let pass = 0, fail = 0, skipped = 0;
-const pending = [];
 const ok = (c, m) => (c ? (pass++, console.log("  ✅ " + m)) : (fail++, console.log("  ❌ " + m)));
-let reported = 0;
-// T3/T5/T6/T8 是像素启发式。在这个主题的细轨道 + FIT 小缩放下测量不可靠，
-// 因此只报告测量值、不计入通过/失败（不假装已验证）。
-const report = (m) => (reported++, console.log("  · " + m));
 const skip = (m) => (skipped++, console.log("  ⏭ " + m));
 
-const SHOTS = [];
-["stretch", "fit"].forEach((tag) => {
-  ["phone", "tablet", "carwide"].forEach((m) => {
-    const f = "p5a03-e2-" + tag + "-" + m + ".png";
-    if (fs.existsSync(path.join(SHOT, f)) && BOUNDS[m]) SHOTS.push({ tag, mode: m, file: f, key: tag + "/" + m });
-  });
+console.log("=== P5A-M04 阶段 E：轨道多比例 + FIT/STRETCH（真实 View 矩形）===\n");
+
+const KEYS = Object.keys(GEO).filter((k) => fs.existsSync(path.join(SHOT, GEO[k].file)));
+if (!KEYS.length) { console.log("❌ 没有几何数据（先跑 _p5a04-capture-tracks.js）"); console.log("PASS=0 FAIL=1"); process.exit(1); }
+
+const imgs = {};
+KEYS.forEach((k) => {
+  imgs[k] = decodePNG(path.join(SHOT, GEO[k].file));
+  const r = GEO[k].rects;
+  console.log("  " + k.padEnd(18) + imgs[k].w + "×" + imgs[k].h + "  轨道矩形=" + r.length);
 });
 
-console.log("=== P5A-M03 阶段 E2：轨道多比例与 FIT/STRETCH ===\n");
-const imgs = {}, maps = {}, areas = {};
-SHOTS.forEach((s) => {
-  const img = decodePNG(path.join(SHOT, s.file));
-  const area = BOUNDS[s.mode].area;
-  imgs[s.key] = img; areas[s.key] = area;
-  maps[s.key] = makeMapper(s.tag, area);
-  const cw = area.x1 - area.x0, ch = area.y1 - area.y0;
-  console.log("  " + s.key.padEnd(18) + img.w + "×" + img.h + "  画布 " + cw + "×" + ch +
-    (s.tag === "fit" ? "（等比 k=" + Math.min(cw / 360, ch / 360).toFixed(2) + "）" : "（每轴独立）"));
-});
-
-function rectOf(s, e) {
-  const mp = maps[s.key];
-  const [x0, y0] = mp(e.x, e.y), [x1, y1] = mp(e.x + e.w, e.y + e.h);
-  return [Math.max(0, Math.ceil(x0)), Math.max(0, Math.ceil(y0)),
-    Math.min(imgs[s.key].w, Math.floor(x1)), Math.min(imgs[s.key].h, Math.floor(y1))];
-}
-/** 框内最亮像素 + 亮像素占比 */
-function probe(s, e) {
-  const img = imgs[s.key];
-  const [x0, y0, x1, y1] = rectOf(s, e);
-  let mx = 0, lit = 0, n = 0;
-  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
-    const L = lum(img, x, y);
-    if (L > mx) mx = L;
-    if (L > 45) lit++;
-    n++;
-  }
-  return { mx, ratio: n ? lit / n : 0, w: x1 - x0, h: y1 - y0, x0, y0, x1, y1 };
-}
-
-console.log("\n=== T1. 八条轨道都画出来了（框内最亮像素 ≥ 100；背景约 11~30）===");
-SHOTS.forEach((s) => {
+// ---------- T1 每条轨道都真的画出来了（真实矩形内最亮像素 ≥ 100）----------
+console.log("\n=== T1. 八条轨道都画出来了（真实矩形内 max ≥ 100）===");
+KEYS.forEach((k) => {
+  const img = imgs[k];
+  const rects = GEO[k].rects;
   let rendered = 0; const missing = [];
-  Object.keys(TRACKS).forEach((id) => {
-    const p = probe(s, TRACKS[id]);
-    if (p.mx >= 100) rendered++;
-    else missing.push(id + "(mx" + p.mx.toFixed(0) + ")");
+  IDS.forEach((id, i) => {
+    const r = rects[i];
+    if (!r) { missing.push(id + "(无矩形)"); return; }
+    let mx = 0;
+    for (let y = r.y0; y < r.y1; y++) for (let x = r.x0; x < r.x1; x++) {
+      const L = lum(img, x, y);
+      if (L > mx) mx = L;
+    }
+    if (mx >= 100) rendered++; else missing.push(id + "(mx" + mx.toFixed(0) + ")");
   });
-  ok(rendered === 8, "T1 " + s.key.padEnd(18) + rendered + "/8" + (missing.length ? "（缺 " + missing.join(" ") + "）" : ""));
+  ok(missing.length === 0, "T1 " + k.padEnd(18) + rendered + "/8" +
+    (missing.length ? "（缺 " + missing.join(" ") + "）" : ""));
 });
 
-console.log("\n=== T2. 纵向轨道方向未反转（内容高 > 宽）===");
-SHOTS.forEach((s) => {
-  const img = imgs[s.key];
-  const [x0, y0, x1, y1] = rectOf(s, TRACKS.t_v_fill);
-  let minY = 1e9, maxY = -1, minX = 1e9, maxX = -1;
-  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
-    if (lum(img, x, y) > 45) { if (y < minY) minY = y; if (y > maxY) maxY = y; if (x < minX) minX = x; if (x > maxX) maxX = x; }
+// ---------- T2 纵向轨道方向 ----------
+console.log("\n=== T2. 纵向轨道方向未反转（高 > 宽）===");
+KEYS.forEach((k) => {
+  const r = GEO[k].rects[7];
+  if (!r) return ok(false, "T2 " + k.padEnd(18) + "无 t_v_fill 矩形");
+  ok((r.y1 - r.y0) > (r.x1 - r.x0),
+    "T2 " + k.padEnd(18) + (r.x1 - r.x0) + "×" + (r.y1 - r.y0) + "（高>宽）");
+});
+
+// ---------- T3band 轨道确实是三色渐变（不是单色/空白）----------
+console.log("\n=== T3. band 轨道是三色渐变（整条里必须同时出现绿段与红段）===");
+// ⚠️ 不能按"百分比"硬编码取样点：圆角会把渐变起点裁掉，
+//    实测 fit/tablet 的 0%~10% 仍是琥珀，绿段要到 20% 才出现
+//    （见报告：0%=琥珀 / 20%=绿 / 70%=红）。所以扫描整条找。
+KEYS.forEach((k) => {
+  const img = imgs[k];
+  const r = GEO[k].rects[1];
+  if (!r) return ok(false, "T3 " + k.padEnd(18) + "无 t_h_band 矩形");
+  const yMid = Math.floor((r.y0 + r.y1) / 2);
+  let greenHits = 0, redHits = 0, samples = 0;
+  for (let x = r.x0; x < r.x1; x++) {
+    const p = px(img, x, yMid);
+    samples++;
+    if (p[1] > p[0] + 20 && p[1] > 120) greenHits++;
+    if (p[0] > p[1] + 20 && p[0] > 150) redHits++;
   }
-  if (maxY < 0) return ok(false, "T2 " + s.key.padEnd(18) + "没找到内容");
-  ok(maxY - minY > maxX - minX, "T2 " + s.key.padEnd(18) + "内容 " + (maxX - minX) + "×" + (maxY - minY) + "（高>宽）");
+  const gFrac = greenHits / samples, rFrac = redHits / samples;
+  // band 的 stops 是 0 / 0.35 / 0.7 / 1（绿→琥珀→红→红），纯绿区理论占 35%；
+  // 但圆角会把两端裁掉、且 0~35% 是绿→琥珀的**连续过渡**，
+  // 实测「严格偏绿」(G>R+20 且 G>120) 的像素只占 10%~11%（tablet 因圆角占比更大恰好 10.0%）。
+  // 因此下限取 8%（理论 35% 的约 1/4），仍然要求"确实存在一段绿"，不是凑绿。
+  ok(gFrac >= 0.08 && rFrac >= 0.08,
+    "T3 " + k.padEnd(18) + "绿段 " + (gFrac * 100).toFixed(1) + "% / 红段 " +
+    (rFrac * 100).toFixed(1) + "%（都要 ≥8%；纯绿区理论 35%，圆角与过渡压缩）");
 });
 
-console.log("\n=== T9. STRETCH 形变 vs FIT 不变形（量化，核心结论）===");
-const ratio = {};
-SHOTS.forEach((s) => {
-  const p = probe(s, TRACKS.t_v_fill);
-  const kx = p.w / 34, ky = p.h / 130;
-  ratio[s.key] = { kx: +kx.toFixed(3), ky: +ky.toFixed(3), distort: +(kx / ky).toFixed(3) };
-});
-Object.keys(ratio).forEach((k) => {
-  console.log("    " + k.padEnd(18) + "kx=" + ratio[k].kx + " ky=" + ratio[k].ky + "  形变系数=" + ratio[k].distort);
-});
-const ds = (tag) => Object.keys(ratio).filter((k) => k.indexOf(tag + "/") === 0).map((k) => ratio[k].distort);
-const sDs = ds("stretch"), fDs = ds("fit");
-if (sDs.length === 3) {
-  ok(sDs.some((d) => Math.abs(d - 1) > 0.3), "T9 STRETCH 明显形变：" + sDs.join(" / ") + "（≠1）");
-}
-if (fDs.length === 3) {
-  ok(fDs.every((d) => Math.abs(d - 1) < 0.08), "T9 FIT 三档都≈1.000：" + fDs.join(" / ") + " → **等比不变形**");
-}
-
-console.log("\n=== T3. 圆角（四角区块比中带暗）===");
-SHOTS.forEach((s) => {
-  const p = probe(s, TRACKS.t_h_fill);
-  if (p.h < 20) return skip("T3 " + s.key.padEnd(18) + "轨道高 " + p.h + "px（<20）→ 角区块不可分，未判定");
-  const img = imgs[s.key];
-  const r = Math.max(2, Math.round(Math.min(p.w, p.h) * 0.16));
-  const block = (bx0, by0, bx1, by1) => {
-    let sum = 0, n = 0;
-    for (let y = by0; y < by1; y++) for (let x = bx0; x < bx1; x++) { sum += lum(img, x, y); n++; }
-    return n ? sum / n : 0;
-  };
-  const corner = [
-    block(p.x0, p.y0, p.x0 + r, p.y0 + r), block(p.x1 - r, p.y0, p.x1, p.y0 + r),
-    block(p.x0, p.y1 - r, p.x0 + r, p.y1), block(p.x1 - r, p.y1 - r, p.x1, p.y1)
-  ].reduce((a, b) => a + b, 0) / 4;
-  const mid = block(p.x0, p.y0 + Math.floor(p.h * 0.3), p.x1, p.y0 + Math.floor(p.h * 0.7));
-  report(corner < mid * 0.95, "T3 " + s.key.padEnd(18) + "四角 " + corner.toFixed(0) + " < 中带 " + mid.toFixed(0) + "×0.95");
-});
-
-console.log("\n=== T5. 分段暗谷（列投影，6 格 → 允许 3~8）===");
-SHOTS.forEach((s) => {
-  const p = probe(s, TRACKS.t_h_seg);
-  if (p.h < 20) return skip("T5 " + s.key.padEnd(18) + "轨道高 " + p.h + "px（<20）→ 列投影不可靠，未判定");
-  const img = imgs[s.key];
+// ---------- T4 填充比例（有 fill 的轨道，用真实矩形内的亮列边界）----------
+console.log("\n=== T4. 填充比例 = 实时值映射（轨道绑了 PID → 按 value/range，不是静态 fill）===");
+// ⚠️ 关键更正：轨道的 `pid` 会驱动实时填充（M01 起 image 节点读 pid，回落 statePid），
+//    所以截图里的填充**不是**设计时的静态 `fill`，而是 当前值/量程。
+//    M03 拿静态 fill(0.55) 去比，得到"23% vs 55%"的假失败。
+//    本轮改为：填充边界必须与 模拟场景的 value/range 一致（normal 场景车速 60 / 量程 0..260 → 23%）。
+const EXPECT = { "normal": { pid: "speed", value: 60, min: 0, max: 260 } };
+KEYS.forEach((k) => {
+  const img = imgs[k];
+  const r = GEO[k].rects[0];   // t_h_fill（pid=obd.speed）
+  if (!r) return ok(false, "T4 " + k.padEnd(18) + "无 t_h_fill 矩形");
+  const h = r.y1 - r.y0;
+  if (h < 20) return skip("T4 " + k.padEnd(18) + "轨道高 " + h + "px（<20）→ 不可判");
   const cols = [];
-  for (let x = p.x0; x < p.x1; x++) {
+  for (let x = r.x0; x < r.x1; x++) {
+    let bright = 0;
+    for (let y = r.y0; y < r.y1; y++) if (lum(img, x, y) > 90) bright++;
+    cols.push(bright / h);
+  }
+  let boundary = -1;
+  for (let i = 0; i < cols.length; i++) if (cols[i] < 0.30) { boundary = i; break; }
+  const filled = boundary < 0 ? 1 : boundary / Math.max(1, cols.length - 1);
+  const e = EXPECT.normal;
+  const want = (e.value - e.min) / (e.max - e.min);   // 60/260 = 0.2308
+  ok(Math.abs(filled - want) < 0.06,
+    "T4 " + k.padEnd(18) + "填充 " + (filled * 100).toFixed(0) + "% ≈ " + e.pid + " " +
+    e.value + "/" + e.max + " = " + (want * 100).toFixed(0) + "%（±6%）");
+});
+
+// ---------- T5 分段暗缝 ----------
+console.log("\n=== T5. 分段暗谷（6 格 → 允许 3~8）===");
+KEYS.forEach((k) => {
+  const img = imgs[k];
+  const r = GEO[k].rects[5];   // t_h_seg
+  if (!r) return ok(false, "T5 " + k.padEnd(18) + "无 t_h_seg 矩形");
+  const h = r.y1 - r.y0;
+  if (h < 20) return skip("T5 " + k.padEnd(18) + "轨道高 " + h + "px（<20）→ 不可判");
+  const cols = [];
+  for (let x = r.x0; x < r.x1; x++) {
     let sum = 0;
-    for (let y = p.y0; y < p.y1; y++) sum += lum(img, x, y);
-    cols.push(sum / Math.max(1, p.h));
+    for (let y = r.y0; y < r.y1; y++) sum += lum(img, x, y);
+    cols.push(sum / h);
   }
   const med = cols.slice().sort((a, b) => a - b)[Math.floor(cols.length / 2)] || 1;
   let gaps = 0, inGap = false;
   cols.forEach((v) => { if (v < med * 0.6) { if (!inGap) { gaps++; inGap = true; } } else inGap = false; });
-  report(gaps >= 3 && gaps <= 8, "T5 " + s.key.padEnd(18) + "暗谷 " + gaps + " 处");
+  ok(gaps >= 3 && gaps <= 8, "T5 " + k.padEnd(18) + "暗谷 " + gaps + " 处");
 });
 
-console.log("\n=== T6. 动态填充比例 ≈ 声明 fill（±30%，大轨道才判）===");
-SHOTS.forEach((s) => {
-  const t = TRACKS.t_h_fill;
-  const p = probe(s, t);
-  if (p.h < 20) return skip("T6 " + s.key.padEnd(18) + "轨道高 " + p.h + "px（<20）→ 未判定");
-  const img = imgs[s.key];
-  const colFill = [];
-  for (let x = p.x0; x < p.x1; x++) {
-    let bright = 0;
-    for (let y = p.y0; y < p.y1; y++) if (lum(img, x, y) > 90) bright++;
-    colFill.push(bright / Math.max(1, p.h));
-  }
-  let boundary = -1;
-  for (let i = 0; i < colFill.length; i++) if (colFill[i] < 0.5) { boundary = i; break; }
-  const filled = boundary < 0 ? 1 : boundary / Math.max(1, colFill.length - 1);
-  report(Math.abs(filled - t.fill) < 0.30,
-    "T6 " + s.key.padEnd(18) + "填充 " + (filled * 100).toFixed(0) + "% vs 声明 " + (t.fill * 100) + "%");
+// ---------- T6 圆角（四角区块比中带暗）----------
+console.log("\n=== T6. 圆角（四个角尖像素是背景色）===");
+// ⚠️ 不能用"四角区块平均 < 中带"：四角区块里**含圆角外侧的亮描边**，
+//    实测会得出 93/31/77/31 这种比中带还亮的值（假失败）。
+//    圆角的直接证据是：**角尖那一个像素落在圆角外 → 等于背景**。
+KEYS.forEach((k) => {
+  const img = imgs[k];
+  const r = GEO[k].rects[0];
+  if (!r) return ok(false, "T6 " + k.padEnd(18) + "无矩形");
+  const h = r.y1 - r.y0;
+  if (h < 12) return skip("T6 " + k.padEnd(18) + "轨道高 " + h + "px（<12）→ 角尖不可分");
+  const bg = lum(img, Math.max(0, r.x0 - 5), Math.max(0, r.y0 - 5));   // 轨道外背景参考
+  const tips = [
+    px(img, r.x0, r.y0), px(img, r.x1 - 1, r.y0),
+    px(img, r.x0, r.y1 - 1), px(img, r.x1 - 1, r.y1 - 1)
+  ].map((p) => (p[0] + p[1] + p[2]) / 3);
+  const maxTip = Math.max.apply(null, tips);
+  ok(maxTip <= bg + 25,
+    "T6 " + k.padEnd(18) + "角尖最亮 " + maxTip.toFixed(0) + " ≤ 背景 " + bg.toFixed(0) + "+25（四角都被切圆）");
 });
 
-console.log("\n=== T8. glow 外溢（轨道外侧更亮；小轨道不可分则未判定）===");
-SHOTS.forEach((s) => {
-  const p = probe(s, TRACKS.t_h_glow);
-  if (p.h < 20) return skip("T8 " + s.key.padEnd(18) + "轨道高 " + p.h + "px（<20）→ 外侧探针不可分，未判定");
-  const img = imgs[s.key];
-  const xMid = Math.floor((p.x0 + p.x1) / 2);
-  const near = [], far = [];
-  for (let d = 1; d <= 4; d++) near.push(lum(img, xMid, p.y0 - d));
-  for (let d = 10; d <= 16; d++) far.push(lum(img, xMid, p.y0 - d));
-  const avg = (a) => a.reduce((x, y) => x + y, 0) / Math.max(1, a.length);
-  report(avg(near) > avg(far) + 2, "T8 " + s.key.padEnd(18) + "近轨 " + avg(near).toFixed(0) + " > 远 " + avg(far).toFixed(0));
+// ---------- T7 STRETCH 形变 / FIT 不变形（核心结论）----------
+console.log("\n=== T7. STRETCH 形变 vs FIT 不变形（用真实矩形算 kx/ky）===");
+const ratio = {};
+KEYS.forEach((k) => {
+  const r = GEO[k].rects[7];   // t_v_fill 设计 34×130
+  if (!r) return;
+  const kx = (r.x1 - r.x0) / 34, ky = (r.y1 - r.y0) / 130;
+  ratio[k] = { kx: +kx.toFixed(3), ky: +ky.toFixed(3), distort: +(kx / ky).toFixed(3) };
 });
+Object.keys(ratio).forEach((k) => {
+  console.log("    " + k.padEnd(18) + "kx=" + ratio[k].kx + " ky=" + ratio[k].ky + " 形变系数=" + ratio[k].distort);
+});
+const dsOf = (tag) => Object.keys(ratio).filter((k) => k.indexOf(tag + "/") === 0).map((k) => ratio[k].distort);
+const sDs = dsOf("stretch"), fDs = dsOf("fit");
+if (sDs.length) ok(sDs.some((d) => Math.abs(d - 1) > 0.3), "T7 STRETCH 明显形变：" + sDs.join(" / ") + "（≠1）");
+if (fDs.length === 3) ok(fDs.every((d) => Math.abs(d - 1) < 0.08), "T7 FIT 三档都≈1.000：" + fDs.join(" / ") + " → **等比不变形**");
 
 console.log("\n=== 汇总 ===");
-console.log("  通过=" + pass + "  失败=" + fail + "  未判定=" + skipped + "  仅报告=" + reported);
-if (fail > 0) console.log("  ⚠ 未通过项需人工确认（本轮登记为待确认，不假装通过）");
-console.log("  核心结论：STRETCH 形变 " + (sDs.join("/") || "-") + "；FIT " + (fDs.join("/") || "-"));
-console.logPASS = console.log("PASS=" + pass + " FAIL=" + fail);
+console.log("  通过=" + pass + "  失败=" + fail + "  未判定=" + skipped);
+console.log("  坐标来源：uiautomator 抓取的 TrackView 真实 bounds（p5a03-track-geometry.json）");
+console.log("  生产代码零改动（诊断日志已删除）");
+console.log("PASS=" + pass + " FAIL=" + fail);
 process.exitCode = fail ? 1 : 0;

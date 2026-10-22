@@ -132,6 +132,29 @@
         font: window.normalizeFont(o.font),
       });
     }
+    // P5A-M04 阶段 C：判断这份量程是否**来自 PID 定义**（= 派生），是就打标记。
+    //
+    // 判定"派生"的两个充分条件：
+    //   ① 调用方**没给** min/max                → 我们按 PID 填的，肯定是派生
+    //   ② 调用方给的值**恰好等于该 PID 的定义**  → 预设 / 内置控件就是这么写的
+    //      （`presets.js`、`next-controls.js` 都显式传 `info.min/max`，
+    //        既有套件 `verify-data-bindings` 也要求它们的量程跟随换 PID）
+    //
+    // ⚠️ 这**不等于**"数值相等就判派生"：节点一旦被用户手改（`setNodeNum`），
+    //    标记立即清除（见 app.js），之后再换 PID 就不会覆盖 ——
+    //    所以"用户手填恰好等于 PID 默认"的场景不再被误判（verify-p5a04-range 的 C3）。
+    //
+    // 标记只在内存（不进设计文件）；草稿/导出/重新导入后消失 → 那就不再跟随（保守）。
+    if (base.type === window.NODE_GAUGE && window.markRangeAuto) {
+      const pidDef = window.BUILTIN_PIDS && window.BUILTIN_PIDS[base.pid];
+      const noExplicit = (o.min === undefined && o.max === undefined);
+      const equalsPidDef = !!pidDef
+        && Number(base.min) === Number(pidDef.min)
+        && Number(base.max) === Number(pidDef.max);
+      if (noExplicit || equalsPidDef) {
+        window.markRangeAuto(base, base.pid, base.min, base.max);
+      }
+    }
     return base;
   }
   window.createNode = createNode;

@@ -138,11 +138,12 @@
         <div class="prow"><label>缩放模式</label>
           <select id="scaleMode" onchange="canvasChanged()"></select>
         </div>
-        <!-- P5A-M03：缩放模式的**量化后果**（形变系数 / 留白），由 scale-hint.js 算 -->
+        <!-- P5A-M04：比例**预览**（临时）—— 只是改显示比例，不改主题设计尺寸 -->
         <div class="prow"><label>比例预览</label>
-          <button type="button" title="把画布尺寸设为手机竖屏 1080×2400" onclick="applyScreenPreset('phone')">手机竖屏</button>
-          <button type="button" title="把画布尺寸设为平板横屏 1600×1000" onclick="applyScreenPreset('tablet')">平板横屏</button>
-          <button type="button" title="把画布尺寸设为车载宽屏 1280×600" onclick="applyScreenPreset('carwide')">车载宽屏</button>
+          <button type="button" title="临时按手机竖屏 1080×2400 的比例显示（不改主题尺寸、不进草稿）" onclick="applyScreenPreset('phone')">手机竖屏</button>
+          <button type="button" title="临时按平板横屏 1600×1000 的比例显示（不改主题尺寸、不进草稿）" onclick="applyScreenPreset('tablet')">平板横屏</button>
+          <button type="button" title="临时按车载宽屏 1280×600 的比例显示（不改主题尺寸、不进草稿）" onclick="applyScreenPreset('carwide')">车载宽屏</button>
+          <button type="button" title="退出预览，回到正式画布尺寸" onclick="clearScreenPreset()">恢复正式尺寸</button>
         </div>
         <div id="scaleHint" class="hint" style="white-space:pre-line"></div>
         <details class="helpDetails"><summary>画布尺寸与缩放怎么选？</summary>

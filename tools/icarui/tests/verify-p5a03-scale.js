@@ -75,8 +75,15 @@ const ok = (c, m) => (c ? (pass++, console.log("  ✅ " + m)) : (fail++, console
     if (!cdp) throw new Error("连不上 CDP");
     await cdp.send("Runtime.enable");
     await cdp.eval("window.alert=function(){};window.confirm=function(){return true};window.prompt=function(){return null};1");
-    for (let i = 0; i < 50; i++) {
-      if (await cdp.eval("!!(window.CanvasState && window.scaleModeStats && window.SCREEN_PRESETS)").catch(() => false)) break;
+    // ⚠️ 必须等 **design 真的就位**：只判 CanvasState 存在不够 ——
+    //    全量顺序跑时曾出现页面刚起、design 还是 null，于是第一个 eval 就
+    //    "Cannot read properties of null (reading 'canvas')"（单跑不会复现）。
+    for (let i = 0; i < 80; i++) {
+      const ready = await cdp.eval(
+        "!!(window.CanvasState && window.CanvasState.design && window.CanvasState.design.canvas" +
+        " && window.scaleModeStats && window.SCREEN_PRESETS)"
+      ).catch(() => false);
+      if (ready) break;
       await sleep(400);
     }
 
@@ -126,7 +133,11 @@ const ok = (c, m) => (c ? (pass++, console.log("  ✅ " + m)) : (fail++, console
     ok(fillCrop > 0, "C3 FILL 裁掉 " + Math.round(fillCrop) + "px（X " +
       Math.round(c3.fillCropX) + " / Y " + Math.round(c3.fillCropY) + "，和 > 0）");
 
-    console.log("\n=== C4. 比例预览按钮：只改 designW/H，**节点数据一个字节不动** ===");
+    // ⚠️ P5A-M04 阶段 B **主动改了语义**：原来点预览会写 designW/H（等于改了正式主题），
+    // 现在改成**临时预览**（只设 S.previewAspect，不碰设计数据）。
+    // 所以这里的断言方向反了：**设计尺寸不变**才是正确行为。
+    // 「预览确实生效」由 previewAspect 断言；数据安全由 verify-p5a04-preview 全量覆盖。
+    console.log("\n=== C4. 比例预览按钮：**不修改** designW/H，节点数据也不动 ===");
     const c4 = await cdp.eval(`(function(){
       const g = window.createNode(window.NODE_GAUGE, { pid:"obd.rpm", x:11, y:22, w:133, h:144 });
       window.commit(function(){ window.CanvasState.design.nodes.push(g); }, "加表");
@@ -136,13 +147,19 @@ const ok = (c, m) => (c ? (pass++, console.log("  ✅ " + m)) : (fail++, console
       window.applyScreenPreset("carwide");
       function find(id){ let o=null; window.walk(window.CanvasState.design.nodes,n=>{ if(n.id===id) o=n; }); return o; }
       const a = find(g.id);
-      return {
+      const out = {
         before: before, after: { x:a.x, y:a.y, w:a.w, h:a.h, min:a.min, max:a.max },
         dw: [beforeDW, window.CanvasState.design.canvas.designW],
-        dh: [beforeDH, window.CanvasState.design.canvas.designH]
+        dh: [beforeDH, window.CanvasState.design.canvas.designH],
+        previewAspect: window.CanvasState.previewAspect
       };
+      window.clearScreenPreset();
+      return out;
     })()`);
-    ok(c4.dw[1] === 1280 && c4.dh[1] === 600, "C4 画布尺寸变为 1280×600（" + c4.dw[0] + "×" + c4.dh[0] + " → " + c4.dw[1] + "×" + c4.dh[1] + "）");
+    ok(c4.dw[1] === c4.dw[0] && c4.dh[1] === c4.dh[0],
+      "C4 设计尺寸**未变**（" + c4.dw[0] + "×" + c4.dh[0] + " → " + c4.dw[1] + "×" + c4.dh[1] + "）");
+    ok(Math.abs(c4.previewAspect - 1280 / 600) < 1e-6,
+      "C4 但预览确实生效（previewAspect=" + (c4.previewAspect || 0).toFixed(4) + "）");
     ok(JSON.stringify(c4.before) === JSON.stringify(c4.after),
       "C4 节点 x/y/w/h/min/max **完全未变**（" + JSON.stringify(c4.after) + "）");
 
