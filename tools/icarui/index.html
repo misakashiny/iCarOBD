@@ -138,6 +138,13 @@
         <div class="prow"><label>缩放模式</label>
           <select id="scaleMode" onchange="canvasChanged()"></select>
         </div>
+        <!-- P5A-M03：缩放模式的**量化后果**（形变系数 / 留白），由 scale-hint.js 算 -->
+        <div class="prow"><label>比例预览</label>
+          <button type="button" title="把画布尺寸设为手机竖屏 1080×2400" onclick="applyScreenPreset('phone')">手机竖屏</button>
+          <button type="button" title="把画布尺寸设为平板横屏 1600×1000" onclick="applyScreenPreset('tablet')">平板横屏</button>
+          <button type="button" title="把画布尺寸设为车载宽屏 1280×600" onclick="applyScreenPreset('carwide')">车载宽屏</button>
+        </div>
+        <div id="scaleHint" class="hint" style="white-space:pre-line"></div>
         <details class="helpDetails"><summary>画布尺寸与缩放怎么选？</summary>
           <div class="hint">填入目标屏幕的宽和高，画布会按这个比例显示。拉伸会铺满屏幕；等比模式可能留边。旧设计改成等比后，请重新检查布局。</div>
         </details>
@@ -236,6 +243,7 @@
 <script src="js/core/namespace.js"></script>
 <script src="js/schema.js"></script>
 <script src="js/model.js"></script>
+<script src="js/scale-hint.js"></script>
 <script src="js/validate.js"></script>
 <script src="js/presets.js"></script>
 <!-- 注册表必须在 presets.js 之后：adapter 要读 BUILTIN_CONTROLS 做等价比对；

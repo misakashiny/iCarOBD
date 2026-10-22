@@ -1,0 +1,220 @@
+{
+  "schema": "icar.ui/2",
+  "meta": {
+    "name": "P5A-M03 状态灯闪烁测试",
+    "author": "P5A-M02 自动化",
+    "description": "三态状态灯（合成素材）+ 低值报警缺口 + PID 不存在未知态"
+  },
+  "name": "P5A-M03 状态灯闪烁测试",
+  "author": "P5A-M02 自动化",
+  "description": "三态状态灯（合成素材）+ 低值报警缺口 + PID 不存在未知态",
+  "themeId": "",
+  "pages": [
+    {
+      "id": "pg0",
+      "name": "主页面",
+      "nodes": [
+        {
+          "id": "g_speed",
+          "type": "gauge",
+          "name": "车速",
+          "pid": "obd.speed",
+          "x": 130,
+          "y": 10,
+          "w": 100,
+          "h": 80,
+          "label": "车速",
+          "unit": "km/h",
+          "cardStyle": 0,
+          "neonPreset": 0,
+          "ringStyle": 0,
+          "ringSegments": 1
+        },
+        {
+          "id": "l_coolant",
+          "type": "image",
+          "name": "水温灯",
+          "x": 20,
+          "y": 110,
+          "w": 70,
+          "h": 60,
+          "assetId": "a_normal",
+          "statePid": "obd.coolant",
+          "states": {
+            "normal": {
+              "assetId": "a_normal"
+            },
+            "warn": {
+              "assetId": "a_warn",
+              "blink": true,
+              "blinkMs": 400
+            },
+            "critical": {
+              "assetId": "a_critical",
+              "blink": true,
+              "blinkMs": 400
+            }
+          }
+        },
+        {
+          "id": "l_speed",
+          "type": "image",
+          "name": "车速灯",
+          "x": 145,
+          "y": 110,
+          "w": 70,
+          "h": 60,
+          "assetId": "a_normal",
+          "statePid": "obd.speed",
+          "states": {
+            "normal": {
+              "assetId": "a_normal"
+            },
+            "warn": {
+              "assetId": "a_warn",
+              "blink": true,
+              "blinkMs": 400
+            },
+            "critical": {
+              "assetId": "a_critical",
+              "blink": false,
+              "blinkMs": 400
+            }
+          }
+        },
+        {
+          "id": "l_volt_low",
+          "type": "image",
+          "name": "低电压灯",
+          "x": 270,
+          "y": 110,
+          "w": 70,
+          "h": 60,
+          "assetId": "a_normal",
+          "statePid": "obd.voltage",
+          "states": {
+            "normal": {
+              "assetId": "a_normal"
+            },
+            "warn": {
+              "assetId": "a_warn",
+              "blink": true,
+              "blinkMs": 400
+            },
+            "critical": {
+              "assetId": "a_critical",
+              "blink": false,
+              "blinkMs": 400
+            }
+          }
+        },
+        {
+          "id": "l_nopid",
+          "type": "image",
+          "name": "无此PID灯",
+          "x": 20,
+          "y": 190,
+          "w": 70,
+          "h": 60,
+          "assetId": "a_normal",
+          "statePid": "no_such_pid_p5a02",
+          "states": {
+            "normal": {
+              "assetId": "a_normal"
+            },
+            "warn": {
+              "assetId": "a_warn",
+              "blink": true,
+              "blinkMs": 400
+            },
+            "critical": {
+              "assetId": "a_critical",
+              "blink": false,
+              "blinkMs": 400
+            }
+          }
+        },
+        {
+          "id": "l_rpm",
+          "type": "image",
+          "name": "转速灯",
+          "x": 145,
+          "y": 190,
+          "w": 70,
+          "h": 60,
+          "assetId": "a_normal",
+          "statePid": "obd.rpm",
+          "states": {
+            "normal": {
+              "assetId": "a_normal"
+            },
+            "warn": {
+              "assetId": "a_warn",
+              "blink": true,
+              "blinkMs": 400
+            },
+            "critical": {
+              "assetId": "a_critical",
+              "blink": false,
+              "blinkMs": 400
+            }
+          }
+        },
+        {
+          "id": "l_load",
+          "type": "image",
+          "name": "负荷灯",
+          "x": 270,
+          "y": 190,
+          "w": 70,
+          "h": 60,
+          "assetId": "a_normal",
+          "statePid": "obd.load",
+          "states": {
+            "normal": {
+              "assetId": "a_normal"
+            },
+            "warn": {
+              "assetId": "a_warn",
+              "blink": true,
+              "blinkMs": 400
+            },
+            "critical": {
+              "assetId": "a_critical",
+              "blink": false,
+              "blinkMs": 400
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "pageIndex": 0,
+  "assets": [
+    {
+      "id": "a_normal",
+      "name": "灯-正常",
+      "kind": "custom",
+      "path": "assets/normal.png",
+      "w": 64,
+      "h": 64
+    },
+    {
+      "id": "a_warn",
+      "name": "灯-警告",
+      "kind": "custom",
+      "path": "assets/warn.png",
+      "w": 64,
+      "h": 64
+    },
+    {
+      "id": "a_critical",
+      "name": "灯-严重",
+      "kind": "custom",
+      "path": "assets/critical.png",
+      "w": 64,
+      "h": 64
+    }
+  ],
+  "canvases": []
+}

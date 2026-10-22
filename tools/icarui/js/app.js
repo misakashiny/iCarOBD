@@ -1080,6 +1080,8 @@
     // 控制库（实测 60 个控件时 8.8ms，占一次滚轮事件 17.8ms 的一半）。
     // 缩放期间跳过，收尾时 canvas.js 的 wheelEndTimer 会补一次完整刷新。
     if (!S.suppressPanelRender && window.renderPanels) window.renderPanels();
+    // P5A-M03：缩放模式的量化提示（草稿恢复 / 切换画布后 canvas 可能变过）
+    if (window.refreshScaleHint) { try { window.refreshScaleHint(); } catch (e) { console.warn("[scale-hint]", e); } }
     // P4A.1：同步 Schema 属性面板（并行面板，只刷新值、不重建 DOM）。
     // ⚠️ 旧面板改字段后走的是 refreshAll，若这里不同步，新面板会显示旧值。
     // 放在 renderPanels 之后、draw 之前：与旧面板同一次刷新里完成。
@@ -2866,6 +2868,46 @@
       S.design.canvas.scaleMode = Number(getVal("scaleMode")) || 0;
     }, "改设计分辨率");
     window.applyCanvasSize();
+    window.refreshScaleHint();
+  };
+
+  /**
+   * 把画布尺寸设成某种常见屏幕比例（P5A-M03 阶段 C）。
+   *
+   * ## 为什么只改 `designW/designH`，不动节点
+   *
+   * 任务要求「不因用户更换模式而改动节点位置或尺寸数据」。
+   * 节点坐标是 **0..360 画布单位**，与 designW/H 无关；designW/H 只决定
+   * 「画布按什么宽高比显示」。改它 = 改预览比例，**节点数据一个字节不动**。
+   *
+   * 走 `canvasChanged()` 这条既有路径（会 commit → 可撤销、会同步 JSON）。
+   */
+  window.applyScreenPreset = function (id) {
+    const p = (window.SCREEN_PRESETS || []).find(x => x.id === id);
+    if (!p) return;
+    const dw = el("dW"), dh = el("dH");
+    if (dw) dw.value = String(p.w);
+    if (dh) dh.value = String(p.h);
+    window.canvasChanged();
+    window.toast && window.toast("画布尺寸已设为" + p.name + " " + p.w + "×" + p.h + "（节点位置未改）");
+  };
+
+  /**
+   * 刷新「比例预览」提示（P5A-M03 阶段 C）。
+   *
+   * 只读 + 只算：对当前设计分辨率与三档屏幕，算出形变系数/留边/裁切。
+   * 与 Android `computeViewport()` 同一口径（见 js/scale-hint.js 文件头）。
+   */
+  window.refreshScaleHint = function () {
+    const box = el("scaleHint");
+    if (!box || typeof window.scaleModeTable !== "function") return;
+    const t = window.scaleModeTable();
+    const icon = { ok: "✅", warn: "⚠️", bad: "❌" };
+    const lines = t.rows.map(r =>
+      icon[r.level] + " " + r.name + " " + r.screen + " — " + r.text.replace(/\*\*/g, "")
+    );
+    box.textContent = "画布 " + t.designW + "×" + t.designH + " · 设为「" +
+      (window.SCALE_MODES.find(m => m.v === t.mode) || {}).n + "」时的实际效果：\n" + lines.join("\n");
   };
 
   // ---- 背景图（v1 兼容字段：只写路径，图片本身放 assets/）

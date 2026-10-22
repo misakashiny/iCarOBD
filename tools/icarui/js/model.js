@@ -60,12 +60,25 @@
       // 所以这里统一：`pid` = 解析后的 id（内部只用它做查表），
       // `rawPid` = 用户写的原样（编辑器回显 + 序列化时写回别名）。
       const rawPid = o.rawPid || o.pid || "obd.rpm";
+      const pidId = window.resolvePid(rawPid);
+      // ---- 量程：**没显式给就按 PID 定义填**（P5A-M03 修）
+      //
+      // 这里原来写死 `min:0 / max:100`。后果是「新建仪表 → 主 PID 是转速(0..8000)
+      // → 节点量程还是 0..100」，而**用 parts 拼装、指针没显式绑 PID 时
+      // `GaugePartsView` 回落到节点量程**（见 GaugePartsView.valueRangeOf）→
+      // 转速 800 早已 ≥100 → 指针钉在端点不动。
+      //
+      // 现在：调用方给了 min/max 就照用（**用户/预设的显式值优先**），
+      // 没给才查 PID 定义。查不到 PID（自定义）时仍回落 0..100（老行为）。
+      const pidDef = window.BUILTIN_PIDS && window.BUILTIN_PIDS[pidId];
+      const defMin = pidDef && Number.isFinite(pidDef.min) ? pidDef.min : 0;
+      const defMax = pidDef && Number.isFinite(pidDef.max) ? pidDef.max : 100;
       Object.assign(base, {
-        pid: window.resolvePid(rawPid),
+        pid: pidId,
         rawPid: rawPid,
         style: num(o.style, 0),
-        min: num(o.min, 0),
-        max: num(o.max, 100),
+        min: num(o.min, defMin),
+        max: num(o.max, defMax),
         warnLow: o.warnLow === undefined ? null : o.warnLow,
         warnHigh: o.warnHigh === undefined ? null : o.warnHigh,
         extraPids: o.extraPids || [],

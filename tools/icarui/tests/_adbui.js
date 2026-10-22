@@ -70,8 +70,10 @@ function findAll(items, substr) {
 }
 const tap = (x, y) => sh(["shell", "input", "tap", String(x), String(y)]);
 const back = () => sh(["shell", "input", "keyevent", "KEYCODE_BACK"]);
-const swipeL = (y) => sh(["shell", "input", "swipe", "1000", String(y || 1200), "100", String(y || 1200), "200"]);
-const swipeR = (y) => sh(["shell", "input", "swipe", "100", String(y || 1200), "1000", String(y || 1200), "200"]);
+// ⚠️ P5A-M03 实测：1000→100 这种"贴边"的滑动在这个 App 里**不稳定**（常常不翻页），
+//    900→150 + 250ms 才稳定触发 pager 翻页。改这里之前请先跑一遍翻页用例。
+const swipeL = (y) => sh(["shell", "input", "swipe", "900", String(y || 1200), "150", String(y || 1200), "250"]);
+const swipeR = (y) => sh(["shell", "input", "swipe", "150", String(y || 1200), "900", String(y || 1200), "250"]);
 
 /** 前台 Activity（简名）；不在 App 返回 null */
 function foreground() {

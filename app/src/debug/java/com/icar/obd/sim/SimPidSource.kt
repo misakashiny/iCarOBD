@@ -85,6 +85,7 @@ object SimPidSource {
      *
      * @return 是否真的起来了（拿不到可用 PID 时会返回 false）
      */
+    @Synchronized
     fun enable(s: SimScenario = SimScenario.NORMAL, extra: List<String> = emptyList()): Boolean {
         scenario = s
         extraPids = extra
@@ -126,6 +127,7 @@ object SimPidSource {
      * 每个 PID 标成 `ok=false, error="采集来源已停止"` ——
      * 这正是「停止模拟时清理自身注入的数据状态」。
      */
+    @Synchronized
     fun disable() {
         stopWatchdog()
         SignalSimulator.stop()
@@ -150,6 +152,7 @@ object SimPidSource {
      * `DISCONNECT` 语义就是「数据断开」= 关掉模拟来源（触发正确失效）；
      * 其它场景若当前没在跑，会重新起一个来源。
      */
+    @Synchronized
     fun setScenario(s: SimScenario) {
         scenario = s
         if (s == SimScenario.DISCONNECT) {
@@ -174,6 +177,7 @@ object SimPidSource {
      * 常量波形下数值不变，但会重新 `publish` 一轮 → UI 立即重绘，
      * 不用干等 10Hz 定时器。
      */
+    @Synchronized
     fun step(n: Int = 1) {
         repeat(n.coerceIn(0, 200)) {
             tick++

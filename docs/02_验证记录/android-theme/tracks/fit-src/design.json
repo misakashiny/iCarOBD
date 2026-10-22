@@ -1,0 +1,195 @@
+{
+  "schema": "icar.ui/2",
+  "meta": {
+    "name": "P5A-M03 轨道全能力（等比）",
+    "author": "P5A-M03 自动化",
+    "description": "代码绘制轨道全能力：填充/色带/渐变/刻度/分段/发光/纵向"
+  },
+  "name": "P5A-M03 轨道全能力（等比）",
+  "author": "P5A-M03 自动化",
+  "description": "代码绘制轨道全能力：填充/色带/渐变/刻度/分段/发光/纵向",
+  "themeId": "",
+  "canvas": {
+    "unit": 360,
+    "scaleMode": 1
+  },
+  "pages": [
+    {
+      "id": "pg0",
+      "name": "主页面",
+      "nodes": [
+        {
+          "id": "t_h_fill",
+          "type": "image",
+          "name": "横填充",
+          "pid": "obd.speed",
+          "x": 10,
+          "y": 20,
+          "w": 160,
+          "h": 34,
+          "trackStyle": {
+            "orient": "h",
+            "radius": 12,
+            "band": false,
+            "gradient": null,
+            "inset": false,
+            "glow": false,
+            "ticks": 0,
+            "segments": 0,
+            "fill": 0.55
+          }
+        },
+        {
+          "id": "t_h_band",
+          "type": "image",
+          "name": "横色带",
+          "pid": "obd.rpm",
+          "x": 190,
+          "y": 20,
+          "w": 160,
+          "h": 34,
+          "trackStyle": {
+            "orient": "h",
+            "radius": 12,
+            "band": true,
+            "gradient": null,
+            "inset": false,
+            "glow": false,
+            "ticks": 0,
+            "segments": 0,
+            "fill": null
+          }
+        },
+        {
+          "id": "t_h_gloss",
+          "type": "image",
+          "name": "横 gloss",
+          "pid": "obd.load",
+          "x": 10,
+          "y": 74,
+          "w": 160,
+          "h": 34,
+          "trackStyle": {
+            "orient": "h",
+            "radius": 12,
+            "band": false,
+            "gradient": "gloss",
+            "inset": false,
+            "glow": false,
+            "ticks": 0,
+            "segments": 0,
+            "fill": 0.45
+          }
+        },
+        {
+          "id": "t_h_fade",
+          "type": "image",
+          "name": "横 fade",
+          "pid": "obd.throttle",
+          "x": 190,
+          "y": 74,
+          "w": 160,
+          "h": 34,
+          "trackStyle": {
+            "orient": "h",
+            "radius": 12,
+            "band": false,
+            "gradient": "fade",
+            "inset": false,
+            "glow": false,
+            "ticks": 0,
+            "segments": 0,
+            "fill": 0.35
+          }
+        },
+        {
+          "id": "t_h_ticks",
+          "type": "image",
+          "name": "横刻度",
+          "pid": "obd.coolant",
+          "x": 10,
+          "y": 128,
+          "w": 160,
+          "h": 34,
+          "trackStyle": {
+            "orient": "h",
+            "radius": 12,
+            "band": false,
+            "gradient": null,
+            "inset": false,
+            "glow": false,
+            "ticks": 8,
+            "segments": 0,
+            "fill": 0.6
+          }
+        },
+        {
+          "id": "t_h_seg",
+          "type": "image",
+          "name": "横分段",
+          "pid": "obd.speed",
+          "x": 190,
+          "y": 128,
+          "w": 160,
+          "h": 34,
+          "trackStyle": {
+            "orient": "h",
+            "radius": 12,
+            "band": false,
+            "gradient": null,
+            "inset": false,
+            "glow": false,
+            "ticks": 0,
+            "segments": 6,
+            "fill": 0.5
+          }
+        },
+        {
+          "id": "t_h_glow",
+          "type": "image",
+          "name": "横发光",
+          "pid": "obd.rpm",
+          "x": 10,
+          "y": 182,
+          "w": 130,
+          "h": 34,
+          "trackStyle": {
+            "orient": "h",
+            "radius": 12,
+            "band": false,
+            "gradient": null,
+            "inset": true,
+            "glow": true,
+            "ticks": 0,
+            "segments": 0,
+            "fill": 0.7
+          }
+        },
+        {
+          "id": "t_v_fill",
+          "type": "image",
+          "name": "纵向填充",
+          "pid": "obd.coolant",
+          "x": 300,
+          "y": 182,
+          "w": 34,
+          "h": 130,
+          "trackStyle": {
+            "orient": "v",
+            "radius": 16,
+            "band": false,
+            "gradient": null,
+            "inset": false,
+            "glow": false,
+            "ticks": 0,
+            "segments": 0,
+            "fill": 0.5
+          }
+        }
+      ]
+    }
+  ],
+  "pageIndex": 0,
+  "assets": [],
+  "canvases": []
+}
