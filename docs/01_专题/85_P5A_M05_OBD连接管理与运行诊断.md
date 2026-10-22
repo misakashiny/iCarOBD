@@ -347,7 +347,18 @@ PID: 生效 5 / 有值 3 / 成功 3 / 失败 2
 
 ## 十一、GitHub 最终 Hash 与同步结果
 
-见提交后回填。
+**`3419849957a138ed27315e4db5604514e5a41944`**
+
+| 项 | 值 |
+|---|---|
+| 本地 HEAD | `3419849957a138ed27315e4db5604514e5a41944` |
+| 远程 `origin/main` | `3419849957a138ed27315e4db5604514e5a41944` |
+| 一致性 | ✅ **完全一致**（`git ls-remote` 实测）|
+| Push | ✅ `e62838c..3419849`（快进，无重写）|
+| 提交链接 | https://github.com/misakashiny/iCarOBD/commit/3419849957a138ed27315e4db5604514e5a41944 |
+| 禁止操作 | 未使用 `--force` / `--force-with-lease` / `reset --hard` / `--allow-unrelated-histories` |
+| 工作区 | 干净（仅用户既有未跟踪物）|
+| 敏感扫描 | ✅ 无密钥 / Token / 私钥 |
 
 ---
 
