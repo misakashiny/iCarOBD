@@ -380,7 +380,16 @@ JVM（`GaugePartsValueBindingTest` 16 项）覆盖：`neededPids` 递归含嵌�
 
 ## 十一、GitHub 完整 Commit Hash、提交链接与同步结果
 
-见提交后回填（本文件末尾）。
+**`ea8df65a04d93e08e2c4fc65d9bc470b33c2ba07`**
+
+| 项 | 值 |
+|---|---|
+| 本地 HEAD | `ea8df65a04d93e08e2c4fc65d9bc470b33c2ba07` |
+| 远程 `origin/main` | `ea8df65a04d93e08e2c4fc65d9bc470b33c2ba07` |
+| 一致性 | ✅ **完全一致** |
+| Push | ✅ `9ddfde9..ea8df65`（快进，无重写）|
+| 提交链接 | https://github.com/misakashiny/iCarOBD/commit/ea8df65a04d93e08e2c4fc65d9bc470b33c2ba07 |
+| 禁止操作 | 未使用 `--force` / `--force-with-lease` / `reset --hard` / `--allow-unrelated-histories` |
 
 ---
 
