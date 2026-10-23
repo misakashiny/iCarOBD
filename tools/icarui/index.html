@@ -278,6 +278,18 @@
 <script src="js/registry/catalog.js"></script>
 <script src="js/adapter/legacy-adapter.js"></script>
 <script src="js/canvas.js"></script>
+<!-- P5B-M01 阶段 B：style 3/4/5/6/7 的预览（与 Android 真实外观对齐）。
+     必须在 canvas.js **之后** —— 它读 CanvasState / BUILTIN_PIDS，
+     并在 canvas.js 调 drawGaugeStylePreview 时才真正工作。 -->
+<script src="js/gauge-preview.js"></script>
+<!-- P5B-M01 阶段 E：高级仪表基元**隔离原型**（SegmentedArc / PathProgress / ValueText / Shape）。
+     ⚠️ 它只挂在 window.AdvancedPrimitives 上，**不被 canvas.js 引用**，
+     不注册任何 schema / 属性面板字段 → 不会写进正式 icar.ui/2。
+     仅供原型验证与将来移植参考。 -->
+<script src="js/advanced-primitives-proto.js"></script>
+<!-- P5B-M01 阶段 F：两套组合仪表示例**原型**（依赖阶段 E 的 AdvancedPrimitives）。
+     同样只是原型：不注册节点类型、不写 icar.ui/2。 -->
+<script src="js/dashboard-proto.js"></script>
 <script src="next-library/data.js"></script>
 <script src="js/next-controls.js"></script>
 <script src="js/data-bindings.js"></script>

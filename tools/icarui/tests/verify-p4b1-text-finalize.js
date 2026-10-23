@@ -85,8 +85,12 @@ async function main() {
     ok(defaults.t_label.size === 7 && defaults.t_label.weight === 400 &&
       defaults.t_label.color === '#8FA0B8' && defaults.t_label.align === 'center',
       't_label defaults unchanged (size7/weight400/#8FA0B8/center)');
-    ok(defaults.text.size === 6, 'text default size unchanged (6)');
-    ok(defaults.box_h1.size === 6, 'box_h1 default size unchanged (6, D-01 kept)');
+    // ⚠️ P5B-M01 阶段 D **有意改变**：box_h1 / text 的预设 fontSize 曾被静默丢弃
+    // （回落成 6）。已在 model.js createNode 的 NODE_TEXT 分支加扁平字段兼容 →
+    // 现在按预设声明值 30 / 18。断言方向反转，不是放宽门槛。
+    // 详见 verify-p4b-text-props 第七节的完整说明。
+    ok(defaults.text.size === 18, 'text default size = 18 (preset literal; was 6 before P5B-M01)');
+    ok(defaults.box_h1.size === 30, 'box_h1 default size = 30 (preset literal; was 6 before P5B-M01)');
     ok(defaults.t_bigunit.weight === 400, 't_bigunit default weight unchanged (400, D-02 kept)');
     ok(defaults.t_big.size === 24 && defaults.t_big.weight === 900, 't_big defaults unchanged');
 

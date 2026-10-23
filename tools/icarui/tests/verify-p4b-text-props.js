@@ -327,18 +327,33 @@ async function main() {
     ok(noSel.noneFamily === null, 'no selection → family null');
     ok(noSel.multiFamily === null, 'multi selection → family null');
 
-    // ================= 七、历史字体问题只读不修 =================
-    const debt = JJ(await step('legacy font debt read-only',
+    // ================= 七、历史字体技术债（P5B-M01 已还清）=================
+    //
+    // ⚠️ **这一节的行为在 P5B-M01 阶段 D 被有意改变**，不是放宽断言：
+    //
+    //   原来（P4B 时期）：box_h1/h2/note 源码字面写 size 30/20/12，但
+    //   `presets.js` 传的是**扁平的 `fontSize`**，而 `createNode` 只读嵌套的 `o.font`
+    //   → `normalizeFont(undefined)` 回落到 `FONT_DEFAULT.size = 6`。
+    //   当时判定为"历史技术债，只读不修"，所以断言写死 `size === 6`。
+    //
+    //   P5B-M01 任务明确要求：「确认其默认 font 对象是否被错误归一化。**如属真实缺陷：
+    //   修复创建路径。保证用户显式字体优先。**」
+    //   → 已在 `model.js createNode` 的 NODE_TEXT 分支加扁平字段兼容。
+    //
+    //   所以现在断言**方向反转**：必须是预设声明的 30/20/12，不再是 6。
+    //   `text` 本身没有预设字号（源码没给），仍应回落 6 —— 这条保持不变。
+    const debt = JJ(await step('legacy font state',
       "JSON.stringify((function(){var R=ICAR.registry.Control;" +
       "function fontOf(k){var n=R.byLegacyKey(k).build();return {size:n.font.size,weight:n.font.weight};}" +
       "return {box_h1:fontOf('box_h1'),box_h2:fontOf('box_h2'),box_note:fontOf('box_note')," +
       "t_bigunit:fontOf('t_bigunit'),text:fontOf('text')};})())"));
-    // D-01：box_* 实际是 size=6 / weight=400（源码字面是 30/700 等）
-    ok(debt.box_h1.size === 6, 'D-01 read-only: box_h1 actual size=6 (NOT the source literal 30)');
-    ok(debt.box_h2.size === 6, 'D-01 read-only: box_h2 actual size=6');
-    ok(debt.box_note.size === 6, 'D-01 read-only: box_note actual size=6');
-    ok(debt.t_bigunit.weight === 400, 'D-02 read-only: t_bigunit actual weight=400');
-    ok(debt.text.size === 6, 'D-03 read-only: text actual size=6');
+    // D-01（P5B-M01 修复后）：box_* 应按预设声明取 30 / 20 / 12
+    ok(debt.box_h1.size === 30, 'D-01 box_h1 size=30（预设声明值，P5B-M01 修复前是 6）');
+    ok(debt.box_h2.size === 20, 'D-01 box_h2 size=20（预设声明值）');
+    ok(debt.box_note.size === 12, 'D-01 box_note size=12（预设声明值）');
+    ok(debt.t_bigunit.weight === 400, 'D-02 t_bigunit weight 仍为 400（未被本轮波及）');
+    // `text` 预设源码也写了 `fontSize: 18` —— 修复后同样从 6 变成 18（与 box_* 同源问题）
+    ok(debt.text.size === 18, 'D-03 text size=18（预设声明值，P5B-M01 修复前是 6）');
 
     // ================= 八、文字族像素基准 =================
     const pixBase = JSON.parse(require('fs').readFileSync(

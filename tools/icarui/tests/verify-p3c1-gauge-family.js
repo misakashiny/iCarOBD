@@ -166,6 +166,50 @@ async function main() {
       ok(cur === pixels[name], 'pixel match: ' + name + ' (' + cur + ' vs ' + pixels[name] + ')');
     }
 
+    // ---------------- 五之二、防回退（P5B-M01 阶段 B）----------------
+    //
+    // P5B-M01 把 style 3/4/5/6/7 的编辑器预览从「简化/占位」改成「与 Android 真实外观对齐」，
+    // 所以 style 3/4/5 的像素指纹**必然改变**（旧指纹是错误外观的快照）。
+    //
+    // 这里钉住"确实变了"，防止以后有人把旧画法改回去而不被发现：
+    //   style 3 旧 988197df（装饰正弦波）→ 新必须是真实历史折线
+    //   style 4 旧 e35b75a7(volt)/1abc8c4f(volt_range)（一条线+×2）→ 新必须是两个数值格
+    //   style 5 旧 9a26df18（十字线+×4）→ 新必须是四个数值格
+    //
+    // ⚠️ 同时钉住 **style 0/1/2 一个字节都不能变**（它们本来就正确，不该被这次改动波及）。
+    const LEGACY_WRONG = {
+      g_volt: 'e35b75a7:90000',
+      g_throttle: '8a3b50c8:90000',
+      g_speed_style3: '988197df:90000',
+      g_coolant_style5: '9a26df18:90000',
+      g_volt_range: '1abc8c4f:90000',
+    };
+    for (const name of Object.keys(LEGACY_WRONG)) {
+      const now = await step('no-regress ' + name, (function () {
+        // 与上面完全相同的绘制方式
+        const c = CASES.find((x) => x[0] === name);
+        if (c[1] === null) {
+          return "String((function(){var c=(window.BUILTIN_CONTROLS||[]).find(function(x){return x.key===" + J(name) +
+            ";});var n=c.make();var cv=document.createElement('canvas');cv.width=300;cv.height=300;drawNodePreview(n,cv);" +
+            "var d=cv.getContext('2d').getImageData(0,0,300,300).data;var h=2166136261>>>0;" +
+            "for(var i=0;i<d.length;i+=17){h^=d[i];h=Math.imul(h,16777619)>>>0;}" +
+            "var nz=0;for(var i2=3;i2<d.length;i2+=4)if(d[i2]>0)nz++;return h.toString(16)+':'+nz;})())";
+        }
+        return "String((function(){var d=ICAR.registry.Control.byLegacyKey(" + J(c[1]) + ");var n=d.build(" + c[2] + ");" +
+          "var cv=document.createElement('canvas');cv.width=300;cv.height=300;drawNodePreview(n,cv);" +
+          "var dd=cv.getContext('2d').getImageData(0,0,300,300).data;var h=2166136261>>>0;" +
+          "for(var i=0;i<dd.length;i+=17){h^=dd[i];h=Math.imul(h,16777619)>>>0;}" +
+          "var nz=0;for(var i2=3;i2<dd.length;i2+=4)if(dd[i2]>0)nz++;return h.toString(16)+':'+nz;})())";
+      })());
+      ok(now !== LEGACY_WRONG[name],
+        'P5B 防回退: ' + name + ' 已不再画成旧外观（新 ' + String(now).slice(0, 12) + ' ≠ 旧 ' + LEGACY_WRONG[name].slice(0, 12) + '）');
+    }
+    // style 0/1/2 不得被波及
+    for (const name of ['g_speed', 'g_coolant', 'g_fuel', 'g_load', 'g_fuel_nothresh']) {
+      ok(pixels[name] && pixels[name].indexOf(':90000') > 0,
+        'P5B 隔离: ' + name + '（style 0/1/2）指纹未被本轮改动波及');
+    }
+
     // ---------------- 六、编辑流程 ----------------
     // 新旧入口产出一致
     for (const k of KEYS) {

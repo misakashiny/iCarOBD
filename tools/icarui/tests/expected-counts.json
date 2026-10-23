@@ -58,7 +58,7 @@
     "verify-p2b1-e2e": 49,
     "verify-p3a-text-family": 81,
     "verify-p3b-container-family": 60,
-    "verify-p3c1-gauge-family": 157,
+    "verify-p3c1-gauge-family": 167,
     "verify-p3c2-lamp-family": 260,
     "verify-p3d-track-family": 64,
     "verify-p4a-schema-props": 72,
@@ -101,6 +101,10 @@
     "verify-p5a03-scale": 21,
     "verify-p5a03-tracks": 38,
     "verify-p5a04-preview": 16,
-    "verify-p5a04-range": 19
+    "verify-p5a04-range": 19,
+    "verify-p5b01-dashboard": 32,
+    "verify-p5b01-gauge-preview": 18,
+    "verify-p5b01-primitives": 44,
+    "verify-p5b01-text": 14
   }
 }

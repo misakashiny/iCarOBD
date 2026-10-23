@@ -3054,6 +3054,16 @@
     simLast = now;
     const vals = simTargets(t);
     S.previewValues = vals;                       // 真值：读数 / 条形 / 状态灯 / 阈值
+    // P5B-M01：累积**历史序列**，供 style 3（折线）画真实趋势。
+    // Android 的 LineChartView 拿的是 VehicleBus.historyOf(pid) 的真实历史；
+    // 编辑器这边用**同一份模拟值**的滑动窗口，两端形状才对得上。
+    // 上限 60 点：够看出趋势，又不占内存。
+    if (!S.history) S.history = {};
+    Object.keys(vals).forEach(function (pid) {
+      const arr = S.history[pid] || (S.history[pid] = []);
+      arr.push(vals[pid]);
+      if (arr.length > 60) arr.splice(0, arr.length - 60);
+    });
     // **让位**：被补间（自检扫表）占着就**不推弹簧** —— 不写"指针角度"这个属性
     if (!S.anim || S.anim.allows("sim")) {
       S.simSprings.step(vals, dt);                // 弹簧位置：指针 / 进度弧 / 数字鼓
@@ -3083,6 +3093,7 @@
     } else {
       if (simRaf) cancelAnimationFrame(simRaf);
       S.previewValues = null;
+      S.history = null;             // P5B-M01：关掉模拟就清历史，style 3 显示"无历史数据"
       S.simPhase = 0;
       S.simSprings.active = false;
       S.simSprings.clear();

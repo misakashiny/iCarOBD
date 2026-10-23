@@ -59,6 +59,19 @@
     showPid: false,
     previewValues: null,  // {pidId: value} 实时模拟注入的值
     /**
+     * **历史序列**（P5B-M01 阶段 B）：`{pidId: [v0, v1, ...]}`，环形，上限 60。
+     *
+     * 为什么需要：Android 的 `LineChartView`（style 3）是**真历史折线**
+     * （`wantsHistory = true`，由渲染层推 `VehicleBus.historyOf(pid)`）。
+     * 编辑器原来画一条与数据无关的正弦波冒充预览 —— 那会让用户以为
+     * "真机上也长这样"。这里存**同一份模拟值**的历史，编辑器照着画，
+     * 两端形状才是一回事。
+     *
+     * ⚠️ 只有实时模拟开着时才有内容；关掉即清空，
+     *    此时 style 3 显示"无历史数据"而不是编一条假曲线。
+     */
+    history: null,
+    /**
      * **弹簧池**（v2.81.0）：实时模拟时指针/弧/鼓的**位置**。
      *
      * ⚠️ 与 `previewValues` 的分工是**刻意的**：
@@ -1523,7 +1536,44 @@ function uniformMatrix(m, w, h) {
     const ratioMech = (mech !== null && mech !== undefined && n.max > n.min)
       ? clamp((mech - n.min) / (n.max - n.min), 0, 1) : ratio;
 
-    if (n.style === 0 || n.style === 7) {
+    // ---------------------------------------------------------------- P5B-M01 阶段 B
+    //
+    // style 3/4/5/6/7 交给 gauge-preview.js 画（与 Android 真实外观对齐）：
+    //   3 LineChart  → 真实历史折线（不再用装饰正弦波）
+    //   4 DualStack  → 上下两个数值格（**不是**"一条线 + ×2"）
+    //   5 Quad       → 2×2 四个数值格
+    //   6 SubDual    → 上大、下分两格
+    //   7 GForce     → G 力散点 + 0.5G 参考圈 + 十字准线（不再复用圆盘）
+    //
+    // ⚠️ 必须**先于** `n.style === 0` 那条判断执行 —— 原来 7 与 0 共用分支，
+    //    所以 style 7 永远被画成普通圆盘。把它挪出来是本轮修的核心问题之一。
+    if (typeof window.drawGaugeStylePreview === "function") {
+      const handled = window.drawGaugeStylePreview(n, {
+        ctx: ctx,
+        colors: {
+          accent: T.accent, track: T.track, tick: T.tick,
+          dim: T.dim, label: T.label || T.dim,
+          value: T.value, surface: T.surface,
+        },
+        fontFamily: (n.font && n.font.family) || "sans-serif",
+        maxTextW: n.w * 0.92,
+        // 报警色复用同一套判定（gaugePreviewAlertLevel），不另立第二套
+        alertColor: function (node, value) { return previewValueColor(node, value, T.value); },
+        alpha: function (hex, a) {
+          const m = /^#?([0-9a-fA-F]{6})$/.exec(String(hex || ""));
+          if (!m) return hex;
+          const v = parseInt(m[1], 16);
+          return "rgba(" + ((v >> 16) & 255) + "," + ((v >> 8) & 255) + "," + (v & 255) + "," + a + ")";
+        },
+      });
+      if (handled) {
+        // 标签仍走原路径（含 card.style），与 0/1/2 保持一致
+        drawGaugeLabel(n, label, unit, style, card.style);
+        return;
+      }
+    }
+
+    if (n.style === 0) {
       const r = Math.min(n.w, n.h) * 0.36;
       // ---- 0) **盘面**：刻度 / 数字 / 红区全部由节点字段算出来。
       //      量程、单位、红区一变签名就变 → `dialFaceFor` 自动重建一块新的。
@@ -1687,34 +1737,15 @@ function uniformMatrix(m, w, h) {
         ctx.restore();
       }
       ctx.fillStyle = T.accent; roundRect(bx, by, bw * ratio, bh, bh / 2); ctx.fill();
-    } else if (n.style === 3) {
-      ctx.strokeStyle = T.accent; ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      const N = 16;
-      for (let i = 0; i < N; i++) {
-        const px = n.w * 0.08 + n.w * 0.84 * i / (N - 1);
-        const py = n.h * 0.80 - n.h * 0.6 * (0.5 + 0.45 * Math.sin(i * 0.8 + (S.simPhase || 0)));
-        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-      }
-      ctx.stroke();
     } else {
-      const cells = n.style === 4 ? 2 : (n.style === 5 ? 4 : 3);
-      ctx.strokeStyle = T.track; ctx.lineWidth = 1;
-      if (cells === 2) {
-        ctx.beginPath(); ctx.moveTo(4, cy); ctx.lineTo(n.w - 4, cy); ctx.stroke();
-      } else if (cells === 4) {
-        ctx.beginPath();
-        ctx.moveTo(cx, 4); ctx.lineTo(cx, n.h - 4);
-        ctx.moveTo(4, cy); ctx.lineTo(n.w - 4, cy);
-        ctx.stroke();
-      } else {
-        ctx.beginPath(); ctx.moveTo(4, n.h * 0.5); ctx.lineTo(n.w - 4, n.h * 0.5); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(cx, n.h * 0.5); ctx.lineTo(cx, n.h - 4); ctx.stroke();
-      }
+      // P5B-M01：style 3/4/5/6/7 已在上面被 `drawGaugeStylePreview` 拦下并 return，
+      // 所以走到这里的只可能是**未来新增但还没实现预览的 style**（防御性兜底）。
+      // 原来这里画的是 style 3 的装饰正弦波 + style 4/5/6 的「×N」占位 —— 已删除，
+      // 因为那会让用户在编辑器里看到与真机完全不同的东西（专题 86 的核心问题）。
       ctx.fillStyle = T.dim;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.font = fontFor(n, 0.09, 7, 18) + "px sans-serif";
-      ctx.fillText("×" + cells, cx, cy);
+      ctx.fillText("样式 " + n.style, cx, cy);
     }
 
     // 标签 / PID / 量程 —— 抽成独立函数，因为**部件路径也要画它**

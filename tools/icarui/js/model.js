@@ -126,10 +126,29 @@
         trackStyle: window.normalizeTrackStyle(o.trackStyle, base.w, base.h),
       });
     } else if (type === window.NODE_TEXT) {
+      // P5B-M01 阶段 D：**兼容扁平的 `fontSize` / `color` 等旧写法**。
+      //
+      // 缺陷：`presets.js` 里 box_h1/h2/note 是这么写的 ——
+      //     createNode(NODE_TEXT, { …, fontSize: d.size, color: d.color })
+      // 但这里只读 `o.font`（嵌套对象），于是 `fontSize` 被**静默丢弃**，
+      // `normalizeFont(undefined)` 回落到 `FONT_DEFAULT.size = 6`。
+      // 结果：用户点「大标题」拖进来的字是 6 号，而不是预设声明的 30 号。
+      //（专题 86 问的「文字预设是否存在归一化后字号变成 6 的问题」—— **确认存在**。）
+      //
+      // 修法：不改已有行为，只在 `o.font` 没给时把扁平字段兜上去；
+      // 合并顺序 `flatFont -> o.font` 保证**用户显式 `o.font.size` 永远优先**。
+      const flatFont = {};
+      if (o.fontSize !== undefined) flatFont.size = o.fontSize;
+      if (o.fontFamily !== undefined) flatFont.family = o.fontFamily;
+      if (o.fontAlign !== undefined) flatFont.align = o.fontAlign;
+      if (o.fontWeight !== undefined) flatFont.weight = o.fontWeight;
+      if (o.fontItalic !== undefined) flatFont.italic = o.fontItalic;
+      if (o.letterSpacing !== undefined) flatFont.letterSpacing = o.letterSpacing;
+      if (o.color !== undefined) flatFont.color = o.color;
       Object.assign(base, {
         text: o.text === undefined ? "文字" : o.text,
         // 字体统一收进一个对象 —— 属性面板、编辑器、App 都只处理一个结构
-        font: window.normalizeFont(o.font),
+        font: window.normalizeFont(Object.assign({}, flatFont, o.font || {})),
       });
     }
     // P5A-M04 阶段 C：判断这份量程是否**来自 PID 定义**（= 派生），是就打标记。
