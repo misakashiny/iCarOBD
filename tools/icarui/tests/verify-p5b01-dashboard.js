@@ -83,37 +83,60 @@ const ok = (c, m) => (c ? (pass++, console.log("  ✅ " + m)) : (fail++, console
       await sleep(400);
     }
 
-    console.log("=== F1. 数据来源表必须诚实 ===");
+    console.log("=== F1. 数据来源表必须诚实（P5B-M02 §E 已改为五类）===");
+    //
+    // ⚠️ P5B-M02 §E 纠错：第一版把这五项一律标成 `"can"`（需车厂 DBC），是**错的**。
+    //    证据来自项目自己的 BuiltInPids.kt：
+    //      :65 机油温度 5C   → **标准 PID 已定义且已实现**（obd-optional，车型可能不实现）
+    //      :55 燃油压力 0A   → **标准 PID 已定义**（obd）
+    //      :62 MAP 0B        → **BOOST 可由它派生**（calc，项目已有 calc_boost）
+    //      :118 机油压力      → 注释原文「不在标准 OBD 里」→ 确实 can-only
+    //    所以改成五类，断言也按新分类写。
     const avail = JSON.parse(await cdp.eval("JSON.stringify(DashboardProto.dataAvailability({}))"));
-    const canKeys = Object.keys(avail).filter((k) => avail[k].src === "can");
-    const obdKeys = Object.keys(avail).filter((k) => avail[k].src === "obd");
-    ok(canKeys.length === 5, "F1 识别出 " + canKeys.length + " 个需 CAN/DBC 的字段（" + canKeys.join("/") + "）");
-    ok(obdKeys.length === 6, "F1 识别出 " + obdKeys.length + " 个标准 OBD 字段（" + obdKeys.join("/") + "）");
+    const by = (s) => Object.keys(avail).filter((k) => avail[k].src === s);
+    const canKeys = by("can-only");
+    const obdKeys = by("obd");
+    const optKeys = by("obd-optional");
+    const calcKeys = by("calc");
+    const notImplKeys = by("not-impl");
+    ok(canKeys.length === 2, "F1 确需 CAN/DBC 的只有 " + canKeys.length + " 项（" + canKeys.join("/") + "）");
+    ok(obdKeys.length === 7, "F1 标准 OBD 已实现 " + obdKeys.length + " 项（" + obdKeys.join("/") + "）");
+    ok(optKeys.length === 1 && optKeys[0] === "oilTemp",
+       "F1 机油温度归为「标准 PID 但车型可能不实现」（" + optKeys.join("/") + "）");
+    ok(calcKeys.indexOf("boost") >= 0, "F1 BOOST 归为「派生」（" + calcKeys.join("/") + "）");
+    ok(notImplKeys.length === 1 && notImplKeys[0] === "lambda",
+       "F1 Lambda 归为「标准有定义但 App 未实现」（" + notImplKeys.join("/") + "）");
     canKeys.forEach((k) => {
-      ok(avail[k].readable === false, "F1 「" + avail[k].label + "」标记为**不可读**（需 CAN/DBC）");
+      ok(avail[k].readable === false, "F1 「" + avail[k].label + "」标记为**不可读**（确无标准 PID）");
     });
     obdKeys.forEach((k) => {
       ok(avail[k].readable === true, "F1 「" + avail[k].label + "」标记为可读（" + avail[k].note + "）");
     });
 
-    console.log("\n=== F2. can 类字段即使传值也必须返回 null（不假装读到）===");
+    console.log("\n=== F2. 确不可读的字段即使传值也必须返回 null（不假装读到）===");
     const lie = JSON.parse(await cdp.eval(`JSON.stringify((function(){
       var V = DashboardProto._internals.val;
-      // 故意给 can 类字段传"值" —— 必须被拒绝
-      var fake = { rpm:3000, speed:80, coolant:90, oilTemp:999, oilPress:99, boost:99, lambda:99 };
+      var fake = { rpm:3000, speed:80, coolant:90, oilTemp:999, oilPress:99, boost:99, lambda:99, fuelPress:350 };
       return {
         oilTemp: V(fake,'oilTemp'),
         oilPress: V(fake,'oilPress'),
         boost: V(fake,'boost'),
         lambda: V(fake,'lambda'),
+        fuelPress: V(fake,'fuelPress'),
         rpm: V(fake,'rpm'),
         speed: V(fake,'speed')
       };
     })())`));
-    ok(lie.oilTemp === null, "F2 油温即便传 999 也返回 null");
-    ok(lie.oilPress === null, "F2 油压即便传 99 也返回 null");
-    ok(lie.boost === null, "F2 BOOST 即便传 99 也返回 null");
-    ok(lie.lambda === null, "F2 Lambda 即便传 99 也返回 null");
+    // 纠错后：机油温度是标准 PID(5C) → **可读**，传值应被接受
+    ok(lie.oilTemp === 999, "F2 机油温度（标准 PID 5C 已实现）传 999 → 正常返回（不再被误判为不可读）");
+    // 机油压力确无标准 PID → 必须拒绝
+    ok(lie.oilPress === null, "F2 机油压力（确无标准 PID）即便传 99 也返回 null");
+    // BOOST 由 MAP 派生 → **可读**
+    ok(lie.boost === 99, "F2 BOOST（由 MAP 派生）传 99 → 正常返回");
+    // Lambda 标准有定义但未实现 → 必须拒绝
+    ok(lie.lambda === null, "F2 Lambda（标准有定义但 App 未实现）即便传 99 也返回 null");
+    // 燃油压力是标准 PID 0A → 可读
+    ok(lie.fuelPress === 350, "F2 燃油压力（标准 PID 0A）传 350 → 正常返回");
     ok(lie.rpm === 3000, "F2 转速（OBD 可读）正常返回 3000");
     ok(lie.speed === 80, "F2 车速（OBD 可读）正常返回 80");
 
@@ -128,8 +151,10 @@ const ok = (c, m) => (c ? (pass++, console.log("  ✅ " + m)) : (fail++, console
         rpm: R({rpm:3250}, 'rpm', 0)
       };
     })())`));
-    ok(txt.oilTemp === "无信号", "F2b 油温无数据 → 「无信号」（实测 " + txt.oilTemp + "）");
-    ok(txt.boost === "无信号", "F2b BOOST 无数据 → 「无信号」（实测 " + txt.boost + "）");
+    // 纠错后措辞分级：机油温度是标准 PID（车可能没实现）→「本车未实现」
+    ok(txt.oilTemp === "本车未实现", "F2b 机油温度无数据 → 「本车未实现」（标准 PID 5C，非 CAN 专属；实测 " + txt.oilTemp + "）");
+    // BOOST 由 MAP 派生，属于可读类，只是没数据 → 普通 --
+    ok(txt.boost === "--", "F2b BOOST（派生）无数据 → --（不是「需 CAN/DBC」；实测 " + txt.boost + "）");
     ok(txt.coolantNoVal === "--", "F2b 水温（OBD 可读但当前没值）→ --（实测 " + txt.coolantNoVal + "）");
     ok(txt.coolantWithVal === "90", "F2b 水温有值 → 90");
     ok(txt.rpm === "3250", "F2b 转速有值 → 3250");

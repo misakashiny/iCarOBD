@@ -20,6 +20,10 @@
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <!-- P5B-M02 §B：拿不到蓝牙权限时改用 dataSync 类型保活。
+         connectedDevice 会因缺运行时蓝牙权限被 Android 14 拒绝；而无类型调用
+         又会继承 Manifest 声明照样被拒（实测 startForegroundCount=0）。 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
@@ -42,7 +46,7 @@
             android:name=".service.ObdService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice" />
+            android:foregroundServiceType="connectedDevice|dataSync" />
 
         <!--
           所有 Activity 都**不锁方向**，跟随系统自动旋转。

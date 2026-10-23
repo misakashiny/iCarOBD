@@ -108,8 +108,46 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   console.log("  主题目录 " + dir + "：\n    " + chk.trim().split("\n").join("\n    "));
 
   // ---- 改 settings
+  //
+  // ⚠️ **P5B-M02 §F 查明上次失败的真因**：
+  //    `settings.designJson` 只是**顶层实时字段**，而 App 渲染用的是
+  //    `Store.activeCanvas()` → `settings.canvases[activeCanvasId].designJson`。
+  //    上次只改了顶层的 designJson，画布里的那份没动 → **渲染仍用旧画布**，
+  //    所以"写入成功但截图不变"。
+  //
+  //    正确做法：**两处都改**（顶层实时字段 + activeCanvas 里的那份）。
+  //    见 Store.kt:655 activeCanvas() 与 :675 snapshotToActiveCanvas()。
   settings.designBaseDir = "/data/user/0/" + PKG + "/" + dir;
   settings.designJson = designText;
+
+  let painted = 0;
+  if (Array.isArray(settings.canvases)) {
+    const idx = settings.canvases.findIndex((c) => c && c.id === settings.activeCanvasId);
+    const target = idx >= 0 ? settings.canvases[idx] : (settings.canvases[0] || null);
+    if (target) {
+      target.designJson = designText;      // ← 关键：画布自己那份
+      target.type = 2;                     // TYPE_CUSTOM
+      target.name = design.meta.name;
+      if (idx < 0) settings.activeCanvasId = target.id;
+      painted = 1;
+      console.log("  已写入 activeCanvas（" + (target.name || target.id) + "）的 designJson");
+    }
+  }
+  if (!painted) {
+    // 没有 canvases（老配置）→ 造一个
+    settings.canvases = [{
+      id: "p5b02-8styles",
+      name: design.meta.name,
+      type: 2,
+      designJson: designText,
+      gauges: [],
+    }];
+    settings.activeCanvasId = "p5b02-8styles";
+    painted = 1;
+    console.log("  配置里没有 canvases → 新建一套并设为 active");
+  }
+  settings.dashType = 2;                   // 0 普通 / 1 性能 / 2 自定义
+
   writeInto("files/config/settings.json", JSON.stringify(settings, null, 2));
 
   // ---- 校验写进去的内容真的是完整 JSON

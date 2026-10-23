@@ -102,9 +102,10 @@
     "verify-p5a03-tracks": 38,
     "verify-p5a04-preview": 16,
     "verify-p5a04-range": 19,
-    "verify-p5b01-dashboard": 32,
+    "verify-p5b01-dashboard": 34,
     "verify-p5b01-gauge-preview": 18,
     "verify-p5b01-primitives": 44,
-    "verify-p5b01-text": 14
+    "verify-p5b01-text": 14,
+    "verify-p5b02-primitives-data": 23
   }
 }

@@ -1,0 +1,30 @@
+=== P5B-M02 §F：八样式主题 Android 渲染验证 ===
+
+## 前两轮为什么没跑通
+
+P5B-M01 尝试过但失败：主题文件**成功写入** settings.designJson，回读校验 gauge 数=8，
+但 App 截图**一点没变**（24860 B，颜色数 198）。
+
+**P5B-M02 §F 查明的真因**（Store.kt:655 `activeCanvas()`）：
+  App 渲染的不是 `settings.designJson`，而是
+  `settings.canvases[activeCanvasId].designJson` —— **画布自己那份**。
+  上次只改了顶层实时字段，画布里的没动 → 渲染仍用旧画布。
+
+## 修法
+  同时写两处：settings.designJson（顶层实时字段）+ activeCanvas.designJson（画布）。
+
+=== F1. 8 档标签在 Android 上全部可见 ===
+  → 8/8 可见
+
+=== F2. 截图留证 ===
+
+=== F3. 像素统计（对比 P5B-M01 的失败截图）===
+  尺寸=1080x2400  颜色数=357
+
+=== F4. 主题已生效的其他旁证 ===
+
+=== 汇总 ===
+通过=14 失败=0
+PASS=14 FAIL=0
+
+⚠️ 层级：Android 模拟器。不代表真机（尤其车载宽屏）表现。

@@ -1,0 +1,41 @@
+=== P5B-M02 §C：四种基元 + 模拟数据通道 ===
+
+=== C0. 身份：四个基元**没有 Android View**，本套件只验编辑器侧 ===
+     ⚠️ 四个基元**均无 Android View**（已核实 app/src/main 无对应 Kotlin 类）
+     ⚠️ 所以本套件的结论**只代表编辑器侧**，不代表跨端一致
+
+=== C1. SegmentedArc：模拟值 → 分段进度 ===
+  C1 NORMAL rpm=800 progress=0.1000 ink=3524
+  C1 ALARM rpm=6800 progress=0.8500 ink=3670
+  C1 CRITICAL rpm=7400 progress=0.9250 ink=3687
+  C1 ZERO rpm=0 progress=0.0000 ink=3504
+     —— 动态变化方向（rpm 增大 → 点亮段增多）
+  C1 方向 rpm=0 pink=0
+  C1 方向 rpm=800 pink=313
+  C1 方向 rpm=6800 pink=2663
+  C1 方向 rpm=7400 pink=2894
+
+=== C2. PathProgress：模拟值 → 曲线进度 ===
+  C2 NORMAL rpm=800 clipped=38.25 total=382.47
+  C2 ALARM rpm=6800 clipped=325.10 total=382.47
+  C2 CRITICAL rpm=7400 clipped=353.79 total=382.47
+  C2 ZERO rpm=0 clipped=0.00 total=382.47
+     —— 动态变化方向（progress 增大 → 端点往前）
+
+=== C3. ValueText：模拟值 → 文本/占位/报警色 ===
+  C3 ValueText: normal=800 alarm=6800 crit=7400 nul=--
+     —— 报警状态（越阈值颜色变化）
+
+=== C4. Shape：基础图形（模拟值驱动尺寸/颜色）===
+  C4 Shape bar load=85 ink=4692
+
+=== C5. 跨端声明边界（诚实标注）===
+     ❌ 四个基元**没有 Android View** → 不存在「Android 与编辑器同输入同表现」的证据
+     ❌ 本套件不主张跨端一致
+     ✅ 结论仅限：**编辑器侧**，同一份模拟值输入下，四个基元的几何/文本/颜色符合预期
+
+=== 汇总 ===
+通过=23 失败=0
+PASS=23 FAIL=0
+
+⚠️ 层级：编辑器侧（无头 Edge + Canvas）。四个基元均无 Android View。

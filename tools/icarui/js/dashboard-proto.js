@@ -36,43 +36,93 @@
   // ================================================================
   // 数据来源表 —— 诚实标注每个字段能不能从车上读到
   // ================================================================
+  // ============================================================================
+  // 数据来源表
+  //
+  // ⚠️ **P5B-M02 §E 纠错**：第一版把这五项一律标成 `can`（"需车厂 DBC，读不到"），
+  //    是**错的**。用"都是 CAN 专属"一句话概括了性质完全不同的五种情况。
+  //    证据全部来自项目自己的 BuiltInPids.kt（可复核）：
+  //
+  //      :65  std("5C", "机油温度", "A-40", "℃")      ← **标准 PID 已定义且已实现**
+  //      :55  std("0A", "燃油压力", "A*3", "kPa")      ← **标准 PID 已定义**
+  //      :62  std("0B", "进气歧管压力 MAP", "A", "kPa") ← **BOOST 可由它派生**
+  //      :95  calc("calc_boost", "增压压力", ...)      ← **已派生**
+  //      :118 tpl_oilPressure 注释「机油压力不在标准 OBD 里」← 这个确实没有
+  //
+  //    所以改为**五类标注**，每类在 UI 上措辞不同：
+  //      obd           标准 PID + 已实现              → 正常读数
+  //      obd-optional  标准 PID，但车型可能不实现      → 读数 或「本车未实现」
+  //      calc          由标准 PID 派生                → 正常读数
+  //      not-impl      标准有定义但 App 未实现         → 「暂未实现」
+  //      can-only      **确无**标准 PID，需 CAN/DBC   → 「需 CAN/DBC」
+  //
+  //    原则：**既不能把不支持的说成支持，也不能把支持的写成不支持** ——
+  //    后者会让用户白放弃一个本来能做的能力。
+  // ============================================================================
   const DataSource = {
-    // --- 现有 OBD-II 标准 PID 就能读
+    // --- 标准 OBD-II PID 已定义 + 项目已实现
     rpm:        { src: "obd",   pid: "obd.rpm",       label: "转速",   note: "Mode 01 PID 0C" },
     speed:      { src: "obd",   pid: "obd.speed",     label: "车速",   note: "Mode 01 PID 0D" },
     coolant:    { src: "obd",   pid: "obd.coolant",   label: "水温",   note: "Mode 01 PID 05" },
     throttle:   { src: "obd",   pid: "obd.throttle",  label: "节气门", note: "Mode 01 PID 11" },
     intakeTemp: { src: "obd",   pid: "obd.intake",    label: "进气温度", note: "Mode 01 PID 0F" },
     load:       { src: "obd",   pid: "obd.load",      label: "负荷",   note: "Mode 01 PID 04" },
+    fuelPress:  { src: "obd",   pid: "obd.fuelpress", label: "燃油压力", note: "Mode 01 PID 0A（3×A kPa）" },
 
-    // --- 派生计算（不直接来自车辆）
+    // --- 标准 PID 已定义，但**车型是否实现未知**（SAE 允许厂商不实现可选 PID）
+    oilTemp:    { src: "obd-optional", pid: "obd.oiltemp", label: "机油温度",
+                  note: "Mode 01 PID 5C（A-40 ℃）。标准有定义，但**不是每台车都实现**，需真车确认",
+                  fallback: "本车未实现" },
+
+    // --- 由标准 PID 派生
+    boost:      { src: "calc",  pid: "calc.boost",    label: "BOOST",
+                  note: "由 MAP(01 0B) − 大气压(01 33) 派生，项目已有 calc_boost" },
     gforce:     { src: "calc",  pid: "calc.gforce",   label: "综合G",  note: "加速度计 / 车速差分" },
     gear:       { src: "calc",  pid: "calc.gear",     label: "挡位",   note: "转速/车速比推算" },
     avgFuel:    { src: "calc",  pid: "calc.avg_l100", label: "平均油耗", note: "累计用油 ÷ 累计里程" },
 
-    // --- 需要专用 CAN / DBC（当前读不到）
-    oilTemp:    { src: "can",   pid: null, label: "油温",   note: "需车厂 CAN/DBC，OBD-II 无标准 PID" },
-    oilPress:   { src: "can",   pid: null, label: "油压",   note: "需车厂 CAN/DBC" },
-    boost:      { src: "can",   pid: null, label: "BOOST",  note: "需 MAP 传感器或车厂 CAN/DBC" },
-    lambda:     { src: "can",   pid: null, label: "Lambda", note: "宽域氧传感器通常不在标准 OBD 里" },
-    fuelPress:  { src: "can",   pid: null, label: "燃油压力", note: "需车厂 CAN/DBC" },
+    // --- 标准有定义，但 App 尚未实现
+    lambda:     { src: "not-impl", pid: null, label: "Lambda",
+                  note: "标准 PID 01 24–01 2B 是宽域 λ，**已定义但项目未实现**；" +
+                        "窄域车只有开关式 01 14（源码注释：马自达 ND3 是宽域，0114 不在支持位图里）",
+                  fallback: "暂未实现" },
+
+    // --- **确无**标准 OBD PID，必须厂商 CAN/DBC 或外置传感器
+    oilPress:   { src: "can-only", pid: null, label: "机油压力",
+                  note: "**SAE J1979 没有机油压力 PID**。tpl_oilPressure 注释原文：" +
+                        "「机油压力不在标准 OBD 里。PID 号 2400 为占位示例」",
+                  fallback: "需 CAN/DBC" },
+    atfTemp:    { src: "can-only", pid: null, label: "变速箱油温",
+                  note: "**无标准 PID**（注意与「机油温度 5C」区分，那个是标准的）",
+                  fallback: "需 CAN/DBC" },
   };
 
-  /** 取一个值；'can' 来源永远返回 null（当前读不到，不编数） */
+  /** 取一个值；非可读来源永远返回 null（不编数） */
   function val(values, key) {
     const meta = DataSource[key];
     if (!meta) return null;
-    if (meta.src === "can") return null;       // ⚠️ 读不到就是读不到，不假装
+    // can-only 与 not-impl：没有可用的数据通道 → 必须返回 null
+    if (meta.src === "can-only" || meta.src === "not-impl") return null;
     const v = values && values[key];
     return (typeof v === "number" && Number.isFinite(v)) ? v : null;
   }
 
   /** 读数文本；null → 明确的"无信号"而不是 0 */
+  /**
+   * 读数文本。无值时按**来源类别**给不同措辞 —— 这是 §E 纠错的关键：
+   * 不能让用户以为"机油温度（标准 PID 5C）"和"机油压力（确无标准 PID）"
+   * 是同一种情况。
+   */
   function readText(values, key, decimals) {
     const meta = DataSource[key];
     const v = val(values, key);
     if (v === null) {
-      return meta && meta.src === "can" ? "无信号" : "--";
+      if (!meta) return "--";
+      // 每类给**自己的**说法，不是笼统的"无信号"
+      if (meta.src === "can-only") return meta.fallback || "需 CAN/DBC";
+      if (meta.src === "not-impl") return meta.fallback || "暂未实现";
+      if (meta.src === "obd-optional") return meta.fallback || "本车未实现";
+      return "--";   // obd / calc：只是当前没数据（没连车 / 值还没采到）
     }
     const dec = decimals === undefined ? 0 : decimals;
     let t = v.toFixed(dec);
@@ -322,7 +372,7 @@
       const my = h * 0.78;
       const meta = DataSource[m.key];
       const v = val(values, m.key);
-      const unreadable = meta.src === "can";
+      const unreadable = meta.src === "can-only" || meta.src === "not-impl";
 
       ctx.save();
       ctx.textAlign = "center";
@@ -393,7 +443,7 @@
           src: meta.src,
           label: meta.label,
           note: meta.note,
-          readable: meta.src !== "can",
+          readable: meta.src !== "can-only" && meta.src !== "not-impl",
           hasValue: val(values, k) !== null,
         };
       });

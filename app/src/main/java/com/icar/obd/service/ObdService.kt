@@ -79,32 +79,58 @@ class ObdService : Service() {
      * **不吞异常**：两次失败都记 `AppLog.e`，现场能看到为什么前台服务起不来。
      */
     private fun startForegroundCompat(n: Notification) {
-        // ---- ① 先试带类型（Android 14+ 才有意义）
-        var typedFailed = false
+        // ================================================================
+        // P5B-M02 §B：**权限前置检查**（而不是靠 try/catch 兜）
+        //
+        // ## 为什么必须前置检查
+        //
+        // P5A-M01 R2 的降级补丁只做了 try/catch —— 实测（verify-p5b02-fgs）
+        // 发现它**并不能真的把服务变成前台**：
+        //
+        //   · 有权限时：startForegroundCount = 1  ✅
+        //   · 撤销权限：startForegroundCount = 0  ❌ —— 带类型和无类型**都失败**
+        //
+        // 原因正是 P5B-M02 §B 第 2 条问的：「不指定类型重试是否仍继承 Manifest 类型」
+        // → **会继承**。Manifest 写了 `foregroundServiceType="connectedDevice"`，
+        //   Android 14 对**无类型调用也按 Manifest 类型校验**，所以无类型重试同样抛
+        //   SecurityException。
+        //
+        // 后果：不崩了（异常被 catch），但 Service **从未成为前台服务** ——
+        //       App 切到后台后没有 FGS 保护，可能被系统回收。
+        //
+        // ## 正确做法
+        //
+        // 先**检查权限**，再决定用哪种类型：
+        //   · 有蓝牙权限 → CONNECTED_DEVICE（正常路径，与既有行为一致）
+        //   · 没有权限  → 用 **dataSync**（不需要蓝牙权限，仍能给进程 FGS 保护）
+        //                 并在通知里如实说明"未授权蓝牙，仅保活"
+        //
+        // ⚠️ 用 dataSync 需要 manifest 声明 FOREGROUND_SERVICE_DATA_SYNC（已加）。
+        // ⚠️ 不改正常连接时的既有机制：有权限时走的还是 CONNECTED_DEVICE。
+        // ================================================================
+        val btGranted = hasBluetoothPermission()
+        AppLog.i(AppLog.M_SYS, "前台服务启动：蓝牙权限=" + (if (btGranted) "已授予" else "未授予"))
+
         if (shouldUseTypedForeground(Build.VERSION.SDK_INT)) {
+            // Android 14+：先按权限选类型
+            val chosenType = chooseForegroundType(btGranted)
             try {
-                startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+                startForeground(NOTIF_ID, n, chosenType)
+                AppLog.i(AppLog.M_SYS, "前台服务已启动，type=" + typeName(chosenType))
                 return
             } catch (e: SecurityException) {
-                typedFailed = true
-                // 最常见：用户没给蓝牙权限。不是致命错误，降级继续。
                 AppLog.w(
                     AppLog.M_SYS,
-                    "前台服务降级：缺少蓝牙权限，改用无类型的 startForeground",
-                    e.message ?: ""
+                    "带类型启动失败，尝试无类型",
+                    (typeName(chosenType) + " | " + (e.message ?: ""))
                 )
             }
-        }
-
-        // ---- ② 决定是否要降级（纯函数，有单测钉住"必须降级不能崩"）
-        val plan = planForegroundFallback(typedFailed)
-        if (plan == ForegroundPlan.NONE) {
-            // 低版本：直接走无类型即可（下面统一做）
         }
 
         try {
             @Suppress("DEPRECATION")
             startForeground(NOTIF_ID, n)
+            AppLog.i(AppLog.M_SYS, "前台服务已启动（无类型）")
         } catch (e: Throwable) {
             // 连无类型都起不来（极少数 ROM / 通知被完全禁用）→ 放弃前台，别让 App 崩
             AppLog.e(
@@ -113,6 +139,19 @@ class ObdService : Service() {
                 e.message ?: e.javaClass.simpleName
             )
             runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+        }
+    }
+
+    /** 当前是否持有任一蓝牙权限（Android 12+ 是运行时权限；低版本无此权限）*/
+    private fun hasBluetoothPermission(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        val need = arrayOf(
+            android.Manifest.permission.BLUETOOTH_CONNECT,
+            android.Manifest.permission.BLUETOOTH_SCAN,
+        )
+        return need.any {
+            androidx.core.content.ContextCompat.checkSelfPermission(this, it) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
         }
     }
 
@@ -190,6 +229,32 @@ class ObdService : Service() {
         /** 无类型启动也失败后怎么办：放弃前台，别让 App 崩。 */
         fun planSecondFallback(untypedFailed: Boolean): ForegroundPlan =
             if (untypedFailed) ForegroundPlan.STOP_SELF else ForegroundPlan.NONE
+
+        /**
+         * P5B-M02 §B：**按权限选前台服务类型**。
+         *
+         * · 有蓝牙权限 → `CONNECTED_DEVICE`（正常路径，与既有行为完全一致）
+         * · 没有权限   → `DATA_SYNC`（不需要蓝牙权限，仍能给进程 FGS 保护）
+         *
+         * 为什么没有权限时不能继续用 `CONNECTED_DEVICE`：
+         * Android 14 要求该类型**同时**满足「manifest 声明」+「持有运行时蓝牙权限」，
+         * 缺后者必然抛 `SecurityException`。而 Manifest 声明了
+         * `foregroundServiceType="connectedDevice"` 之后，**连无类型调用也会按它校验** ——
+         * 所以"降级成无类型"这条路本来就走不通（P5B-M02 §B 实测 startForegroundCount=0）。
+         */
+        fun chooseForegroundType(bluetoothGranted: Boolean): Int =
+            if (bluetoothGranted) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+            } else {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            }
+
+        /** 类型 → 可读名字（日志用）*/
+        fun typeName(type: Int): String = when (type) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE -> "connectedDevice"
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC -> "dataSync"
+            else -> "type=" + type
+        }
     }
 }
 

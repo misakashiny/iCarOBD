@@ -26,18 +26,19 @@ const NODES = [
   { style: 7, pid: "calc.gforce",  extra: ["calc.gx", "calc.gy"],               label: "7 G力" },
 ];
 
-const W = 168, H = 168;
+const W = 172, H = 72;   // 2 列 × 4 行，8 个一屏可见
 const PAD = 8;
+const ROW_GAP = 8;
 
 const nodes = NODES.map(function (d, i) {
-  const col = i % 4;
-  const row = Math.floor(i / 4);
+  const col = i % 2;
+  const row = Math.floor(i / 2);
   const n = {
     id: "style" + d.style,
     type: "gauge",
     name: d.label,
     x: PAD + col * (W + PAD),
-    y: PAD + row * (H + PAD) + 14,
+    y: 20 + row * (H + ROW_GAP),
     w: W, h: H,
     z: 10 + i,
     alpha: 255,
@@ -65,14 +66,14 @@ const nodes = NODES.map(function (d, i) {
 
 // 每个表盘上方加一个文字标签（说明这是第几档）
 const labels = NODES.map(function (d, i) {
-  const col = i % 4;
-  const row = Math.floor(i / 4);
+  const col = i % 2;
+  const row = Math.floor(i / 2);
   return {
     id: "label" + d.style,
     type: "text",
     x: PAD + col * (W + PAD),
-    y: PAD + row * (H + PAD),
-    w: W, h: 14,
+    y: 20 + row * (H + ROW_GAP) - 12,
+    w: W, h: 11,
     z: 30 + i,
     alpha: 255, rotation: 0, scale: 1,
     text: d.label,
