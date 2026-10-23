@@ -279,7 +279,19 @@ Android 端 `ConnectFragment.hasBluetoothPermission()` 只是把这个值喂给�
 
 ## 九、GitHub 完整 Hash 与远程同步证明
 
-见提交后回填。
+**`54ad25f5270ea2115cebc9171961463fbe1d5ef7`**
+
+| 项 | 值 |
+|---|---|
+| 本地 HEAD | `54ad25f5270ea2115cebc9171961463fbe1d5ef7` |
+| 远程 `origin/main` | `54ad25f5270ea2115cebc9171961463fbe1d5ef7` |
+| 一致性 | ✅ **完全一致**（`git ls-remote` 实测）|
+| Push | ✅ `8594229..54ad25f`（快进，无重写）|
+| 提交链接 | https://github.com/misakashiny/iCarOBD/commit/54ad25f5270ea2115cebc9171961463fbe1d5ef7 |
+| 提交文件数 | 25（**显式路径**，未含用户未跟踪的 `86_ICarUI全控件实现方式盘点.md`）|
+| 敏感扫描 | ✅ 无密钥 / Token / 私钥 |
+| 禁止操作 | 未使用 `--force` / `--force-with-lease` / `reset --hard` / `--allow-unrelated-histories` |
+| 用户未提交内容 | ✅ `86_ICarUI全控件实现方式盘点.md` 仍在工作区、未被提交、未被修改 |
 
 ---
 
