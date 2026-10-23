@@ -147,6 +147,24 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
         // 控件检视（v1.20.14）：从别的 Activity 回来时把浮窗重新挂上
         // （旋转重建 / 从设置页返回都会走到这里；`applyInspectorState` 是幂等的）
         applyInspectorState()
+
+        // ================================================================
+        // P5B-M03 §A3：**回到前台时补起前台服务**
+        //
+        // 场景：用户先拒了蓝牙权限（ObdService.onCreate 里不起前台服务）→
+        //       后来在系统设置里授予 → 回到 App。
+        //
+        // ⚠️ 为什么不能只靠 onStartCommand：
+        //   Activity 已经在栈顶时 `am start` 只会"deliver intent to running
+        //   top-most instance"，**不会重新走 onStart/onStop 循环**，
+        //   所以 Service.onStartCommand 不会被调用 —— 实测授权后 count 仍是 0。
+        //
+        // 所以在这里主动补：`startService` 会让系统调 Service.onStartCommand，
+        // 里面再按权限决定是否 startForeground。
+        // **幂等**：每次 onResume 都调一次是安全的（Service 不会重复创建，
+        // onStartCommand 里有 isForegroundStarted 守卫）。
+        // ================================================================
+        startServiceSafely()
     }
 
     override fun onStop() {
@@ -1051,12 +1069,37 @@ class MainActivity : AppCompatActivity(), ObdController.Listener {
         }
     }
 
+    /**
+     * 拉起 OBD 服务。
+     *
+     * ## ⚠️ P5B-M03 §A3 修复的崩溃（`ForegroundServiceDidNotStartInTimeException`）
+     *
+     * 原来这里用 `startForegroundService()`。Android 对这个 API 有**硬契约**：
+     * **必须在 5 秒内调用 `Service.startForeground()`**，否则直接抛
+     * `RemoteServiceException$ForegroundServiceDidNotStartInTimeException` —— **进程崩**。
+     *
+     * 而 P5B-M03 的设计是「**没有蓝牙权限就不进前台**」（避免滥用 dataSync）。
+     * 这两件事直接冲突：
+     *   · 无权限时不调 startForeground → 违反契约 → 崩
+     *   · 调 `stopSelf()` 也不行 —— 实测系统**只认 startForeground**，
+     *     stopSelf 照样抛同一个异常（已在模拟器实测复现，堆栈指向本方法）
+     *
+     * ## 改法
+     *
+     * 改用 **`startService()`**。它没有 5 秒契约。
+     * Service 自己在 `onCreate` / `onStartCommand` 里按权限决定要不要
+     * 进前台（有权限 → startForeground；无权限 → 什么都不做，Service 自然被回收）。
+     *
+     * ⚠️ 前台化的**合法性**不受影响：`startForeground()` 允许从
+     *    由 `startService` 拉起的服务里调用（只要进程处于可启动前台的允许状态，
+     *     本 App 是前台 Activity 拉起，`PROC_STATE_TOP` 满足）。
+     */
     private fun startServiceSafely() {
         runCatching {
-            startForegroundService(Intent(this, ObdService::class.java))
-            AppLog.i(AppLog.M_SYS, "前台服务已拉起")
+            startService(Intent(this, ObdService::class.java))
+            AppLog.i(AppLog.M_SYS, "OBD 服务已拉起（普通服务，由 Service 自行决定是否前台）")
         }.onFailure {
-            AppLog.w(AppLog.M_SYS, "前台服务启动失败", it.message ?: "")
+            AppLog.w(AppLog.M_SYS, "OBD 服务启动失败", it.message ?: "")
         }
     }
 

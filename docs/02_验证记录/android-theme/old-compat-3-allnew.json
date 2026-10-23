@@ -1,0 +1,86 @@
+{
+  "schema": "icar.ui/2",
+  "meta": {
+    "name": "旧版兼容-全未知",
+    "author": "P5B-M03 compat test",
+    "version": 1
+  },
+  "scaleMode": 0,
+  "assets": [],
+  "pages": [
+    {
+      "id": "p0",
+      "name": "主页面",
+      "nodes": [
+        {
+          "id": "a",
+          "type": "segmentedArc",
+          "name": "segmentedArc-a",
+          "x": 8,
+          "y": 8,
+          "w": 160,
+          "h": 80,
+          "rotation": 0,
+          "scale": 1,
+          "alpha": 255,
+          "z": 0,
+          "locked": false,
+          "visible": true,
+          "children": [],
+          "pid": "obd.rpm"
+        },
+        {
+          "id": "b",
+          "type": "pathProgress",
+          "name": "pathProgress-b",
+          "x": 8,
+          "y": 96,
+          "w": 160,
+          "h": 80,
+          "rotation": 0,
+          "scale": 1,
+          "alpha": 255,
+          "z": 0,
+          "locked": false,
+          "visible": true,
+          "children": [],
+          "pid": "obd.load"
+        },
+        {
+          "id": "c",
+          "type": "valueText",
+          "name": "valueText-c",
+          "x": 176,
+          "y": 8,
+          "w": 160,
+          "h": 80,
+          "rotation": 0,
+          "scale": 1,
+          "alpha": 255,
+          "z": 0,
+          "locked": false,
+          "visible": true,
+          "children": [],
+          "pid": "obd.coolant"
+        },
+        {
+          "id": "d",
+          "type": "shape",
+          "name": "shape-d",
+          "x": 176,
+          "y": 96,
+          "w": 160,
+          "h": 80,
+          "rotation": 0,
+          "scale": 1,
+          "alpha": 255,
+          "z": 0,
+          "locked": false,
+          "visible": true,
+          "children": [],
+          "kind": "circle"
+        }
+      ]
+    }
+  ]
+}

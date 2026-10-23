@@ -106,6 +106,8 @@
     "verify-p5b01-gauge-preview": 18,
     "verify-p5b01-primitives": 44,
     "verify-p5b01-text": 14,
-    "verify-p5b02-primitives-data": 23
+    "verify-p5b02-primitives-data": 23,
+    "verify-p5b03-editor-primitives": 39,
+    "verify-p5b03-dashboards": 19
   }
 }

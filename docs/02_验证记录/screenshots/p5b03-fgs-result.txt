@@ -1,0 +1,15 @@
+=== P5B-M03 §A：前台服务类型合规性（设备端）===
+设备: sdk_gphone64_x86_64  Android 14  SDK 34
+
+## 本轮的设计变更
+  P5B-M02：无蓝牙权限 → DATA_SYNC 保活（判定为滥用）
+  P5B-M03：无蓝牙权限 → **不起前台服务**（离线浏览不需要 FGS）
+
+
+=== 汇总 ===
+通过=22 失败=0
+PASS=22 FAIL=0
+
+⚠️ 环境限制：只有 Android 14（API 34）。Android 15/16 的 dataSync 6 小时
+   限制**未实测**，只做了代码层准备（onTimeout）与 targetSdk 核对（34 < 35）。
+   不得据此宣称 Android 15/16 长期运行安全。

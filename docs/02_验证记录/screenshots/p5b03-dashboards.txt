@@ -1,0 +1,32 @@
+=== P5B-M03 §F：两套综合主题动态验证 ===
+
+确定性输入（与 Android SimScenario 通道对齐）：
+  NORMAL    rpm= 800 speed= 60 coolant=90
+  MID       rpm=4000 speed=100 coolant=95
+  ALARM     rpm=6800 speed=150 coolant=115
+  CRITICAL  rpm=7400 speed=200 coolant=170
+  ZERO      rpm=   0 speed=  0 coolant=-40
+
+  圆环/RPM 点亮渲染 ink: {"normal":5832,"mid":9877,"alarm":13461,"critical":13061,"zero":1712,"nodata":572}
+  RPM→进度比: {"normal":0.1,"mid":0.5,"alarm":0.85,"critical":0.925,"zero":0}
+  数据屏 ink: {"normal":2460,"alarm":3772,"nodata":403}
+  界面措辞：{"oilTemp":"本车未实现","oilPress":"需 CAN/DBC","boost":"--","lambda":"暂未实现","coolant":"--","rpm":"--"}
+
+  五项的分类与措辞：
+    机油温度     src=obd-optional  →  "本车未实现"
+    机油压力     src=can-only  →  "需 CAN/DBC"
+    BOOST    src=calc  →  "--"
+    Lambda   src=not-impl  →  "暂未实现"
+    水温       src=obd  →  "--"
+
+  ✅ 三种不可读原因**措辞不同** —— 用户能分清：
+     「本车未实现」（标准有，车不支持）
+     「需 CAN/DBC」（标准就没有）
+     「暂未实现」（标准有，我们没做）
+
+=== 汇总 ===
+通过=19 失败=0
+PASS=19 FAIL=0
+
+⚠️ 层级：编辑器原型（无头 Edge）。两套综合主题**无 Android View**，
+   所以本套件不主张跨端一致。

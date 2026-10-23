@@ -1,0 +1,56 @@
+{
+  "schema": "icar.ui/2",
+  "meta": {
+    "name": "旧版兼容-未知报警组件",
+    "author": "P5B-M03 compat test",
+    "version": 1
+  },
+  "scaleMode": 0,
+  "assets": [],
+  "pages": [
+    {
+      "id": "p0",
+      "name": "主页面",
+      "nodes": [
+        {
+          "id": "ok-gauge",
+          "type": "gauge",
+          "name": "gauge-ok-gauge",
+          "x": 8,
+          "y": 8,
+          "w": 160,
+          "h": 80,
+          "rotation": 0,
+          "scale": 1,
+          "alpha": 255,
+          "z": 0,
+          "locked": false,
+          "visible": true,
+          "children": [],
+          "pid": "obd.rpm",
+          "style": 0
+        },
+        {
+          "id": "alarm-unknown",
+          "type": "valueText",
+          "name": "valueText-alarm-unknown",
+          "x": 8,
+          "y": 96,
+          "w": 160,
+          "h": 60,
+          "rotation": 0,
+          "scale": 1,
+          "alpha": 255,
+          "z": 0,
+          "locked": false,
+          "visible": true,
+          "children": [],
+          "pid": "obd.coolant",
+          "warnHigh": 100,
+          "criticalHigh": 110,
+          "_expectNewVersion": "红色报警数值 115"
+        }
+      ]
+    }
+  ]
+}

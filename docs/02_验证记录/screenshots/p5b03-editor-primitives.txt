@@ -1,0 +1,12 @@
+=== P5B-M03 §E：编辑器高级基元工程化验证 ===
+
+策略：**真的用编辑器的通用能力**（createNode / hitTest / undo），
+      不另写测试专用的移动缩放逻辑（那会违背「不要另建设计器」）。
+
+     Undo 实测: {"hasDoUndo":true,"hasDoRedo":true,"hasStack":true,"nAfterAdd":7,"nodePresentAfterAdd":true,"typeAfterAdd":"shape","undoIndexBefore":1,"undoSizeBefore":2,"undoIndexAfter":0,"nodePresentAfterUndo":false,"nAfterUndo":5,"nodePresentAfterRedo":true,"typeAfterRedo":"shape","xAfterRedo":11,"nAfterRedo":7}
+
+=== 汇总 ===
+通过=39 失败=0
+PASS=39 FAIL=0
+
+⚠️ 层级：编辑器（无头 Edge）。四个基元仍未注册进正式控件体系。
