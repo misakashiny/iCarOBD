@@ -383,7 +383,19 @@ repeat(n.coerceIn(0, 200)) {
 
 ## 十一、GitHub 完整提交 Hash 与远程验证
 
-见提交后回填。
+**`0bd3abdc7bd78a042698594bf2df621b32d40b1a`**
+
+| 项 | 值 |
+|---|---|
+| 本地 HEAD | `0bd3abdc7bd78a042698594bf2df621b32d40b1a` |
+| 远程 `origin/main` | `0bd3abdc7bd78a042698594bf2df621b32d40b1a` |
+| 一致性 | ✅ **完全一致**（`git ls-remote` 实测）|
+| Push | ✅ `886be52..0bd3abd`（快进，无重写）|
+| 提交链接 | https://github.com/misakashiny/iCarOBD/commit/0bd3abdc7bd78a042698594bf2df621b32d40b1a |
+| 提交文件数 | 27（**显式路径**）|
+| 敏感扫描 | ✅ 无密钥 / Token / 私钥 |
+| 禁止操作 | 未使用 `--force` / `--force-with-lease` / `reset --hard` / `--allow-unrelated-histories` |
+| **用户未跟踪文档** | ✅ `86_ICarUI全控件实现方式盘点.md` 仍在工作区、**未被提交、未被修改**（SHA256 `AFC1428F…5AD6605` 与开工一致）|
 
 ---
 
