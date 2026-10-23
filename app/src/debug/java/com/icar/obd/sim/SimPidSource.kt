@@ -179,8 +179,22 @@ object SimPidSource {
      */
     @Synchronized
     fun step(n: Int = 1) {
+        // ⚠️ P5A-M01 修的缺陷：原来这里只 `tick++` + `SignalSimulator.tick()`，
+        //    **没有重新算通道目标值**。
+        //
+        //    为什么那样是错的：`applyScenario()` 才负责用
+        //    `SimScenario.values(s, tick, extraPids)` 把**当前 tick** 翻译成通道配置；
+        //    而 `SignalSimulator.tick()` 只是把已有通道按 `WAVE_CONSTANT` 再写一遍 ——
+        //    而场景通道恰恰都是 `WAVE_CONSTANT`（min==max==目标值），
+        //    所以值**永远是第一次 enable 时算出来的那个**，`--ei step N` 完全没效果。
+        //
+        //    实测证据：`--es scenario normal --ei step 0` 与 `--ei step 20` 广播回显
+        //    完全一致（`std_0C=860` 两次相同）。
+        //
+        //    修法：每推进一个 tick 就重新 `applyScenario`，让新 tick 真的落到通道上。
         repeat(n.coerceIn(0, 200)) {
             tick++
+            runCatching { applyScenario(scenario) }
             runCatching { SignalSimulator.tick(System.currentTimeMillis()) }
         }
     }

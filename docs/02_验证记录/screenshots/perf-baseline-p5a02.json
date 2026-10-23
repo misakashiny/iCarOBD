@@ -1,125 +1,125 @@
 {
-  "generatedAt": "2026-10-22T13:07:32.036+08:00",
+  "generatedAt": "2026-10-23T15:12:52.944+08:00",
   "device": "emulator-5554",
   "durationMin": 11,
   "samples": [
     {
-      "t": 0.49,
-      "pssMB": 100.22,
-      "javaMB": 16.53
+      "t": 0.48,
+      "pssMB": 74.54,
+      "javaMB": 14.01
     },
     {
       "t": 1.01,
-      "pssMB": 95.57,
-      "javaMB": 14.3
+      "pssMB": 77.46,
+      "javaMB": 12.88
     },
     {
       "t": 1.53,
-      "pssMB": 95.16,
-      "javaMB": 13.87
+      "pssMB": 78.11,
+      "javaMB": 12.88
     },
     {
       "t": 2.11,
-      "pssMB": 96.6,
-      "javaMB": 14.8
+      "pssMB": 80.09,
+      "javaMB": 13.38
     },
     {
       "t": 2.63,
-      "pssMB": 95.81,
-      "javaMB": 14.34
+      "pssMB": 79.6,
+      "javaMB": 12.91
     },
     {
-      "t": 3.16,
-      "pssMB": 95.57,
-      "javaMB": 14.29
+      "t": 3.15,
+      "pssMB": 79.54,
+      "javaMB": 12.89
     },
     {
       "t": 3.68,
-      "pssMB": 95.39,
-      "javaMB": 14.38
+      "pssMB": 79.6,
+      "javaMB": 12.93
     },
     {
       "t": 4.36,
-      "pssMB": 97.16,
-      "javaMB": 15.87
+      "pssMB": 81.71,
+      "javaMB": 13.66
     },
     {
-      "t": 4.88,
-      "pssMB": 96.04,
-      "javaMB": 14.75
+      "t": 4.89,
+      "pssMB": 80.95,
+      "javaMB": 12.91
     },
     {
-      "t": 5.4,
-      "pssMB": 95.79,
-      "javaMB": 14.8
+      "t": 5.41,
+      "pssMB": 80.92,
+      "javaMB": 12.92
     },
     {
       "t": 5.93,
-      "pssMB": 96,
-      "javaMB": 14.74
+      "pssMB": 80.96,
+      "javaMB": 12.89
     },
     {
-      "t": 6.5,
-      "pssMB": 97.42,
-      "javaMB": 15.91
+      "t": 6.51,
+      "pssMB": 80.1,
+      "javaMB": 13.35
     },
     {
-      "t": 7.02,
-      "pssMB": 96.81,
-      "javaMB": 15.28
+      "t": 7.04,
+      "pssMB": 79.66,
+      "javaMB": 12.95
     },
     {
-      "t": 7.55,
-      "pssMB": 96.67,
-      "javaMB": 15.17
+      "t": 7.56,
+      "pssMB": 79.45,
+      "javaMB": 12.9
     },
     {
-      "t": 8.17,
-      "pssMB": 93.92,
-      "javaMB": 12.14
+      "t": 8.24,
+      "pssMB": 80.26,
+      "javaMB": 13.64
     },
     {
-      "t": 8.75,
-      "pssMB": 97.37,
-      "javaMB": 15.7
+      "t": 8.77,
+      "pssMB": 79.38,
+      "javaMB": 12.94
     },
     {
-      "t": 9.27,
-      "pssMB": 97.24,
-      "javaMB": 15.56
+      "t": 9.29,
+      "pssMB": 79.32,
+      "javaMB": 12.89
     },
     {
-      "t": 9.79,
-      "pssMB": 97.24,
-      "javaMB": 15.56
+      "t": 9.82,
+      "pssMB": 79.33,
+      "javaMB": 12.89
     },
     {
-      "t": 10.36,
-      "pssMB": 98.53,
-      "javaMB": 16.71
+      "t": 10.39,
+      "pssMB": 79.86,
+      "javaMB": 13.38
     },
     {
-      "t": 10.88,
-      "pssMB": 97.86,
-      "javaMB": 16.03
+      "t": 10.91,
+      "pssMB": 79.36,
+      "javaMB": 12.91
     }
   ],
   "summary": {
-    "startPssMB": 100.22,
-    "endPssMB": 95.04,
-    "maxPssMB": 100.22,
-    "minPssMB": 93.92,
-    "growthMB": -2.36,
-    "slopeMBPerMin": 0.082,
-    "seg1AvgMB": 96.49,
-    "seg3AvgMB": 97.03,
+    "startPssMB": 74.54,
+    "endPssMB": 78.19,
+    "maxPssMB": 81.71,
+    "minPssMB": 74.54,
+    "growthMB": 4.82,
+    "slopeMBPerMin": 0.178,
+    "seg1AvgMB": 78.22,
+    "seg3AvgMB": 79.58,
     "plateau": true,
     "gfx": {
-      "totalFrames": 544,
+      "totalFrames": 484,
       "jankyPct": null,
       "p50": 17,
-      "p90": 22,
-      "p99": 36
+      "p90": 61,
+      "p99": 85
     },
     "fatals": 0,
     "anrs": 0,
