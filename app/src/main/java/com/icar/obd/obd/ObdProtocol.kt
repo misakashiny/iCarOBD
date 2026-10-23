@@ -364,11 +364,28 @@ object ObdProtocol {
 
         if (occurrence > 0) return null
 
-        // 兜底：响应模式对但 PID 对不上（部分 ECU 会回 "41 00 ..." 之类的位图响应）
-        val idx = bytes.indexOf(respMode)
-        if (idx >= 0 && idx + 1 < bytes.size) {
-            return bytes.subList(idx + 1, bytes.size).map { it.toByte() }.toByteArray()
-        }
+        // ================================================================
+        // P5A-M06 阶段 A：**删除兜底分支**（原来是 v1.15.0 起的"宽容匹配"）
+        //
+        // 原行为：响应模式字节对得上、但 PID 字节对不上时，把 respMode 之后的
+        // **全部字节**当数据返回。
+        //
+        // 实证危害（`ObdAttributionTest` 钉住，探针见 `ObdAttributionProbeTest`）：
+        //   41 00 BE 3F 80  → 当车速 = 0.0 km/h      （位图冒充数据）
+        //   41 0D 1A F8     → 当转速 = 838.5 rpm
+        //   41 0C 1A F8     → 当车速 = 12.0 km/h
+        //   41 05 7B        → 当转速 = 350.75 rpm
+        // 也就是说：**无法可靠归属的响应会悄悄变成另一个 PID 的"有效值"**，
+        // 仪表上显示的是假数，而用户完全无法察觉。
+        //
+        // 兼容性调查：既有测试说它是为了「请求 01 0D 却收到 01 00 位图响应」。
+        // 但位图有其**正当通道** —— `PidScanner` / `ElmSession` / `CanSniffer` 都是
+        // 用 `extractData(reply, 1, "00")` **显式请求 01 00**，走精确匹配，不依赖兜底。
+        // 所以这条兜底没有任何正当用途。
+        //
+        // 按任务要求「不能让无法可靠归属的响应悄悄生成另一个 PID 的有效值」→ 删。
+        // 后果：错 PID 的响应现在返回 null → `parse()` 报"无有效响应"，
+        // `ObdEngine` 按失败处理（不影响正常车型，因为正常车型本来就回对了 PID）。
         return null
     }
 
@@ -429,7 +446,7 @@ object ObdProtocol {
             // "ECU 说不行"和"没人回答"必须能分开，否则排障只能靠猜
             ?: return ParseResult(
                 false, null, ByteArray(0), raw.trim(),
-                negativeReason(raw) ?: "无有效响应"
+                negativeReason(raw) ?: misattributionReason(raw, pid) ?: "无有效响应"
             )
         if (data.isEmpty()) return ParseResult(false, null, data, raw.trim(), "响应无数据字节")
         return try {
@@ -438,6 +455,30 @@ object ObdProtocol {
         } catch (t: Throwable) {
             ParseResult(false, null, data, raw.trim(), "公式错误: ${t.message}")
         }
+    }
+
+    /**
+     * P5A-M06 阶段 A：当响应**里确实有一条肯定应答、但 PID 不是我们要的那个**时，
+     * 给一条能直接看懂的原因，而不是笼统的"无有效响应"。
+     *
+     * 背景：删掉宽容兜底之后，`41 0D …` 拿 `0C` 去解析会返回 null。
+     * 如果只说"无有效响应"，排障时无法区分「车没回」和「回的是别的 PID」——
+     * 而后者恰恰是最需要被看见的情况（说明请求/响应串了，或者用户在编辑器里填错了 PID）。
+     */
+    private fun misattributionReason(raw: String, pid: PidDefinition): String? {
+        val mode = pid.modeInt()
+        val respMode = (mode + 0x40) and 0xFF
+        val bytes = try { hexBytes(stripNoise(raw)) } catch (e: Throwable) { return null }
+        if (bytes.isEmpty()) return null
+        val idx = bytes.indexOf(respMode)
+        if (idx < 0) return null
+        if (idx + 1 >= bytes.size) return null
+        val got = bytes[idx + 1]
+        val want = pid.pid.uppercase().replace(Regex("[^0-9A-F]"), "").chunked(2)
+            .firstOrNull()?.let { runCatching { Integer.parseInt(it, 16) }.getOrNull() }
+        if (want == null) return null
+        if (got == want) return null
+        return String.format("响应 PID 不匹配：请求 %02X，收到 %02X（已拒绝，不产生数值）", want, got)
     }
 
     data class ParseResult(

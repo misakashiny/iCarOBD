@@ -113,6 +113,11 @@
       "file": "docs/03_历史归档/20261014_STATUS_整理前.md",
       "link": "app/src/test/java/com/icar/obd/obd/TmpT1RUnitProbeTest.kt",
       "reason": "2026-10-14迁移前STATUS的历史临时/旧名测试引用，当前工作树与备份清单均无该路径；只保留当时记录，不是当前测试入口。整理前原始字节在ZIP，现行回归为GForceSourceTest及持久测试；新增纳入docs扫描故精确登记，不能豁免新测试路径。"
+    },
+    {
+      "file": "docs/02_验证记录/20261014_FrameMonitor生命周期核实.md",
+      "link": "app/build/test-results/testDebugUnitTest/TEST-com.icar.obd.obd.FrameMonitorLifecycleTest.xml",
+      "reason": "历史验证记录（2026-10-14）。这条是当时 JUnit 跑出来的**构建产物路径**，不是源码文档；构建产物本来就会被 gradlew clean 清掉（P5A-M06 做 clean 构建后该文件不存在）。记录本身是真实跑过的证据，不应为了让链接检查通过而改写历史正文。"
     }
   ]
 }

@@ -215,20 +215,24 @@ class ObdLinkIntegrationTest {
 
     @Test
     fun `C6 无效响应 字节不足或非法 不产生值`() {
-        // ⚠️ 第一版把 "41 0D 1A F8" 也当成"无效"，结果它**被判成功**（838.5）。
-        //    读源码后确认这是**既有的容错设计**，不是缺陷：
-        //    `ObdProtocol.matchData` 在 PID 字节对不上时会走**兜底分支**
-        //    （L367-371：只要响应模式字节存在，就把其后字节当数据），
-        //    注释写明"部分 ECU 会回 41 00 之类的位图响应"。
-        //    所以这里只用**真正无法解析**的输入：字节不足 / 含非十六进制 / 错误帧。
+        // ⚠️ P5A-M06 阶段 A **行为已变**：M05 时这里断言过「PID 不匹配会回落到
+        //    响应模式之后的全部字节」，并把它记成"已知容错"。
+        //    后来实证证明那不是容错、是**数据归属缺陷**（位图被当车速 = 0.0 km/h，
+        //    `41 0D …` 被当转速 = 838.5 rpm）→ 兜底已删除，见 `ObdAttributionTest`。
+        //
+        //    所以现在错 PID 的响应与其它无效响应一样：**都不产生值**。
         for (raw in listOf("41 0C", "41 0C ZZ ZZ", "?")) {
             val p = ObdProtocol.parse(raw, pidRpm())
             if (p.ok) fail("raw=[$raw] 不应解析成功（得到 ${p.value}）")
         }
-        // 并把兜底行为**显式记录下来**，避免以后有人误以为它是 bug
-        val fallback = ObdProtocol.parse("41 0D 1A F8", pidRpm())
-        assertTrue("已知容错：PID 不匹配时会回落到「响应模式之后全部字节」", fallback.ok)
-        // 值来自 [0D,1A,F8]：A=0x0D B=0x1A → 0x0D1A/4 = 834.5（不是 838.5）
+        // 错 PID 现在也拒绝，并给出可排障的原因
+        val wrongPid = ObdProtocol.parse("41 0D 1A F8", pidRpm())
+        assertFalse("错 PID 不得生成转速值（P5A-M06 修复）", wrongPid.ok)
+        assertNull(wrongPid.value)
+        assertTrue(
+            "原因应点明 PID 不匹配，实际=[${wrongPid.error}]",
+            (wrongPid.error ?: "").contains("PID")
+        )
     }
 
     // ------------------------------------------------------------------ C7 适配器中途断开
