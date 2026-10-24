@@ -28,6 +28,49 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // ============================================================
+            // P5B-M05：**让 Release 变体可以被安装验证**（默认仍然是 unsigned）
+            //
+            // ## 为什么需要这个开关
+            //
+            // P5B-M03 / M04 的报告都记录了「Release APK 6,155,333 B」，但那些
+            // 数字**都只是文件大小** —— Release 从来没有被真正安装过。
+            // P5B-M05 阶段 A 一装就露馅：
+            //
+            //   INSTALL_PARSE_FAILED_NO_CERTIFICATES:
+            //   Failed to collect certificates from base.apk
+            //
+            // 也就是「Release 能不能跑」这件事**从未被验证**。
+            // 六种 v3 能力全都在 Release 里（dexdump 已证实），但没装上去跑过。
+            //
+            // ## 为什么不直接配一个正式签名
+            //
+            // 正式签名的 keystore / 口令属于**发布决策**，不是本任务授权范围。
+            // 而且把签名材料写进仓库是安全事故。
+            //
+            // ## 做法
+            //
+            // 用 Gradle **自动生成的 debug keystore** 签 release 变体，
+            // 只在显式加 `-Pp5b05ReleaseSigning=debug` 时生效。
+            // 这样：
+            //   · 默认 `assembleRelease` 输出**仍是 unsigned**（发布流程不受影响）
+            //   · 验证时用一个标准签名的包，能装能跑
+            //   · 产物名带 `-p5b05test` 后缀，肉眼可辨，不会与正式包混淆
+            // ============================================================
+            if (project.hasProperty("p5b05ReleaseSigning")) {
+                signingConfig = signingConfigs.getByName("debug")
+            }
+        }
+    }
+
+    // 验证用产物改名，避免与正式发布包混淆
+    applicationVariants.all {
+        val v = this
+        if (v.buildType.name == "release" && project.hasProperty("p5b05ReleaseSigning")) {
+            v.outputs.all {
+                (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl)
+                    .outputFileName = "app-release-p5b05test.apk"
+            }
         }
     }
 

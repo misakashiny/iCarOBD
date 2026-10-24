@@ -956,11 +956,33 @@ class CanvasSettingsFragment : Fragment() {
         Store.customGauges.clear()
         Store.customGauges.addAll(d.gauges)
 
-        // v2：把**设计文件原文**存下来，渲染时按节点树走。
+        // 节点树格式（v2 / v3）：把**设计文件原文**存下来，渲染时按节点树走。
         // 为什么存原文而不是序列化 d：DesignFile.toJson() 写的是 v1，
         // 往返会丢掉 nodes / assets / controls / 字体 / 状态。
+        //
+        // ================================================================
+        // ⚠️ P5B-M05 阶段 A 修的**真实缺陷**（Release 渲染 v3 失败）
+        //
+        // 原来这一行是：
+        //
+        //     if (rawText.isNotBlank() && rawText.contains("icar.ui/2")) rawText else ""
+        //
+        // **只认 v2**。于是 P5B-M04 引入的 v3 主题在 App 里走「导入」路径时：
+        //   · 解析 OK、确认框正常、主题名正确显示
+        //   · 但 `designJson` 被写成 **空字符串**
+        //   · 渲染层拿不到节点树 → `built == 0` → 显示空态
+        //     「没有可显示的通道，请先连接设备并在 PID 页启用通道」
+        //
+        // 更隐蔽的地方：**Debug 版看不出来**。因为测试套件（deploy-8styles.js）
+        // 是**直接写 settings.json** 绕过了这个函数，所以 Debug 一直"正常"。
+        // 只有真的走 UI 导入（Release 上唯一可行的路径）才会暴露。
+        // 而 Release 从来没被安装过 —— 三个原因叠加，这个 bug 藏了一整轮。
+        //
+        // 判据改用 `d.isTreeSchema`（解析阶段已判定 schema 是 v2 或 v3）：
+        // 比字符串 contains 更准（现在会误判 `icar.ui/20` 这种，也不认 v3）。
+        // ================================================================
         Store.settings.designJson =
-            if (rawText.isNotBlank() && rawText.contains("icar.ui/2")) rawText else ""
+            if (rawText.isNotBlank() && d.isTreeSchema) rawText else ""
 
         // 主题：设计文件里存的是**名字**（neon/ice/amber），不是 id ——
         // 因为 id 会随自建主题分配而变化，名字才是跨机器稳定的

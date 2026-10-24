@@ -80,6 +80,22 @@ data class DesignFile(
      * 这样渲染层不用知道 pages 的存在。
      */
     val pages: List<DesignPage> = emptyList(),
+    /**
+     * P5B-M05：这份设计是否是**节点树格式**（`icar.ui/2` 或 `icar.ui/3`）。
+     *
+     * ## 为什么需要这个字段
+     *
+     * 调用方（「导入设计文件」）要判断"能不能把原文存下来按节点树渲染"。
+     * 原来那里写的是 `rawText.contains("icar.ui/2")` —— **只认 v2**，
+     * 于是 v3 主题导入后 `designJson` 被写成空串，画布显示空态
+     * （「没有可显示的通道」）。Debug 版因为测试直接写 settings.json
+     * 绕过了这个函数，所以一直没暴露。
+     *
+     * 用解析阶段已经判定好的结果，而不是再对原文做字符串匹配：
+     *   · 不认 `icar.ui/20` 这类误判
+     *   · 新增 schema 时只改解析层一处，调用方自动跟上
+     */
+    val isTreeSchema: Boolean = false,
     /** 设计分辨率（v2 才有；v1 用默认值） */
     val designW: Int = 2560,
     val designH: Int = 1600,
@@ -599,6 +615,8 @@ data class DesignFile(
                 assets = assets,
                 nodes = nodes,
                 pages = pages,
+                // P5B-M05：解析阶段已经判定过 schema（v1 / v2 / v3），这里把结论带出去
+                isTreeSchema = isTree,
                 designW = canvas?.optInt("designW", 2560) ?: 2560,
                 designH = canvas?.optInt("designH", 1600) ?: 1600,
                 scaleMode = canvas?.optInt("scaleMode", SCALE_STRETCH) ?: SCALE_STRETCH,
