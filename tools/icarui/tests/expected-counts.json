@@ -112,6 +112,7 @@
     "verify-p5b04-editor": 70,
     "verify-p5b05-dataintegrity": 36,
     "verify-p5b05-pathpoint": 35,
-    "verify-p5b05-primitives": 55
+    "verify-p5b05-primitives": 55,
+    "verify-p5b05-templates": 25
   }
 }
