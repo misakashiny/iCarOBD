@@ -327,6 +327,25 @@
     // 选择框与手柄（画在最上）
     drawSelection();
 
+    // ================================================================
+    // P5B-M05 阶段 D：PathProgress 控制点叠加（D1 第 1、7 条 / D5 预览）
+    //
+    // 在**设备坐标**里画（setTransform 复位），这样控制点大小不随节点缩放变化
+    // —— 节点缩到 10% 时点还保持可点击的尺寸。
+    // ================================================================
+    {
+      const ppeDraw = window.PathPointEditor;
+      if (ppeDraw && ppeDraw.isActive()) {
+        const pn = ppeDraw.currentNode();
+        // ⚠️ 用 deviceMatrix(累积祖先变换)，不是 selectionMatrix(要两个参数)
+        const m = pn && window.deviceMatrix ? window.deviceMatrix(S.design.nodes, pn.id) : null;
+        if (pn && m) {
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ppeDraw.drawOverlay(ctx, pn, m);
+        }
+      }
+    }
+
     // 框选矩形
     if (S.marquee) {
       const a = S.marquee;
@@ -869,17 +888,61 @@ function uniformMatrix(m, w, h) {
     }
 
     if (n.type === "shape") {
-      I.drawShape(ctx, {
-        kind: n.kind || "rect",
-        x: 0, y: 0, w: w, h: h,
+      // ================================================================
+      // ⚠️ P5B-M05 阶段 F 修的**真实缺陷**：drawShape 的参数契约
+      //
+      // `AdvancedPrimitives._internals.drawShape` 对三种 kind 用的**不是** x/y/w/h：
+      //
+      //   circle / ring  →  ctx.arc(num(p.cx,0), num(p.cy,0), num(p.r,10), ...)
+      //   line           →  moveTo(num(p.x1,0), num(p.y1,0)) → lineTo(x2,y2)
+      //   polyline       →  直接用 p.points 里的 x/y 当**设备坐标**
+      //
+      // 原来这里一律传 `{x:0, y:0, w, h}`，于是这三种 kind：
+      //   · circle/ring  → cx=cy=0, r=10 → 画在节点左上角外面（看不见）
+      //   · line         → x1=y1=x2=y2=0 → 宽度 0
+      //   · polyline     → 点还是归一化 0..1，被当成设备坐标 → 全挤在左上角 1 像素内
+      //
+      // 实测像素：line=0、polyline=3、circle=100（只有默认 r=10 那点）、ring=46。
+      // **rect / roundRect 是对的**（它们用 x/y/w/h）—— 所以只有部分图形坏，
+      // 更容易被忽略。
+      //
+      // 修法：按 kind 分别传正确参数（几何全部由节点 w/h 算出来）。
+      // ================================================================
+      const kind = n.kind || "rect";
+      const base = {
+        kind: kind,
         fill: n.fill === "none" ? null : (n.fill || "#3DD6FF"),
         stroke: n.stroke === "none" ? null : (n.stroke || null),
         strokeWidth: num(n.strokeWidth, 0),
         cornerRadius: num(n.cornerRadius, 12),
         innerRatio: num(n.innerRatio, 0.6),
         rotationDeg: num(n.rotationDeg, 0),
-        points: n.points || null,
-      });
+      };
+
+      if (kind === "circle" || kind === "ring") {
+        // 圆/环：圆心在节点中心，半径取短边一半减去描边
+        const sw = base.strokeWidth || 0;
+        base.cx = w / 2;
+        base.cy = h / 2;
+        base.r = Math.max(0.5, Math.min(w, h) / 2 - sw);
+      } else if (kind === "line") {
+        // 直线：左下 → 右上（与 Android ShapePrimitiveView 同一方向）
+        const sw = base.strokeWidth || 0;
+        base.x1 = sw;
+        base.y1 = h - sw;
+        base.x2 = w - sw;
+        base.y2 = sw;
+      } else if (kind === "polyline") {
+        // 折线：节点的归一化点 **换算成设备坐标**（drawShape 要的是像素）
+        const raw = n.points || [];
+        base.points = raw.map(function (p) {
+          return { x: (p.x === undefined ? 0 : p.x) * w, y: (p.y === undefined ? 0 : p.y) * h };
+        });
+      } else {
+        base.x = 0; base.y = 0; base.w = w; base.h = h;
+      }
+
+      I.drawShape(ctx, base);
       return;
     }
   }
@@ -2342,6 +2405,41 @@ function uniformMatrix(m, w, h) {
     const cp = eventPos(ev);                    // 设备（画布位图）坐标
     const np = canvasToNode(cp.x, cp.y);        // 0..360 坐标（移动量用这个）
 
+    // ================================================================
+    // 0) P5B-M05 阶段 D：**路径控制点优先**
+    //
+    // 必须排在缩放手柄**之前** —— 路径点常落在节点边框附近
+    // （起点在 (0,0)、终点在 (w,h)），否则用户想拖起点，实际拖的是节点角。
+    //
+    // 只在「单选一个未锁定的 pathProgress」时生效，其余情况完全走老路径。
+    // ================================================================
+    const ppe = window.PathPointEditor;
+    if (ppe && ppe.isActive()) {
+      const pn = ppe.currentNode();
+      if (pn) {
+        // ⚠️ 传 `cp`（画布**位图**坐标），不是 ev.clientX。
+        //    eventPos 已经把 CSS 像素折算成位图坐标（含 devicePixelRatio），
+        //    而 PathPointEditor 的世界矩阵输出的也是位图坐标 —— 同一空间。
+        const hit = ppe.hitPathPoint(pn, cp.x, cp.y);
+        if (hit) {
+          if (ppe.beginDrag(pn.id, hit.index)) {
+            S.pathPointDrag = { active: true, id: pn.id, index: hit.index };
+            return;
+          }
+        }
+        // Alt + 点击 = 在最近一段上插入新点（D1 第 3 条）
+        if (ev.altKey) {
+          const r = ppe.addPointAt(pn.id, cp.x, cp.y);
+          if (r && r.index !== undefined) {
+            window.requestDraw && window.requestDraw();
+            return;
+          }
+          if (r && r.error && window.toast) window.toast(r.error);
+          return;
+        }
+      }
+    }
+
     // 1) 先判手柄（只在单选时）。**在设备空间判**，旋转过的控件也能点中
     if (S.selection.length === 1) {
       const n = window.findNode(S.design.nodes, S.selection[0]);
@@ -2449,6 +2547,21 @@ function uniformMatrix(m, w, h) {
   cv.addEventListener("pointermove", ev => {
     if (!S.design) return;
     const cp = eventPos(ev);
+
+    // ================================================================
+    // P5B-M05 阶段 D：路径控制点拖动（最高优先级）
+    //
+    // ⚠️ 用 `ev.clientX/clientY`（相对 canvas 元素）而不是 `cp`：
+    //    PathPointEditor 的命中测试签名是屏幕坐标，内部走 screenToCanvas。
+    //    混用两套坐标是拖动"跳"的最常见原因。
+    // ================================================================
+    const ppeMove = window.PathPointEditor;
+    if (ppeMove && ppeMove.isDragging()) {
+      // 用 eventPos 算出的**画布位图坐标** cp，不用 ev.clientX
+      ppeMove.moveDrag(cp.x, cp.y);
+      window.requestDraw && window.requestDraw();
+      return;
+    }
 
     // 光标提示：悬停手柄时给 resize 光标
     if (!S.drag) {
@@ -2617,6 +2730,21 @@ function uniformMatrix(m, w, h) {
   });
 
   cv.addEventListener("pointerup", ev => {
+    // ================================================================
+    // P5B-M05 阶段 D：结束路径点拖动（D3：一次拖动 = 一条历史）
+    //
+    // `endDrag()` 内部只在**真的移动过**时才 pushHistory，
+    // 所以"点一下控制点没拖"不会污染撤销栈。
+    // ================================================================
+    const ppeUp = window.PathPointEditor;
+    if (ppeUp && ppeUp.isDragging()) {
+      const r = ppeUp.endDrag();
+      S.pathPointDrag = null;
+      if (r && r.changed) window.requestDraw && window.requestDraw();
+      draw();
+      return;
+    }
+
     const d = S.drag;
     S.drag = null;
     // 参考线只在拖动过程中有意义，松手必须清掉 —— 否则会一直留在画布上

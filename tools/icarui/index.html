@@ -291,6 +291,13 @@
      必须在 control-registry.js（Reg 就绪）与 advanced-primitives-proto.js（绘制内核）之后。
      它把四种 type 接进正式控件库 → 可拖入画布、可属性编辑、可 Undo/Redo、可导出 v3。 -->
 <script src="js/registry/controls/primitive-family.js"></script>
+<!-- P5B-M05 阶段 D：PathProgress 画布控制点编辑器。
+     依赖 canvas.js（selectionMatrix / CanvasState）与 primitive-family（节点类型）。
+     复用现有命中测试与坐标变换，不重写。 -->
+<script src="js/path-point-editor.js"></script>
+<!-- P5B-M05 阶段 E：基元快捷预设（转速环/红区/油门环/面板/大号车速…）。
+     ⚠️ 只产出**已有**的 v3 节点参数组合，不注册新 node type。 -->
+<script src="js/primitive-presets.js"></script>
 <!-- P5B-M01 阶段 F：两套组合仪表示例**原型**（依赖阶段 E 的 AdvancedPrimitives）。
      同样只是原型：不注册节点类型、不写 icar.ui/2。 -->
 <script src="js/dashboard-proto.js"></script>

@@ -109,6 +109,9 @@
     "verify-p5b02-primitives-data": 23,
     "verify-p5b03-editor-primitives": 39,
     "verify-p5b03-dashboards": 19,
-    "verify-p5b04-editor": 70
+    "verify-p5b04-editor": 70,
+    "verify-p5b05-dataintegrity": 36,
+    "verify-p5b05-pathpoint": 35,
+    "verify-p5b05-primitives": 55
   }
 }
