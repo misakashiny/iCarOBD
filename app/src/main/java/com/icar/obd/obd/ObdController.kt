@@ -63,6 +63,13 @@ object ObdController {
     private lateinit var ctx: Context
     private var ready = false
 
+    /**
+     * P5B-M05：`everGotData` 那个订阅的退订句柄。
+     *
+     * 见 `init()` 里的说明 —— 原来返回值被丢弃，导致订阅永不退订且重复 init 会叠加。
+     */
+    private var everGotDataUnsub: (() -> Unit)? = null
+
     lateinit var transport: ObdTransport
         private set
     lateinit var session: ElmSession
@@ -198,7 +205,21 @@ object ObdController {
         // 记住「这台车真的能通」—— 只在**第一次解析出数值**时写盘一次。
         // 「开机自动连」拿它当门槛：光有地址不够，得确认以前真的收到过数据，
         // 否则点了连接却没读通的设备也会被记住，下次开机会白试一遍。
-        VehicleBus.addValueListener { v ->
+        //
+        // ================================================================
+        // ⚠️ P5B-M05 阶段 H1 修的**真实缺陷**：这个订阅**永不退订**
+        //
+        // 原来是裸的 `VehicleBus.addValueListener { ... }` —— 返回值被丢弃。
+        // 两个后果，都被新加的订阅计数器抓到了：
+        //
+        //   1. `init()` 每次调用都会再订阅一个（虽然它通常只调一次，
+        //      但这是**靠约定**而不是靠代码保证的）
+        //   2. 累计加/减永远不配平（实测 30 加 / 22 减）
+        //
+        // 现在先退旧的再挂新的 —— 幂等，重复 init 也只会有 1 个。
+        // ================================================================
+        everGotDataUnsub?.invoke()
+        everGotDataUnsub = VehicleBus.addValueListener { v ->
             if (v.ok && !Store.settings.everGotData) {
                 Store.settings.everGotData = true
                 Store.saveSettings()

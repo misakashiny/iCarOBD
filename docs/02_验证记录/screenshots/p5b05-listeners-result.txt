@@ -1,0 +1,9 @@
+=== P5B-M05 阶段 H1：订阅计数（直接计数，不靠堆推断）===
+
+
+=== 汇总 ===
+通过=18 失败=0
+PASS=18 FAIL=0
+
+⚠️ 本套件用**直接计数**（VehicleBus.liveValueListenerCount()），不是堆内存推断。
+⚠️ 层级：Android 14 模拟器 / Debug 变体。真机与真车未验证。

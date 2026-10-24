@@ -72,6 +72,11 @@ class ValueTextPrimitiveView @JvmOverloads constructor(
 
     private fun bind() {
         if (!busBinding) return
+        // ⚠️ P5B-M05：**先退旧的再挂新的**。
+        // 原来直接 `unsub = addValueListener{...}` —— 若 bind() 被调两次
+        // （如 setPid 后又 onAttachedToWindow），第一次的 unsub 被覆盖，
+        // 那个闭包就**永远退不掉**。订阅计数器会表现为"累计加 > 累计减"。
+        unsub?.invoke()
         unsub = VehicleBus.addValueListener { pv ->
             if (pv.pidId == pid) {
                 lastValue = if (pv.ok) pv.value else null

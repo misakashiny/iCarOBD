@@ -158,12 +158,78 @@ object VehicleBus {
 
     fun addValueListener(l: (PidValue) -> Unit): () -> Unit {
         valueListeners.add(l)
-        return { valueListeners.remove(l) }
+        // P5B-M05 阶段 H1：订阅计数（Debug 用）
+        synchronized(listenerCountLock) { valueListenerAdds++ }
+        return {
+            valueListeners.remove(l)
+            synchronized(listenerCountLock) { valueListenerRemoves++ }
+        }
     }
 
     fun addEventListener(l: (String) -> Unit): () -> Unit {
         eventListeners.add(l)
-        return { eventListeners.remove(l) }
+        synchronized(listenerCountLock) { eventListenerAdds++ }
+        return {
+            eventListeners.remove(l)
+            synchronized(listenerCountLock) { eventListenerRemoves++ }
+        }
+    }
+
+    // ================================================================
+    // P5B-M05 阶段 H1：**订阅数量统计**（任务 §十 H1 明确要求）
+    //
+    // ## 为什么需要它
+    //
+    // P5B-M04 用「5 轮主题切换后 Java 堆 −5,024K」作为监听器的证据 ——
+    // 那是**间接**推断：堆下降只能说明"没有明显暴涨"，
+    // 而**一个泄漏的监听器比一次 GC 释放的对象还小**，完全看不出来。
+    //
+    // 指令原话：「不能仅因为一次 GC 后 Heap 减少就判断不存在泄漏。」
+    //
+    // ## 做法：数"活着"的
+    //
+    // 不去数"加了几次减了几次"（那只证明调用配对），而是直接读
+    // `valueListeners.size` —— 那是**当前真正还持有引用的闭包数**。
+    //
+    // 判据：建 Renderer → >0；销毁 → **精确回到 0**。
+    // ================================================================
+
+    private val listenerCountLock = Any()
+    private var valueListenerAdds = 0
+    private var valueListenerRemoves = 0
+    private var eventListenerAdds = 0
+    private var eventListenerRemoves = 0
+
+    /** **当前存活的**值监听器数量（不是净增量）*/
+    fun liveValueListenerCount(): Int = valueListeners.size
+
+    /** 当前存活的事件监听器数量 */
+    fun liveEventListenerCount(): Int = eventListeners.size
+
+    /**
+     * 订阅计数快照（给 Debug 探针/日志用）。
+     *
+     * @return `live` 当前存活数；`added`/`removed` 累计；`balanced` 是否配平
+     */
+    fun listenerStats(): Map<String, Int> = synchronized(listenerCountLock) {
+        mapOf(
+            "liveValue" to valueListeners.size,
+            "liveEvent" to eventListeners.size,
+            "valueAdded" to valueListenerAdds,
+            "valueRemoved" to valueListenerRemoves,
+            "eventAdded" to eventListenerAdds,
+            "eventRemoved" to eventListenerRemoves,
+        )
+    }
+
+    /** 订阅计数重置（仅供测试，避免跨用例累计）*/
+    fun resetListenerStatsForTest() {
+        synchronized(listenerCountLock) {
+            valueListenerAdds = 0
+            valueListenerRemoves = 0
+            eventListenerAdds = 0
+            eventListenerRemoves = 0
+        }
     }
 
     fun emit(msg: String) {

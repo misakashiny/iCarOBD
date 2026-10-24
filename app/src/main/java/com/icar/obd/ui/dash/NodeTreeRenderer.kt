@@ -18,6 +18,7 @@ import com.icar.obd.data.GaugeFont
 import com.icar.obd.data.GaugeItem
 import com.icar.obd.data.NodeState
 import com.icar.obd.data.PrimitiveFields
+import com.icar.obd.data.AppLog
 import com.icar.obd.obd.VehicleBus
 import com.icar.obd.ui.primitive.PathProgressView
 import com.icar.obd.ui.primitive.SegmentedArcView
@@ -323,9 +324,27 @@ class NodeTreeRenderer(private val context: Context) {
      * release 是"不用了"。两者都必须退订。
      */
     fun release() {
+        // P5B-M05 阶段 H1：**订阅计数**（任务 §十 H1 要求可观察证据）
+        //
+        // 打这一行的目的：设备套件能直接从 logcat 读到
+        // 「退订前有多少个存活监听器 → 退订后多少个」，
+        // 从而**精确**验证"回到 0"，而不是靠堆内存推断。
+        //
+        // 为什么这比 P5B-M04 的「堆 −5,024K」可靠：
+        // 堆只会告诉你"没暴涨"，而**一个泄漏的监听器
+        // 比一次 GC 释放的对象还小**，在堆上看不出来。
+        val before = VehicleBus.liveValueListenerCount()
+        val nUnsub = busUnsubs.size
         busUnsubs.values.forEach { runCatching { it.invoke() } }
         busUnsubs.clear()
         busViews.clear()
+        val after = VehicleBus.liveValueListenerCount()
+        val st = VehicleBus.listenerStats()
+        AppLog.i(
+            AppLog.M_UI, "订阅计数",
+            "释放 本节点=${nUnsub} 存活=${before}→${after} " +
+                "累计加=${st["valueAdded"]} 累计减=${st["valueRemoved"]}"
+        )
     }
 
     private fun buildInto(nodes: List<DesignNode>, parent: ViewGroup, design: DesignFile): Int {
