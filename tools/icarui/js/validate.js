@@ -13,11 +13,51 @@
 (function () {
   const SCHEMA_V1 = window.SCHEMA_V1;
   const SCHEMA_V2 = window.SCHEMA_V2;
+  // P5B-M04：`icar.ui/3`（用户已明确授权新增）
+  const SCHEMA_V3 = window.SCHEMA_V3;
   const CANVAS = window.CANVAS;
   const MAX_NODES = window.MAX_NODES;
   const MAX_GAUGES = window.MAX_GAUGES;
 
+  /**
+   * 当前正在解析的设计是否 v3。
+   *
+   * 由 parseDesignRoot 在判定 schema 后设置，parseNode 用它决定
+   * type 白名单是否包含四种高级基元。
+   *
+   * ⚠️ **不用参数传递**的原因：parseNode 有 6 个调用点
+   * （pages / nodes / controls / gauges / children …），逐个加参数会让签名越来越长，
+   * 而且漏一处就是「某个路径下 v3 节点不认识」的隐蔽 bug
+   * —— Android 侧就是因为漏了 `children` 和顶层 `nodes` 两处，
+   * 分别导致「分组内的基元不认」和「编辑器导出的文件读不回」。
+   * 解析是**同步单线程**的，模块内变量不存在竞态。
+   */
+  let _allowV3 = false;
+
   function num(v, d) { const n = Number(v); return Number.isFinite(n) ? n : d; }
+
+  /**
+   * P5B-M04：解析归一化控制点数组（`[{x,y}]`，x/y ∈ 0..1）。
+   *
+   * 滤掉 NaN/Infinity 与非法项，越界夹到 0..1 —— 与 Android
+   * `PrimitiveParser.parsePoints` 同一套规则。
+   * 非法项进 warnings（不是 error）：少一个点不该让整份主题加载失败。
+   */
+  function parsePointsSoft(arr, path, warnings) {
+    if (!Array.isArray(arr)) return [];
+    const out = [];
+    for (let i = 0; i < arr.length && i < 64; i++) {
+      const p = arr[i];
+      if (!p || typeof p !== "object") { warnings.push(path + ".points[" + i + "] 不是对象 —— 已跳过"); continue; }
+      const x = Number(p.x), y = Number(p.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        warnings.push(path + ".points[" + i + "] 坐标非法 —— 已跳过");
+        continue;
+      }
+      out.push({ x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) });
+    }
+    return out;
+  }
   function has(o, k) { return Object.prototype.hasOwnProperty.call(o, k) && o[k] !== null; }
   function trimNum(v) {
     const n = Number(v);
@@ -130,11 +170,27 @@
       isV1 = true;
       warnings.push("这是 v1（`" + SCHEMA_V1 + "`）设计文件，已自动升级成 v2 的节点树。"
         + "保存时会写成 v2。");
-    } else if (schema !== SCHEMA_V2) {
-      errors.push("不支持的 schema：`" + schema + "`（本版本认 `" + SCHEMA_V1 + "` 与 `" + SCHEMA_V2 + "`）");
+    } else if (schema !== SCHEMA_V2 && schema !== SCHEMA_V3) {
+      // P5B-M04：加认 `icar.ui/3`。
+      // ⚠️ 不加的后果（实测踩过）：编辑器能导出 v3，但**读不回自己导出的文件**
+      //    —— 报「不支持的 schema: icar.ui/3」。这是自相矛盾的，必须修。
+      errors.push("不支持的 schema：`" + schema + "`（本版本认 `" + SCHEMA_V1 + "` / `"
+        + SCHEMA_V2 + "` / `" + SCHEMA_V3 + "`）");
     }
 
     // ---- meta
+    // ================================================================
+    // P5B-M04：**按 schema 决定 type 白名单**
+    //
+    // v1/v2 只认 4 种（gauge/image/text/group）；v3 额外认四种高级基元。
+    // `window.NODE_TYPES` 是**跨语言契约表**（与 Android DesignNode.TYPES_V2
+    // 逐条比对），不能往里塞 v3 种类 —— 那会让"v2 只认 4 种"的语义失效，
+    // 也会让跨语言比对套件报错。
+    //
+    // 所以用这个模块内变量传播，写法与 Android 的 `allowV3` 参数一致。
+    // ================================================================
+    _allowV3 = (schema === SCHEMA_V3);
+
     const meta = root.meta;
     if (meta === null || typeof meta !== "object" || Array.isArray(meta)) {
       warnings.push("没有 `meta` 段（不影响渲染，但建议写上名字方便识别）");
@@ -401,9 +457,12 @@ themeColors: (root.themeColors && typeof root.themeColors === "object" && !Array
     const type = forceGauge ? window.NODE_GAUGE
       : (typeof o.type === "string" && o.type ? o.type : window.NODE_GAUGE);
 
+    // v1/v2 只认 NODE_TYPES；v3 额外认四种高级基元（见 _allowV3 的注释）
     const known = window.NODE_TYPES.map(t => t.v);
-    if (known.indexOf(type) < 0) {
-      errors.push(path + " 的 type `" + type + "` 不认识（本版本认：" + known.join(" / ") + "）");
+    const v3Known = window.V3_NODE_TYPES || [];
+    const allowed = _allowV3 ? known.concat(v3Known) : known;
+    if (allowed.indexOf(type) < 0) {
+      errors.push(path + " 的 type `" + type + "` 不认识（本版本认：" + allowed.join(" / ") + "）");
       return null;
     }
     if (bumpCount) bumpCount();
@@ -581,6 +640,104 @@ themeColors: (root.themeColors && typeof root.themeColors === "object" && !Array
     } else if (type === window.NODE_TEXT) {
       node.text = typeof o.text === "string" ? o.text : "文字";
       node.font = parseFont(o.font, path + ".font", warnings);
+    } else if (v3Known.indexOf(type) >= 0) {
+      // ================================================================
+      // P5B-M04：v3 四种高级基元的**字段解析**
+      //
+      // 与 Android `PrimitiveParser` 逐字段对应（同一份规范文档 98）。
+      // 不解析的话：节点是建出来了，但 `startAngle`/`segmentCount`/`points`
+      // 全丢 → 画布上全是默认值，且导出再导入会**越用越少字段**。
+      // ================================================================
+      const r2v = (v, d) => { const n = num(v, d); return Math.round(n * 100) / 100; };
+      const clampV = (v, lo, hi, d) => { const n = num(v, d); return Math.min(hi, Math.max(lo, n)); };
+      const colorOr = (v, d) => (typeof v === "string" && v.trim()) ? v.trim() : d;
+
+      // PID（shape 没有）
+      if (type !== "shape") {
+        const rawPid = typeof o.pid === "string" ? o.pid : "";
+        node.rawPid = rawPid;
+        node.pid = rawPid ? window.resolvePid(rawPid) : "";
+      }
+
+      if (type === "valueText") {
+        node.decimals = Math.round(clampV(o.decimals, 0, 3, 0));
+        node.unit = typeof o.unit === "string" ? o.unit : "";
+        node.prefix = typeof o.prefix === "string" ? o.prefix : "";
+        node.suffix = typeof o.suffix === "string" ? o.suffix : "";
+        node.valueLabels = Array.isArray(o.valueLabels) ? o.valueLabels.slice() : null;
+        node.size = r2v(o.size, 28);
+        node.unitSize = r2v(o.unitSize, 12);
+        node.align = Math.round(clampV(o.align, 0, 2, 1));
+        node.color = colorOr(o.color, "#FFFFFF");
+        node.warnColor = colorOr(o.warnColor, "#FFB020");
+        node.criticalColor = colorOr(o.criticalColor, "#FF4D4F");
+        node.noDataColor = colorOr(o.noDataColor, "#7A8088");
+        node.warnHigh = has(o, "warnHigh") ? num(o.warnHigh, null) : null;
+        node.criticalHigh = has(o, "criticalHigh") ? num(o.criticalHigh, null) : null;
+      }
+
+      if (type === "shape") {
+        const k = typeof o.kind === "string" ? o.kind : "rect";
+        const KINDS = ["rect", "roundRect", "circle", "ring", "line", "polyline"];
+        node.kind = KINDS.indexOf(k) >= 0 ? k : "rect";
+        if (node.kind !== k) warnings.push(path + ".kind = " + k + " 不认识 —— 已回落 rect");
+        node.fill = colorOr(o.fill, "#3DD6FF");
+        node.stroke = colorOr(o.stroke, "none");
+        node.strokeWidth = r2v(o.strokeWidth, 0);
+        node.cornerRadius = r2v(o.cornerRadius, 12);
+        node.innerRatio = r2v(o.innerRatio, 0.6);
+        node.rotationDeg = r2v(o.rotationDeg, 0);
+        node.points = parsePointsSoft(o.points, path, warnings);
+      }
+
+      if (type === "segmentedArc" || type === "pathProgress") {
+        node.minVal = r2v(o.minVal, 0);
+        node.maxVal = r2v(o.maxVal, 100);
+        if (node.maxVal <= node.minVal) {
+          errors.push(path + " 的量程非法：min=" + node.minVal + " >= max=" + node.maxVal);
+        }
+      }
+
+      if (type === "segmentedArc") {
+        node.startAngle = r2v(o.startAngle, 150);
+        node.sweepAngle = r2v(o.sweepAngle, 240);
+        node.segmentCount = Math.round(clampV(o.segmentCount, 1, 360, 24));
+        node.gapAngle = r2v(o.gapAngle, 2);
+        node.thickness = r2v(o.thickness, 12);
+        node.activeColor = colorOr(o.activeColor, "#FF3D7F");
+        node.inactiveColor = colorOr(o.inactiveColor, "#4A5058");
+        node.noDataColor = colorOr(o.noDataColor, "#FF4D4F");
+        node.radiusRatio = r2v(o.radiusRatio, 0.42);
+        // 分区色：逐项规范成 {at,color}（只 slice 的话 `at` 字段不进还原链，
+        // verify-fields 会报「写了但没还原」）
+        node.zoneColors = Array.isArray(o.zoneColors)
+          ? o.zoneColors.filter(function (z) { return z && typeof z === "object"; })
+              .map(function (z) {
+                return { at: clampV(z.at, 0, 1, 0), color: colorOr(z.color, "#FFFFFF") };
+              })
+              .sort(function (a, b) { return a.at - b.at; })
+          : null;
+      }
+
+      if (type === "pathProgress") {
+        const ptsRaw = o.points;
+        const nPts = Array.isArray(ptsRaw) ? ptsRaw.length : 0;
+        if (nPts > 64) {
+          errors.push(path + ".points 有 " + nPts + " 个点，超过上限 64");
+        }
+        node.points = parsePointsSoft(ptsRaw, path, warnings);
+        if (node.points.length < 2) {
+          errors.push(path + ".points 至少需要 2 个有效点（实际 " + node.points.length + "）");
+        }
+        node.curve = Math.round(clampV(o.curve, 0, 1, 0));
+        node.thickness = r2v(o.thickness, 6);
+        node.activeColor = colorOr(o.activeColor, "#3DD6FF");
+        node.inactiveColor = colorOr(o.inactiveColor, "#2A3038");
+        node.gradientTo = colorOr(o.gradientTo, "none");
+        node.fill = !!o.fill;
+        node.fillColor = colorOr(o.fillColor, "#3300C8FF");
+        node.forward = o.forward !== false;
+      }
     }
 
     // ---- 子节点

@@ -1,0 +1,14 @@
+=== P5B-M04 §F3：v3 节点在 Android 的真实绘制验证 ===
+
+判据：在截图里搜**精确 RGB**（每个基元用唯一标志色），不是看截图大小/颜色数。
+  shape          fill      = #3DD6FF (61,214,255)
+  segmentedArc   active    = #FF3D7F (255,61,127)
+  segmentedArc   inactive  = #4A5058 (74,80,88)
+  pathProgress   inactive  = #2A3038 (42,48,56)
+
+
+=== 汇总 ===
+通过=18 失败=0
+PASS=18 FAIL=0
+
+⚠️ 层级：Android 14 模拟器。不代表真机/真车。

@@ -133,6 +133,29 @@ class ValueTextPrimitiveView @JvmOverloads constructor(
     var valueSizeSp: Float = 28f
         set(v) { field = v.coerceAtLeast(1f); invalidate() }
 
+    /**
+     * 主数值字号（**像素**）。
+     *
+     * 为什么要有这个：画布单位 → 像素的换算由渲染器做（它知道 Viewport），
+     * 而这个值是"已经算好的像素"，直接设置比再传一遍 scale 干净。
+     */
+    var valueSizePx: Float
+        get() = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, valueSizeSp, resources.displayMetrics)
+        set(v) {
+            val sp = TypedValue.deriveDimension(TypedValue.COMPLEX_UNIT_SP, v.coerceAtLeast(1f),
+                resources.displayMetrics)
+            valueSizeSp = sp
+        }
+
+    /** 单位字号（**像素**）*/
+    var unitSizePx: Float
+        get() = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, unitSizeSp, resources.displayMetrics)
+        set(v) {
+            val sp = TypedValue.deriveDimension(TypedValue.COMPLEX_UNIT_SP, v.coerceAtLeast(1f),
+                resources.displayMetrics)
+            unitSizeSp = sp
+        }
+
     /** 单位字号（sp）*/
     var unitSizeSp: Float = 12f
         set(v) { field = v.coerceAtLeast(1f); invalidate() }

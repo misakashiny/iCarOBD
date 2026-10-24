@@ -207,7 +207,7 @@ async function main(){
   })()`));
   ok(J.setTrackField==='function','J1 旧面板 setTrackField 仍在');
   ok(J.normalizeTrackStyle==='function','J2 normalizeTrackStyle 仍在（唯一真源）');
-  ok(J.registryCount===69,'J3 Registry 仍 69 条');
+  ok(J.registryCount===73,'J3 Registry 为 73 条（P5B-M04 授权 +4；此前 69）');
 
   // ---------- K. 异常输入不破坏设计 ----------
   const K=JJ(await cdp.eval(`(function(){

@@ -426,18 +426,54 @@ console.log("\n=== 4b. 字体枚举（v2 新增，跨语言契约）===");
    * `listOf(FAMILY_SANS, FAMILY_SERIF, ...)` —— 引用常量。
    * 第一版按字面量抓，抓到 0 个，报了 7 条假失败。
    */
+  /**
+   * 从 Kotlin 源码解析一个 `val X = listOf(A, B, ...)` 的常量列表。
+   *
+   * ## P5B-M04 扩展：支持 `+` 拼接
+   *
+   * `DesignNode.TYPES` 现在写成：
+   *   `val TYPES = TYPES_V2 + TYPES_V3_ONLY`
+   * 因为 v3 要区分「v1/v2 只认 4 种」和「v3 多认 4 种」，
+   * 一条平铺的 listOf 表达不了这个语义。
+   *
+   * 正则若不认 `+`，会解析到 **0 种类型** —— 套件报「解析到 0 种节点类型」，
+   * 而工具侧明明是 4 种。那不是产品的错，是解析器没跟上写法。
+   *
+   * 所以这里：遇到 `A + B` 时递归展开两侧再拼接。
+   */
   function kotlinConstList(src, listName) {
+    // 先试 listOf(...) 字面量
     const m = new RegExp("val " + listName + " = listOf\\(([^)]*)\\)").exec(src);
-    if (!m) return [];
-    return m[1].split(",").map(s => s.trim()).filter(Boolean).map(name => {
-      if (/^\d+$/.test(name)) return Number(name);
-      if (/^"/.test(name)) return name.replace(/"/g, "");
-      // 常量引用：去 const val 里找它的值
-      const c = new RegExp("const val " + name + " = \"([^\"]+)\"").exec(src);
-      if (c) return c[1];
-      const n = new RegExp("const val " + name + " = (\\d+)").exec(src);
-      return n ? Number(n[1]) : name;
-    });
+    if (m) {
+      return m[1].split(",").map(s => s.trim()).filter(Boolean).map(name => {
+        if (/^\d+$/.test(name)) return Number(name);
+        if (/^"/.test(name)) return name.replace(/"/g, "");
+        // 常量引用：去 const val 里找它的值
+        const c = new RegExp("const val " + name + " = \"([^\"]+)\"").exec(src);
+        if (c) return c[1];
+        const n = new RegExp("const val " + name + " = (\\d+)").exec(src);
+        return n ? Number(n[1]) : name;
+      });
+    }
+    // P5B-M04：再试 `A + B + ...` 拼接（递归展开每一项）
+    const j = new RegExp("val " + listName + " = ([A-Za-z0-9_]+(?:\\s*\\+\\s*[A-Za-z0-9_]+)+)").exec(src);
+    if (j) {
+      const parts = j[1].split("+").map(s => s.trim()).filter(Boolean);
+      let acc = [];
+      parts.forEach(part => {
+        const sub = kotlinConstList(src, part);
+        if (sub.length === 0) {
+          throw new Error(
+            "kotlinConstList: `" + listName + "` 里引用了 `" + part +
+            "`，但在源码里找不到它的定义。要么常量改名了，要么写法变了 —— " +
+            "这会静默少掉一截类型，所以直接失败而不是继续。"
+          );
+        }
+        acc = acc.concat(sub);
+      });
+      return acc;
+    }
+    return [];
   }
 
   // 字体族
@@ -473,10 +509,34 @@ console.log("\n=== 4b. 字体枚举（v2 新增，跨语言契约）===");
     kDefColor ? "#" + kDefColor[1].slice(2).toUpperCase() : null, "默认字色一致");
 
   // 节点类型
+  //
+  // ## P5B-M04：按 schema 分层比对
+  //
+  // 原来是「工具的 4 种 == Kotlin 的 TYPES」。v3 之后 `TYPES` 是 **8 种**
+  // （v2 的 4 种 + v3 的 4 种基元），直接比 4-vs-8 必然不等 ——
+  // 但**不是契约坏了**，而是契约多了一层。
+  //
+  // 正确的契约是三条：
+  //   ① v1/v2 认的种类 = 工具的 NODE_TYPES（4 种，顺序一致）  ← 存量行为不变
+  //   ② v3 额外认的种类 = 工具的 V3_NODE_TYPES（4 种，顺序一致）
+  //   ③ Kotlin 的全集 = 两者拼接（顺序一致）
   const kTypes = kotlinConstList(nodeKt, "TYPES");
   ok(kTypes.length > 0, `解析到 ${kTypes.length} 种节点类型`);
-  eq(JSON.stringify(tool.NODE_TYPES.map(x => x.v)), JSON.stringify(kTypes),
-    "节点类型的名字与顺序一致");
+
+  const kTypesV2 = kotlinConstList(nodeKt, "TYPES_V2");
+  const kTypesV3Only = kotlinConstList(nodeKt, "TYPES_V3_ONLY");
+  const toolTypesV2 = tool.NODE_TYPES.map(x => x.v);
+  const toolTypesV3 = (tool.V3_NODE_TYPES || []).slice();
+
+  ok(kTypesV2.length > 0, `Kotlin TYPES_V2 解析到 ${kTypesV2.length} 种`);
+  ok(kTypesV3Only.length > 0, `Kotlin TYPES_V3_ONLY 解析到 ${kTypesV3Only.length} 种`);
+
+  eq(JSON.stringify(toolTypesV2), JSON.stringify(kTypesV2),
+    "**v1/v2 认的节点类型**名字与顺序一致（存量契约不变）");
+  eq(JSON.stringify(toolTypesV3), JSON.stringify(kTypesV3Only),
+    "**v3 新增的节点类型**名字与顺序一致");
+  eq(JSON.stringify(toolTypesV2.concat(toolTypesV3)), JSON.stringify(kTypes),
+    "Kotlin 全集中 v2+v3 的拼接顺序一致");
 
   // 状态名
   //

@@ -192,6 +192,34 @@ data class DesignFile(
          */
         const val SCHEMA_V2 = "icar.ui/2"
 
+        // ================================================================
+        // P5B-M04：`icar.ui/3`（用户已明确授权新增）
+        //
+        // ## v3 = v2 的超集
+        //
+        // v2 的全部字段与语义**一字不改**。v3 只增加四种节点：
+        //   valueText / shape / segmentedArc / pathProgress
+        //
+        // ## 为什么必须升版本号而不是塞进 v2
+        //
+        // 旧版 App（v1.15.0）对 v2 主题里的**未知 node type** 会整份拒绝并报
+        // 「type 不认识」；但对**未知 schema** 会在**更早**的位置拒绝，报
+        // 「不支持的 schema：icar.ui/3（本版本认 icar.ui/1 与 icar.ui/2）」。
+        //
+        // P5B-M04 阶段 A 实测确认了这一点（6/6 通过），所以升版本号对旧版
+        // 用户的提示**更清楚**，而且不会把 v2 的语义悄悄改掉。
+        //
+        // ## 导出行为
+        //
+        // **仍不写 v3**（见 toJson 的注释）—— 本轮只做"读"，不做"写"。
+        // 编辑器负责导出 v3。App 侧存的是**原文**（见 CanvasSettingsFragment），
+        // 所以不会把 v3 改写成 v2。
+        // ================================================================
+        const val SCHEMA_V3 = "icar.ui/3"
+
+        /** 认的所有 schema */
+        val SCHEMAS = listOf(SCHEMA, SCHEMA_V2, SCHEMA_V3)
+
         /** 缩放模式：每轴独立拉伸（= v1 行为，默认） */
         const val SCALE_STRETCH = 0
         /** 等比缩放，短边留黑边 */
@@ -412,11 +440,14 @@ data class DesignFile(
             // ---- schema
             val schema = root.optString("schema", "")
             val isV2 = schema == SCHEMA_V2
+            // P5B-M04：v3 也是"节点树"格式，节点层解析路径与 v2 完全相同
+            val isV3 = schema == SCHEMA_V3
+            val isTree = isV2 || isV3
             if (schema.isBlank()) {
-                errors.add("缺少 `schema` 字段。应当写 \"$SCHEMA\" 或 \"$SCHEMA_V2\"")
-            } else if (schema != SCHEMA && !isV2) {
+                errors.add("缺少 `schema` 字段。应当写 \"$SCHEMA\" 或 \"$SCHEMA_V2\" 或 \"$SCHEMA_V3\"")
+            } else if (schema != SCHEMA && !isTree) {
                 // 不兼容就明确拒绝 —— 静默按旧规则画会让人以为是渲染 bug
-                errors.add("不支持的 schema：`$schema`（本版本认 `$SCHEMA` 与 `$SCHEMA_V2`）")
+                errors.add("不支持的 schema：`$schema`（本版本认 `$SCHEMA` / `$SCHEMA_V2` / `$SCHEMA_V3`）")
             }
 
             // ---- meta
@@ -444,7 +475,7 @@ data class DesignFile(
             // **向后兼容**：没有 pages 的老文件（含全部 v1 升级来的）行为完全不变。
             val pgArr = root.optJSONArray("pages")
             var pages: List<DesignPage> = emptyList()
-            val hasPages = isV2 && pgArr != null && pgArr.length() > 0
+            val hasPages = isTree && pgArr != null && pgArr.length() > 0
 
             val nodes: List<DesignNode>
             if (hasPages) {
@@ -462,7 +493,7 @@ data class DesignFile(
                             id = pg.optString("id", "pg$p"),
                             name = pg.optString("name", "页面 ${p + 1}"),
                             nodes = parseNodeArray(
-                                pg.optJSONArray("nodes"), "pages[$p].nodes", errors, warnings, assetIds, allowEmpty = true
+                                pg.optJSONArray("nodes"), "pages[$p].nodes", errors, warnings, assetIds, allowEmpty = true, allowV3 = isV3
                             )
                         )
                     )
@@ -474,7 +505,7 @@ data class DesignFile(
                     pages = list
                     nodes = list[0].nodes      // **nodes 指向第一页**，渲染层不用知道 pages
                 }
-            } else if (isV2) {
+            } else if (isTree) {
                 val arr = root.optJSONArray("nodes")
                 if (arr == null) {
                     errors.add("缺少 `nodes` 数组")
@@ -490,7 +521,11 @@ data class DesignFile(
                         errors.add("nodes[$i] 不是一个对象")
                         continue
                     }
-                    DesignNode.parse(o, "nodes[$i]", errors, warnings, assetIds)?.let { out.add(it) }
+                    // ⚠️ P5B-M04 修的缺陷：这里原来**没有传 allowV3** ——
+                    //    顶层 `nodes`（无 `pages`）写法的 v3 主题，
+                    //    四个基元全被判成「只有 icar.ui/3 才支持」而拒绝加载。
+                    //    编辑器导出的正是这种无 pages 的写法，所以这条路径必须传。
+                    DesignNode.parse(o, "nodes[$i]", errors, warnings, assetIds, allowV3 = isV3)?.let { out.add(it) }
                 }
                 val total = DesignNode.flatten(out).size
                 if (total > DesignNode.MAX_NODES) {
@@ -638,7 +673,9 @@ data class DesignFile(
         private fun parseNodeArray(
             arr: JSONArray?, path: String,
             errors: MutableList<String>, warnings: MutableList<String>,
-    assetIds: Set<String>, allowEmpty: Boolean = false
+    assetIds: Set<String>, allowEmpty: Boolean = false,
+            /** P5B-M04：当前主题是否 v3（决定四种新 type 是否合法）*/
+            allowV3: Boolean = false
         ): List<DesignNode> {
             if (arr == null) return emptyList()
             if (arr.length() == 0 && !allowEmpty) errors.add("`$path` 是空的 —— 仪表盘上什么都不会显示")
@@ -649,7 +686,7 @@ data class DesignFile(
                     errors.add("$path[$i] 不是一个对象")
                     continue
                 }
-                DesignNode.parse(o, "$path[$i]", errors, warnings, assetIds)?.let { out.add(it) }
+                DesignNode.parse(o, "$path[$i]", errors, warnings, assetIds, allowV3 = allowV3)?.let { out.add(it) }
             }
             val total = DesignNode.flatten(out).size
             if (total > DesignNode.MAX_NODES) {

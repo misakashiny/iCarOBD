@@ -1,0 +1,24 @@
+{
+  "schema": "icar.ui/3",
+  "meta": {
+    "name": "minimal v3"
+  },
+  "pages": [
+    {
+      "id": "p0",
+      "name": "主页面",
+      "nodes": [
+        {
+          "id": "g",
+          "type": "gauge",
+          "name": "表",
+          "x": 8,
+          "y": 8,
+          "w": 100,
+          "h": 80,
+          "pid": "obd.rpm"
+        }
+      ]
+    }
+  ]
+}

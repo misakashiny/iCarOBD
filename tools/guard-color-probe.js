@@ -23,6 +23,22 @@ const ALLOW_FN = {
   draw: '框选矩形 / 吸附参考线',
   drawImageNode: '没有图的紫色占位 X',
   drawPartOutlines: '子部件外框',
+  // P5B-M04：v3 高级基元的绘制分派 + 未知控件占位。
+  //
+  // 这里的色值**全部是「节点字段没给时的兜底默认值」**，不是工具 UI 色：
+  //   n.activeColor || '#FF3D7F' —— 有字段就用字段（跟设计走），
+  //   字段缺了才用协议规定的默认值（与 Android PrimitiveParser 的默认值**逐条一致**）。
+  //
+  // 为什么不能改成跟 window.currentTheme()：
+  //   这四个 type 的配色是 **v3 协议里写死的默认值**（见
+  //   docs/01_专题/98_P5B_M04_v3主题格式规范.md），两端口径必须一致。
+  //   跟主题走会导致「编辑器里一个色、手机上另一个色」。
+  //
+  // drawUnknownNodePlaceholder 是**错误提示层**（红色虚线框），
+  // 与选中框同一类：不该跟主题，否则主题配色偏红时提示就看不见了。
+  drawPrimitiveNode: 'v3 基元的兜底默认值（有字段就用字段，与 Android 默认值逐条一致）',
+  colorOf: 'v3 valueText 的兜底默认值（同上）',
+  drawUnknownNodePlaceholder: '未知控件占位（错误提示层，与选中框同类）',
 };
 
 // **状态色**（告警红 / 警告黄 / 紫 / 安全绿）。理论上属于设计内容，

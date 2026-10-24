@@ -725,15 +725,217 @@ function uniformMatrix(m, w, h) {
     if (n.type === window.NODE_GAUGE) drawGaugeNode(n);
     else if (isImage) drawImageNode(n);
     else if (n.type === window.NODE_TEXT) drawTextNode(n);
-    // 分组：**不画任何东西**。
-    //
-    // 第一版给分组画了个紫色虚线框，用户明确说"不需要紫色的虚线" ——
-    // 它平时挡视线（分组是逻辑容器，不是可见元素），选中时已经有青色选择框了。
-    // 想知道分组范围/层级，看**控件树**。
+    else if (isPrimitiveType(n.type)) drawPrimitiveNode(n);
+    else if (n.type === window.NODE_GROUP) {
+      // 分组：**不画任何东西**。
+      //
+      // 第一版给分组画了个紫色虚线框，用户明确说"不需要紫色的虚线" ——
+      // 它平时挡视线（分组是逻辑容器，不是可见元素），选中时已经有青色选择框了。
+      // 想知道分组范围/层级，看**控件树**。
+    } else {
+      // ================================================================
+      // P5B-M04 修的缺陷（任务 §三 A5）：**未知 type 以前被静默跳过**
+      //
+      // 原代码是三个 `if/else if` 且没有兜底 —— 未知 type 什么都不画，
+      // 用户在画布上看到的只是"这块没了"，**没有任何提示**。
+      // 任务 §四 B2 明确禁止：
+      //   「对包含不认识的关键节点的 v3 主题，必须产生明确错误或不可忽略的警告」
+      //   「不得静默输出缺少重要动态仪表的主题」
+      //
+      // 所以这里画出**醒目的占位**（红色虚线框 + 类型名），并登记到未知清单。
+      // 占位不会导出（导出走 nodeToJson，它按 type 白名单序列化）。
+      // ================================================================
+      recordUnknownNode(n);
+      drawUnknownNodePlaceholder(n);
+    }
 
     ctx.restore();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
+  }
+
+  // ================================================================
+  // P5B-M04：四种高级基元（v3）
+  // ================================================================
+
+  /** v3 的四种节点 type（与 primitive-family.js / Android DesignNode 逐条一致）*/
+  const PRIMITIVE_TYPES = ["valueText", "shape", "segmentedArc", "pathProgress"];
+
+  function isPrimitiveType(t) {
+    return PRIMITIVE_TYPES.indexOf(t) >= 0;
+  }
+
+  /** 未知节点清单（去重，供状态栏/导出提示）*/
+  const unknownNodes = [];
+  function recordUnknownNode(n) {
+    const sig = n.id + ":" + n.type;
+    if (unknownNodes.some(function (x) { return x.sig === sig; })) return;
+    unknownNodes.push({ sig: sig, id: n.id, type: n.type });
+    window.__unknownNodes = unknownNodes;
+  }
+  window.getUnknownNodes = function () { return unknownNodes.slice(); };
+  window.clearUnknownNodes = function () { unknownNodes.length = 0; };
+
+  /** 醒目的未知节点占位（红色虚线框 + 类型名）*/
+  function drawUnknownNodePlaceholder(n) {
+    const w = Math.abs(n.w), h = Math.abs(n.h);
+    ctx.save();
+    ctx.setLineDash([8, 6]);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "#FF3B30";
+    ctx.strokeRect(2, 2, w - 4, h - 4);
+    ctx.setLineDash([]);
+    ctx.fillStyle = "rgba(255,59,48,0.18)";
+    ctx.fillRect(2, 2, w - 4, h - 4);
+    ctx.fillStyle = "#FF6B60";
+    ctx.font = Math.max(10, Math.min(w, h) * 0.14) + "px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("未知控件", w / 2, h / 2 - 10);
+    ctx.font = Math.max(8, Math.min(w, h) * 0.10) + "px sans-serif";
+    ctx.fillText(String(n.type || "?"), w / 2, h / 2 + 12);
+    ctx.restore();
+  }
+
+  /**
+   * 绘制 v3 基元节点。
+   *
+   * ⚠️ **不重复实现绘制** —— 全部委托 `AdvancedPrimitives._internals`
+   * （P5B-M01 的绘制内核）。本函数只做"字段名对齐 + 取值"。
+   *
+   * 坐标系：进到这里时 ctx 已经 setTransform 到**该节点的局部坐标系**
+   * （原点 = 节点左上角，单位 = 画布单位），所以这里直接用 0..w / 0..h。
+   */
+  function drawPrimitiveNode(n) {
+    const AP = window.AdvancedPrimitives;
+    if (!AP || !AP._internals) return;   // 原型没加载 → 什么都不画（但不算未知）
+    const I = AP._internals;
+    const w = Math.abs(n.w), h = Math.abs(n.h);
+
+    if (n.type === "segmentedArc") {
+      const r = Math.min(w, h) * (n.radiusRatio === undefined ? 0.42 : n.radiusRatio);
+      I.drawSegmentedArc(ctx, {
+        cx: w / 2, cy: h / 2, radius: r,
+        startAngle: num(n.startAngle, 150),
+        sweepAngle: num(n.sweepAngle, 240),
+        segmentCount: Math.round(num(n.segmentCount, 24)),
+        gapAngle: num(n.gapAngle, 2),
+        thickness: num(n.thickness, 12),
+        progress: progressOf(n),
+        activeColor: n.activeColor || "#FF3D7F",
+        inactiveColor: n.inactiveColor || "#4A5058",
+        noDataColor: n.noDataColor || "#FF4D4F",
+        colorStops: stopsOf(n.zoneColors),
+      });
+      return;
+    }
+
+    if (n.type === "pathProgress") {
+      const pts = (n.points || []).map(function (p) {
+        return { x: p.x * w, y: p.y * h };
+      });
+      I.drawPathProgress(ctx, {
+        points: pts,
+        curve: n.curve === 1 ? "poly" : "smooth",
+        progress: progressOf(n),
+        thickness: num(n.thickness, 6),
+        activeColor: n.activeColor || "#3DD6FF",
+        inactiveColor: n.inactiveColor || "#2A3038",
+        gradientTo: n.gradientTo && n.gradientTo !== "none" ? n.gradientTo : null,
+        fill: !!n.fill,
+        fillColor: n.fillColor || "rgba(0,200,255,0.2)",
+        forward: n.forward !== false,
+      });
+      return;
+    }
+
+    if (n.type === "valueText") {
+      const v = simValueOf(n.pid);
+      I.drawValueText(ctx, {
+        x: w / 2, y: h / 2, w: w, h: h,
+        value: v,
+        decimals: Math.round(num(n.decimals, 0)),
+        unit: n.unit || "",
+        prefix: n.prefix || "",
+        suffix: n.suffix || "",
+        valueLabels: n.valueLabels || null,
+        size: num(n.size, 28),
+        unitSize: num(n.unitSize, 12),
+        align: Math.round(num(n.align, 1)),
+        color: colorOf(n, v),
+        noDataColor: n.noDataColor || "#7A8088",
+      });
+      return;
+    }
+
+    if (n.type === "shape") {
+      I.drawShape(ctx, {
+        kind: n.kind || "rect",
+        x: 0, y: 0, w: w, h: h,
+        fill: n.fill === "none" ? null : (n.fill || "#3DD6FF"),
+        stroke: n.stroke === "none" ? null : (n.stroke || null),
+        strokeWidth: num(n.strokeWidth, 0),
+        cornerRadius: num(n.cornerRadius, 12),
+        innerRatio: num(n.innerRatio, 0.6),
+        rotationDeg: num(n.rotationDeg, 0),
+        points: n.points || null,
+      });
+      return;
+    }
+  }
+
+  /**
+   * 取某个 PID 的**当前模拟值**。
+   *
+   * 数据源是 `CanvasState.previewValues`（`{pidId: value}`）——
+   * 这是编辑器里真实的模拟注入通道，与数字读数/条形/状态灯用的是同一份
+   * （见 canvas.js 的 `S.previewValues` 注释：「真值 —— 数字读数、条形、
+   * 状态灯、阈值判定都读它」）。
+   *
+   * ⚠️ 第一版写成 `window.VehicleBus.simValue(pid)` —— 那个对象在编辑器里
+   *    **根本不存在**（只有注释提到 Android 的 VehicleBus）。拿不到值会
+   *    静默返回 null，导致"所有基元都显示无数据"，很难排查。
+   */
+  function simValueOf(pid) {
+    if (!pid) return null;
+    const S = window.CanvasState;
+    if (!S || !S.previewValues) return null;
+    const resolved = window.resolvePid ? window.resolvePid(pid) : pid;
+    let v = S.previewValues[resolved];
+    if (v === undefined) v = S.previewValues[pid];
+    return (typeof v === "number" && Number.isFinite(v)) ? v : null;
+  }
+  window.simValueOf = simValueOf;
+
+  function num(v, dflt) {
+    const x = typeof v === "number" ? v : parseFloat(v);
+    return isFinite(x) ? x : dflt;
+  }
+
+  /** 绑定值 → 进度 [0,1]；无绑定/无数据 → null */
+  function progressOf(n) {
+    if (!n.pid) return null;
+    const raw = simValueOf(n.pid);
+    if (raw === null || raw === undefined) return null;
+    const lo = num(n.minVal, 0), hi = num(n.maxVal, 100);
+    if (hi <= lo) return null;
+    return Math.max(0, Math.min(1, (raw - lo) / (hi - lo)));
+  }
+
+  /** valueText 的颜色：阈值优先 */
+  function colorOf(n, v) {
+    if (v === null || v === undefined) return n.noDataColor || "#7A8088";
+    const ch = n.criticalHigh, wh = n.warnHigh;
+    if (typeof ch === "number" && v >= ch) return n.criticalColor || "#FF4D4F";
+    if (typeof wh === "number" && v >= wh) return n.warnColor || "#FFB020";
+    return n.color || "#FFFFFF";
+  }
+
+  /** zoneColors → colorStops */
+  function stopsOf(z) {
+    if (!Array.isArray(z) || !z.length) return null;
+    return z.slice().sort(function (a, b) { return a.at - b.at; })
+      .map(function (x) { return { at: x.at, color: x.color }; });
   }
 
   /**

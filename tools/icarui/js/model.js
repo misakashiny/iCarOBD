@@ -44,6 +44,32 @@
       visible: o.visible === undefined ? true : !!o.visible,
       children: [],
     };
+    // ================================================================
+    // P5B-M04：v3 四种基元节点 —— 通用 `pid` 处理
+    //
+    // `createNode` 原来只在 NODE_GAUGE 分支处理 pid，四种新 type 的
+    // `pid` 会被**直接丢掉**（建出来的节点 `pid` 是 undefined）。
+    // 后果：分段圆环/曲线进度/数值全都"无数据"，而且很难查
+    // （属性面板里有 pid，但画布上就是不亮）。
+    //
+    // 这里补一条通用分支：与 gauge 用**同一套** {
+    //   `pid`    = 解析后的 id（内部查表用）
+    //   `rawPid` = 用户写的原样（回显 + 序列化写回）
+    // } 规则，避免"同一个 PID 有两种内部表示"的老问题。
+    // ================================================================
+    const V3_PRIM_TYPES = ["valueText", "shape", "segmentedArc", "pathProgress"];
+    if (V3_PRIM_TYPES.indexOf(type) >= 0) {
+      const rawPid = o.rawPid || o.pid || "";
+      base.pid = rawPid ? window.resolvePid(rawPid) : "";
+      base.rawPid = rawPid;
+      // 把其余字段原样搬过来（各 type 自己的字段由调用方/build 传）
+      Object.keys(o).forEach(function (k) {
+        if (k === "id" || k === "type" || k === "children" || k === "pid" || k === "rawPid") return;
+        if (base[k] === undefined) base[k] = o[k];
+      });
+      return base;
+    }
+
     if (type === window.NODE_GAUGE) {
       // ⚠️ **必须把别名解析成 PID id**，并同时保留原样写法 —— 与 `parseNode` 一致。
       //
@@ -927,6 +953,103 @@
     } else if (n.type === window.NODE_TEXT) {
       o.text = n.text;
       o.font = window.normalizeFont(n.font);
+    } else if (window.V3_NODE_TYPES && window.V3_NODE_TYPES.indexOf(n.type) >= 0) {
+      // ================================================================
+      // P5B-M04：v3 四种高级基元的**字段导出**
+      //
+      // ⚠️ 这段不加的后果（实测踩过）：`nodeToJson` 是按 type 分支的白名单，
+      //    四种新 type 没有分支 → 导出的节点**只剩通用字段**
+      //    （id/type/x/y/w/h…），`startAngle`/`segmentCount`/`points` 全部丢失。
+      //    导出的文件看起来"有四个节点"，但 App 上全是默认值。
+      //
+      // ## 导出策略：**逐字段白名单**，不整体展开
+      //
+      // 整体 Object.assign(o, n) 会把编辑器内部字段（__controlKey、rawPid 之外的临时态）
+      // 也写进文件。所以按 v3 规范里的字段表逐个挑。
+      //
+      // ## 空值不写
+      //
+      // 与 v2 其它 type 一致：`null`/`undefined`/`""` 的字段**不写**，
+      // 让文件干净、且"没设"与"设成空"能区分。
+      // ================================================================
+      const put = function (key, v) {
+        if (v === null || v === undefined) return;
+        if (typeof v === "string" && v === "") return;
+        o[key] = v;
+      };
+
+      // ---- 三类都有的：PID 绑定（写语义别名，与 gauge 同一规则）
+      if (n.type !== "shape") {
+        if (n.pid) o.pid = window.ALIAS_OF[n.pid] || n.pid;
+      }
+
+      if (n.type === "valueText") {
+        put("decimals", n.decimals);
+        put("unit", n.unit);
+        put("prefix", n.prefix);
+        put("suffix", n.suffix);
+        if (n.valueLabels && n.valueLabels.length) o.valueLabels = n.valueLabels.slice();
+        put("size", r2(n.size));
+        put("unitSize", r2(n.unitSize));
+        put("align", n.align);
+        put("color", n.color);
+        put("warnColor", n.warnColor);
+        put("criticalColor", n.criticalColor);
+        put("noDataColor", n.noDataColor);
+        // 阈值：**只在有值时写**（null 表示"没设"，不写这个键即可，
+        // 与 v2 其它可选字段同一规则；也避免三元里的 null 被字段扫描正则误认成字段名）
+        if (n.warnHigh !== null && n.warnHigh !== undefined) o.warnHigh = r2(n.warnHigh);
+        if (n.criticalHigh !== null && n.criticalHigh !== undefined) o.criticalHigh = r2(n.criticalHigh);
+      }
+
+      if (n.type === "shape") {
+        put("kind", n.kind);
+        put("fill", n.fill);
+        put("stroke", n.stroke);
+        put("strokeWidth", r2(n.strokeWidth));
+        put("cornerRadius", r2(n.cornerRadius));
+        put("innerRatio", r2(n.innerRatio));
+        put("rotationDeg", r2(n.rotationDeg));
+        if (n.points && n.points.length) {
+          o.points = n.points.map(function (p) { return { x: r2(p.x), y: r2(p.y) }; });
+        }
+      }
+
+      if (n.type === "segmentedArc" || n.type === "pathProgress") {
+        put("minVal", r2(n.minVal));
+        put("maxVal", r2(n.maxVal));
+      }
+
+      if (n.type === "segmentedArc") {
+        put("startAngle", r2(n.startAngle));
+        put("sweepAngle", r2(n.sweepAngle));
+        put("segmentCount", n.segmentCount);
+        put("gapAngle", r2(n.gapAngle));
+        put("thickness", r2(n.thickness));
+        put("activeColor", n.activeColor);
+        put("inactiveColor", n.inactiveColor);
+        put("noDataColor", n.noDataColor);
+        put("radiusRatio", r2(n.radiusRatio));
+        if (n.zoneColors && n.zoneColors.length) {
+          o.zoneColors = n.zoneColors.map(function (z) {
+            return { at: r2(z.at), color: z.color };
+          });
+        }
+      }
+
+      if (n.type === "pathProgress") {
+        put("curve", n.curve);
+        put("thickness", r2(n.thickness));
+        put("activeColor", n.activeColor);
+        put("inactiveColor", n.inactiveColor);
+        put("gradientTo", n.gradientTo);
+        if (n.fill) o.fill = true;
+        put("fillColor", n.fillColor);
+        if (n.forward === false) o.forward = false;
+        if (n.points && n.points.length) {
+          o.points = n.points.map(function (p) { return { x: r2(p.x), y: r2(p.y) }; });
+        }
+      }
     }
     if (n.children && n.children.length) {
       o.children = sortByZ(n.children).map(nodeToJson);
@@ -969,8 +1092,26 @@ function toV2Json(d) {
     // 它不认识 `$$`，于是"工具里 `$100`、平板上 `$$100`"。
     // 现在 `nodes[].text` 是纯字面值，画布 / 导出 / App 三边同一个串。
     const rd = (typeof window.resolveDesign === "function") ? window.resolveDesign(d) : d;
+
+    // ================================================================
+    // P5B-M04 §四 B2：**按节点内容自动定 schema**
+    //
+    // | 设计里有没有 v3 节点 | 导出 schema |
+    // |---|---|
+    // | 没有（纯 v1/v2 内容）| `icar.ui/2`  ← **存量文件逐字节不变** |
+    // | 有任一 v3 节点       | `icar.ui/3`  ← 自动升级 |
+    //
+    // 为什么必须这样：
+    //   · v3 节点写进 v2 文件 → **Android 会拒绝整份**（正确行为，但不该发生）
+    //   · 纯 v2 内容写 v3 → 旧版 App 打不开，纯属无谓破坏兼容
+    // 所以"有则升、无则留"。
+    // ================================================================
+    const schemaOut = (typeof window.schemaForDesign === "function")
+      ? window.schemaForDesign(rd)
+      : window.SCHEMA_V2;
+
     const root = {
-      schema: window.SCHEMA_V2,
+      schema: schemaOut,
       meta: { name: rd.name, author: rd.author, description: rd.description },
       canvas: {
         unit: window.CANVAS,

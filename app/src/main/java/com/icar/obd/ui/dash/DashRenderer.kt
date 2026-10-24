@@ -465,6 +465,18 @@ class DashRenderer(
         main.removeCallbacks(ticker)
         // 离开当前页/后台：必须停掉装饰动画，否则会 60fps 空转
         nodeRenderer.stopPartsAnimation()
+        // ================================================================
+        // P5B-M04 §C1：**退出前退订 VehicleBus**
+        //
+        // v3 的 segmentedArc / pathProgress / valueText 会注册总线监听器。
+        // `stop()` 是"这一页不再活跃"的边界 —— 此时不退订，
+        // Fragment 销毁后监听器仍持有 View → 泄漏。
+        //
+        // ⚠️ 为什么不在 onDestroy 才退订：`stop()` 也会在切换页面时调用，
+        //    而旧页的 View 那时已经不可见了，继续监听纯属浪费。
+        //    再次 `start()` + 重建时会重新注册。
+        // ================================================================
+        nodeRenderer.release()
     }
 
     /** 自定义仪表盘里被删除的 PID 需要清理，避免出现「未绑定」死块 */

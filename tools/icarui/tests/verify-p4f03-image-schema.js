@@ -203,7 +203,7 @@ async function main(){
       trackMode:all.filter(function(d){return d.render&&d.render.mode==='track';}).length,
       stateMode:all.filter(function(d){return d.render&&d.render.mode==='state';}).length});
   })()`));
-  ok(L.total===69,'L1 **Registry 仍 69 条**（未为图片功能擅自加条目）');
+  ok(L.total===73,'L1 **Registry 为 73 条**（P5B-M04 授权 +4 个基元；图片功能本身仍未加条目）');
   ok(L.imageMode===0,'L2 Registry 中无 image 模式（普通图片用内置 schema）');
   ok(L.trackMode===28,'L3 轨道 28 条不受影响');
   ok(L.stateMode===19,'L4 状态灯 19 条不受影响');

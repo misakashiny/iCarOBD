@@ -1,0 +1,56 @@
+{
+  "schema": "icar.ui/3",
+  "meta": {
+    "name": "P5B-M04 无效控制点测试"
+  },
+  "canvas": {
+    "unit": 360,
+    "designW": 2560,
+    "designH": 1600,
+    "scaleMode": 0
+  },
+  "nodes": [
+    {
+      "id": "pp2",
+      "type": "pathProgress",
+      "name": "含无效点",
+      "x": 10,
+      "y": 10,
+      "w": 340,
+      "h": 300,
+      "rotation": 0,
+      "scale": 1,
+      "alpha": 255,
+      "z": 1,
+      "pid": "obd.load",
+      "minVal": 0,
+      "maxVal": 100,
+      "points": [
+        {
+          "x": 0,
+          "y": 1
+        },
+        {
+          "x": "abc",
+          "y": 0.5
+        },
+        {
+          "x": 0.5,
+          "y": null
+        },
+        {
+          "x": 0.6,
+          "y": 0.2
+        },
+        {
+          "x": 2,
+          "y": -1
+        },
+        {
+          "x": 1,
+          "y": 0
+        }
+      ]
+    }
+  ]
+}

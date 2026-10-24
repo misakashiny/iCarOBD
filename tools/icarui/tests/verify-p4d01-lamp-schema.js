@@ -235,7 +235,7 @@ async function main(){
       lampFamilyCount:ICAR.registry.lampFamily?ICAR.registry.lampFamily.registered:null
     });
   })()`));
-  ok(K.registryIntact===69,'K1 Registry 仍为 69 条（未减少）');
+  ok(K.registryIntact===73,'K1 Registry 为 73 条（P5B-M04 授权 +4 个基元；此前 69）');
   ok(K.lampFamilyCount===19,'K2 lampFamily 注册 19 条');
 
  }catch(e){ok(false,e.stack||e.message);}

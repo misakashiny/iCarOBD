@@ -28,13 +28,18 @@
 // ============================================================================
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const { execFileSync } = require("child_process");
 
 const ADB = "C:\\Android\\Sdk\\platform-tools\\adb.exe";
 const SERIAL = "emulator-5554";
 const PKG = "com.icar.obd";
 const ROOT = path.join(__dirname, "..", "..", "..", "..");
-const THEME = path.join(ROOT, "docs", "02_验证记录", "android-theme", "p5b01-8styles.json");
+// P5B-M04：可由命令行指定主题文件（默认仍是 8 档测试主题）
+//   node deploy-8styles.js v3-full.json
+const THEME_NAME = process.argv[2] && process.argv[2] !== "restore"
+  ? process.argv[2] : "p5b01-8styles.json";
+const THEME = path.join(ROOT, "docs", "02_验证记录", "android-theme", THEME_NAME);
 
 /** 普通 adb 调用（无 shell 引号问题） */
 function adb(args) {
@@ -52,10 +57,53 @@ function shell(cmd) {
 function asApp(script) {
   return shell("run-as " + PKG + " sh -c '" + script.replace(/'/g, "'\\''") + "'");
 }
-/** 把文本写进 App 私有目录（base64 走管道，避开所有转义/权限坑） */
+/**
+ * 把文本写进 App 私有目录。
+ *
+ * ## ⚠️ P5B-M04 修的真实缺陷：`ENAMETOOLONG`
+ *
+ * 原来是 `asApp("echo " + base64 + " | base64 -d > " + relPath)` ——
+ * 整份 base64 作为**一个命令行参数**传给 adb。主题超过几十 KB 时，
+ * Windows 命令行长度上限（约 32K）被突破，实测报：
+ *
+ *     Error: spawnSync adb.exe ENAMETOOLONG
+ *     spawnargs: [..., "run-as com.icar.obd sh -c 'echo ewogIC...'"]
+ *
+ * 症状是"部署脚本崩了"，而 8 档小主题（~15KB）不会触发 —— 所以一直没暴露。
+ * 但 v3 模板（40 个 Shape / 20 节点）一上就炸。
+ *
+ * ## 修法：走 `adb push` + `cat` 拼接
+ *
+ * push 是文件传输，不受命令行长度限制。分块 push 后 `cat` 拼成目标文件，
+ * 再用 `mv` 原子替换 —— 避免 App 在写入过程中读到半个文件。
+ */
 function writeInto(relPath, text) {
-  const b64 = Buffer.from(text, "utf8").toString("base64");
-  asApp("echo " + b64 + " | base64 -d > " + relPath);
+  const buf = Buffer.from(text, "utf8");
+  const REMOTE_DIR = "/data/local/tmp/_p5b04_push";
+
+  shell("rm -rf " + REMOTE_DIR + " && mkdir -p " + REMOTE_DIR);
+
+  // 分块 push（每块 64KB，远低于任何上限）
+  const CHUNK = 64 * 1024;
+  const nChunks = Math.max(1, Math.ceil(buf.length / CHUNK));
+  const localDir = path.join(os.tmpdir(), "p5b04_push_" + Date.now());
+  fs.mkdirSync(localDir, { recursive: true });
+
+  const parts = [];
+  for (let i = 0; i < nChunks; i++) {
+    const slice = buf.subarray(i * CHUNK, Math.min((i + 1) * CHUNK, buf.length));
+    const lp = path.join(localDir, "part" + i);
+    fs.writeFileSync(lp, slice);
+    const rp = REMOTE_DIR + "/part" + i;
+    adb(["push", lp, rp]);
+    parts.push(rp);
+  }
+
+  // cat 拼接 → 目标路径（先写到 .tmp 再 mv，原子替换）
+  const tmpRel = relPath + ".p5b04tmp";
+  asApp("cat " + parts.join(" ") + " > " + tmpRel + " && mv " + tmpRel + " " + relPath);
+  shell("rm -rf " + REMOTE_DIR);
+  try { fs.rmSync(localDir, { recursive: true, force: true }); } catch (e) { }
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -151,15 +199,35 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   writeInto("files/config/settings.json", JSON.stringify(settings, null, 2));
 
   // ---- 校验写进去的内容真的是完整 JSON
+  //
+  // ⚠️ P5B-M04：原来是写死 `gaugeCount === 8`（只适合 8 档测试主题）。
+  //    改成**通用校验**：比 schema 与节点数是否与源文件一致，
+  //    并对 v3 主题额外核对四种基元节点数量。
   const back = asApp("cat files/config/settings.json");
   let okJson = false, gaugeCount = 0;
+  let detail = "";
   try {
     const j = JSON.parse(back.replace(/^\uFEFF/, ""));
     const dj = JSON.parse(j.designJson);
-    gaugeCount = (dj.pages[0].nodes || []).filter((n) => n.type === "gauge").length;
-    okJson = gaugeCount === 8;
-  } catch (e) { /* 留给下面报错 */ }
-  console.log("  回读校验：designJson 可解析=" + okJson + "  gauge 数=" + gaugeCount);
+    // 两种形态都支持：编辑器导出的是**顶层 nodes**，旧文件可能是 pages[0].nodes
+    const nodes = (dj.pages && dj.pages[0] && dj.pages[0].nodes) || dj.nodes || [];
+    const srcNodes = (design.pages && design.pages[0] && design.pages[0].nodes) || design.nodes || [];
+
+    gaugeCount = nodes.filter((n) => n.type === "gauge").length;
+
+    const V3_TYPES = ["valueText", "shape", "segmentedArc", "pathProgress"];
+    const primCount = nodes.filter((n) => V3_TYPES.includes(n.type)).length;
+    const srcPrim = srcNodes.filter((n) => V3_TYPES.includes(n.type)).length;
+
+    okJson = dj.schema === design.schema && nodes.length === srcNodes.length;
+    if (srcPrim > 0) okJson = okJson && primCount === srcPrim;
+
+    detail = "  schema=" + dj.schema + "  节点=" + nodes.length + "/" + srcNodes.length;
+    if (srcPrim > 0) detail += "  基元=" + primCount + "/" + srcPrim;
+  } catch (e) {
+    detail = "  （解析失败：" + e.message + "）";
+  }
+  console.log("  回读校验：一致=" + okJson + "  gauge 数=" + gaugeCount + detail);
 
   // ---- 重启 App
   shell("am force-stop " + PKG);

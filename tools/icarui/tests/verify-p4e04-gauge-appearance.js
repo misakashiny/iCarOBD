@@ -222,7 +222,7 @@ async function main(){
   ok(K.text===12,'K3 文字 12/12 无回归');
   ok(K.cont===4,'K4 容器 4/4 无回归');
   ok(K.gauge===6,'K5 仪表 6/6');
-  ok(K.registry===69,'K6 Registry 仍 69 条');
+  ok(K.registry===73,'K6 Registry 为 73 条（P5B-M04 授权 +4；此前 69）');
 
   // ---------- L. 普通图片不误判 ----------
   const L=JJ(await cdp.eval(`(function(){

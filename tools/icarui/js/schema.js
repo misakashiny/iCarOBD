@@ -18,7 +18,43 @@
 
 window.SCHEMA_V1 = "icar.ui/1";
 window.SCHEMA_V2 = "icar.ui/2";
-window.SCHEMA = window.SCHEMA_V2;      // 本工具现在产出的版本
+// P5B-M04：`icar.ui/3`（用户已明确授权新增）。
+// v3 = v2 的超集，只增加四种高级基元：valueText / shape / segmentedArc / pathProgress。
+// 与 App 侧 `DesignFile.SCHEMA_V3` 逐字一致。
+window.SCHEMA_V3 = "icar.ui/3";
+// ⚠️ 这个常量是"**默认**产出"，不是"永远产出"。
+// 真正的导出由 `schemaForDesign()` 按节点内容决定（见 model.js 的 toV2Json）。
+window.SCHEMA = window.SCHEMA_V2;
+
+/** v3 专属的四种节点 type（与 Android `DesignNode.TYPES_V3_ONLY` 逐条一致）*/
+window.V3_NODE_TYPES = ["valueText", "shape", "segmentedArc", "pathProgress"];
+
+/**
+ * 判断一份设计该导出成哪个 schema。
+ *
+ * 规则（任务 §四 B2）：
+ *   · 含任一 v3 节点 → `icar.ui/3`
+ *   · 否则           → `icar.ui/2`（**存量文件逐字节不变**）
+ *
+ * @param {object} design 设计对象（resolveDesign 之后的也行）
+ * @returns {string} schema 名
+ */
+window.schemaForDesign = function (design) {
+  if (!design) return window.SCHEMA_V2;
+  var found = false;
+  function walk(nodes) {
+    if (!nodes || found) return;
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      if (!n) continue;
+      if (window.V3_NODE_TYPES.indexOf(n.type) >= 0) { found = true; return; }
+      if (n.children && n.children.length) walk(n.children);
+    }
+  }
+  if (design.nodes) walk(design.nodes);
+  if (design.pages) design.pages.forEach(function (p) { walk(p && p.nodes); });
+  return found ? window.SCHEMA_V3 : window.SCHEMA_V2;
+};
 
 window.CANVAS = 360;
 

@@ -225,7 +225,7 @@ async function main(){
   ok(L.trackOk===28,'L2 轨道 28/28 识别无回归');
   ok(L.textOk===12,'L3 文字 12/12 识别无回归');
   ok(L.contOk===4,'L4 容器 4/4 识别无回归');
-  ok(L.registry===69,'L5 Registry 仍 69 条');
+  ok(L.registry===73,'L5 Registry 为 73 条（P5B-M04 授权 +4；此前 69）');
 
   // ---------- M. 状态灯 statePid 未受批次 A 影响 ----------
   const M=JJ(await cdp.eval(`(function(){

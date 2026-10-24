@@ -17,6 +17,12 @@ import com.icar.obd.data.DesignNode
 import com.icar.obd.data.GaugeFont
 import com.icar.obd.data.GaugeItem
 import com.icar.obd.data.NodeState
+import com.icar.obd.data.PrimitiveFields
+import com.icar.obd.obd.VehicleBus
+import com.icar.obd.ui.primitive.PathProgressView
+import com.icar.obd.ui.primitive.SegmentedArcView
+import com.icar.obd.ui.primitive.ShapePrimitiveView
+import com.icar.obd.ui.primitive.ValueTextPrimitiveView
 import com.icar.obd.data.Store
 import com.icar.obd.ui.view.BaseGaugeView
 import com.icar.obd.ui.view.DashboardBackground
@@ -24,7 +30,6 @@ import com.icar.obd.ui.view.GaugeTheme
 import com.icar.obd.ui.view.GaugePartsView
 import com.icar.obd.ui.view.GaugeViewFactory
 import com.icar.obd.ui.view.TrackView
-import com.icar.obd.obd.VehicleBus
 import kotlin.math.max
 import kotlin.math.min
 
@@ -264,6 +269,8 @@ class NodeTreeRenderer(private val context: Context) {
 
     private val rptNoPid = ArrayList<String>()
     private val rptUnknown = ArrayList<String>()
+    /** P5B-M04：成功构建的 v3 基元节点（诊断用）*/
+    private val rptBuilt = ArrayList<String>()
     private val rptAssets = ArrayList<String>()
 
     /** 每种问题最多记几条 —— 与项目其它日志一样**有界**，防洪水 */
@@ -284,14 +291,41 @@ class NodeTreeRenderer(private val context: Context) {
      * @return 建出来的 View 数量（0 表示没有可见节点）
      */
     fun build(nodes: List<DesignNode>, parent: ViewGroup, design: DesignFile, cw: Int, ch: Int): Int {
+        // ================================================================
+        // P5B-M04 §C1：「**不得让 View 销毁后仍保留 VehicleBus 监听器**」
+        //
+        // `build()` 会重建整棵视图树 —— 旧 View 被丢弃，但它们注册在
+        // VehicleBus 上的监听器**不会自动退订**（VehicleBus 持有的是闭包）。
+        // 不退订的后果：
+        //   · 每次重建泄漏 N 个闭包（N = 绑定 PID 的基元节点数）
+        //   · 旧闭包持有已废弃的 View 引用 → 内存泄漏
+        //   · 每次总线更新都会执行所有历史闭包 → 越用越卡
+        // 所以**重建前必须先全部退订**。这是本函数第一件事。
+        // ================================================================
+        busUnsubs.values.forEach { runCatching { it.invoke() } }
+        busUnsubs.clear()
+        busViews.clear()
+
         gauges.clear()
         stateCells.clear()
         trackViews.clear()
-        rptNoPid.clear(); rptUnknown.clear(); rptAssets.clear()
+        rptNoPid.clear(); rptUnknown.clear(); rptAssets.clear(); rptBuilt.clear()
         t = computeViewport(design.scaleMode, cw, ch)
         val n = buildInto(nodes, parent, design)
         lastReport = BuildReport(n, rptNoPid.toList(), rptUnknown.toList(), rptAssets.toList())
         return n
+    }
+
+    /**
+     * 彻底释放（宿主 Fragment/Activity 销毁时调）。
+     *
+     * 与 [build] 的区别：build 是"重建"（之后还会挂新的监听），
+     * release 是"不用了"。两者都必须退订。
+     */
+    fun release() {
+        busUnsubs.values.forEach { runCatching { it.invoke() } }
+        busUnsubs.clear()
+        busViews.clear()
     }
 
     private fun buildInto(nodes: List<DesignNode>, parent: ViewGroup, design: DesignFile): Int {
@@ -340,12 +374,177 @@ class NodeTreeRenderer(private val context: Context) {
         node.isImage -> buildImage(node)
         node.isText -> buildText(node)
         node.isGauge -> buildGauge(node)
+
+        // ============================================================
+        // P5B-M04：`icar.ui/3` 四种高级基元
+        //
+        // 只有 v3 主题会走到这里（解析层已保证：v1/v2 里出现这些 type 会报错）。
+        // 四个分支都要求 `node.prim != null`；为 null 说明解析异常 → 归到 unknown，
+        // **不能静默**（任务 §四 B2：「不得静默输出缺少重要动态仪表的主题」）。
+        // ============================================================
+        node.type == DesignNode.TYPE_VALUE_TEXT && node.prim != null -> buildPrimValueText(node)
+        node.type == DesignNode.TYPE_SHAPE && node.prim != null -> buildPrimShape(node)
+        node.type == DesignNode.TYPE_SEGMENTED_ARC && node.prim != null -> buildPrimSegmentedArc(node)
+        node.type == DesignNode.TYPE_PATH_PROGRESS && node.prim != null -> buildPrimPathProgress(node)
+
         else -> {
             // 类型不认识 —— 以前**静默返回 null**：画布上少一块，而日志里没有任何线索
             rec(rptUnknown, "${node.id}(${node.type})")
             null
         }
     }
+
+    // ================================================================
+    // P5B-M04：四种高级基元的 View 构建
+    //
+    // ## 为什么每个都要单独一个函数
+    //
+    // 四种 View 的"尺寸换算"不一样：
+    //   · valueText  字号来自**画布单位**，要乘 pxY 换算到像素
+    //   · shape      polyline 点是归一化 0..1，View 内部自己换算
+    //   · segmentedArc  radiusRatio 相对 `min(w,h)`，View 自己算
+    //   · pathProgress 点归一化，View 自己算
+    // 所以这里只负责"把 prim 的字段灌进 View"，换算交给 View。
+    // ================================================================
+
+    /** 四种基元 View 的通用设置（尺寸/变换已由 layoutParams + applyTransform 做）*/
+    private fun View.applyCommon(node: DesignNode) {
+        // 尺寸由 layoutParams() 设置，变换由 applyTransform() 设置 —— 这里不重复设
+        // 只做 View 级的透明度（node.alpha 已由上层 globalAlpha 处理，这里给 View 自己的）
+        this.alpha = 1f
+    }
+
+    private fun buildPrimValueText(node: DesignNode): View {
+        val p = node.prim!!
+        val v = ValueTextPrimitiveView(context)
+        v.applyCommon(node)
+        // ⚠️ 先设 busBinding=false，灌完所有字段再打开 ——
+        //    否则 pid setter 会在字段还没设好时就 bind 一次
+        v.busBinding = false
+        v.decimals = p.decimals
+        v.unit = p.unit
+        v.prefix = p.prefix
+        v.suffix = p.suffix
+        v.valueLabels = p.valueLabels
+        // 字号：画布单位 → 像素（与既有 gauge 的换算一致）
+        v.valueSizePx = p.size * t.pxY
+        v.unitSizePx = p.unitSize * t.pxY
+        v.align = p.align
+        v.normalColor = p.color
+        v.warnColor = p.warnColor
+        v.criticalColor = p.criticalColor
+        v.noDataColor = p.noDataColor
+        v.warnHigh = p.warnHigh
+        v.criticalHigh = p.criticalHigh
+        v.textAlpha = node.alpha
+        // 最后绑定：pid setter 会立刻取一次 VehicleBus 的当前值
+        v.busBinding = true
+        v.pid = p.pid
+        rec(rptBuilt, node.id)
+        return v
+    }
+
+    private fun buildPrimShape(node: DesignNode): View {
+        val p = node.prim!!
+        val v = ShapePrimitiveView(context)
+        v.applyCommon(node)
+        v.kind = p.kind
+        v.fillColor = p.fill
+        v.strokeColor = p.stroke
+        v.strokeWidth = p.strokeWidth
+        v.cornerRadius = p.cornerRadius
+        v.innerRatio = p.innerRatio
+        v.rotationDeg = p.rotationDeg
+        v.viewAlpha = node.alpha
+        // 折线：归一化 → 数组
+        if (p.points.size >= 2) {
+            val arr = FloatArray(p.points.size * 2)
+            p.points.forEachIndexed { i, pt ->
+                arr[i * 2] = pt[0]
+                arr[i * 2 + 1] = pt[1]
+            }
+            v.polyline = arr
+        }
+        rec(rptBuilt, node.id)
+        return v
+    }
+
+    private fun buildPrimSegmentedArc(node: DesignNode): View {
+        val p = node.prim!!
+        val v = SegmentedArcView(context)
+        v.applyCommon(node)
+        v.startAngle = p.startAngle
+        v.sweepAngle = p.sweepAngle
+        v.segmentCount = p.segmentCount
+        v.gapAngle = p.gapAngle
+        // 线宽是画布单位 → 像素
+        v.thickness = p.thickness * t.pxY
+        v.activeColor = p.activeColor
+        v.inactiveColor = p.inactiveColor
+        v.noDataColor = p.noDataColor
+        v.radiusRatio = p.radiusRatio
+        v.zoneColors = zoneColorArray(p.zoneColors)
+        // 进度：无绑定 → null（View 画"无数据"）；有绑定 → 立刻取一次
+        v.progress = ratioOf(p, p.pid)
+        attachBus(node, p.pid, v) { raw ->
+            v.progress = if (raw == null) null else ((raw - p.minVal) / (p.maxVal - p.minVal)).coerceIn(0f, 1f)
+        }
+        rec(rptBuilt, node.id)
+        return v
+    }
+
+    private fun buildPrimPathProgress(node: DesignNode): View {
+        val p = node.prim!!
+        val v = PathProgressView(context)
+        v.applyCommon(node)
+        v.curve = p.curve
+        v.thickness = p.thickness * t.pxY
+        v.activeColor = p.activeColor
+        v.inactiveColor = p.inactiveColor
+        v.gradientTo = p.gradientTo
+        v.fillEnabled = p.fillEnabled
+        v.fillColor = p.fillColor
+        v.forward = p.forward
+        v.points = p.points
+        v.progress = ratioOf(p, p.pid)
+        attachBus(node, p.pid, v) { raw ->
+            v.progress = if (raw == null) null else ((raw - p.minVal) / (p.maxVal - p.minVal)).coerceIn(0f, 1f)
+        }
+        rec(rptBuilt, node.id)
+        return v
+    }
+
+    /** 当前值 → 进度 [0,1]；无绑定或无数据 → null */
+    private fun ratioOf(p: PrimitiveFields, pid: String): Float? {
+        if (pid.isEmpty()) return null
+        val raw = VehicleBus.value(pid) ?: return null
+        val span = p.maxVal - p.minVal
+        if (span <= 0f) return null
+        return ((raw - p.minVal) / span).coerceIn(0f, 1f)
+    }
+
+    /** 订阅总线驱动 progress；View detach 时自动退订 */
+    private fun attachBus(node: DesignNode, pid: String, view: View, apply: (Float?) -> Unit) {
+        if (pid.isEmpty()) return
+        busViews[node.id] = view
+        val unsub = VehicleBus.addValueListener { pv ->
+            if (pv.pidId == pid) {
+                val raw = if (pv.ok) pv.value else null
+                apply(raw)
+                view.postInvalidate()
+            }
+        }
+        busUnsubs[node.id] = unsub
+    }
+
+    /** 分区色 → IntArray（View 按段索引取色）*/
+    private fun zoneColorArray(z: List<Pair<Float, Int>>): IntArray =
+        if (z.isEmpty()) IntArray(0) else z.map { it.second }.toIntArray()
+
+    /** pid → 监听器的退订函数（onDetach 时统一清）*/
+    private val busUnsubs = HashMap<String, () -> Unit>()
+    /** node.id → 需要刷新的 View（总线回调里 postInvalidate）*/
+    private val busViews = HashMap<String, View>()
 
     /** 分组：一个透明 FrameLayout，子节点在它的坐标系里排布 */
     private fun buildGroup(node: DesignNode, design: DesignFile): View {

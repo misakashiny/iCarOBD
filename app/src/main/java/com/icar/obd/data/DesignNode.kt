@@ -249,6 +249,14 @@ data class DesignNode(
     val showLabel: Boolean = true,
     val showRange: Boolean = true,
 
+    // ================================================================
+    // ---- P5B-M04：v3 四种高级基元的字段（只有 v3 主题会出现非 null）
+    //
+    // 保守设计：**一个可空容器**，而不是把 30 多个字段平铺进 DesignNode。
+    // 好处：v1/v2 节点的构造签名与内存布局完全不变（存量代码零影响）。
+    // ================================================================
+    val prim: PrimitiveFields? = null,
+
     // ---- type == "image"
     val assetId: String = "",
     val statePid: String = "",
@@ -289,9 +297,32 @@ data class DesignNode(
         const val TYPE_GAUGE = "gauge"
         const val TYPE_TEXT = "text"
 
-        /** 与工具侧 `NODE_TYPES` 一致（跨语言比对守着） */
-        val TYPES = listOf(TYPE_GAUGE, TYPE_IMAGE, TYPE_TEXT, TYPE_GROUP)
-        val TYPE_NAMES = listOf("仪表", "图片", "文字", "分组")
+        // ================================================================
+        // P5B-M04：`icar.ui/3` 新增的四种**高级基元**（用户已明确授权）
+        //
+        // ⚠️ 只在 **v3 主题**里被接受（见 DesignFile 的 schema 判定）。
+        //    v1/v2 主题里出现这些 type 仍然报错 —— 避免"悄悄改了 v2 的语义"。
+        // ================================================================
+        const val TYPE_VALUE_TEXT = "valueText"
+        const val TYPE_SHAPE = "shape"
+        const val TYPE_SEGMENTED_ARC = "segmentedArc"
+        const val TYPE_PATH_PROGRESS = "pathProgress"
+
+        /** v1/v2 认的 4 种（**语义不变**，跨语言比对守着） */
+        val TYPES_V2 = listOf(TYPE_GAUGE, TYPE_IMAGE, TYPE_TEXT, TYPE_GROUP)
+        val TYPE_NAMES_V2 = listOf("仪表", "图片", "文字", "分组")
+
+        /** v3 新增的 4 种 */
+        val TYPES_V3_ONLY = listOf(TYPE_VALUE_TEXT, TYPE_SHAPE, TYPE_SEGMENTED_ARC, TYPE_PATH_PROGRESS)
+        val TYPE_NAMES_V3_ONLY = listOf("数值", "图形", "分段圆环", "曲线进度")
+
+        /** 全部合法 type（v3 视图）*/
+        val TYPES = TYPES_V2 + TYPES_V3_ONLY
+        val TYPE_NAMES = TYPE_NAMES_V2 + TYPE_NAMES_V3_ONLY
+
+        /** 这个 type 是否只有 v3 才认 */
+        fun isV3OnlyType(t: String): Boolean = t in TYPES_V3_ONLY
+
 
         /** 一屏最多几个节点（与工具侧 `MAX_NODES` 一致） */
         const val MAX_NODES = 200
@@ -361,7 +392,15 @@ data class DesignNode(
             warnings: MutableList<String>,
             assetIds: Set<String>,
             forceGauge: Boolean = false,
-            depth: Int = 0
+            depth: Int = 0,
+            /**
+             * P5B-M04：当前主题是否 **v3**。
+             *
+             * 只有 v3 才接受四种新 type；v1/v2 里出现 → 仍然报错。
+             * 这是「**不悄悄改变 v2 语义**」的实现保证：
+             * 一份写着 `schema: icar.ui/2` 的设计，如果掺了 v3 节点，是**错误**而不是静默升级。
+             */
+            allowV3: Boolean = false
         ): DesignNode? {
             // ⚠️ **深度闸门必须在递归之前**（v1.20.19，与工具侧 `parseNode` 同一处判定）。
             //
@@ -383,6 +422,14 @@ data class DesignNode(
             val type = if (forceGauge) TYPE_GAUGE else o.optString("type", TYPE_GAUGE)
             if (type !in TYPES) {
                 errors.add("$path 的 type `$type` 不认识（本版本认：${TYPES.joinToString(" / ")}）")
+                return null
+            }
+            // P5B-M04：v3 专属 type 在 v1/v2 主题里**必须报错**（不静默升级）
+            if (isV3OnlyType(type) && !allowV3) {
+                errors.add(
+                    "$path 的 type `$type` 只有 `icar.ui/3` 才支持 —— " +
+                        "当前主题声明的是更旧的 schema。请用新版编辑器另存为 v3 后再使用"
+                )
                 return null
             }
 
@@ -424,6 +471,8 @@ data class DesignNode(
             var trackStyle: TrackStyle? = null
             var text = ""
             var font = GaugeFont()
+            /** P5B-M04：v3 高级基元的字段容器（只有 v3 的四种 type 会赋值）*/
+            var prim: PrimitiveFields? = null
 
             when (type) {
                 TYPE_GAUGE -> {
@@ -513,6 +562,37 @@ data class DesignNode(
                     text = o.optString("text", "文字")
                     font = GaugeFont.parse(o.optJSONObject("font"), "$path.font", warnings)
                 }
+
+                // ============================================================
+                // P5B-M04：v3 四种高级基元
+                //
+                // 每个分支都走 DesignNode.companion 里的 parseXxx() 纯函数，
+                // 这样单测能直接打解析逻辑，不必造整个 DesignFile。
+                // ============================================================
+                TYPE_VALUE_TEXT -> {
+                    val f = PrimitiveFields()
+                    PrimitiveParser.parseValueText(o, path, f)
+                    warnings.addAll(f.warnings)
+                    prim = f
+                }
+                TYPE_SHAPE -> {
+                    val f = PrimitiveFields()
+                    PrimitiveParser.parseShape(o, path, f, w, h)
+                    warnings.addAll(f.warnings)
+                    prim = f
+                }
+                TYPE_SEGMENTED_ARC -> {
+                    val f = PrimitiveFields()
+                    if (!PrimitiveParser.parseSegmentedArc(o, path, f, errors)) return null
+                    warnings.addAll(f.warnings)
+                    prim = f
+                }
+                TYPE_PATH_PROGRESS -> {
+                    val f = PrimitiveFields()
+                    if (!PrimitiveParser.parsePathProgress(o, path, f, errors)) return null
+                    warnings.addAll(f.warnings)
+                    prim = f
+                }
             }
 
             // ---- 子节点
@@ -525,7 +605,10 @@ data class DesignNode(
                         errors.add("$path.children[$i] 不是一个对象")
                         continue
                     }
-                    parse(c, "$path.children[$i]", errors, warnings, assetIds, false, depth + 1)
+                    // ⚠️ P5B-M04 修的缺陷：这里原来**没有把 allowV3 传下去**，
+                    //    导致 v3 主题里分组内的新节点被判成「只有 icar.ui/3 才支持」
+                    //    —— 明明主题就是 v3。递归必须继承父节点的 schema 能力。
+                    parse(c, "$path.children[$i]", errors, warnings, assetIds, false, depth + 1, allowV3)
                         ?.let { kids.add(it) }
                 }
             }
@@ -550,6 +633,7 @@ data class DesignNode(
                 labelFont = labelFont,
                 showLabel = showLabel,
                 showRange = showRange,
+                prim = prim,
                 assetId = assetId,
                 statePid = statePid,
                 stateWarn = stateWarn,

@@ -167,7 +167,7 @@ async function main(){
   })()`));
   ok(J.setNodeNum==='function','J1 旧面板 setNodeNum 仍在（scale 归 1/下限 0.05 逻辑在此）');
   ok(J.localMatrix==='function','J2 localMatrix 仍在（唯一矩阵源，未改动）');
-  ok(J.registry===69,'J3 Registry 仍 69 条');
+  ok(J.registry===73,'J3 Registry 为 73 条（P5B-M04 授权 +4；此前 69）');
 
   // ---------- K. 其它族无回归 ----------
   const K=JJ(await cdp.eval(`(function(){

@@ -1,0 +1,8 @@
+=== P5B-M04 §D：四基元正式接入编辑器（18 条要求）===
+
+
+=== 汇总 ===
+通过=70 失败=0
+PASS=70 FAIL=0
+
+⚠️ 层级：编辑器（无头 Edge）。D18「Android 实际渲染」见 device/verify-p5b04-v3-render.js。

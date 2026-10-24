@@ -192,7 +192,7 @@ async function main(){
   })()`));
   ok(J.addBand==='function'&&J.delBand==='function','J1 旧面板色带函数仍在');
   ok(J.addPart==='function'&&J.movePart==='function','J2 旧面板子部件函数仍在');
-  ok(J.registry===69,'J3 Registry 仍 69 条（未加条目）');
+  ok(J.registry===73,'J3 Registry 为 73 条（P5B-M04 授权 +4；数组/轨道功能本身仍未加条目）');
 
   // ---------- K. Android 侧 TrackStyle 契约（静态校验）----------
   const kt=fsc.readFileSync('D:/icarobd2/app/src/main/java/com/icar/obd/data/DesignNode.kt','utf8');

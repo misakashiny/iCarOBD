@@ -287,6 +287,10 @@
      不注册任何 schema / 属性面板字段 → 不会写进正式 icar.ui/2。
      仅供原型验证与将来移植参考。 -->
 <script src="js/advanced-primitives-proto.js"></script>
+<!-- P5B-M04 阶段 D：四种高级基元的**正式注册**（valueText / shape / segmentedArc / pathProgress）。
+     必须在 control-registry.js（Reg 就绪）与 advanced-primitives-proto.js（绘制内核）之后。
+     它把四种 type 接进正式控件库 → 可拖入画布、可属性编辑、可 Undo/Redo、可导出 v3。 -->
+<script src="js/registry/controls/primitive-family.js"></script>
 <!-- P5B-M01 阶段 F：两套组合仪表示例**原型**（依赖阶段 E 的 AdvancedPrimitives）。
      同样只是原型：不注册节点类型、不写 icar.ui/2。 -->
 <script src="js/dashboard-proto.js"></script>
