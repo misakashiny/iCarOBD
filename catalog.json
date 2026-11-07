@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "updatedAt": "2026-11-07T12:41:56.771Z",
+  "themes": [
+    {
+      "id": "white-armor",
+      "version": "1.0.0",
+      "name": "白甲竞速 · 横屏",
+      "author": "ICarUI",
+      "description": "原创社区入门主题。使用标准车速、转速及温度数据；不包含车辆配置。",
+      "width": 1600,
+      "height": 900,
+      "pages": 1,
+      "minAppCode": 114,
+      "package": {
+        "path": "themes/white-armor/1.0.0/theme.icarzip",
+        "size": 8502,
+        "sha256": "ee238ddb8e483e7c9143a0c36e4300a8a67b259e8d18fbecfbddfdb94455f52a"
+      },
+      "preview": {
+        "path": "themes/white-armor/1.0.0/preview.png",
+        "size": 26757,
+        "sha256": "dac1b72b093b94cc6effe4e37cbf145ac798031759f94feda53ee948331582e6"
+      }
+    }
+  ]
+}
