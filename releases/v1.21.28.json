@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "sourceRepository": "misakashiny/ICarOBD-Private",
+  "sourceCommit": "715bcaede8605cb44d6afd8bad77810c8b0ca5e1",
+  "sourceTag": "v1.21.28",
+  "versionName": "1.21.28",
+  "versionCode": 120,
+  "apkSha256": "d0226d51dcac9b1b8dc28ce61712c713568cdaa962b1c3dd35640f58b9c62f6d",
+  "apkSize": 7802050,
+  "buildInputsSha256": "838add003ab448f7be99c9330993a252f501ae06ee0714b9412281cfb84c7ca1",
+  "buildInputCount": 449
+}
