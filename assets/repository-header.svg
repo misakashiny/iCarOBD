@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="240" viewBox="0 0 1200 240" role="img" aria-label="ICarOBD — DOWNLOAD &amp; UPDATES">
+<title>ICarOBD — DOWNLOAD &amp; UPDATES</title><desc>Android dashboards, data and alerts. Icon adapted from the project's existing Android vector asset; no generated raster.</desc>
+<rect width="1200" height="240" rx="20" fill="#F8F7F5"/>
+<path d="M1110 0H1200V240H1012Z" fill="#ED0711"/>
+<g transform="translate(28 22) scale(1.8)"><path fill="#ED0711" d="M23,66 C17,43 29,23 49,21 C64,19 77,26 84,36 L76,42 C71,33 62,29 52,30 C37,31 29,43 31,55 Z"/><path fill="#ED0711" d="M86,42 C94,58 90,76 76,87 L66,87 L61,79 C77,72 84,59 79,48 Z"/><path fill="#ED0711" d="M33,32 L39,41 L34,45 L28,39 Z M50,25 L55,25 L55,36 L50,36 Z M68,29 L74,33 L68,42 L63,38 Z M24,49 L36,50 L36,56 L24,55 Z"/><path fill="#151719" d="M49,58 L83,37 L58,66 C55,72 46,70 46,64 C46,61 47,59 49,58 Z"/><path fill="#ED0711" d="M17,83 L31,66 L47,61 L33,72 Z M20,88 L36,74 L49,70 L36,80 Z"/></g>
+<text x="246" y="113" font-family="Segoe UI,Arial,sans-serif" font-size="76" font-weight="750" fill="#151719">ICarOBD</text>
+<text x="250" y="161" font-family="Segoe UI,Arial,sans-serif" font-size="24" letter-spacing="2" fill="#6B3236">DOWNLOAD &amp; UPDATES</text>
+<text x="250" y="197" font-family="Segoe UI,Arial,sans-serif" font-size="18" fill="#565960">Android dashboards, data and alerts</text>
+</svg>

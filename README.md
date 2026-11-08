@@ -1,29 +1,80 @@
-# iCar OBD
+<p align="center"><img src="assets/repository-header.svg" alt="ICarOBD 下载与更新" width="100%"></p>
 
-Android车辆仪表App与ICarUI主题制作工具。ELM327兼容BLE/SPP传输，PID管理与探测、CAN探测/监听、多画布仪表、规则告警、日志与CSV。Android7.0以上，当前仅arm64。
+<p align="center"><strong>把车辆数据，变成清楚好读的仪表与提醒。</strong><br>Android 7.0+ · 手机与平板 · 当前提供 Debug 测试版</p>
 
-## 协作文档入口
+<p align="center"><a href="https://github.com/misakashiny/iCarOBD/releases/download/v1.21.26/ICarOBD_1.21.26.apk"><strong>下载 1.21.26 APK</strong></a> · <a href="https://github.com/misakashiny/iCarOBD/releases/latest">最新发布</a> · <a href="INSTALL.md">安装说明</a> · <a href="CHANGELOG.md">更新记录</a></p>
 
-开发/更换AI工具按顺序读根目录五件套（规范 V0.2）：
+---
 
-| 文件 | 职责 |
-|---|---|
-| [AGENTS.md](AGENTS.md) | AI执行规则 |
-| [01_项目规格.md](01_项目规格.md) | 产品规格 |
-| [03_当前任务.md](03_当前任务.md) | 唯一当前任务 |
-| [04_交接状态.md](04_交接状态.md) | 唯一当前状态与交接 |
-| [02_开发计划.md](02_开发计划.md) | 任务顺序 |
+## 下载与安装
 
-技术文档与现行入口另见[AI接手指南](docs/00_AI接手指南.md)；[当前进度和BUG](docs/03_开发进度与问题清单.md)、[统一更新日志](docs/07_版本更新日志.md)、[环境与命令](docs/02_环境配置与验证.md)。
+<!-- current-release:start -->
+**最新版本：1.21.26（118）** · 2026-11-08 · 8.01 MB
 
-## 使用与运行
+- 下载文件应以 **.apk** 结尾，直接安装，无需解压。
+- 已安装 ICarOBD 时，使用同签名版本直接覆盖安装，保留现有配置与数据。
+- App 内可从连接页进入“应用更新”，检查并下载新版。
 
-- App安装包从项目Releases或本地构建获取；当前代码版本1.20.22/code91，未发布修复见日志。仓库不存APK。
-- App中连接适配器后初始化，选择/添加PID并验证，再绑定到画布；画布布局由设计和归一化坐标决定，不再描述成固定2/4列。
-- 无车可用App模拟源检查仪表：开启后离页继续，显式停止显示未知。模拟不等于车辆信号已验证。
-- 工具双击tools/icarui/start-icarui.cmd或index.html；使用说明见[ICarUI README](tools/icarui/README.md)。
-- 根目录“打开迭代看板.cmd”查看本地进度；更新后先运行node tools/iteration-board/build.js。
+[直接下载 APK](https://github.com/misakashiny/iCarOBD/releases/download/v1.21.26/ICarOBD_1.21.26.apk) · [本版本说明](https://github.com/misakashiny/iCarOBD/releases/tag/v1.21.26) · [版本对应记录](releases/v1.21.26.json)
+<!-- current-release:end -->
 
-## 保留边界
+## 界面预览
 
-真实适配器/车辆操作按任务与授权执行，SPP及部分CAN/PID分支仍待硬件验收。旧设计格式、用户素材和已放弃但仍构建的LVGL保留兼容；本轮整理未改变产品功能。
+<p align="center">
+<a href="assets/dashboard.png"><img src="assets/dashboard.png" width="240" alt="默认仪表实际界面，模拟数据"></a>
+<a href="assets/rules.png"><img src="assets/rules.png" width="240" alt="规则工具单行与规则列表"></a>
+<a href="assets/catalogue.png"><img src="assets/catalogue.png" width="240" alt="按用途查找审核后的数据"></a>
+</p>
+
+<sub>Android 模拟器实际截图；仪表读数为模拟数据，不是实车采样。</sub>
+
+## 可以做什么
+
+| 你想做的事 | ICarOBD 提供 |
+| :--- | :--- |
+| 看得清 | 默认仪表主题、读数平滑变化、横竖屏与平板适配 |
+| 自己设计仪表 | 导入 ICarUI 主题、独立全屏画布、在线主题库 |
+| 管理数据 | PID 编辑与探测、CAN 探测与记录、审核后的数据目录 |
+| 获得提醒 | 条件规则、音效库与收藏、效果模拟、提醒设置 |
+| 保存自己的配置 | 本机 PID 离线使用，可选择同步到私有 GitHub 数据源 |
+| 排查问题 | 日志、CSV 行车记录、知识库与控件检视 |
+
+实际可读取的数据取决于车辆、适配器和对应 PID 定义。功能模拟与界面测试不代表已完成实车适配。
+
+## 1.21.26 更新重点
+
+- 仪表盘长按 **1 秒**打开默认仪表设置。
+- 音效库、效果模拟、提醒设置、更多，保持轻薄单行。
+- 数据目录改为私有 GitHub 在线源，完整目录不写入手机缓存。
+- 个人 PID 支持比对与同步；冲突、删除由你选择，自动同步默认关闭。
+
+## 仓库分工
+
+| 仓库 | 内容 |
+| :--- | :--- |
+| **ICarOBD · 本仓库** | APK、更新说明、发行校验与展示资料 |
+| [ICarOBD-Private](https://github.com/misakashiny/ICarOBD-Private) | 安卓 App 的源码、资源与测试，需要授权访问 |
+| [ICarOBD-Data-Private](https://github.com/misakashiny/ICarOBD-Data-Private) | 数据目录、审核资料与个人 PID，需要授权访问 |
+
+本仓库的主分支已整理为发行入口。旧公开源码保留在 Git 历史和历史标签中；它们不代表最新 APK 的源码。
+
+**不要把 Releases 自动生成的 Source code.zip 当成 APK 或最新 App 源码。** 最新 App 的对应私有源码提交见每个版本的 source.json / 版本对应记录。历史版本未建立映射的，会明确标记。
+
+现有 [theme-library 分支](https://github.com/misakashiny/iCarOBD/tree/theme-library) 继续提供主题下载，保持已安装版本的主题源地址有效。
+
+## 更新与校验
+
+应用更新读取 [最新 update.json](https://github.com/misakashiny/iCarOBD/releases/latest/download/update.json)，核对版本、文件大小、SHA-256 和安装签名。检查与下载由用户发起，安装由 Android 系统确认。
+
+1.21.26 已完成 2,283 项 JVM 测试、861 项原生检查与真实 GitHub 访问检查。本版本未进行实体手机、实体平板、TalkBack、Release 构建或实车验收。
+
+<details>
+<summary>1.21.26 文件完整性</summary>
+
+文件：ICarOBD_1.21.26.apk  
+大小：8,008,340 字节  
+SHA-256：`a56353293660323bbc34a9519ea1421cdd3769af20952e8421dc021ac3eaedc8`
+
+</details>
+
+[查看全部版本](https://github.com/misakashiny/iCarOBD/releases) · [报告使用问题](https://github.com/misakashiny/iCarOBD/issues)
