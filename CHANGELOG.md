@@ -1,5 +1,16 @@
 # 更新记录
 
+## 1.21.27 · 2026-11-08
+
+1. 取消应用选项中的双指导航手势。
+2. 仪表盘顶部标题与蓝牙连接状态行移除。
+3. 仪表演示和规则效果模拟改用简洁小提示，可点按调整或退出；大字体下文字完整显示。
+4. 默认主题源迁至 ICarUI-Theme，保留其他主题源与已有配置。
+5. 同款主题的不同画布比例合并展示，可按手机和平板尺寸选择并下载；与 ICarUI 使用同一份主题包。
+
+[下载 APK](https://github.com/misakashiny/iCarOBD/releases/download/v1.21.27/ICarOBD_1.21.27.apk) · [源码对应记录](releases/v1.21.27.json)
+
+
 [返回首页](README.md) · [全部发布与历史安装包](https://github.com/misakashiny/iCarOBD/releases)
 
 近期版本按发布记录整理；下载文件和版本号以各发布页为准。
