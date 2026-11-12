@@ -2,20 +2,20 @@
 
 <p align="center"><strong>把车辆数据，变成清楚好读的仪表与提醒。</strong><br>Android 7.0+ · 手机与平板 · 当前提供签名 Release 版</p>
 
-<p align="center"><a href="https://github.com/misakashiny/iCarOBD/releases/download/v1.21.47/ICarOBD_1.21.47.apk"><strong>下载 1.21.47 APK</strong></a> · <a href="https://github.com/misakashiny/iCarOBD/releases/latest">最新发布</a> · <a href="INSTALL.md">安装说明</a> · <a href="CHANGELOG.md">更新记录</a></p>
+<p align="center"><a href="https://github.com/misakashiny/iCarOBD/releases/download/v1.21.48/ICarOBD_1.21.48.apk"><strong>下载 1.21.48 APK</strong></a> · <a href="https://github.com/misakashiny/iCarOBD/releases/latest">最新发布</a> · <a href="INSTALL.md">安装说明</a> · <a href="CHANGELOG.md">更新记录</a></p>
 
 ---
 
 ## 下载与安装
 
 <!-- current-release:start -->
-**最新版本：1.21.47（139）** · 2026-11-11 · 36.33 MB
+**最新版本：1.21.48（140）** · 2026-11-12 · 36.33 MB
 
 - 下载文件应以 **.apk** 结尾，直接安装，无需解压。
 - 已安装 ICarOBD 时，使用同签名版本直接覆盖安装，保留现有配置与数据。
 - App 内可从连接页进入“应用更新”，检查并下载新版。
 
-[直接下载 APK](https://github.com/misakashiny/iCarOBD/releases/download/v1.21.47/ICarOBD_1.21.47.apk) · [本版本说明](https://github.com/misakashiny/iCarOBD/releases/tag/v1.21.47) · [版本对应记录](releases/v1.21.47.json)
+[直接下载 APK](https://github.com/misakashiny/iCarOBD/releases/download/v1.21.48/ICarOBD_1.21.48.apk) · [本版本说明](https://github.com/misakashiny/iCarOBD/releases/tag/v1.21.48) · [版本对应记录](releases/v1.21.48.json)
 <!-- current-release:end -->
 
 ## 界面预览
@@ -41,12 +41,11 @@
 
 实际可读取的数据取决于车辆、适配器和对应 PID 定义。功能模拟与界面测试不代表已完成实车适配。
 
-## 1.21.47 更新重点
+## 1.21.48 更新重点
 
-- 默认日常界面迁移到 Flutter，旧 ICarUI 画布继续使用独立全屏运行器。
-- 新增 RED-02 黑红、冰川 HUD、白昼简约三套在线应用外观，支持预览、应用和恢复。
-- 修复扫表和快滑卡顿、规则开关误触，以及旧画布长读数裁切。
-- 与旧版本同签名，可覆盖升级并保留设置、PID、规则和画布。
+- 默认仪表与应用共用一套主题配色，仪表布局仍可单独调整。
+- 全屏画布滑到「主题与画布」时沿用上一张画布的横竖屏方向，右滑可回到该画布。
+- 修复带自定义字号的外观包加载时应用页面退回默认色的问题。
 
 ## 仓库分工
 
@@ -68,14 +67,14 @@
 
 应用更新读取 [最新 update.json](https://github.com/misakashiny/iCarOBD/releases/latest/download/update.json)，核对版本、文件大小、SHA-256 和安装签名。检查与下载由用户发起，安装由 Android 系统确认。
 
-1.21.47 已在 K80 Pro 完成离线扫表、TalkBack 双击、分屏和配置保全检查，也通过 Android 7 保存回读。三套外观已从 GitHub 下载并应用，个人 PID 云同步已使用合成数据验证。实车与实体 OBD 适配器尚未验证。
+1.21.48 已在 K80 Pro 验证联动换色、横屏管理页右滑返回和覆盖安装时的配置保全。实车与实体 OBD 适配器尚未验证。
 
 <details>
-<summary>1.21.47 文件完整性</summary>
+<summary>1.21.48 文件完整性</summary>
 
-文件：ICarOBD_1.21.47.apk  
-大小：36,333,639 字节  
-SHA-256：`2d3e283f60d988e67b3952aada65b125b466d2319a5f20426552d071a248bec2`
+- 文件：ICarOBD_1.21.48.apk
+- 大小：36,334,167 字节
+- SHA-256：`99dd40a12964c9b6d84578878e9e106158ef9638eb4570c1d13c3e3663f5d178`
 
 </details>
 

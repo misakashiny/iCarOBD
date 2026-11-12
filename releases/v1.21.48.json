@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "sourceRepository": "misakashiny/ICarOBD-Private",
+  "sourceCommit": "e650be2213f05cedb0e1158ed18ee75369696b98",
+  "sourceTag": "v1.21.48",
+  "versionName": "1.21.48-flutter",
+  "versionCode": 140,
+  "apkSha256": "99dd40a12964c9b6d84578878e9e106158ef9638eb4570c1d13c3e3663f5d178",
+  "apkSize": 36334167,
+  "buildInputCount": 540,
+  "buildInputsSha256": "b3db980062373b6fa54d8ddc164443ab9e8b41b838b1689de73be5ce4520a0e4"
+}
