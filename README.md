@@ -2,20 +2,20 @@
 
 <p align="center"><strong>把车辆数据，变成清楚好读的仪表与提醒。</strong><br>Android 7.0+ · 手机与平板 · 当前提供签名 Release 版</p>
 
-<p align="center"><a href="https://github.com/misakashiny/iCarOBD/releases/download/v1.21.48/ICarOBD_1.21.48.apk"><strong>下载 1.21.48 APK</strong></a> · <a href="https://github.com/misakashiny/iCarOBD/releases/latest">最新发布</a> · <a href="INSTALL.md">安装说明</a> · <a href="CHANGELOG.md">更新记录</a></p>
+<p align="center"><a href="https://github.com/misakashiny/iCarOBD/releases/download/v1.21.61/ICarOBD_1.21.61.apk"><strong>下载 1.21.61 APK</strong></a> · <a href="https://github.com/misakashiny/iCarOBD/releases/latest">最新发布</a> · <a href="INSTALL.md">安装说明</a> · <a href="CHANGELOG.md">更新记录</a></p>
 
 ---
 
 ## 下载与安装
 
 <!-- current-release:start -->
-**最新版本：1.21.48（140）** · 2026-11-12 · 36.33 MB
+**最新版本：1.21.61-oshi-home（153）** · 2026-11-17 · 49.07 MB · 星野爱首页预览
 
-- 下载文件应以 **.apk** 结尾，直接安装，无需解压。
-- 已安装 ICarOBD 时，使用同签名版本直接覆盖安装，保留现有配置与数据。
-- App 内可从连接页进入“应用更新”，检查并下载新版。
+- 下载文件以 **.apk** 结尾，直接安装，无需解压。
+- 沿用原包名与签名，覆盖安装保留配置与数据；应用内“连接 → 应用更新”可检查新版。
+- 长按底部仪表盘 → 仪表设置 → 主题 → 本机主题，选择「星野爱 · 星光舞台（首页预览）」并应用。升级不自动替换当前主题。
 
-[直接下载 APK](https://github.com/misakashiny/iCarOBD/releases/download/v1.21.48/ICarOBD_1.21.48.apk) · [本版本说明](https://github.com/misakashiny/iCarOBD/releases/tag/v1.21.48) · [版本对应记录](releases/v1.21.48.json)
+[直接下载 APK](https://github.com/misakashiny/iCarOBD/releases/download/v1.21.61/ICarOBD_1.21.61.apk) · [本版本说明](https://github.com/misakashiny/iCarOBD/releases/tag/v1.21.61) · [版本对应记录](releases/v1.21.61.json)
 <!-- current-release:end -->
 
 ## 界面预览
@@ -41,11 +41,12 @@
 
 实际可读取的数据取决于车辆、适配器和对应 PID 定义。功能模拟与界面测试不代表已完成实车适配。
 
-## 1.21.48 更新重点
+## 1.21.61 更新重点
 
-- 默认仪表与应用共用一套主题配色，仪表布局仍可单独调整。
-- 全屏画布滑到「主题与画布」时沿用上一张画布的横竖屏方向，右滑可回到该画布。
-- 修复带自定义字号的外观包加载时应用页面退回默认色的问题。
+- 新增星野爱「星光舞台」横竖屏仪表首页，人物、舞台与实时数据分层呈现。
+- 连续转速灯弧、星形端点与辅助数据光轨，保留稳定的数字槽和单位位置。
+- 保留明日香主题、现有绑定/规则/画布与重构后的功能入口；90/100/115%应用字号独立于系统。
+- 星野爱本轮仅实现首页，其他页面继续沿用现有外观。
 
 ## 仓库分工
 
@@ -67,14 +68,14 @@
 
 应用更新读取 [最新 update.json](https://github.com/misakashiny/iCarOBD/releases/latest/download/update.json)，核对版本、文件大小、SHA-256 和安装签名。检查与下载由用户发起，安装由 Android 系统确认。
 
-1.21.48 已在 K80 Pro 验证联动换色、横屏管理页右滑返回和覆盖安装时的配置保全。实车与实体 OBD 适配器尚未验证。
+1.21.61 最终 APK 已通过手机竖屏、横屏、平板及115%应用字号四组模拟器检查、冷启动与配置保全验证。本版尚未在实体手机、实车或实体 OBD 适配器上验收。
 
 <details>
-<summary>1.21.48 文件完整性</summary>
+<summary>1.21.61 文件完整性</summary>
 
-- 文件：ICarOBD_1.21.48.apk
-- 大小：36,334,167 字节
-- SHA-256：`99dd40a12964c9b6d84578878e9e106158ef9638eb4570c1d13c3e3663f5d178`
+- 文件：ICarOBD_1.21.61.apk
+- 大小：49,065,954 字节
+- SHA-256：`65fd442749cfa0df67f6f2d4e1da7b7de94cb3d89937c11bc7437d8cca69f98b`
 
 </details>
 

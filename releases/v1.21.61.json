@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "sourceRepository": "misakashiny/ICarOBD-Private",
+  "sourceCommit": "9fea0553abf849382d14ebfa0464ff816c8bed42",
+  "sourceTag": "v1.21.61",
+  "versionName": "1.21.61-oshi-home",
+  "versionCode": 153,
+  "apkSha256": "65fd442749cfa0df67f6f2d4e1da7b7de94cb3d89937c11bc7437d8cca69f98b",
+  "apkSize": 49065954,
+  "buildInputCount": 591,
+  "buildInputsSha256": "cdb7666eaac346ca3a0e56e5770b7e75fbc38348e52cd0638de94489fac30c4b",
+  "buildVariant": "release",
+  "buildProperties": {
+    "icarFlutter": "true",
+    "icarFlutterDefaultShell": "true",
+    "testReleaseSigning": "debug"
+  },
+  "testedSourceFileCount": 881
+}
