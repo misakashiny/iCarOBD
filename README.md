@@ -2,20 +2,19 @@
 
 <p align="center"><strong>把车辆数据，变成清楚好读的仪表与提醒。</strong><br>Android 7.0+ · 手机与平板 · 当前提供签名 Release 版</p>
 
-<p align="center"><a href="https://github.com/misakashiny/iCarOBD/releases/download/v1.21.61/ICarOBD_1.21.61.apk"><strong>下载 1.21.61 APK</strong></a> · <a href="https://github.com/misakashiny/iCarOBD/releases/latest">最新发布</a> · <a href="INSTALL.md">安装说明</a> · <a href="CHANGELOG.md">更新记录</a></p>
+<p align="center"><a href="https://github.com/misakashiny/iCarOBD/releases/download/v1.21.62/ICarOBD_1.21.62.apk"><strong>下载 1.21.62 APK</strong></a> · <a href="https://github.com/misakashiny/iCarOBD/releases/latest">最新发布</a> · <a href="INSTALL.md">安装说明</a> · <a href="CHANGELOG.md">更新记录</a></p>
 
 ---
 
 ## 下载与安装
 
 <!-- current-release:start -->
-**最新版本：1.21.61-oshi-home（153）** · 2026-11-17 · 49.07 MB · 星野爱首页预览
+**最新版本 1.21.62-asuka-motion（154）** · 2026-11-18 · 49.09 MB
 
-- 下载文件以 **.apk** 结尾，直接安装，无需解压。
-- 沿用原包名与签名，覆盖安装保留配置与数据；应用内“连接 → 应用更新”可检查新版。
-- 长按底部仪表盘 → 仪表设置 → 主题 → 本机主题，选择「星野爱 · 星光舞台（首页预览）」并应用。升级不自动替换当前主题。
+明日香 · 二号机仪表首页加入一次装甲扣合和铭牌扫光。横竖屏卡榫分别沿各自画框的真实折线就位。拉转速时，短拖光贴着已点亮区域的斜边；稳态和收油时恢复原转速条。
+长按底部「仪表盘」，在仪表设置的本机主题中选择「明日香 · 二号机」，点击「应用外观」。已经使用明日香主题的用户直接进入仪表首页即可。
 
-[直接下载 APK](https://github.com/misakashiny/iCarOBD/releases/download/v1.21.61/ICarOBD_1.21.61.apk) · [本版本说明](https://github.com/misakashiny/iCarOBD/releases/tag/v1.21.61) · [版本对应记录](releases/v1.21.61.json)
+[直接下载 APK](https://github.com/misakashiny/iCarOBD/releases/download/v1.21.62/ICarOBD_1.21.62.apk) · [本版本说明](https://github.com/misakashiny/iCarOBD/releases/tag/v1.21.62) · [版本对应记录](releases/v1.21.62.json)
 <!-- current-release:end -->
 
 ## 界面预览

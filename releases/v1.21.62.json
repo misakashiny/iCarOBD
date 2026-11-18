@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "sourceRepository": "misakashiny/ICarOBD-Private",
+  "sourceCommit": "f6283ceb4e200ce07e136a9332443c5a8c5c4644",
+  "sourceTag": "v1.21.62",
+  "versionName": "1.21.62-asuka-motion",
+  "versionCode": 154,
+  "apkSha256": "266a4d563a438384005656aa5e7dbbbdd9d0b1d98a95a82dbb3e29b4a351e0a1",
+  "apkSize": 49085990,
+  "buildInputCount": 591,
+  "buildInputsSha256": "a1691c5f6eccd04f5cc433b0fe1d11cccfec4b87e915ef4ac4171a0bb242ea1d",
+  "buildVariant": "release",
+  "buildProperties": {
+    "icarFlutter": "true",
+    "icarFlutterDefaultShell": "true",
+    "testReleaseSigning": "debug",
+    "icarReleaseTests": "true"
+  }
+}
